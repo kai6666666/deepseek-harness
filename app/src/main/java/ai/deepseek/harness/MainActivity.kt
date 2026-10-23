@@ -176,6 +176,7 @@ class MainActivity : AppCompatActivity() {
         askNotificationPermission()
         DshService.start(this)
         observeRuntime()
+        renderWizard(root)
     }
 
     private fun observeRuntime() {
@@ -214,6 +215,82 @@ class MainActivity : AppCompatActivity() {
         }.onFailure {
             runCatching { startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) }
         }
+    }
+
+    // ------------------------------------------------------------ 首启向导
+
+    private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
+
+    /** 10 分钟内自检过且全绿就不打扰；否则后台跑一次 SelfCheck，把缺的项做成卡片 */
+    private fun renderWizard(root: LinearLayout) {
+        val prefs = getSharedPreferences("setup", MODE_PRIVATE)
+        val lastOk = prefs.getBoolean("ok", false)
+        val fresh = System.currentTimeMillis() - prefs.getLong("checked_at", 0L) < 10 * 60_000L
+        if (lastOk && fresh) return
+
+        lifecycleScope.launch {
+            val json = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                runCatching { org.json.JSONObject(SelfCheck.run(this@MainActivity)) }.getOrNull()
+            } ?: return@launch
+
+            val ok = json.optBoolean("ok")
+            prefs.edit().putLong("checked_at", System.currentTimeMillis()).putBoolean("ok", ok).apply()
+
+            val missing = ArrayList<Pair<String, String>>()
+            json.optJSONArray("items")?.let { arr ->
+                for (i in 0 until arr.length()) {
+                    val it = arr.optJSONObject(i) ?: continue
+                    if (it.optBoolean("ok")) continue
+                    val id = it.optString("id")
+                    if (id == "shizuku" || id == "root" || id == "level" || id == "backend") continue
+                    missing += id to it.optString("hint")
+                }
+            }
+            if (ok || missing.isEmpty()) return@launch
+            showWizardCards(root, missing)
+        }
+    }
+
+    private fun showWizardCards(root: LinearLayout, missing: List<Pair<String, String>>) {
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(16), dp(20), dp(12))
+            setBackgroundColor(android.graphics.Color.parseColor("#1B1B1F"))
+        }
+        card.addView(TextView(this).apply {
+            text = "还差 ${missing.size} 项准备"
+            setTextColor(android.graphics.Color.WHITE)
+            textSize = 15f
+        })
+        missing.forEach { (id, hint) ->
+            val label = when (id) {
+                "accessibility" -> "无障碍（屏幕控制）"
+                "overlay" -> "悬浮窗"
+                "battery" -> "电池优化白名单"
+                "rootfs", "dsh", "dsh_runtime", "mcp" -> "内核：$id"
+                else -> id
+            }
+            card.addView(Button(this).apply {
+                text = "去开启：$label"
+                setOnClickListener {
+                    when (id) {
+                        "accessibility" -> PermissionGate.openGrantScreen(
+                            this@MainActivity, Capability.ACCESSIBILITY,
+                        )
+                        "overlay" -> PermissionGate.openGrantScreen(
+                            this@MainActivity, Capability.OVERLAY,
+                        )
+                        "battery" -> openBatterySettings()
+                        else -> DshService.start(this@MainActivity)
+                    }
+                }
+            })
+        }
+        card.addView(Button(this).apply {
+            text = "跳过（不影响 dsh 运行）"
+            setOnClickListener { card.visibility = View.GONE }
+        })
+        root.addView(card)
     }
 
     override fun onPause() {
