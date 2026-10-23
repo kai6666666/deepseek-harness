@@ -7,8 +7,9 @@ on:
 
 jobs:
   apk:
-    # arm64 runner：镜像层里的原生模块（node-pty / sherpa-onnx）必须按 arm64 取
-    runs-on: ubuntu-24.04-arm
+    # x86_64 runner：Android build-tools 的 aapt2 只有 x86_64 Linux 版，
+    # arm64 runner 上装不了 SDK。镜像层里的 arm64 依赖靠 npm 的 --cpu/--os 交叉解析。
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -17,12 +18,19 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - uses: android-actions/setup-android@v3
-
-      - name: SDK packages
+      - name: Install Android SDK (manual)
         run: |
-          yes | sdkmanager --licenses > /dev/null || true
-          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+          set -euo pipefail
+          SDK="$HOME/android-sdk"
+          mkdir -p "$SDK/cmdline-tools"
+          curl -fsSL -o /tmp/cmdtools.zip https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
+          unzip -q /tmp/cmdtools.zip -d "$SDK/cmdline-tools"
+          mv "$SDK/cmdline-tools/cmdline-tools" "$SDK/cmdline-tools/latest"
+          yes | "$SDK/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$SDK" --licenses > /dev/null || true
+          "$SDK/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$SDK" "platforms;android-35" "build-tools;35.0.0"
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
+          echo "$SDK/platform-tools" >> "$GITHUB_PATH"
 
       - name: Build image layers
         run: bash tools/build-layers.sh
