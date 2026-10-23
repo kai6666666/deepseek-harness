@@ -206,36 +206,42 @@ class DshRuntime private constructor(private val app: Context) {
         parent.mkdirs()
         // 归档里的顶层目录名固定是 LAYER_TOP；解压完再 mv 到 rootfsDir（同名 rename，同盘瞬时完成）
         val script = buildString {
-            appendLine("set -e")
+            // 故意不用 set -e：每一步自己判错，失败时把证据（tar rc / stderr / ls 输出）打进 logcat。
+            // 上一版用 set -e，真机失败时只留一行 "exit=1"，什么线索都没有。
+            appendLine("set -u")
             appendLine("BIN='${binDir.absolutePath}'")
             appendLine("PARENT='${parent.absolutePath}'")
             appendLine("ROOT='${rootfsDir.absolutePath}'")
             appendLine("TOP=\"\$PARENT/$LAYER_TOP\"")
-            appendLine("mkdir -p \"\$PARENT\"")
-            appendLine("rm -rf \"\$ROOT\" \"\$TOP\"")
+            appendLine("say(){ echo \"[install] \$*\"; }")
+            appendLine("die(){ say \"FAIL \$*\"; exit 1; }")
+            appendLine("mkdir -p \"\$PARENT\" || die mkdir-parent")
+            appendLine("say clear-rootfs")
+            appendLine("rm -rf \"\$ROOT\" \"\$TOP\" || say 'warn: rm 部分失败'")
             ROOTFS_LAYERS.forEach { name ->
-                // proot 环境下 mknod /dev/* 必然失败，tar 会返回非零；用 --exclude 挡掉后仍兜一层，
-                // 真正的完整性由下面的 test 断言负责（node 可执行 + dsh 包存在）。
+                // proot 环境下 mknod /dev/* 必然失败；--exclude 挡掉 dev，再兜一层 rc 记录
+                appendLine("say 'untar $name'")
                 appendLine(
                     "\"\$BIN/busybox\" tar xf '${File(filesDir, name).absolutePath}' -C \"\$PARENT\" " +
-                        "--exclude='$LAYER_TOP/dev/*' 2>/dev/null || true"
+                        "--exclude='$LAYER_TOP/dev/*' 2>\"\$PARENT/.tar.err\""
                 )
-                appendLine("echo LAYER_OK $name")
+                appendLine("rc=\$?; say \"tar rc=\$rc\"")
+                appendLine("if [ \$rc -ne 0 ]; then head -c 500 \"\$PARENT/.tar.err\" 2>/dev/null; echo; fi")
             }
-            // 上一次失败可能残留在 files/../ubuntu-noble-aarch64（旧路径 bug 留下的 1.4 GiB）
+            appendLine("say stale-cleanup")
             appendLine("rm -rf '${File(filesDir.parentFile, LAYER_TOP).absolutePath}'")
-            appendLine("test -d \"\$TOP\"")
-            appendLine("mv \"\$TOP\" \"\$ROOT\"")
-            // guest 内的 /dev 被 --exclude 挡掉了，这里补上 proot 需要的挂载点与标准流软链
+            appendLine("[ -d \"\$TOP\" ] || die 'no-\$TOP'")
+            appendLine("mv \"\$TOP\" \"\$ROOT\" || die mv")
+            appendLine("say seed-dev")
             appendLine("\"\$BIN/busybox\" mkdir -p \"\$ROOT/dev/pts\" \"\$ROOT/dev/shm\" \"\$ROOT/tmp\"")
             appendLine("\"\$BIN/busybox\" ln -sfn /proc/self/fd \"\$ROOT/dev/fd\"")
             appendLine("\"\$BIN/busybox\" ln -sfn /proc/self/fd/0 \"\$ROOT/dev/stdin\"")
             appendLine("\"\$BIN/busybox\" ln -sfn /proc/self/fd/1 \"\$ROOT/dev/stdout\"")
             appendLine("\"\$BIN/busybox\" ln -sfn /proc/self/fd/2 \"\$ROOT/dev/stderr\"")
-            appendLine("test -x \"\$ROOT/usr/local/bin/node\"")
-            appendLine("test -f \"\$ROOT/usr/local/lib/node_modules/@deepseek-ai/dsh/package.json\"")
+            appendLine("[ -x \"\$ROOT/usr/local/bin/node\" ] || { say 'node-not-exec'; ls -la \"\$ROOT/usr/local/bin\" 2>&1 | head -5; die node; }")
+            appendLine("[ -f \"\$ROOT/usr/local/lib/node_modules/@deepseek-ai/dsh/package.json\" ] || { say 'dsh-pkg-missing'; ls \"\$ROOT/usr/local/lib/node_modules\" 2>&1 | head -5; die dsh-pkg; }")
             appendLine("echo ok > \"\$ROOT/$INSTALL_MARKER\"")
-            appendLine("echo INSTALL_OK")
+            appendLine("say INSTALL_OK")
         }
 
         val code = runHostShell(script, timeoutMs = 20 * 60_000L)
@@ -442,7 +448,9 @@ class DshRuntime private constructor(private val app: Context) {
 
     private fun runHostShell(script: String, timeoutMs: Long): Int {
         val bash = File(binDir, "bash")
-        val pb = ProcessBuilder(bash.absolutePath, "-lc", script)
+        // -c 而不是 -lc：登录 shell 会去 source /etc/profile 之类，PATH 可能被换掉，
+        // 导致 rm/mv 变成 command not found，且失败现场只剩一行 exit=1。
+        val pb = ProcessBuilder(bash.absolutePath, "-c", script)
         pb.directory(filesDir)
         pb.redirectErrorStream(true)
         pb.environment().remove("LD_LIBRARY_PATH")
