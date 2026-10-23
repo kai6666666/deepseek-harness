@@ -226,6 +226,12 @@ class DshRuntime private constructor(private val app: Context) {
             appendLine("rm -rf '${File(filesDir.parentFile, LAYER_TOP).absolutePath}'")
             appendLine("test -d \"\$TOP\"")
             appendLine("mv \"\$TOP\" \"\$ROOT\"")
+            // guest 内的 /dev 被 --exclude 挡掉了，这里补上 proot 需要的挂载点与标准流软链
+            appendLine("\"\$BIN/busybox\" mkdir -p \"\$ROOT/dev/pts\" \"\$ROOT/dev/shm\" \"\$ROOT/tmp\"")
+            appendLine("\"\$BIN/busybox\" ln -sfn /proc/self/fd \"\$ROOT/dev/fd\"")
+            appendLine("\"\$BIN/busybox\" ln -sfn /proc/self/fd/0 \"\$ROOT/dev/stdin\"")
+            appendLine("\"\$BIN/busybox\" ln -sfn /proc/self/fd/1 \"\$ROOT/dev/stdout\"")
+            appendLine("\"\$BIN/busybox\" ln -sfn /proc/self/fd/2 \"\$ROOT/dev/stderr\"")
             appendLine("test -x \"\$ROOT/usr/local/bin/node\"")
             appendLine("test -f \"\$ROOT/usr/local/lib/node_modules/@deepseek-ai/dsh/package.json\"")
             appendLine("echo ok > \"\$ROOT/$INSTALL_MARKER\"")
@@ -315,19 +321,35 @@ class DshRuntime private constructor(private val app: Context) {
     }
 
     private fun prootBinds(): List<String> {
-        val binds = ArrayList<String>(24)
+        val binds = ArrayList<String>(28)
         fun add(src: String, dst: String? = null) {
-            if (!File(src).exists()) return
+            val f = File(src)
+            // 关键：app 读不到的东西绑进去只会让 proot 报 "can't sanitize binding" 并拖慢启动
+            if (!f.exists() || !f.canRead()) return
             binds += if (dst == null || dst == src) listOf("-b", src) else listOf("-b", "$src:$dst")
         }
+        // 目标目录必须存在于 guest 内，否则 proot 会自己去 glue rootfs 里造（更慢，且老内核上会失败）
+        fun ensureGuestDir(path: String) {
+            runCatching { File(rootfsDir, path.trimStart('/')).mkdirs() }
+        }
+        ensureGuestDir("/dev")
+        ensureGuestDir("/dev/pts")
+        ensureGuestDir("/dev/shm")
         add("/dev"); add("/proc"); add("/sys"); add("/dev/pts")
         add(tmpDir.absolutePath, "/dev/shm")
         add("/proc/self/fd", "/dev/fd")
         add("/proc/self/fd/0", "/dev/stdin")
         add("/proc/self/fd/1", "/dev/stdout")
         add("/proc/self/fd/2", "/dev/stderr")
-        add("/storage/emulated/0", "/sdcard")
-        add("/storage/emulated/0")
+        // 外部存储：拿不到就退到 app 专属目录（无需任何存储权限也能读写）
+        if (File("/storage/emulated/0").canRead()) {
+            add("/storage/emulated/0", "/sdcard")
+            add("/storage/emulated/0")
+        } else {
+            app.getExternalFilesDir(null)?.let { ext ->
+                if (ext.isDirectory) add(ext.absolutePath, "/sdcard")
+            }
+        }
         add("/data/local/tmp")
         add(app.applicationInfo.dataDir, "/data/data/${app.packageName}")
         add(filesDir.absolutePath)
@@ -380,6 +402,12 @@ class DshRuntime private constructor(private val app: Context) {
         // 关键：清掉 Android 自带的库搜索路径，否则 proot 会去加载系统的 libc
         pb.environment().remove("LD_LIBRARY_PATH")
         pb.environment()["TMPDIR"] = tmpDir.absolutePath
+        // 真机实测：没有这两个变量 proot 直接死在
+        //   "proot error: can't create temporary directory: Permission denied"
+        // PROOT_TMP_DIR 给 glue rootfs 用；PROOT_LOADER 指到改名后的 loader，
+        // 否则 proot 会去 /proc/self/exe 同目录找 "loader"（那里只有 liboperit_proot.so）
+        pb.environment()["PROOT_TMP_DIR"] = tmpDir.absolutePath
+        pb.environment()["PROOT_LOADER"] = File(binDir, "loader").absolutePath
         Log.i(TAG, "spawn: ${buildCommand(port).joinToString(" ")}")
         return pb.start()
     }
