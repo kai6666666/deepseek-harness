@@ -360,7 +360,44 @@ class DshRuntime private constructor(private val app: Context) {
             }
             Log.i(TAG, "overlay -> ${dst.absolutePath} (${dst.length()} B)")
         }.onFailure { Log.w(TAG, "overlay 写入失败: ${it.message}") }
+
+        // 用户 overlay 投放点：$DSH_HOME/overlays/*.yml，启动时自动 --patch，预检逐条归因
+        runCatching {
+            val dir = userOverlayDir()
+            dir.mkdirs()
+            val readme = File(dir, "README.txt")
+            if (!readme.isFile) {
+                readme.writeText(
+                    """
+                    |把自己的 DSH overlay 放这里，文件名以 .yml / .yaml 结尾，引擎启动时会自动 --patch。
+                    |
+                    |格式要求：顶层必须是补丁操作列表，例如
+                    |  - insert:
+                    |      - id: my-tool
+                    |        name: '@deepseek-ai/dsh-mcp-client'
+                    |        config: { serverName: my, transport: streamable-http, url: http://127.0.0.1:9000/mcp }
+                    |
+                    |写坏了不会拖垮整个引擎：启动前的组合预检会逐条跑 --dump-config，
+                    |把出错的文件名和 DSH 原始报错直接写进日志与通知。
+                    """.trimMargin() + "\n"
+                )
+            }
+        }.onFailure { Log.w(TAG, "准备 overlays 目录失败: ${it.message}") }
     }
+
+    /** guest 内的用户 overlay 目录（宿主机视角路径） */
+    private fun userOverlayDir(): File = File(rootfsDir, "root/.dsh/overlays")
+
+    /** guest 内的用户 overlay（guest 路径），按文件名排序保证顺序稳定 */
+    private fun userOverlays(): List<String> =
+        userOverlayDir().listFiles()
+            ?.filter { it.isFile && (it.name.endsWith(".yml") || it.name.endsWith(".yaml")) }
+            ?.sortedBy { it.name }
+            ?.map { "/root/.dsh/overlays/${it.name}" }
+            ?: emptyList()
+
+    /** 实际要 --patch 的全部 overlay（guest 路径，顺序 = 生效顺序） */
+    private fun overlayGuestPaths(): List<String> = listOf(GUEST_OVERLAY) + userOverlays()
 
     /** Operit 的坑位 4：proot 下 /proc 部分文件缺失会让 node/npm 直接崩 */
     private fun seedFakeProcFiles() {
@@ -495,8 +532,10 @@ class DshRuntime private constructor(private val app: Context) {
             "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
             "/bin/bash", "-lc",
             // --patch 是 launcher 级 flag，必须排在 --no-open/--port 这类 inner 参数之前，
-            // 否则会被当成 web app 的参数。overlay 由 seedOverlay() 写进 /root。
-            "mkdir -p /tmp && cd /root && exec dsh web --patch $GUEST_OVERLAY --no-open --port $port",
+            // 否则会被当成 web app 的参数。内置 overlay + 用户 overlay（$DSH_HOME/overlays）一起挂。
+            "mkdir -p /tmp && cd /root && exec dsh web " +
+                overlayGuestPaths().joinToString(" ") { "--patch $it" } +
+                " --no-open --port $port",
         )
         return cmd
     }
@@ -514,14 +553,40 @@ class DshRuntime private constructor(private val app: Context) {
      */
     private fun probeOverlay() {
         if (overlayProbed || !isInstalled()) return
-        _state.value = _state.value.copy(detail = "预检 overlay 组合（dsh --dump-config）…")
-        val script = "cd /root && dsh web --patch $GUEST_OVERLAY --dump-config >/tmp/dump.yml 2>&1; " +
-            "rc=\$?; echo \"[probe] dump-config rc=\$rc\"; " +
-            "if [ \$rc -ne 0 ]; then tail -c 1200 /tmp/dump.yml; else grep -c '^- ' /tmp/dump.yml | sed 's/^/[probe] layers=/'; fi; exit \$rc"
-        val rc = runInContainer(script, 180_000L)
-        if (rc != 0) throw IOException("overlay 组合预检失败 exit=$rc\n${tail()}")
-        overlayProbed = true
-        Log.i(TAG, "overlay 组合预检通过")
+        val overlays = overlayGuestPaths()
+        _state.value = _state.value.copy(detail = "预检 overlay 组合（${overlays.size} 层）…")
+
+        if (dumpConfig(overlays) == 0) {
+            overlayProbed = true
+            Log.i(TAG, "overlay 组合预检通过（${overlays.size} 层）")
+            return
+        }
+
+        // 全量失败 → 逐层归因：每层单独跑一次 --dump-config，指出到底哪个文件坏
+        val report = StringBuilder()
+        val bad = ArrayList<String>()
+        overlays.forEach { one ->
+            val ok = dumpConfig(listOf(one)) == 0
+            report.append(if (ok) "OK   " else "FAIL ").append(one).append('\n')
+            if (!ok) bad.add(one)
+        }
+        Log.e(TAG, "overlay 预检失败：\n$report")
+        val reason = if (bad.isEmpty()) {
+            "overlay 组合冲突：每层单独都能过，一起 --patch 才失败（多半是重复 id / serverName）"
+        } else {
+            "以下 overlay 写坏了：\n$report"
+        }
+        throw IOException("$reason\n${tail()}")
+    }
+
+    /** 跑一次 `dsh web --patch … --dump-config`，返回退出码（输出进 logTail） */
+    private fun dumpConfig(files: List<String>): Int {
+        val patch = files.joinToString(" ") { "--patch $it" }
+        val script = "cd /root && dsh web $patch --dump-config >/tmp/dump.yml 2>&1; rc=\$?; " +
+            "echo \"[probe] rc=\$rc$patch\"; " +
+            "if [ \$rc -ne 0 ]; then tail -c 1000 /tmp/dump.yml; " +
+            "else echo \"[probe] rows=\$(grep -c '^- ' /tmp/dump.yml)\"; fi; exit \$rc"
+        return runInContainer(script, 180_000L)
     }
 
     /** 在容器里跑脚本并收集输出（用于预检这类需要真正进 guest 的一次性动作） */
