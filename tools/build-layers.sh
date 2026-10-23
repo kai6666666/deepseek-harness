@@ -28,9 +28,9 @@ if [ ! -f "$LAYER1" ]; then
   mkdir -p "$W/node"
   tar -xJf "$W/node.tar.xz" -C "$W/node" --strip-components=1
   cp -a "$W/node/bin" "$W/node/lib" "$W/node/include" "$W/node/share" "$W/ubuntu-noble-aarch64/usr/local/"
-  export PATH="$W/node/bin:$PATH"
+  # 注意：镜像里放的是 arm64 node，但跑 npm 的是 runner 自己的 x86_64 node
+  # （arm64 二进制在 x86 上根本执行不了）。npm 只负责落文件，交叉靠 --cpu/--os。
   export npm_config_registry="${NPM_REGISTRY:-https://registry.npmjs.org}"
-  # 交叉装：runner 是 x86_64，但镜像要吃 arm64 的原生件
   export npm_config_arch=arm64
   export npm_config_platform=linux
   npm install -g "@deepseek-ai/dsh@$DSH_VER" \
