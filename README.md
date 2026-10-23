@@ -70,8 +70,9 @@ Operit-main/terminal/                     OperitTerminalCore@master（68 文件 
 | **DSH 侧 mcp-client 真连上了** | `initialize from dsh-mcp-client proto=2025-11-25` → `client initialized` → `tools/list -> 10 tools` | 容器内 `dsh web --patch /root/mcp-android.overlay.yml`，日志来自宿主 McpServer |
 | **APK 原地升级后自愈** | `pm install -r` 覆盖安装，冷启自动重建 `bin/` 软链 → READY + MCP 握手 10 工具 | 2026-10-23 23:27 实测（上一版会 `error=2 No such file or directory`） |
 | **端口交给内核** | `--port 0` → READY `http://127.0.0.1:45717/?token=…`，3080 让给别的 App | 2026-10-24 00:07 实测 |
-| **overlay 预检** | 启动前 `dsh --dump-config` 组合校验，2.5 s 通过才真启动 | logcat `DshRuntime: overlay 组合预检通过` |
-| **安全模式** | 连续失败 >3 次 → `Phase.FAILED` 并保留完整错误，不再无限退避 | `MAX_AUTO_RESTARTS = 3` |
+| **overlay 预检** | 启动前 `dsh --dump-config` 逐层校验；坏哪层点名哪层（`FAIL /root/.dsh/overlays/bad.yml`），通过时 1~2.5 s | 真机实测：`bad.yml` → rc=1 并归因；删掉后自动恢复 READY |
+| **用户 overlay 投放点** | `$DSH_HOME/overlays/*.yml` 自动 `--patch`，目录里自带 README.txt 说明格式 | 首启即生成 `…/root/.dsh/overlays/README.txt` |
+| **安全模式** | 连续失败 >3 次 → `Phase.FAILED` 并保留完整错误；计数跨 supervisor，回前台只再试 1 次 | 真机实测：4 次失败进安全模式，错误原文点名坏文件 |
 | **息屏也能装完** | 屏幕全黑状态下 3 分 38 秒完成解层+起服务（WakeLock 生效） | 22:33:39 → 22:37:17 |
 
 ---
