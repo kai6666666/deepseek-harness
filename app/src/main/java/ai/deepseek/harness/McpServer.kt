@@ -207,7 +207,7 @@ class McpServer private constructor(private val app: Context) : NanoHTTPD("127.0
         return result.fold(
             onSuccess = { r ->
                 ToolCallBus.emit(ToolEvent(hostName, ToolEvent.Phase.OK, summarize(r), elapsed))
-                true to summarize(r)
+                true to resultText(r)
             },
             onFailure = { e ->
                 val msg = e.message ?: "tool failed"
@@ -215,6 +215,27 @@ class McpServer private constructor(private val app: Context) : NanoHTTPD("127.0
                 false to msg
             },
         )
+    }
+
+    /**
+     * 把 MCP 风格的 `content[]` 拉平成**完整文本**给插件用。
+     *
+     * 注意不能用 [summarize]：那是给状态条的一行预览（60 字截断），
+     * 真机实测过——插件拿到的 `text` 只有一个 `{`。
+     */
+    private fun resultText(result: JSONObject): String {
+        val arr = result.optJSONArray("content") ?: return result.toString()
+        val sb = StringBuilder()
+        for (i in 0 until arr.length()) {
+            val item = arr.optJSONObject(i) ?: continue
+            when (item.optString("type")) {
+                "text" -> sb.append(item.optString("text"))
+                "image" -> sb.append("[image ").append(item.optString("mimeType", "image/png")).append(']')
+                else -> sb.append('[').append(item.optString("type")).append(']')
+            }
+            if (i < arr.length() - 1) sb.append('\n')
+        }
+        return sb.toString()
     }
 
 

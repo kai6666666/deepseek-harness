@@ -258,4 +258,17 @@ export function apply(ctx) {
 		}
 	}
 	ctx?.logger?.info?.(`[dsh-android-bridge] 已注册 ${TOOLS.length} 个安卓工具，信箱 ${dir}`);
+
+	// 落地一个「我真的被加载了」的证据文件：真机排障时不必再靠猜。
+	// 宿主 AndroidToolBridge 不会写它，只有本插件 apply() 会。
+	try {
+		writeJsonAtomic(path.join(dir, 'applied.json'), {
+			pid: process.pid,
+			at: Date.now(),
+			tools: TOOLS.map((t) => t.name),
+			version: '1.0.0',
+		});
+	} catch {
+		/* 取证失败不影响工具 */
+	}
 }
