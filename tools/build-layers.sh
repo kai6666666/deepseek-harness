@@ -30,6 +30,9 @@ if [ ! -f "$LAYER1" ]; then
   cp -a "$W/node/bin" "$W/node/lib" "$W/node/include" "$W/node/share" "$W/ubuntu-noble-aarch64/usr/local/"
   export PATH="$W/node/bin:$PATH"
   export npm_config_registry="${NPM_REGISTRY:-https://registry.npmjs.org}"
+  # 交叉装：runner 是 x86_64，但镜像要吃 arm64 的原生件
+  export npm_config_arch=arm64
+  export npm_config_platform=linux
   npm install -g "@deepseek-ai/dsh@$DSH_VER" \
     --prefix "$W/ubuntu-noble-aarch64/usr/local" \
     --cpu=arm64 --os=linux \
