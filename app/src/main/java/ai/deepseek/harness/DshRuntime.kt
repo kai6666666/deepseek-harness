@@ -1,6 +1,7 @@
 package ai.deepseek.harness
 
 import android.content.Context
+import android.system.Os
 import android.util.Log
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -199,58 +200,110 @@ class DshRuntime private constructor(private val app: Context) {
             }
         }
 
-        // 2) 直接在 parent 里叠层解压：两层顶层目录同名，layer1 自然覆盖到 layer0 上
+        // 2) 只有「解压」交给 busybox：mv / rm / ln 全部搬回 Kotlin。
+        //    真机踩到的坑：in-app 里 shell 的 mv 不可用（PATH 与登录 shell 环境差异），
+        //    失败现场没有任何输出，只剩 exit=1。改成 Java 的 renameTo / deleteRecursively / Os.symlink
+        //    之后，这条链路上不再依赖任何外部命令。
         _state.value = _state.value.copy(detail = "解压镜像层（busybox tar xf）…")
         val parent = rootfsDir.parentFile
             ?: throw IOException("rootfs 路径异常：${rootfsDir.absolutePath}")
         parent.mkdirs()
-        // 归档里的顶层目录名固定是 LAYER_TOP；解压完再 mv 到 rootfsDir（同名 rename，同盘瞬时完成）
+        val top = File(parent, LAYER_TOP)
+
+        _state.value = _state.value.copy(detail = "清理旧 rootfs…")
+        deleteTree(rootfsDir)
+        deleteTree(top)
+        deleteTree(File(filesDir.parentFile, LAYER_TOP))   // 旧路径 bug 留下的 1.4 GiB
+
         val script = buildString {
-            // 故意不用 set -e：每一步自己判错，失败时把证据（tar rc / stderr / ls 输出）打进 logcat。
-            // 上一版用 set -e，真机失败时只留一行 "exit=1"，什么线索都没有。
-            appendLine("set -u")
             appendLine("BIN='${binDir.absolutePath}'")
             appendLine("PARENT='${parent.absolutePath}'")
-            appendLine("ROOT='${rootfsDir.absolutePath}'")
-            appendLine("TOP=\"\$PARENT/$LAYER_TOP\"")
-            appendLine("say(){ echo \"[install] \$*\"; }")
-            appendLine("die(){ say \"FAIL \$*\"; exit 1; }")
-            appendLine("mkdir -p \"\$PARENT\" || die mkdir-parent")
-            appendLine("say clear-rootfs")
-            appendLine("rm -rf \"\$ROOT\" \"\$TOP\" || say 'warn: rm 部分失败'")
             ROOTFS_LAYERS.forEach { name ->
-                // proot 环境下 mknod /dev/* 必然失败；--exclude 挡掉 dev，再兜一层 rc 记录
-                appendLine("say 'untar $name'")
+                appendLine("echo \"[install] untar $name\"")
                 appendLine(
                     "\"\$BIN/busybox\" tar xf '${File(filesDir, name).absolutePath}' -C \"\$PARENT\" " +
                         "--exclude='$LAYER_TOP/dev/*' 2>\"\$PARENT/.tar.err\""
                 )
-                appendLine("rc=\$?; say \"tar rc=\$rc\"")
+                appendLine("rc=\$?; echo \"[install] tar rc=\$rc\"")
                 appendLine("if [ \$rc -ne 0 ]; then head -c 500 \"\$PARENT/.tar.err\" 2>/dev/null; echo; fi")
             }
-            appendLine("say stale-cleanup")
-            appendLine("rm -rf '${File(filesDir.parentFile, LAYER_TOP).absolutePath}'")
-            appendLine("[ -d \"\$TOP\" ] || die 'no-\$TOP'")
-            appendLine("mv \"\$TOP\" \"\$ROOT\" || die mv")
-            appendLine("say seed-dev")
-            appendLine("\"\$BIN/busybox\" mkdir -p \"\$ROOT/dev/pts\" \"\$ROOT/dev/shm\" \"\$ROOT/tmp\"")
-            appendLine("\"\$BIN/busybox\" ln -sfn /proc/self/fd \"\$ROOT/dev/fd\"")
-            appendLine("\"\$BIN/busybox\" ln -sfn /proc/self/fd/0 \"\$ROOT/dev/stdin\"")
-            appendLine("\"\$BIN/busybox\" ln -sfn /proc/self/fd/1 \"\$ROOT/dev/stdout\"")
-            appendLine("\"\$BIN/busybox\" ln -sfn /proc/self/fd/2 \"\$ROOT/dev/stderr\"")
-            appendLine("[ -x \"\$ROOT/usr/local/bin/node\" ] || { say 'node-not-exec'; ls -la \"\$ROOT/usr/local/bin\" 2>&1 | head -5; die node; }")
-            appendLine("[ -f \"\$ROOT/usr/local/lib/node_modules/@deepseek-ai/dsh/package.json\" ] || { say 'dsh-pkg-missing'; ls \"\$ROOT/usr/local/lib/node_modules\" 2>&1 | head -5; die dsh-pkg; }")
-            appendLine("echo ok > \"\$ROOT/$INSTALL_MARKER\"")
-            appendLine("say INSTALL_OK")
+            appendLine("echo \"[install] untar done\"")
         }
 
         val code = runHostShell(script, timeoutMs = 20 * 60_000L)
         if (code != 0) throw IOException("镜像解压失败，exit=$code\n${tail()}")
+        if (!top.isDirectory) throw IOException("解压后没有 $LAYER_TOP 目录\n${tail()}")
+
+        _state.value = _state.value.copy(detail = "落盘 rootfs…")
+        if (!top.renameTo(rootfsDir)) {
+            // 同盘 rename 正常是瞬时；失败通常意味着跨挂载点，退回「逐个文件搬」
+            copyTree(top, rootfsDir)
+            deleteTree(top)
+        }
+        if (!rootfsDir.isDirectory) throw IOException("rootfs 目录创建失败：${rootfsDir.absolutePath}")
+
+        seedDevNodes()
+
+        val node = File(rootfsDir, "usr/local/bin/node")
+        if (!node.isFile) throw IOException("node 未进镜像：${node.absolutePath}")
+        if (!node.canExecute()) node.setExecutable(true, false)
+        val dshPkg = File(rootfsDir, "usr/local/lib/node_modules/@deepseek-ai/dsh/package.json")
+        if (!dshPkg.isFile) throw IOException("dsh 包未进镜像：${dshPkg.absolutePath}")
+        File(rootfsDir, INSTALL_MARKER).writeText("ok\n")
+
         if (!File(rootfsDir, "etc").isDirectory) throw IOException("rootfs 结构异常：缺 etc/")
 
         seedFakeProcFiles()
         seedResolvConf()
         Log.i(TAG, "installed rootfs -> ${rootfsDir.absolutePath}")
+    }
+
+    /** 递归删除：不走 shell 的 rm，避免 PATH / 权限造成的静默失败 */
+    private fun deleteTree(f: File) {
+        if (!f.exists()) return
+        val t0 = System.currentTimeMillis()
+        runCatching { f.deleteRecursively() }
+            .onFailure { Log.w(TAG, "deleteTree ${f.name}: ${it.message}") }
+        Log.i(TAG, "deleteTree ${f.name} ${System.currentTimeMillis() - t0}ms")
+    }
+
+    /** renameTo 失败时的退路：逐项复制（保留权限位与软链本身） */
+    private fun copyTree(src: File, dst: File) {
+        dst.mkdirs()
+        src.listFiles()?.forEach { s ->
+            val d = File(dst, s.name)
+            if (s.isDirectory) {
+                copyTree(s, d)
+            } else {
+                runCatching {
+                    Files.copy(
+                        s.toPath(), d.toPath(),
+                        java.nio.file.LinkOption.NOFOLLOW_LINKS,
+                        java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                        java.nio.file.StandardCopyOption.COPY_ATTRIBUTES,
+                    )
+                }.onFailure { Log.w(TAG, "copy ${s.name}: ${it.message}") }
+            }
+        }
+        runCatching { dst.setLastModified(src.lastModified()) }
+    }
+
+    /** guest 内的 /dev：proot 需要这些挂载点存在，标准流用软链指到 /proc/self/fd */
+    private fun seedDevNodes() {
+        File(rootfsDir, "dev/pts").mkdirs()
+        File(rootfsDir, "dev/shm").mkdirs()
+        File(rootfsDir, "tmp").mkdirs()
+        mapOf(
+            "dev/fd" to "/proc/self/fd",
+            "dev/stdin" to "/proc/self/fd/0",
+            "dev/stdout" to "/proc/self/fd/1",
+            "dev/stderr" to "/proc/self/fd/2",
+        ).forEach { (rel, target) ->
+            val f = File(rootfsDir, rel)
+            if (f.exists() || Files.isSymbolicLink(f.toPath())) return@forEach
+            runCatching { Os.symlink(target, f.absolutePath) }
+                .onFailure { Log.w(TAG, "symlink $rel -> $target: ${it.message}") }
+        }
     }
 
     /** Operit 的坑位 4：proot 下 /proc 部分文件缺失会让 node/npm 直接崩 */
