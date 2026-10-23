@@ -59,6 +59,7 @@ class FloatingBubbleService : LifecycleService() {
     private lateinit var bubbleParams: WindowManager.LayoutParams
     private lateinit var panelParams: WindowManager.LayoutParams
     private var web: WebView? = null
+    private var statusView: TextView? = null
     private var lastUrl: String? = null
 
     private val density get() = resources.displayMetrics.density
@@ -196,9 +197,11 @@ class FloatingBubbleService : LifecycleService() {
         val title = TextView(this).apply {
             text = "DeepSeek Harness"
             setTextColor(Color.WHITE)
-            textSize = 13f
+            textSize = 12f
+            maxLines = 1
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
         }
+        statusView = title
         val close = TextView(this).apply {
             text = "✕"
             setTextColor(Color.parseColor("#BBBBBB"))
@@ -252,6 +255,12 @@ class FloatingBubbleService : LifecycleService() {
                     loadIntoWeb(st.url)
                 }
                 bubble?.alpha = if (st.phase == Phase.READY) 1f else 0.55f
+            }
+        }
+        // 状态条：把 MCP 工具调用实时贴到头部
+        lifecycleScope.launch {
+            ToolCallBus.events.collect { e ->
+                statusView?.text = ToolCallBus.render(e)
             }
         }
     }
