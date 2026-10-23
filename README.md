@@ -67,11 +67,12 @@ Operit-main/terminal/                     OperitTerminalCore@master（68 文件 
 | **授权链路在真机成立** | token URL → **303**，裸 origin → **401** | Android shell curl 打到 app 起的 3080 |
 | **WebView 真的渲染出来了** | `onPageFinished http://127.0.0.1:3080/ title=DeepSeek Harness` | logcat `DshWebView`（debug 包已开远程调试） |
 | **回环 MCP 桥可用** | `initialize` / `tools/list` / `tools/call selfcheck` 全通，10 个工具在册 | curl POST `127.0.0.1:8765/mcp` |
+| **DSH 侧 mcp-client 真连上了** | `initialize from dsh-mcp-client proto=2025-11-25` → `client initialized` → `tools/list -> 10 tools` | 容器内 `dsh web --patch /root/mcp-android.overlay.yml`，日志来自宿主 McpServer |
 | **息屏也能装完** | 屏幕全黑状态下 3 分 38 秒完成解层+起服务（WakeLock 生效） | 22:33:39 → 22:37:17 |
 
 ---
 
-## 真机踩出来的四个坑（都已修，写在这里省下重踩）
+## 真机踩出来的五个坑（都已修，写在这里省下重踩）
 
 | 症状 | 真因 | 修法 |
 |---|---|---|
@@ -79,18 +80,21 @@ Operit-main/terminal/                     OperitTerminalCore@master（68 文件 
 | `proot error: can't create temporary directory: Permission denied` | 没设 `PROOT_TMP_DIR`；proot 默认往 `/tmp` 写 glue rootfs | `PROOT_TMP_DIR=files/tmp`、`PROOT_LOADER=bin/loader`、`TMPDIR=files/tmp` |
 | `镜像解压失败 exit=1`（无任何输出） | 解压后 `mv` / `rm` / `ln` 在 app 的 shell 环境里静默失败 | 删/改名/建软链全部改 Kotlin：`deleteRecursively` / `renameTo` / `Os.symlink`，shell 只负责 `busybox tar xf` |
 | 首装「卡住」十几分钟 | 屏幕熄灭进 Doze，安装协程被冻住；WakeLock 只在 READY/STARTING 时持有 | WakeLock 覆盖 INSTALLING/STARTING/READY 全阶段 |
+| 升级 APK 后 `Cannot run program …/bin/proot: error=2` | `nativeLibraryDir` 带安装路径哈希，升级后整段变了，旧软链指向已删除目录 | `bin/` 软链改成**每次启动都重建**（`ensureBinLinks()` 放进 runCycle），不只在首次安装时建 |
 
 ---
 
 ## 已知缺口
 
-1. **WebView 渲染未经人工目视确认**：本机屏幕被系统锁屏挡住，只能用 `onPageFinished` 日志 + HTTP 303 交叉验证。
+1. **模型侧的自动调用还没跑**：工具已注册进 DSH（`tools/list -> 10 tools`），但让模型自己决定去调
+   `mcp__android__screenshot` 需要先配模型凭据、开一次会话；这一步只能在 UI 里点，没有 CLI 旁路。
+2. **WebView 渲染未经人工目视确认**：本机屏幕被系统锁屏挡住，只能用 `onPageFinished` 日志 + HTTP 303 交叉验证。
    已开 `WebView.setWebContentsDebuggingEnabled(true)`（debug 包），可 `chrome://inspect` 直连。
-2. **Shizuku / Root 档未实跑**：本机没装 Shizuku、没有 root，`BackendRegistry` 会安全回落到无障碍档。
-3. **悬浮球 / 状态条 / 首启向导**：代码已编译进 APK，界面交互尚未在真机上逐项点过。
-4. **嵌套 proot 不可测**：本仓库的 proot 二进制链的是 Android `linker64`，
+3. **Shizuku / Root 档未实跑**：本机没装 Shizuku、没有 root，`BackendRegistry` 会安全回落到无障碍档。
+4. **悬浮球 / 状态条 / 首启向导**：代码已编译进 APK，界面交互尚未在真机上逐项点过。
+5. **嵌套 proot 不可测**：本仓库的 proot 二进制链的是 Android `linker64`，
    在容器内执行会 `required file not found`；所以「容器里再开容器」这条路走不通。
-5. **`/dev/*` 设备节点**：proot 下无法 `mknod`，安装时用 `--exclude` 挡掉并在 guest 内预建挂载点；
+6. **`/dev/*` 设备节点**：proot 下无法 `mknod`，安装时用 `--exclude` 挡掉并在 guest 内预建挂载点；
    运行期把宿主 `/dev/null` 等按需 bind 进去。
 
 ---
