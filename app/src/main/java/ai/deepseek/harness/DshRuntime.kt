@@ -18,8 +18,6 @@ import kotlinx.coroutines.launch
 import java.io.File
 import java.io.IOException
 import java.net.HttpURLConnection
-import java.net.InetSocketAddress
-import java.net.ServerSocket
 import java.net.URL
 import java.nio.file.Files
 
@@ -69,9 +67,12 @@ class DshRuntime private constructor(private val app: Context) {
         private const val OVERLAY_ASSET = "mcp-android.overlay.yml"
         private const val GUEST_OVERLAY = "/root/mcp-android.overlay.yml"
 
-        private const val PORT_FIRST = 3080
-        private const val PORT_LAST = 3090
+        /** 0 = 交给内核分配端口；真实端口从 stdout 的授权 URL 里读回 */
+        private const val DSH_PORT = 0
         private const val URL_TIMEOUT_MS = 120_000L
+
+        /** 连续失败超过这个次数就进安全模式，不再自动重启 */
+        private const val MAX_AUTO_RESTARTS = 3
 
         /** `dsh web: http://127.0.0.1:3080/?token=xxx` */
         private val URL_RE = Regex("""dsh web:\s*(http://127\.0\.0\.1:(\d+)/\?token=[A-Za-z0-9_\-]+)""")
@@ -98,6 +99,14 @@ class DshRuntime private constructor(private val app: Context) {
     private var scope: CoroutineScope? = null
     private var supervisor: Job? = null
     private var process: Process? = null
+
+    /** 上一次 READY 的时间戳；用于「稳定运行过就重置重启预算」 */
+    @Volatile
+    private var readySince = 0L
+
+    /** overlay 组合预检只做一次/进程生命周期（overlay 由 seedOverlay 每次重写为 APK 内版本） */
+    @Volatile
+    private var overlayProbed = false
 
     @Volatile
     private var stopping = false
@@ -146,9 +155,24 @@ class DshRuntime private constructor(private val app: Context) {
             } catch (e: CancellationException) {
                 throw e
             } catch (t: Throwable) {
-                val readyFor = System.currentTimeMillis() - cycleStart
-                if (readyFor > 10 * 60_000L) restarts = 0   // 稳定运行过，重置预算
+                // 稳定跑过一段时间（含 READY 之后）就重置预算，避免把「很久以前崩过一次」算进连续失败
+                val readyLongEnough = readySince > 0 && System.currentTimeMillis() - readySince > 60_000L
+                if (readyLongEnough || System.currentTimeMillis() - cycleStart > 10 * 60_000L) restarts = 0
+                readySince = 0
+
                 restarts++
+                if (restarts > MAX_AUTO_RESTARTS) {
+                    // 安全模式：连续失败超过预算就停下，把最后一次的真实错误留在 detail 里给用户看，
+                    // 而不是无限退避把日志刷爆（DSH 官方客户端也是这么做的：失败 3 次进 rescue）。
+                    Log.e(TAG, "进入安全模式（连续失败 $restarts 次）：${t.message}")
+                    _state.value = _state.value.copy(
+                        phase = Phase.FAILED,
+                        restarts = restarts,
+                        detail = "连续失败 $restarts 次，已停止自动重启\n${t.message}\n${tail()}",
+                    )
+                    break
+                }
+
                 val backoffMs = minOf(30_000L, 1_000L shl minOf(restarts, 5))
                 Log.w(TAG, "cycle failed (restarts=$restarts, backoff=${backoffMs}ms): ${t.message}")
                 _state.value = _state.value.copy(
@@ -159,15 +183,16 @@ class DshRuntime private constructor(private val app: Context) {
                 delay(backoffMs)
             }
         }
-        _state.value = _state.value.copy(phase = Phase.STOPPED)
+        if (_state.value.phase != Phase.FAILED) {
+            _state.value = _state.value.copy(phase = Phase.STOPPED)
+        }
     }
 
     private suspend fun runCycle() {
         _state.value = DshState(phase = if (isInstalled()) Phase.STARTING else Phase.INSTALLING)
         if (!isInstalled()) install()
 
-        val port = pickPort()
-        _state.value = _state.value.copy(phase = Phase.STARTING, port = port, detail = "spawning proot…")
+        _state.value = _state.value.copy(phase = Phase.STARTING, detail = "spawning proot…")
 
         // 每次启动前都把 MCP overlay 重写一遍：rootfs 可能是老版本装的，overlay 必须跟 APK 一致
         // 同时重建 bin/ 软链 —— 升级 APK 后 nativeLibraryDir 会变（/data/app/~~hash...），
@@ -175,13 +200,21 @@ class DshRuntime private constructor(private val app: Context) {
         ensureBinLinks()
         seedOverlay()
 
-        val p = spawn(port)
+        // overlay 组合预检：先跑一次 `dsh … --dump-config`，把「YAML 写坏 / 插件名不存在」这类错误
+        // 挡在真启动之前。它比"起服务→等 120 s 超时→重启"便宜得多，也是 DSH 官方客户端的做法。
+        probeOverlay()
+
+        // 端口交给内核分配（--port 0），再从 stdout 的授权 URL 里读回真实端口。
+        // 好处：不会再与别的 App / 残留实例抢 3080，也不必逐个 bind 探测。
+        val p = spawn(DSH_PORT)
         process = p
         _state.value = _state.value.copy(pid = findPidOf(p) ?: 0L)
 
         val url = awaitUrl(p) ?: throw IOException("${URL_TIMEOUT_MS / 1000}s 内未出现授权 URL")
+        val port = URL_RE.find(url)?.groupValues?.get(2)?.toIntOrNull() ?: 0
         if (!probe(url)) throw IOException("授权 URL 未返回 303")
 
+        readySince = System.currentTimeMillis()
         _state.value = _state.value.copy(
             phase = Phase.READY, url = url, port = port,
             detail = "ready on port $port\n${tail()}",
@@ -390,18 +423,6 @@ class DshRuntime private constructor(private val app: Context) {
 
     // ---------------------------------------------------------------- launch
 
-    private fun pickPort(): Int {
-        for (p in PORT_FIRST..PORT_LAST) {
-            try {
-                ServerSocket().use { it.bind(InetSocketAddress("127.0.0.1", p)) }
-                return p
-            } catch (_: IOException) {
-                // 端口被占，试下一个
-            }
-        }
-        return PORT_FIRST
-    }
-
     private fun prootBinds(): List<String> {
         val binds = ArrayList<String>(28)
         fun add(src: String, dst: String? = null) {
@@ -483,6 +504,44 @@ class DshRuntime private constructor(private val app: Context) {
     /** 给环境管理用：在同一个 rootfs 里跑任意脚本（不带 dsh 参数）。 */
     fun containerCommand(script: String): List<String> =
         buildCommand(0).dropLast(3) + listOf("/bin/bash", "-lc", script)
+
+    /**
+     * overlay 组合预检（每个进程只做一次）。
+     *
+     * 跑 `dsh web --patch <overlay> --dump-config`：它会把 bundle 层、profile 层、--patch 层
+     * 全部组合一遍但不启动服务，所以「YAML 语法坏 / 插件名拼错 / config 字段不合法」都会在这里
+     * 直接报错退出，而不是等到起服务后 URL 超时、再重启三轮才发现。
+     */
+    private fun probeOverlay() {
+        if (overlayProbed || !isInstalled()) return
+        _state.value = _state.value.copy(detail = "预检 overlay 组合（dsh --dump-config）…")
+        val script = "cd /root && dsh web --patch $GUEST_OVERLAY --dump-config >/tmp/dump.yml 2>&1; " +
+            "rc=\$?; echo \"[probe] dump-config rc=\$rc\"; " +
+            "if [ \$rc -ne 0 ]; then tail -c 1200 /tmp/dump.yml; else grep -c '^- ' /tmp/dump.yml | sed 's/^/[probe] layers=/'; fi; exit \$rc"
+        val rc = runInContainer(script, 180_000L)
+        if (rc != 0) throw IOException("overlay 组合预检失败 exit=$rc\n${tail()}")
+        overlayProbed = true
+        Log.i(TAG, "overlay 组合预检通过")
+    }
+
+    /** 在容器里跑脚本并收集输出（用于预检这类需要真正进 guest 的一次性动作） */
+    private fun runInContainer(script: String, timeoutMs: Long): Int {
+        val pb = ProcessBuilder(containerCommand(script))
+        pb.directory(filesDir)
+        pb.redirectErrorStream(true)
+        pb.environment().remove("LD_LIBRARY_PATH")
+        pb.environment()["TMPDIR"] = tmpDir.absolutePath
+        pb.environment()["PROOT_TMP_DIR"] = tmpDir.absolutePath
+        pb.environment()["PROOT_LOADER"] = File(binDir, "loader").absolutePath
+        val p = pb.start()
+        p.inputStream.bufferedReader().useLines { lines -> lines.forEach { push(it) } }
+        val done = p.waitFor(timeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS)
+        if (!done) {
+            runCatching { p.destroyForcibly() }
+            return -1
+        }
+        return p.exitValue()
+    }
 
     private fun spawn(port: Int): Process {
         val pb = ProcessBuilder(buildCommand(port))
