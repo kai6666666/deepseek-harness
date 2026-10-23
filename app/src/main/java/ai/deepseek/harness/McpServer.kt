@@ -275,6 +275,14 @@ class McpServer private constructor(private val app: Context) : NanoHTTPD("127.0
         },
 
         ToolDef(
+            "selfcheck",
+            "一次性自检：无障碍/悬浮窗/电池/Shizuku/Root/rootfs/dsh/内核/MCP 九项，返回 JSON。",
+            schema(),
+        ) {
+            textContent(SelfCheck.run(app))
+        },
+
+        ToolDef(
             "env_status",
             "查询容器环境：rootfs/node/dsh 是否就位、当前镜像源、可用生态。",
             schema(),
