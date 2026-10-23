@@ -199,10 +199,10 @@ class McpServer private constructor(private val app: Context) : NanoHTTPD("127.0
             "点击安卓屏幕上的绝对坐标（像素）。",
             schema("x" to "number", "y" to "number", required = listOf("x", "y")),
         ) { args ->
-            val svc = HarnessAccessibilityService.instance
-                ?: return@ToolDef toolError(notReady())
-            val ok = svc.tap(args.getDouble("x").toFloat(), args.getDouble("y").toFloat())
-            textContent(if (ok) "tapped (${args.getDouble("x")}, ${args.getDouble("y")})" else "tap cancelled")
+            val be = BackendRegistry.pick(app)
+            be.tap(args.getDouble("x").toFloat(), args.getDouble("y").toFloat())
+                ?.let { return@ToolDef toolError(it) }
+            textContent("tapped (${args.getDouble("x")}, ${args.getDouble("y")}) via ${be.name}")
         },
 
         ToolDef(
@@ -213,14 +213,13 @@ class McpServer private constructor(private val app: Context) : NanoHTTPD("127.0
                 "duration_ms" to "number", required = listOf("x1", "y1", "x2", "y2"),
             ),
         ) { args ->
-            val svc = HarnessAccessibilityService.instance
-                ?: return@ToolDef toolError(notReady())
-            val ok = svc.swipe(
+            val be = BackendRegistry.pick(app)
+            be.swipe(
                 args.getDouble("x1").toFloat(), args.getDouble("y1").toFloat(),
                 args.getDouble("x2").toFloat(), args.getDouble("y2").toFloat(),
                 args.optLong("duration_ms", 300L),
-            )
-            textContent(if (ok) "swiped" else "swipe cancelled")
+            )?.let { return@ToolDef toolError(it) }
+            textContent("swiped via ${be.name}")
         },
 
         ToolDef(
@@ -228,10 +227,9 @@ class McpServer private constructor(private val app: Context) : NanoHTTPD("127.0
             "抓取当前屏幕截图，返回 PNG 图片。",
             schema(),
         ) {
-            val svc = HarnessAccessibilityService.instance
-                ?: return@ToolDef toolError(notReady())
-            val b64 = svc.screenshotPngBase64()
-                ?: return@ToolDef toolError("截图失败：无障碍未授权、屏幕处于安全窗口或系统版本不支持")
+            val be = BackendRegistry.pick(app)
+            val b64 = be.screenshotPngBase64()
+                ?: return@ToolDef toolError("截图失败（${be.name}）：权限不足、屏幕处于安全窗口或系统版本不支持")
             JSONObject().put(
                 "content",
                 JSONArray().put(
@@ -245,9 +243,12 @@ class McpServer private constructor(private val app: Context) : NanoHTTPD("127.0
             "导出当前窗口的可交互节点（文字/描述/资源 id/屏幕矩形/是否可点）。",
             schema("limit" to "number"),
         ) { args ->
-            val svc = HarnessAccessibilityService.instance
-                ?: return@ToolDef toolError(PermissionGate.requireTool(app, PermissionLevel.ACCESSIBILITY) ?: notReady())
-            textContent(svc.dumpNodes(args.optInt("limit", 400)))
+            val be = BackendRegistry.pick(app)
+            val dump = be.uiDump(args.optInt("limit", 400))
+                ?: return@ToolDef toolError(
+                    PermissionGate.requireTool(app, PermissionLevel.ACCESSIBILITY) ?: notReady(),
+                )
+            textContent(dump)
         },
 
         ToolDef(
@@ -255,7 +256,7 @@ class McpServer private constructor(private val app: Context) : NanoHTTPD("127.0
             "查询本机权限等级（STANDARD/ACCESSIBILITY/DEBUGGER/ROOT）与各能力可用性。",
             schema(),
         ) {
-            textContent(PermissionGate.status(app).describe())
+            textContent(PermissionGate.status(app).describe() + "\n" + BackendRegistry.describe(app))
         },
 
         ToolDef(
