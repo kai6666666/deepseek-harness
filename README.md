@@ -63,8 +63,11 @@ Operit-main/terminal/                     OperitTerminalCore@master（68 文件 
 | **真机安装** | `pm install -r` Success（同签名可覆盖升级） | 固定 keystore `app/keystore/dsh.jks` |
 | **App 内解层** | layer0 15 s + layer1 43 s（从 APK assets 拷到 filesDir 后解） | `Log.i` + `run-as` 交叉核对，rootfs 1.3 GiB |
 | **App 内跑通 proot** | `proot -V` → 3.3.0；`node -v` → v24.19.0 | `DshRuntime: spawn: …/bin/proot -0 -r …` |
-| **App 内 dsh web 起来** | `READY http://127.0.0.1:3080/?token=…`，spawn→READY 约 35 秒 | logcat `DshRuntime` |
+| **App 内 dsh web 起来** | `READY http://127.0.0.1:3080/?token=…`，spawn→READY 约 39 秒 | logcat `DshRuntime` |
 | **授权链路在真机成立** | token URL → **303**，裸 origin → **401** | Android shell curl 打到 app 起的 3080 |
+| **WebView 真的渲染出来了** | `onPageFinished http://127.0.0.1:3080/ title=DeepSeek Harness` | logcat `DshWebView`（debug 包已开远程调试） |
+| **回环 MCP 桥可用** | `initialize` / `tools/list` / `tools/call selfcheck` 全通，10 个工具在册 | curl POST `127.0.0.1:8765/mcp` |
+| **息屏也能装完** | 屏幕全黑状态下 3 分 38 秒完成解层+起服务（WakeLock 生效） | 22:33:39 → 22:37:17 |
 
 ---
 
