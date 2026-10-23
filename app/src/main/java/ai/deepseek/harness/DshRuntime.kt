@@ -104,6 +104,15 @@ class DshRuntime private constructor(private val app: Context) {
     @Volatile
     private var readySince = 0L
 
+    /**
+     * 连续失败计数。放在字段里而不是 supervise() 的局部变量：
+     * 进入安全模式后若用户把 App 再拉到前台（onStartCommand 会调 start()），
+     * 只会再试 1 次就重新进安全模式，而不是又连炸 4 次。
+     * 重置点只有两个：READY（真的跑起来了）与用户点「重试」（restartNow）。
+     */
+    @Volatile
+    private var failureStreak = 0
+
     /** overlay 组合预检只做一次/进程生命周期（overlay 由 seedOverlay 每次重写为 APK 内版本） */
     @Volatile
     private var overlayProbed = false
@@ -137,6 +146,9 @@ class DshRuntime private constructor(private val app: Context) {
     }
 
     fun restartNow() {
+        // 用户主动重试：清空连续失败计数，重新给满预算（overlay 也可能已被改好，重新预检）
+        failureStreak = 0
+        overlayProbed = false
         process?.destroyForcibly()
         if (supervisor?.isActive != true) start()
     }
@@ -144,7 +156,6 @@ class DshRuntime private constructor(private val app: Context) {
     // ------------------------------------------------------------- supervise
 
     private suspend fun supervise() {
-        var restarts = 0
         while ((scope?.isActive ?: false) && !stopping) {
             val cycleStart = System.currentTimeMillis()
             try {
@@ -157,27 +168,27 @@ class DshRuntime private constructor(private val app: Context) {
             } catch (t: Throwable) {
                 // 稳定跑过一段时间（含 READY 之后）就重置预算，避免把「很久以前崩过一次」算进连续失败
                 val readyLongEnough = readySince > 0 && System.currentTimeMillis() - readySince > 60_000L
-                if (readyLongEnough || System.currentTimeMillis() - cycleStart > 10 * 60_000L) restarts = 0
+                if (readyLongEnough || System.currentTimeMillis() - cycleStart > 10 * 60_000L) failureStreak = 0
                 readySince = 0
 
-                restarts++
-                if (restarts > MAX_AUTO_RESTARTS) {
+                failureStreak++
+                if (failureStreak > MAX_AUTO_RESTARTS) {
                     // 安全模式：连续失败超过预算就停下，把最后一次的真实错误留在 detail 里给用户看，
                     // 而不是无限退避把日志刷爆（DSH 官方客户端也是这么做的：失败 3 次进 rescue）。
-                    Log.e(TAG, "进入安全模式（连续失败 $restarts 次）：${t.message}")
+                    Log.e(TAG, "进入安全模式（连续失败 $failureStreak 次）：${t.message}")
                     _state.value = _state.value.copy(
                         phase = Phase.FAILED,
-                        restarts = restarts,
-                        detail = "连续失败 $restarts 次，已停止自动重启\n${t.message}\n${tail()}",
+                        restarts = failureStreak,
+                        detail = "连续失败 $failureStreak 次，已停止自动重启\n${t.message}\n${tail()}",
                     )
                     break
                 }
 
-                val backoffMs = minOf(30_000L, 1_000L shl minOf(restarts, 5))
-                Log.w(TAG, "cycle failed (restarts=$restarts, backoff=${backoffMs}ms): ${t.message}")
+                val backoffMs = minOf(30_000L, 1_000L shl minOf(failureStreak, 5))
+                Log.w(TAG, "cycle failed (restarts=$failureStreak, backoff=${backoffMs}ms): ${t.message}")
                 _state.value = _state.value.copy(
                     phase = Phase.RESTARTING,
-                    restarts = restarts,
+                    restarts = failureStreak,
                     detail = "${t.message}  retry in ${backoffMs}ms\n${tail()}",
                 )
                 delay(backoffMs)
@@ -215,6 +226,7 @@ class DshRuntime private constructor(private val app: Context) {
         if (!probe(url)) throw IOException("授权 URL 未返回 303")
 
         readySince = System.currentTimeMillis()
+        failureStreak = 0
         _state.value = _state.value.copy(
             phase = Phase.READY, url = url, port = port,
             detail = "ready on port $port\n${tail()}",
