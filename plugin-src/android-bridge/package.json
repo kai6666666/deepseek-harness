@@ -1,0 +1,15 @@
+{
+  "name": "dsh-android-bridge",
+  "version": "1.0.0",
+  "description": "把宿主 Android App 的能力（截图 / 节点树 / 点击 / 滑动 / 权限 / 自检）注册成 DSH 原生工具，走文件信箱，不经过 MCP。",
+  "type": "module",
+  "main": "./lib/index.js",
+  "exports": {
+    ".": {
+      "default": "./lib/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "license": "MIT",
+  "private": true
+}

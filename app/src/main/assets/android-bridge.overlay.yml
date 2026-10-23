@@ -1,0 +1,17 @@
+# deepseek harness / DSH 侧安卓工具插件（原生插件形态，不走 MCP）
+#
+# 由 DshRuntime 在每次启动前写入 /root/android-bridge.overlay.yml；
+# 插件本体在 guest 的 /usr/local/lib/node_modules/dsh-android-bridge（与 @deepseek-ai/* 同级，
+# 所以裸名能被 dsh 自己的 node 解析到）。
+#
+# 模型看到的工具名（不带 mcp__ 前缀）：
+#   android_screenshot / android_ui_dump / android_tap / android_swipe
+#   android_permission / android_selfcheck
+#
+# 前提：APP 已安装且前台服务在跑（文件信箱 $DSH_HOME/android-bridge 由宿主轮询 200 ms）；
+#       屏幕类工具还需要用户在系统设置里打开无障碍开关。
+
+- insert:
+    - id: dsh-android-bridge
+      name: dsh-android-bridge
+      config: {}

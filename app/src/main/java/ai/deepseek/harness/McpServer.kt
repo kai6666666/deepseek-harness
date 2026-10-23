@@ -188,8 +188,35 @@ class McpServer private constructor(private val app: Context) : NanoHTTPD("127.0
 
     private fun toolError(message: String): JSONObject =
         textContent(message).put("isError", true)
-
     // ------------------------------------------------------------- tools
+
+    /**
+     * 供 [AndroidToolBridge] 调用：按工具名执行一次，返回 (ok, 文本结果)。
+     *
+     * 插件侧工具名带 `android_` 前缀（`android_tap`），宿主内部工具名不带（`tap`），
+     * 这里统一去掉前缀，两边不必各写一份映射表。
+     */
+    fun invoke(name: String, args: JSONObject): Pair<Boolean, String> {
+        val hostName = name.removePrefix("android_")
+        val tool = tools.firstOrNull { it.name == hostName }
+            ?: return false to "unknown tool: $name（宿主只有 ${tools.joinToString { it.name }}）"
+        ToolCallBus.emit(ToolEvent(hostName, ToolEvent.Phase.START))
+        val started = System.currentTimeMillis()
+        val result = runCatching { runBlocking { tool.call(args) } }
+        val elapsed = System.currentTimeMillis() - started
+        return result.fold(
+            onSuccess = { r ->
+                ToolCallBus.emit(ToolEvent(hostName, ToolEvent.Phase.OK, summarize(r), elapsed))
+                true to summarize(r)
+            },
+            onFailure = { e ->
+                val msg = e.message ?: "tool failed"
+                ToolCallBus.emit(ToolEvent(hostName, ToolEvent.Phase.ERROR, msg, elapsed))
+                false to msg
+            },
+        )
+    }
+
 
     private class ToolDef(
         val name: String,

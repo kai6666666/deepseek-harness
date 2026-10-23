@@ -63,9 +63,13 @@ class DshRuntime private constructor(private val app: Context) {
         /** 两层归档共同的顶层目录名；解压后 rename 成 rootfsDir 的最后一段 */
         private const val LAYER_TOP = "ubuntu-noble-aarch64"
 
-        /** DSH 侧 MCP 桥：APK assets 里一份，装完写进 guest 的 /root */
-        private const val OVERLAY_ASSET = "mcp-android.overlay.yml"
-        private const val GUEST_OVERLAY = "/root/mcp-android.overlay.yml"
+        /** DSH 侧安卓工具插件：APK assets 里一份 zip，装完解进 guest 的 node_modules */
+        private const val PLUGIN_ASSET = "android-bridge-plugin.zip"
+        private const val PLUGIN_GUEST_DIR = "/usr/local/lib/node_modules/dsh-android-bridge"
+
+        /** 挂载插件的 overlay（启动时 --patch） */
+        private const val OVERLAY_ASSET = "android-bridge.overlay.yml"
+        private const val GUEST_OVERLAY = "/root/android-bridge.overlay.yml"
 
         /** 0 = 交给内核分配端口；真实端口从 stdout 的授权 URL 里读回 */
         private const val DSH_PORT = 0
@@ -373,6 +377,36 @@ class DshRuntime private constructor(private val app: Context) {
             Log.i(TAG, "overlay -> ${dst.absolutePath} (${dst.length()} B)")
         }.onFailure { Log.w(TAG, "overlay 写入失败: ${it.message}") }
 
+        // 插件本体：同时铺到两个位置，避开「加载锚点到底在哪」的不确定性 ——
+        //   ① /usr/local/lib/node_modules/dsh-android-bridge  与 @deepseek-ai/* 同级
+        //   ② /root/.dsh/node_modules/dsh-android-bridge      $DSH_HOME/node_modules（DSH_0.3.4 的做法）
+        // 两个都放，裸名 'dsh-android-bridge' 无论从哪一层向上解析都能命中。
+        runCatching {
+            val targets = listOf(
+                File(rootfsDir, PLUGIN_GUEST_DIR.trimStart('/')),
+                File(rootfsDir, "root/.dsh/node_modules/dsh-android-bridge"),
+            )
+            val bytes = app.assets.open(PLUGIN_ASSET).use { it.readBytes() }
+            targets.forEach { dir ->
+                dir.mkdirs()
+                java.util.zip.ZipInputStream(bytes.inputStream()).use { zip ->
+                    var entry = zip.nextEntry
+                    while (entry != null) {
+                        val out = File(dir, entry.name)
+                        if (entry.isDirectory) {
+                            out.mkdirs()
+                        } else {
+                            out.parentFile?.mkdirs()
+                            out.outputStream().use { zip.copyTo(it) }
+                        }
+                        zip.closeEntry()
+                        entry = zip.nextEntry
+                    }
+                }
+                Log.i(TAG, "plugin -> ${dir.absolutePath}")
+            }
+        }.onFailure { Log.w(TAG, "插件解包失败: ${it.message}") }
+
         // 用户 overlay 投放点：$DSH_HOME/overlays/*.yml，启动时自动 --patch，预检逐条归因
         runCatching {
             val dir = userOverlayDir()
@@ -538,6 +572,8 @@ class DshRuntime private constructor(private val app: Context) {
         cmd += listOf(
             "/usr/bin/env", "-i",
             "HOME=/root",
+            // 插件靠 DSH_HOME 定位信箱目录（$DSH_HOME/android-bridge）
+            "DSH_HOME=/root/.dsh",
             "TMPDIR=/tmp",
             "TERM=xterm-256color",
             "LANG=en_US.UTF-8",
@@ -643,6 +679,10 @@ class DshRuntime private constructor(private val app: Context) {
         p.inputStream.bufferedReader().useLines { lines ->
             for (line in lines) {
                 push(line)
+                // 插件自己的注册/告警日志要落到 logcat，否则“工具到底注册上没有”只能靠猜
+                if (line.contains("dsh-android-bridge") || line.contains("startup failed")) {
+                    Log.i(TAG, "engine: $line")
+                }
                 URL_RE.find(line)?.let { return it.groupValues[1] }
                 if (System.currentTimeMillis() > deadline) return null
             }

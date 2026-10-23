@@ -57,6 +57,8 @@ class DshService : Service() {
         super.onCreate()
         runtime = DshRuntime.get(this)
         createChannel()
+        // 插件信箱桥：DSH 侧的 android_* 工具靠它回调到宿主执行
+        AndroidToolBridge.start(this)
         // 回环 MCP server 与内核同期起步；无障碍未授权时工具会回 isError 提示
         McpServer.get(this).startServer()
         ServiceCompat.startForeground(
@@ -162,6 +164,7 @@ class DshService : Service() {
         collector?.cancel()
         scope.cancel()
         applyWakeLock(false)
+        AndroidToolBridge.stop()
         runtime.stop()
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
         super.onDestroy()
