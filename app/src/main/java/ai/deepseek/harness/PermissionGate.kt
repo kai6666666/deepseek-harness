@@ -20,7 +20,8 @@ enum class PermissionLevel(val rank: Int) {
     STANDARD(0),
     ACCESSIBILITY(1),
     DEBUGGER(2),   // Shizuku：等价 uid 2000(shell)
-    ROOT(3),       // su：uid 0
+    ADMIN(3),      // Device Owner / 系统级（可 pm grant、改安全设置）
+    ROOT(4),       // su：uid 0
 }
 
 enum class Capability(val label: String) {
@@ -148,6 +149,8 @@ object PermissionGate {
                     append("请让用户执行 request_permission(kind=accessibility)，然后在系统设置里打开「DeepSeek Harness 屏幕控制」。")
                 PermissionLevel.DEBUGGER ->
                     append("请安装并启动 Shizuku 后调用 request_permission(kind=shizuku)。")
+                PermissionLevel.ADMIN ->
+                    append("需要设备管理员/Device Owner：请先把本应用设为设备所有者，或改用 Shizuku/Root。")
                 PermissionLevel.ROOT, PermissionLevel.STANDARD ->
                     append("请调用 request_permission 获取入口。")
             }
