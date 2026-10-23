@@ -359,6 +359,10 @@ class DshRuntime private constructor(private val app: Context) {
         return cmd
     }
 
+    /** 给环境管理用：在同一个 rootfs 里跑任意脚本（不带 dsh 参数）。 */
+    fun containerCommand(script: String): List<String> =
+        buildCommand(0).dropLast(3) + listOf("/bin/bash", "-lc", script)
+
     private fun spawn(port: Int): Process {
         val pb = ProcessBuilder(buildCommand(port))
         pb.directory(filesDir)
