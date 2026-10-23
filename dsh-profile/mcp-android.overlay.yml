@@ -4,25 +4,32 @@
 #   dsh web --patch /root/dsh-android.overlay.yml
 # 或把下面两行并进 profile 的 cordis.yml。
 #
+# 注意：DSH 的 --patch 叠加层必须是「补丁操作列表」，也就是顶层要有 `- insert:`，
+# 直接把 {id,name,config} 放在列表根上不会被当作插件行（服务起来了但工具表是空的）。
+# 参考 apps/cli/config/examples/mcp-memory/engram.cordis.yml 与
+# packages/preset/agent-preset/skills/cordis-plugin-development/templates/mcp/cordis.patch.yml
+#
 # 模型看到的工具名：
 #   mcp__android__tap
 #   mcp__android__swipe
 #   mcp__android__screenshot
 #   mcp__android__ui_dump
+#   mcp__android__selfcheck …
 #
-# 前提：APP 已安装且前台服务在跑（MCP server 监听 127.0.0.1:8765），
+# 前提：APP 已安装且前台服务在跑（MCP server 监听 127.0.0.1:8765）；
 #       屏幕类工具还需要用户在系统设置里打开无障碍开关。
 
-- id: mcp-android
-  name: '@deepseek-ai/dsh-mcp-client'
-  config:
-    serverName: android
-    transport: streamable-http
-    url: http://127.0.0.1:8765/mcp
-    toolCallTimeoutMs: 30000
-    failOnStartupError: false
-    reconnect:
-      enabled: true
-      initialDelayMs: 500
-      maxDelayMs: 5000
-      maxAttempts: 50
+- insert:
+    - id: mcp-android
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: android
+        transport: streamable-http
+        url: http://127.0.0.1:8765/mcp
+        toolCallTimeoutMs: 30000
+        failOnStartupError: false
+        reconnect:
+          enabled: true
+          initialDelayMs: 500
+          maxDelayMs: 5000
+          maxAttempts: 50

@@ -1,0 +1,20 @@
+# deepseek harness / DSH 侧 MCP 桥（随 APK 打包，安装时写进 guest 的 /root/）
+#
+# 由 DshRuntime 在解层后写入 /root/mcp-android.overlay.yml，
+# 启动命令带上 `dsh web --patch /root/mcp-android.overlay.yml --no-open --port N`。
+# 顶层必须是 `- insert:`（补丁操作列表），否则不是插件行。
+
+- insert:
+    - id: mcp-android
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: android
+        transport: streamable-http
+        url: http://127.0.0.1:8765/mcp
+        toolCallTimeoutMs: 30000
+        failOnStartupError: false
+        reconnect:
+          enabled: true
+          initialDelayMs: 500
+          maxDelayMs: 5000
+          maxAttempts: 50

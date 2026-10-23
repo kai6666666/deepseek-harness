@@ -65,6 +65,10 @@ class DshRuntime private constructor(private val app: Context) {
         /** 两层归档共同的顶层目录名；解压后 rename 成 rootfsDir 的最后一段 */
         private const val LAYER_TOP = "ubuntu-noble-aarch64"
 
+        /** DSH 侧 MCP 桥：APK assets 里一份，装完写进 guest 的 /root */
+        private const val OVERLAY_ASSET = "mcp-android.overlay.yml"
+        private const val GUEST_OVERLAY = "/root/mcp-android.overlay.yml"
+
         private const val PORT_FIRST = 3080
         private const val PORT_LAST = 3090
         private const val URL_TIMEOUT_MS = 120_000L
@@ -165,6 +169,9 @@ class DshRuntime private constructor(private val app: Context) {
         val port = pickPort()
         _state.value = _state.value.copy(phase = Phase.STARTING, port = port, detail = "spawning proot…")
 
+        // 每次启动前都把 MCP overlay 重写一遍：rootfs 可能是老版本装的，overlay 必须跟 APK 一致
+        seedOverlay()
+
         val p = spawn(port)
         process = p
         _state.value = _state.value.copy(pid = findPidOf(p) ?: 0L)
@@ -255,6 +262,7 @@ class DshRuntime private constructor(private val app: Context) {
 
         seedFakeProcFiles()
         seedResolvConf()
+        seedOverlay()
         Log.i(TAG, "installed rootfs -> ${rootfsDir.absolutePath}")
     }
 
@@ -304,6 +312,18 @@ class DshRuntime private constructor(private val app: Context) {
             runCatching { Os.symlink(target, f.absolutePath) }
                 .onFailure { Log.w(TAG, "symlink $rel -> $target: ${it.message}") }
         }
+    }
+
+    /** 把 MCP overlay 写进 guest 的 /root：DSH 启动时用 --patch 加载它 */
+    private fun seedOverlay() {
+        runCatching {
+            val dst = File(rootfsDir, GUEST_OVERLAY.trimStart('/'))
+            dst.parentFile?.mkdirs()
+            app.assets.open(OVERLAY_ASSET).use { input ->
+                dst.outputStream().use { output -> input.copyTo(output) }
+            }
+            Log.i(TAG, "overlay -> ${dst.absolutePath} (${dst.length()} B)")
+        }.onFailure { Log.w(TAG, "overlay 写入失败: ${it.message}") }
     }
 
     /** Operit 的坑位 4：proot 下 /proc 部分文件缺失会让 node/npm 直接崩 */
@@ -450,7 +470,9 @@ class DshRuntime private constructor(private val app: Context) {
             "LANG=en_US.UTF-8",
             "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
             "/bin/bash", "-lc",
-            "mkdir -p /tmp && cd /root && exec dsh web --no-open --port $port",
+            // --patch 是 launcher 级 flag，必须排在 --no-open/--port 这类 inner 参数之前，
+            // 否则会被当成 web app 的参数。overlay 由 seedOverlay() 写进 /root。
+            "mkdir -p /tmp && cd /root && exec dsh web --patch $GUEST_OVERLAY --no-open --port $port",
         )
         return cmd
     }

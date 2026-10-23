@@ -121,6 +121,10 @@ class McpServer private constructor(private val app: Context) : NanoHTTPD("127.0
         return when (method) {
             "initialize" -> {
                 val proto = params.optString("protocolVersion").ifBlank { PROTOCOL_FALLBACK }
+                Log.i(
+                    TAG,
+                    "initialize from ${params.optJSONObject("clientInfo")?.optString("name")} proto=$proto",
+                )
                 ok(
                     id,
                     JSONObject()
@@ -138,6 +142,7 @@ class McpServer private constructor(private val app: Context) : NanoHTTPD("127.0
             "tools/list" -> {
                 val arr = JSONArray()
                 tools.forEach { arr.put(it.describe()) }
+                Log.i(TAG, "tools/list -> ${arr.length()} tools")
                 ok(id, JSONObject().put("tools", arr))
             }
 
