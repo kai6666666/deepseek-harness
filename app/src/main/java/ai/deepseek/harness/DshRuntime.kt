@@ -73,7 +73,7 @@ class DshRuntime private constructor(private val app: Context) {
 
         /** 0 = 交给内核分配端口；真实端口从 stdout 的授权 URL 里读回 */
         private const val DSH_PORT = 0
-        private const val URL_TIMEOUT_MS = 120_000L
+        private const val URL_TIMEOUT_MS = 180_000L
 
         /** 连续失败超过这个次数就进安全模式，不再自动重启 */
         private const val MAX_AUTO_RESTARTS = 3
@@ -691,17 +691,30 @@ class DshRuntime private constructor(private val app: Context) {
     }
 
     /** 303 才算 ready；401 说明服务活着但没带 token */
-    private fun probe(url: String): Boolean = runCatching {
-        val conn = URL(url).openConnection() as HttpURLConnection
-        conn.instanceFollowRedirects = false
-        conn.connectTimeout = 5_000
-        conn.readTimeout = 5_000
-        conn.requestMethod = "GET"
-        val code = conn.responseCode
-        conn.disconnect()
-        Log.i(TAG, "probe $code")
-        code == HttpURLConnection.HTTP_SEE_OTHER   // 303
-    }.getOrDefault(false)
+    private fun probe(url: String): Boolean {
+        // 带插件后 DSH 首次处理请求可能慢（cordis 还在挂载工具），所以：给足超时 + 重试 3 次。
+        // 上一次用 5s 单次超时，插件版首启直接被判成「授权 URL 未返回 303」，白等 60 s 后重启。
+        repeat(3) { attempt ->
+            val code = runCatching {
+                val conn = URL(url).openConnection() as HttpURLConnection
+                conn.instanceFollowRedirects = false
+                conn.connectTimeout = 10_000
+                conn.readTimeout = 20_000
+                conn.requestMethod = "GET"
+                val c = conn.responseCode
+                conn.disconnect()
+                c
+            }.getOrElse {
+                Log.w(TAG, "probe try#${attempt + 1} 异常: ${it.message}")
+                -1
+            }
+            Log.i(TAG, "probe ${if (code < 0) "error" else code} (try#${attempt + 1})")
+            if (code == HttpURLConnection.HTTP_SEE_OTHER) return true
+            if (code == HttpURLConnection.HTTP_UNAUTHORIZED) return false   // 401：服务活着但没带 token，重试无意义
+            Thread.sleep(500)
+        }
+        return false
+    }
 
     // ---------------------------------------------------------------- helper
 
