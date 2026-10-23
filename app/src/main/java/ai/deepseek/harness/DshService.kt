@@ -100,7 +100,8 @@ class DshService : Service() {
                 val text = st.detail.lineSequence().firstOrNull().orEmpty().take(120)
                 getSystemService(NotificationManager::class.java)
                     .notify(NOTIFICATION_ID, buildNotification(title, text))
-                applyWakeLock(st.phase == Phase.READY || st.phase == Phase.STARTING)
+                // 安装/启动阶段同样要压住 CPU：真机上屏幕一关，install 会被 Doze 冻住十几分钟
+                applyWakeLock(st.phase != Phase.STOPPED && st.phase != Phase.FAILED && st.phase != Phase.IDLE)
             }
         }
     }

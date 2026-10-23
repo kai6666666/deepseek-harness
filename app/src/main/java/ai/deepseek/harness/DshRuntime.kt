@@ -384,7 +384,10 @@ class DshRuntime private constructor(private val app: Context) {
         fun add(src: String, dst: String? = null) {
             val f = File(src)
             // 关键：app 读不到的东西绑进去只会让 proot 报 "can't sanitize binding" 并拖慢启动
-            if (!f.exists() || !f.canRead()) return
+            if (!f.exists() || !f.canRead()) {
+                Log.i(TAG, "skip bind $src（不可读）")
+                return
+            }
             binds += if (dst == null || dst == src) listOf("-b", src) else listOf("-b", "$src:$dst")
         }
         // 目标目录必须存在于 guest 内，否则 proot 会自己去 glue rootfs 里造（更慢，且老内核上会失败）
@@ -395,6 +398,8 @@ class DshRuntime private constructor(private val app: Context) {
         ensureGuestDir("/dev/pts")
         ensureGuestDir("/dev/shm")
         add("/dev"); add("/proc"); add("/sys"); add("/dev/pts")
+        // /dev 目录本身若被 SELinux 挡住，至少把 node 运行时真正会碰的几个设备节点绑进去
+        listOf("/dev/null", "/dev/zero", "/dev/random", "/dev/urandom").forEach { add(it) }
         add(tmpDir.absolutePath, "/dev/shm")
         add("/proc/self/fd", "/dev/fd")
         add("/proc/self/fd/0", "/dev/stdin")

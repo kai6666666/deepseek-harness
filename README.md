@@ -58,26 +58,37 @@ Operit-main/terminal/                     OperitTerminalCore@master（68 文件 
 | 授权 URL 可用 | `<token URL>` → **303 + Set-Cookie** → 200 / 37,512 B | `m0/verify-dsh-web.sh` |
 | 容器 loopback == 宿主 loopback | Android 侧 curl 容器端口 → 401（通） | 无需端口转发 |
 | 冷启动 | 约 45 秒；RSS 约 411 MB | 设备实测 |
-| **Kotlin 源码可编译** | 5 文件 / 31 个 class / rc=0 | Kotlin 2.0.21 + android.jar API36 + androidx + nanohttpd |
-| **镜像自带 node+dsh 能启服务** | `dsh web` 打出 token URL；origin=401、token=303 | 用镜像内的 node 24.19.0 + dsh 0.2.1-rc.2 实跑 |
-| 叠层解压 | layer0 34 秒 + layer1 88 秒（从 sdcard 读） | 模拟装机全流程 |
+| **Kotlin 源码可编译** | 11 文件 / 74 个 class / rc=0 | Kotlin 2.0.21 + android.jar API35 + androidx + nanohttpd |
+| **APK 由 GitHub Actions 云构建** | 191,441,199 B，artifact 可下载 | `kai6666666/deepseek-harness` + `.github/workflows/android.yml` |
+| **真机安装** | `pm install -r` Success（同签名可覆盖升级） | 固定 keystore `app/keystore/dsh.jks` |
+| **App 内解层** | layer0 15 s + layer1 43 s（从 APK assets 拷到 filesDir 后解） | `Log.i` + `run-as` 交叉核对，rootfs 1.3 GiB |
+| **App 内跑通 proot** | `proot -V` → 3.3.0；`node -v` → v24.19.0 | `DshRuntime: spawn: …/bin/proot -0 -r …` |
+| **App 内 dsh web 起来** | `READY http://127.0.0.1:3080/?token=…`，spawn→READY 约 35 秒 | logcat `DshRuntime` |
+| **授权链路在真机成立** | token URL → **303**，裸 origin → **401** | Android shell curl 打到 app 起的 3080 |
 
 ---
 
-## 未验证（下一步）
+## 真机踩出来的四个坑（都已修，写在这里省下重踩）
 
-1. **真机安装运行**：本机是 arm64，Android build-tools 的 `aapt2` 只有 x86_64 Linux 版，
-   出 APK 必须在 PC 上 `./gradlew assembleDebug`。源码已通过类型检查，但没打过包。
-2. **rootfs 安装链路**：`install()` 的解压/软链/假 proc 文件是在设备外用 bash 复现的，
-   没有在 App 沙箱里真跑过（沙箱内 `filesDir` 的 exec 位、`nativeLibraryDir` 软链需实测）。
-3. **`/dev/*` 设备节点解不出来**：proot 下无法 `mknod`，tar 会报错退出。
-   `install()` 已用 `--exclude='ubuntu-noble-aarch64/dev/*' || true` 挡掉，并由 `test` 断言保底；
-   真机仍建议跑一遍确认。
-4. **MCP 桥**：`mcp__android__*` 尚未实现（Operit 的 `MCPLocalServer` + `ToolRegistration` 是现成料）。
-5. **悬浮窗外壳**：Operit 的 `FloatingWindowManager.kt`(51 KB) 尚未移植。
-6. **嵌套 proot 不可测**：本仓库的 proot 二进制链的是 Android `linker64`，
-   在容器内执行会 `required file not found`；所以「容器里再开容器」这条路走不通，
-   验证只能用镜像自带的 node 直接跑（已做）。
+| 症状 | 真因 | 修法 |
+|---|---|---|
+| `INSTALL_FAILED_UPDATE_INCOMPATIBLE` | CI 每次重建都生成新的 `debug.keystore`，签名不一致 | 仓库内固定 `app/keystore/dsh.jks`，debug/release 都用它 |
+| `proot error: can't create temporary directory: Permission denied` | 没设 `PROOT_TMP_DIR`；proot 默认往 `/tmp` 写 glue rootfs | `PROOT_TMP_DIR=files/tmp`、`PROOT_LOADER=bin/loader`、`TMPDIR=files/tmp` |
+| `镜像解压失败 exit=1`（无任何输出） | 解压后 `mv` / `rm` / `ln` 在 app 的 shell 环境里静默失败 | 删/改名/建软链全部改 Kotlin：`deleteRecursively` / `renameTo` / `Os.symlink`，shell 只负责 `busybox tar xf` |
+| 首装「卡住」十几分钟 | 屏幕熄灭进 Doze，安装协程被冻住；WakeLock 只在 READY/STARTING 时持有 | WakeLock 覆盖 INSTALLING/STARTING/READY 全阶段 |
+
+---
+
+## 已知缺口
+
+1. **WebView 渲染未经人工目视确认**：本机屏幕被系统锁屏挡住，只能用 `onPageFinished` 日志 + HTTP 303 交叉验证。
+   已开 `WebView.setWebContentsDebuggingEnabled(true)`（debug 包），可 `chrome://inspect` 直连。
+2. **Shizuku / Root 档未实跑**：本机没装 Shizuku、没有 root，`BackendRegistry` 会安全回落到无障碍档。
+3. **悬浮球 / 状态条 / 首启向导**：代码已编译进 APK，界面交互尚未在真机上逐项点过。
+4. **嵌套 proot 不可测**：本仓库的 proot 二进制链的是 Android `linker64`，
+   在容器内执行会 `required file not found`；所以「容器里再开容器」这条路走不通。
+5. **`/dev/*` 设备节点**：proot 下无法 `mknod`，安装时用 `--exclude` 挡掉并在 guest 内预建挂载点；
+   运行期把宿主 `/dev/null` 等按需 bind 进去。
 
 ---
 
