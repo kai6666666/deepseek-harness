@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">DeepSeek Harness</string>
+    <string name="acc_desc">允许 DeepSeek Harness 的 dsh 内核读取屏幕节点树、执行点击与滑动、抓取屏幕截图。</string>
+</resources>
