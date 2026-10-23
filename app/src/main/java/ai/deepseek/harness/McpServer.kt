@@ -260,6 +260,51 @@ class McpServer private constructor(private val app: Context) : NanoHTTPD("127.0
         },
 
         ToolDef(
+            "env_status",
+            "查询容器环境：rootfs/node/dsh 是否就位、当前镜像源、可用生态。",
+            schema(),
+        ) {
+            textContent(EnvManager.status(app))
+        },
+
+        ToolDef(
+            "env_mirror",
+            "切换镜像源：official / aliyun / tuna / ustc（同时改 apt、npm、pip）。",
+            schema("preset" to "string", required = listOf("preset")),
+        ) { args ->
+            val id = args.optString("preset")
+            val preset = MirrorPreset.byId(id)
+                ?: return@ToolDef toolError(
+                    "未知源：$id（可选 ${MirrorPreset.presets.joinToString("/") { it.id }}）",
+                )
+            val touched = EnvManager.applyMirror(app, preset)
+            textContent("已切到 ${preset.label}（${preset.id}）：${touched.joinToString(", ")}\n" + EnvManager.status(app))
+        },
+
+        ToolDef(
+            "env_install",
+            "在容器里装包：ecosystem=apt/npm/pip/cargo，packages 逗号分隔。",
+            schema(
+                "ecosystem" to "string", "packages" to "string", "mirror" to "string",
+                required = listOf("ecosystem", "packages"),
+            ),
+        ) { args ->
+            val eco = Ecosystem.entries.firstOrNull { it.id.equals(args.optString("ecosystem"), true) }
+                ?: return@ToolDef toolError("未知生态：${args.optString("ecosystem")}（apt/npm/pip/cargo）")
+            val pkgs = args.optString("packages").split(',', ' ')
+                .map { it.trim() }.filter { it.isNotEmpty() }
+            if (pkgs.isEmpty()) return@ToolDef toolError("packages 为空")
+            val preset = args.optString("mirror").takeIf { it.isNotBlank() }?.let { MirrorPreset.byId(it) }
+            val script = buildString {
+                appendLine("set -e")
+                appendLine(EnvManager.installCommand(eco, pkgs, preset))
+                appendLine(EnvManager.fixPermissionsScript())
+                appendLine("echo ENV_INSTALL_OK")
+            }
+            val out = runInContainer(script)
+            textContent(out.takeLast(4000))
+        },
+        ToolDef(
             "request_permission",
             "打开某项能力的授予入口：accessibility / shizuku / root / battery。",
             schema("kind" to "string", required = listOf("kind")),
@@ -281,6 +326,31 @@ class McpServer private constructor(private val app: Context) : NanoHTTPD("127.0
             )
         },
     )
+
+    private fun runInContainer(script: String, timeoutMs: Long = 300_000L): String {
+        val pb = ProcessBuilder(DshRuntime.get(app).containerCommand(script))
+        pb.redirectErrorStream(true)
+        pb.environment().remove("LD_LIBRARY_PATH")
+        val p = pb.start()
+        val sb = StringBuilder()
+        val deadline = System.currentTimeMillis() + timeoutMs
+        val reader = p.inputStream.bufferedReader()
+        try {
+            while (true) {
+                val line = reader.readLine() ?: break
+                sb.appendLine(line)
+                if (System.currentTimeMillis() > deadline) {
+                    p.destroyForcibly()
+                    sb.appendLine("[timeout ${timeoutMs}ms]")
+                    break
+                }
+            }
+        } finally {
+            runCatching { reader.close() }
+        }
+        runCatching { p.waitFor(5, java.util.concurrent.TimeUnit.SECONDS) }
+        return sb.toString().ifBlank { "exit=${runCatching { p.exitValue() }.getOrDefault(-1)}" }
+    }
 
     private fun notReady(): String =
         "无障碍服务未启用：请在 系统设置 → 无障碍 → DeepSeek Harness 屏幕控制 中打开，然后重试"
