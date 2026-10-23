@@ -66,14 +66,61 @@ Operit-main/terminal/                     OperitTerminalCore@master（68 文件 
 | **App 内 dsh web 起来** | `READY http://127.0.0.1:3080/?token=…`，spawn→READY 约 39 秒 | logcat `DshRuntime` |
 | **授权链路在真机成立** | token URL → **303**，裸 origin → **401** | Android shell curl 打到 app 起的 3080 |
 | **WebView 真的渲染出来了** | `onPageFinished http://127.0.0.1:3080/ title=DeepSeek Harness` | logcat `DshWebView`（debug 包已开远程调试） |
-| **回环 MCP 桥可用** | `initialize` / `tools/list` / `tools/call selfcheck` 全通，10 个工具在册 | curl POST `127.0.0.1:8765/mcp` |
-| **DSH 侧 mcp-client 真连上了** | `initialize from dsh-mcp-client proto=2025-11-25` → `client initialized` → `tools/list -> 10 tools` | 容器内 `dsh web --patch /root/mcp-android.overlay.yml`，日志来自宿主 McpServer |
-| **APK 原地升级后自愈** | `pm install -r` 覆盖安装，冷启自动重建 `bin/` 软链 → READY + MCP 握手 10 工具 | 2026-10-23 23:27 实测（上一版会 `error=2 No such file or directory`） |
-| **端口交给内核** | `--port 0` → READY `http://127.0.0.1:45717/?token=…`，3080 让给别的 App | 2026-10-24 00:07 实测 |
+| **安卓工具是原生插件**（不是 MCP） | DSH 侧 `applied.json`：`{"pid":28835,"tools":["android_screenshot","android_ui_dump","android_tap","android_swipe","android_permission","android_selfcheck"]}` | 插件 `dsh-android-bridge@1.0.0` 真被 cordis `apply()` |
+| **文件信箱往返** | 写 `req.json{id:2002,tool:"android_selfcheck"}` → `res-2002.json` 返回完整 7/11 自检 JSON | 宿主 `AndroidToolBridge` 200 ms 轮询 |
+| **端口交给内核** | `--port 0` → READY `http://127.0.0.1:46769/?token=…`，3080 让给别的 App | 2026-10-24 01:26 实测 |
+| **APK 原地升级后自愈** | `pm install -r` 覆盖安装，冷启自动重建 `bin/` 软链 → READY + 插件重新落地 | 2026-10-23 23:27 实测（上一版会 `error=2 No such file or directory`） |
 | **overlay 预检** | 启动前 `dsh --dump-config` 逐层校验；坏哪层点名哪层（`FAIL /root/.dsh/overlays/bad.yml`），通过时 1~2.5 s | 真机实测：`bad.yml` → rc=1 并归因；删掉后自动恢复 READY |
 | **用户 overlay 投放点** | `$DSH_HOME/overlays/*.yml` 自动 `--patch`，目录里自带 README.txt 说明格式 | 首启即生成 `…/root/.dsh/overlays/README.txt` |
 | **安全模式** | 连续失败 >3 次 → `Phase.FAILED` 并保留完整错误；计数跨 supervisor，回前台只再试 1 次 | 真机实测：4 次失败进安全模式，错误原文点名坏文件 |
 | **息屏也能装完** | 屏幕全黑状态下 3 分 38 秒完成解层+起服务（WakeLock 生效） | 22:33:39 → 22:37:17 |
+
+---
+
+## 安卓工具：DSH 原生插件（不是 MCP）
+
+```text
+APK assets/android-bridge-plugin.zip
+  → 解到 guest 两个位置（避开加载锚点不确定性）
+      /usr/local/lib/node_modules/dsh-android-bridge
+      /root/.dsh/node_modules/dsh-android-bridge
+  → overlay: - insert: [{ id: dsh-android-bridge, name: dsh-android-bridge }]
+  → dsh 启动时 --patch，cordis 调 apply(ctx) → ctx.tools.register(...)
+```
+
+模型看到的是**原生工具名**，没有 `mcp__` 前缀：
+
+| 工具 | 作用 |
+|---|---|
+| `android_screenshot` | 截图，返回落盘路径与尺寸 |
+| `android_ui_dump` | 无障碍节点树（text / desc / bounds / clickable） |
+| `android_tap` / `android_swipe` | 点击 / 滑动（绝对像素） |
+| `android_permission` | 查询或申请 accessibility/shizuku/root/battery/overlay |
+| `android_selfcheck` | 九项宿主自检（rootfs / dsh / dsh_runtime / 无障碍 / 后端档位…） |
+
+跨进程用**文件信箱**（插件 ↔ 宿主），不走 HTTP、不走协议握手：
+
+```text
+插件 execute(args) → $DSH_HOME/android-bridge/req.json   {id, tool, args}
+宿主 AndroidToolBridge（200 ms 轮询）→ 执行 → res-<id>.json {id, ok, text}
+```
+
+- 自增 `id` 配对，避免并发调用拿错回执；请求/回执都原子写（tmp + rename）
+- 插件 `apply()` 里 `ctx.tools.register` 包 try/catch —— 注册抛异常会让 cordis 判插件 failed、引擎直接退出
+- `apply()` 末尾写 `applied.json`（pid + 工具列表）作为「插件真的被加载」的取证
+
+真机证据：
+
+```text
+$ cat $DSH_HOME/android-bridge/applied.json
+{"pid":28835,"tools":["android_screenshot","android_ui_dump","android_tap","android_swipe","android_permission","android_selfcheck"],"version":"1.0.0"}
+
+$ cat $DSH_HOME/android-bridge/res-2002.json
+{"id":2002,"ok":true,"text":"{\n  \"ok\": false,\n  \"passed\": 7,\n  \"total\": 11,\n  \"summary\": \"✗accessibility | ✓overlay | ✓battery | ✗shizuku | ✗root | ✓level | ✓rootfs | ✓dsh | ✓dsh_runtime | ✓mcp | ✗backend\" …"}
+```
+
+> 回环 MCP server（127.0.0.1:8765）仍然保留，但**只当宿主内部的工具实现层 + 调试入口**，
+> DSH 侧不再连它。
 
 ---
 
