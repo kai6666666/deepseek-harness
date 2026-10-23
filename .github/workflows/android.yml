@@ -1,0 +1,43 @@
+name: build-apk
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  apk:
+    # arm64 runner：镜像层里的原生模块（node-pty / sherpa-onnx）必须按 arm64 取
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: SDK packages
+        run: |
+          yes | sdkmanager --licenses > /dev/null || true
+          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Build image layers
+        run: bash tools/build-layers.sh
+        env:
+          NPM_REGISTRY: https://registry.npmjs.org
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Assemble debug
+        run: gradle :app:assembleDebug --no-daemon --stacktrace
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deepseek-harness-debug
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
