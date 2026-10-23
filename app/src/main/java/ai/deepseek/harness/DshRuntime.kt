@@ -61,6 +61,9 @@ class DshRuntime private constructor(private val app: Context) {
         )
         private const val INSTALL_MARKER = ".deepseek_harness_installed"
 
+        /** 两层归档共同的顶层目录名；解压后 rename 成 rootfsDir 的最后一段 */
+        private const val LAYER_TOP = "ubuntu-noble-aarch64"
+
         private const val PORT_FIRST = 3080
         private const val PORT_LAST = 3090
         private const val URL_TIMEOUT_MS = 120_000L
@@ -200,22 +203,29 @@ class DshRuntime private constructor(private val app: Context) {
         _state.value = _state.value.copy(detail = "解压镜像层（busybox tar xf）…")
         val parent = rootfsDir.parentFile
             ?: throw IOException("rootfs 路径异常：${rootfsDir.absolutePath}")
+        parent.mkdirs()
+        // 归档里的顶层目录名固定是 LAYER_TOP；解压完再 mv 到 rootfsDir（同名 rename，同盘瞬时完成）
         val script = buildString {
             appendLine("set -e")
             appendLine("BIN='${binDir.absolutePath}'")
             appendLine("PARENT='${parent.absolutePath}'")
             appendLine("ROOT='${rootfsDir.absolutePath}'")
+            appendLine("TOP=\"\$PARENT/$LAYER_TOP\"")
             appendLine("mkdir -p \"\$PARENT\"")
-            appendLine("rm -rf \"\$ROOT\"")
+            appendLine("rm -rf \"\$ROOT\" \"\$TOP\"")
             ROOTFS_LAYERS.forEach { name ->
                 // proot 环境下 mknod /dev/* 必然失败，tar 会返回非零；用 --exclude 挡掉后仍兜一层，
                 // 真正的完整性由下面的 test 断言负责（node 可执行 + dsh 包存在）。
                 appendLine(
                     "\"\$BIN/busybox\" tar xf '${File(filesDir, name).absolutePath}' -C \"\$PARENT\" " +
-                        "--exclude='ubuntu-noble-aarch64/dev/*' 2>/dev/null || true"
+                        "--exclude='$LAYER_TOP/dev/*' 2>/dev/null || true"
                 )
                 appendLine("echo LAYER_OK $name")
             }
+            // 上一次失败可能残留在 files/../ubuntu-noble-aarch64（旧路径 bug 留下的 1.4 GiB）
+            appendLine("rm -rf '${File(filesDir.parentFile, LAYER_TOP).absolutePath}'")
+            appendLine("test -d \"\$TOP\"")
+            appendLine("mv \"\$TOP\" \"\$ROOT\"")
             appendLine("test -x \"\$ROOT/usr/local/bin/node\"")
             appendLine("test -f \"\$ROOT/usr/local/lib/node_modules/@deepseek-ai/dsh/package.json\"")
             appendLine("echo ok > \"\$ROOT/$INSTALL_MARKER\"")

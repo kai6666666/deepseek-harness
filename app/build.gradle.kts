@@ -21,6 +21,29 @@ android {
     // 可执行二进制以 .so 形式落到 lib/<abi>/,靠 nativeLibraryDir 拿到可执行位
     packaging {
         jniLibs { useLegacyPackaging = true }
+        // proot / bash / busybox 是老式 ELF，别让 AGP 碰它们的符号表（实测不碰，这里是保险）
+        jniLibs { keepDebugSymbols += "**/*.so" }
+    }
+
+    // 固定签名：CI 每次重建都换 debug.keystore 会导致「签名不一致」装不上去，
+    // 所以把测试用 keystore 随仓库带着，构建机与本机用它签，升级才能覆盖安装。
+    signingConfigs {
+        create("dsh") {
+            storeFile = file("keystore/dsh.jks")
+            storePassword = "dshharness"
+            keyAlias = "dsh"
+            keyPassword = "dshharness"
+        }
+    }
+
+    buildTypes {
+        getByName("debug") {
+            signingConfig = signingConfigs.getByName("dsh")
+        }
+        getByName("release") {
+            signingConfig = signingConfigs.getByName("dsh")
+            isMinifyEnabled = false
+        }
     }
 
     compileOptions {
