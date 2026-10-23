@@ -170,6 +170,9 @@ class DshRuntime private constructor(private val app: Context) {
         _state.value = _state.value.copy(phase = Phase.STARTING, port = port, detail = "spawning proot…")
 
         // 每次启动前都把 MCP overlay 重写一遍：rootfs 可能是老版本装的，overlay 必须跟 APK 一致
+        // 同时重建 bin/ 软链 —— 升级 APK 后 nativeLibraryDir 会变（/data/app/~~hash...），
+        // 旧软链指向已被删除的目录，会直接变成 error=2 No such file or directory。
+        ensureBinLinks()
         seedOverlay()
 
         val p = spawn(port)
