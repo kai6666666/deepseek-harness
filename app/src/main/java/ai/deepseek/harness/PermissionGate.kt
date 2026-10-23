@@ -29,6 +29,7 @@ enum class Capability(val label: String) {
     SHIZUKU("Shizuku"),
     ROOT("Root"),
     BATTERY_WHITELIST("电池优化白名单"),
+    OVERLAY("悬浮窗权限"),
 }
 
 data class CapabilityStatus(
@@ -131,6 +132,10 @@ object PermissionGate {
             Capability.BATTERY_WHITELIST -> Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
                 .setData(Uri.parse("package:${context.packageName}"))
             Capability.ROOT -> return hasRoot()
+            Capability.OVERLAY -> Intent(
+                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                Uri.parse("package:${context.packageName}"),
+            )
         } ?: return false
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         context.startActivity(intent)
