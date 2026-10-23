@@ -146,9 +146,24 @@ class McpServer private constructor(private val app: Context) : NanoHTTPD("127.0
                 val args = params.optJSONObject("arguments") ?: JSONObject()
                 val tool = tools.firstOrNull { it.name == name }
                     ?: return errorBody(id, -32602, "unknown tool: $name")
+                ToolCallBus.emit(ToolEvent(name, ToolEvent.Phase.START))
+                val started = System.currentTimeMillis()
                 val result = runCatching { runBlocking { tool.call(args) } }
-                    .getOrElse { return ok(id, toolError(it.message ?: "tool failed")) }
-                ok(id, result)
+                val elapsed = System.currentTimeMillis() - started
+                result.fold(
+                    onSuccess = { r ->
+                        ToolCallBus.emit(
+                            ToolEvent(name, ToolEvent.Phase.OK, summarize(r), elapsed),
+                        )
+                        ok(id, r)
+                    },
+                    onFailure = { e ->
+                        ToolCallBus.emit(
+                            ToolEvent(name, ToolEvent.Phase.ERROR, e.message.orEmpty(), elapsed),
+                        )
+                        ok(id, toolError(e.message ?: "tool failed"))
+                    },
+                )
             }
 
             else -> errorBody(id, -32601, "method not found: $method")
@@ -326,6 +341,15 @@ class McpServer private constructor(private val app: Context) : NanoHTTPD("127.0
             )
         },
     )
+
+    private fun summarize(result: JSONObject): String {
+        val arr = result.optJSONArray("content") ?: return ""
+        val first = arr.optJSONObject(0) ?: return ""
+        return when (first.optString("type")) {
+            "image" -> "image/png"
+            else -> first.optString("text").lineSequence().firstOrNull().orEmpty().take(60)
+        }
+    }
 
     private fun runInContainer(script: String, timeoutMs: Long = 300_000L): String {
         val pb = ProcessBuilder(DshRuntime.get(app).containerCommand(script))
