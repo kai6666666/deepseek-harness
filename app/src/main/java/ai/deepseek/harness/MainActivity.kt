@@ -94,8 +94,17 @@ class MainActivity : AppCompatActivity() {
             text = "设置"
             setOnClickListener { openBatterySettings() }
         }
+        val btnFloat = Button(this).apply {
+            text = "悬浮"
+            setOnClickListener {
+                if (!FloatingBubbleService.start(this@MainActivity)) {
+                    openBatterySettings()   // 没有悬浮窗权限时先引导；真正授权走 request_permission
+                }
+            }
+        }
         bar.addView(reload)
         bar.addView(btnSettings)
+        bar.addView(btnFloat)
 
         progress = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
             isIndeterminate = true
