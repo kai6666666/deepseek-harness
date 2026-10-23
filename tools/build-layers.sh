@@ -38,7 +38,10 @@ if [ ! -f "$LAYER1" ]; then
     --cpu=arm64 --os=linux \
     --no-audit --no-fund \
     --allow-scripts=@deepseek-ai/dsh-subprocess-local,koffi,node-pty,@google/genai,protobufjs
-  "$W/ubuntu-noble-aarch64/usr/local/bin/node" -v
+  # 不能在 x86 runner 上执行 arm64 的 node；只做结构 + ELF 机器类型校验
+  test -x "$W/ubuntu-noble-aarch64/usr/local/bin/node"
+  node -e "const b=require('fs').readFileSync(process.argv[1]);if(b.readUInt16LE(0x12)!==0xB7){console.error('not aarch64');process.exit(1)};console.log('node ELF machine = aarch64 OK')" "$W/ubuntu-noble-aarch64/usr/local/bin/node"
+  test -f "$W/ubuntu-noble-aarch64/usr/local/lib/node_modules/@deepseek-ai/dsh/package.json"
   tar -cJf "$LAYER1" -C "$W" ubuntu-noble-aarch64
 fi
 
