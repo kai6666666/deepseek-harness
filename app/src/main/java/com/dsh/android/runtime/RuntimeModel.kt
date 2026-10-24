@@ -39,8 +39,8 @@ object RuntimeAssets {
  * 这样日志与诊断包才能直接指路，而不是让模型去猜。
  */
 sealed class RuntimeAvailability {
-    /** 齐全，可以用。 */
-    data class Ready(val rootfs: java.io.File, val proot: java.io.File, val loader: java.io.File) :
+    /** 齐全，可以用。loader 可能为 null —— proot 5.1.x 把 loader 内嵌进二进制。 */
+    data class Ready(val rootfs: java.io.File, val proot: java.io.File, val loader: java.io.File?) :
         RuntimeAvailability()
 
     /** rootfs 已就绪，但缺 proot（libproot.so）或 proot-loader。 */

@@ -47,7 +47,8 @@ class AlpineRuntime private constructor(
             return RuntimeAvailability.NotProvisioned("rootfs 未解包：${rootfs.absolutePath}")
         }
         val proot = findProot() ?: return RuntimeAvailability.ProotMissing(rootfs, "libproot.so")
-        val loader = findLoader() ?: return RuntimeAvailability.ProotMissing(rootfs, "proot-loader.so")
+        // proot 5.1.x 把 loader 内嵌进二进制 → 外置 loader 可有可无
+        val loader = findLoader()
         return RuntimeAvailability.Ready(rootfs, proot, loader)
     }
 
@@ -107,7 +108,8 @@ class AlpineRuntime private constructor(
         DROP_KEYS.forEach { env.remove(it) }
         env["PROOT_NO_SECCOMP"] = "1"
         env["PROOT_TMP_DIR"] = context.cacheDir.absolutePath
-        env["PROOT_LOADER"] = av.loader.absolutePath
+        // 只有外置 loader 存在时才设；内嵌 loader 的 proot 不认这个变量也无害
+        av.loader?.let { env["PROOT_LOADER"] = it.absolutePath }
         env["TMPDIR"] = context.cacheDir.absolutePath
         Log.i(TAG, "已切到 alpine 档：rootfs=${av.rootfs.name} proot=${av.proot.name}")
     }
