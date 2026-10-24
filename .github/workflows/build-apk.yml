@@ -57,7 +57,9 @@ jobs:
           curl -sL -H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/octet-stream" "$URL" -o /tmp/assets.zip
           ls -lh /tmp/assets.zip
           mkdir -p app/src/main/assets
-          unzip -o -q /tmp/assets.zip -d app/src/main/assets -x 'mobile-ui.zip'
+          unzip -o -q /tmp/assets.zip -d app/src/main/assets -x 'mobile-ui.zip' -x 'webview-compat.zip'
+          # ⚠️ 这两个 zip 要排除：它们已在 git 里改过（「交流群」入口移除）。
+          #    webview-compat.zip 里还藏着 mobileui/lib/client.js 的旧副本——设置页真正用的就是它。
           # ⚠️ 排除 mobile-ui.zip：它已在 git 里（改过设置项，见"移除交流群"那次提交），
           #    如果被 Release 附件里的旧版覆盖，改了也白改。
           echo "assets 恢复后: $(ls -1 app/src/main/assets | wc -l) 项 / $(du -sh app/src/main/assets | cut -f1)"
