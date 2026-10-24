@@ -127,10 +127,39 @@ else
     TS="$(find . -maxdepth 2 -name 'talloc.c' | head -1)"
     if [ -n "$TS" ]; then
       TD="$(dirname "$TS")"
+      # ⚠️ talloc.c 里有 `#include "replace.h"`，而独立的 talloc 包**不带** replace.h
+      #    （它假设自己在 samba 源码树里）。生成一个最小替身，避免为此下载 30 MB 的 samba。
+      if [ ! -f "$TD/replace.h" ] && [ ! -f ./replace.h ]; then
+        cat > "$WORK/replace.h" <<'HDR'
+#ifndef DSH_REPLACE_MIN_H
+#define DSH_REPLACE_MIN_H
+#define _GNU_SOURCE 1
+#include <stdbool.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <stdarg.h>
+#include <errno.h>
+#include <assert.h>
+#include <unistd.h>
+#define _PUBLIC_
+#define _PRIVATE_ static
+#define HAVE_STDBOOL_H 1
+#define HAVE_STDINT_H 1
+#define HAVE_UNISTD_H 1
+#define HAVE_STRINGS_H 1
+#endif
+HDR
+        : > "$WORK/config.h"
+        say "   · 已生成最小 replace.h / config.h"
+      fi
+      RMIN="$WORK"
       OBJS=()
       for c in "$TS" $(find . -maxdepth 2 -name 'replace*.c' 2>/dev/null); do
         o="$(basename "${c%.c}").o"
-        if "$CC" -O2 -fPIC -D_FILE_OFFSET_BITS=64 -D_GNU_SOURCE -I"$TD" -I. \
+        if "$CC" -O2 -fPIC -D_FILE_OFFSET_BITS=64 -D_GNU_SOURCE -I"$TD" -I"$RMIN" -I. \
              -c "$c" -o "$o" > "cc-$(basename "$c").log" 2>&1; then
           OBJS+=("$o")
         else
