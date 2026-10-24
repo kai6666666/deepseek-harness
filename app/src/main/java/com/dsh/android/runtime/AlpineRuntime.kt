@@ -30,8 +30,13 @@ class AlpineRuntime private constructor(
 
     private fun candidates(names: List<String>): Sequence<File> = sequence {
         yieldAll(names.map { File(context.filesDir, it) })
-        // jniLibs 里的 .so 会被解到 nativeLibraryDir（可执行位通常是 0755）
-        yieldAll(names.map { File(context.nativeLibraryDir, it.substringAfterLast('/')) })
+        // ⚠️ Context 没有 `nativeLibraryDir` 属性（编译期 Unresolved reference），
+        //    真实入口是 ApplicationInfo.nativeLibraryDir。
+        val nativeDir = context.applicationInfo.nativeLibraryDir
+        if (!nativeDir.isNullOrEmpty()) {
+            // jniLibs 里的 .so 会被解到 nativeLibraryDir（可执行位通常是 0755）
+            yieldAll(names.map { File(nativeDir, it.substringAfterLast('/')) })
+        }
         // 兜底：Termux 里若装了 proot，直接借用
         yield(File(context.filesDir, "termux/usr/bin/proot"))
     }.filter { it.isFile && it.canExecute() }

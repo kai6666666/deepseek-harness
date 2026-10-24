@@ -6917,9 +6917,11 @@ class EngineManager private constructor(private val context: Context) {
         // ★ G-03 首启供给：把 assets/runtime 里那份 rootfs 解到 filesDir/runtime/alpine。
         //   已就绪时只做一次 status() 探测（读 manifest + 查 .ready/执行位），不解包。
         //   **失败不阻断启动** —— 引擎会回退 Termux 档，App 不会因为"没拉 rootfs"变哑。
-        runCatching { AlpineProvisioner(context).provision() }
-            .onSuccess { Log.i(TAG, "alpine 供给完成: ${it.absolutePath}") }
-            .onFailure { Log.w(TAG, "alpine 供给失败（回退 Termux）: ${it.message}") }
+        // ⚠️ provision() 本身返回 Result<File>；外面再套 runCatching 会得到
+        //   Result<Result<File>>，`it` 就成了 Result —— 编译期报 Unresolved reference 'absolutePath'。
+        val provisioned = runCatching { AlpineProvisioner(context).provision() }.getOrNull()
+        provisioned?.onSuccess { Log.i(TAG, "alpine 供给完成: ${it.absolutePath}") }
+        provisioned?.onFailure { Log.w(TAG, "alpine 供给失败（回退 Termux）: ${it.message}") }
         Log.i(TAG, "运行时档位: ${alpineRuntime.availability().describe()}")
         if (process?.isAlive == true) {
             Log.i(TAG, "引擎已在运行")
