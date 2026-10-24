@@ -87,12 +87,17 @@ else
   # talloc 用 waf：选项在不同版本里不一样（实测 2.4.2 不认 --disable-shared），
   # 所以先问 --help，只拼它支持的选项。
   ./configure --help > waf-help.txt 2>&1 || true
-  # ⚠️ 关键：--cross-compile
-  # waf 默认会"编译一个小程序然后运行它"来探测 ABI；aarch64 二进制在 x86 runner 上跑不了，
-  # 于是 configure 报 `Checking simple C program : not found` → `The configuration failed`。
-  # 开启 cross-compile 后它跳过"运行"这一步。
+  # ⚠️ 交叉编译探测：waf 是二选一
+  #   --cross-compile        → 完全不运行探测程序（新版 waf 会再要求 --cross-execute/--cross-answers，
+  #                            实测 talloc 2.4.2 报 "Cannot cross-compile without either ..."）
+  #   --cross-execute=<prog> → 拿这个程序去"运行"编译产物；`/bin/true` 最省事：返回 0、输出空
   OPTS=(--host=aarch64-linux-android --prefix="$PREFIX")
-  for o in --cross-compile --disable-python --without-gettext --disable-shared --enable-static; do
+  if grep -q -- '--cross-execute' waf-help.txt; then
+    OPTS+=(--cross-execute=/bin/true)
+  elif grep -q -- '--cross-compile' waf-help.txt; then
+    OPTS+=(--cross-compile)
+  fi
+  for o in --disable-python --without-gettext --disable-shared --enable-static; do
     grep -q -- "$o" waf-help.txt && OPTS+=("$o")
   done
   rm -rf bin build 2>/dev/null || true     # 上次失败可能留下半配置
