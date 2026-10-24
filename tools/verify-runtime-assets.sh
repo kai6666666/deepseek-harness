@@ -15,7 +15,7 @@ set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO="$(cd "$HERE/.." && pwd)"
 ASSETS="${DSH_ASSETS_DIR:-$REPO/app/src/main/assets/runtime}"
-TAR="$ASSETS/alpine-rootfs.tar.gz"
+TAR="$ASSETS/alpine-rootfs.bin"
 MAN="$ASSETS/alpine-rootfs.manifest.json"
 EXPECT_NODE_MAJOR="${EXPECT_NODE_MAJOR:-24}"
 SOFT=0

@@ -110,8 +110,8 @@ fi
 # ── 4) 落地 assets/runtime/ ──────────────────────────────────────────
 say "== 4/4 落地"
 mkdir -p "$DEST" || die "建目录失败: $DEST" 5
-if [ -e "$DEST/alpine-rootfs.tar.gz" ] && [ "$FORCE" != "1" ]; then
-  OLD="$(python3 -c 'import hashlib,sys;print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' "$DEST/alpine-rootfs.tar.gz" 2>/dev/null || echo none)"
+if [ -e "$DEST/alpine-rootfs.bin" ] && [ "$FORCE" != "1" ]; then
+  OLD="$(python3 -c 'import hashlib,sys;print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' "$DEST/alpine-rootfs.bin" 2>/dev/null || echo none)"
   if [ "$OLD" = "$ACTUAL" ]; then
     say "   已是最新（sha256 相同），跳过复制"
   else
@@ -119,10 +119,10 @@ if [ -e "$DEST/alpine-rootfs.tar.gz" ] && [ "$FORCE" != "1" ]; then
     exit 5
   fi
 else
-  cp -f "$TAR" "$DEST/alpine-rootfs.tar.gz" || die "复制失败（磁盘空间？）" 5
+  cp -f "$TAR" "$DEST/alpine-rootfs.bin" || die "复制失败（磁盘空间？）" 5
   say "   ✓ $DEST/alpine-rootfs.tar.gz"
 fi
-printf '%s  %s\n' "$ACTUAL" "alpine-rootfs.tar.gz" > "$DEST/alpine-rootfs.tar.gz.sha256"
+printf '%s  %s\n' "$ACTUAL" "alpine-rootfs.tar.gz" > "$DEST/alpine-rootfs.bin.sha256"
 
 # assets 侧 manifest：schema 3，App 直接读它
 NODEJS="$NODEJS" ALPINE="$ALPINE" BUILT="$BUILT" PKGS_JSON="$PKGS_JSON" \
@@ -130,7 +130,7 @@ BYTES="$BYTES" SHA="$ACTUAL" DEST="$DEST" python3 - <<'PY' || die "写 manifest 
 import json, os, datetime
 d = {
     "schema": 3,
-    "assetsPath": "runtime/alpine-rootfs.tar.gz",
+    "assetsPath": "runtime/alpine-rootfs.bin",
     "bytes": int(os.environ["BYTES"]),
     "sha256": os.environ["SHA"],
     "nodejs": os.environ["NODEJS"],

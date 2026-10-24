@@ -22,7 +22,9 @@ enum class RuntimeBackend(val dirName: String) {
 /** APK 内置资产的位置（相对 assets/）。改这里要同步 tools/fetch-rootfs-into-assets.sh。 */
 object RuntimeAssets {
     const val DIR = "runtime"
-    const val ROOTFS_TAR_GZ = "$DIR/alpine-rootfs.tar.gz"
+    // ⚠️ 必须是 .bin，不能是 .tar.gz：AGP 会按扩展名做格式推断，把 .tar.gz 自动解压并
+    //    改名成 .tar（见 app/build.gradle.kts 里 noCompress 那段注释）。我们用 .bin 绕开。
+    const val ROOTFS_TAR_GZ = "$DIR/alpine-rootfs.bin"
     const val MANIFEST = "$DIR/alpine-rootfs.manifest.json"
 
     /** 解包后需要的最小可用体积倍数（G-05：解包 165 MB，务必留余量）。 */
