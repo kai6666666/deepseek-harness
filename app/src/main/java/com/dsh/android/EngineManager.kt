@@ -22,6 +22,8 @@ import java.nio.file.Files
 import java.nio.file.attribute.PosixFilePermission
 import java.util.EnumSet
 import java.util.concurrent.TimeUnit
+import com.dsh.android.runtime.AlpineRuntime
+import com.dsh.android.runtime.AlpineProvisioner
 
 /**
  * 管理内置 DSH 引擎的生命周期。
@@ -239,6 +241,17 @@ class EngineManager private constructor(private val context: Context) {
 
     /** Termux 环境：提供 node 可执行文件与 $PREFIX。 */
     private val bootstrap by lazy { com.dsh.android.termux.TermuxBootstrap(context) }
+
+    /**
+     * Alpine 档（G-03）。**只有 rootfs + proot 都就绪时才可用**；
+     * 不可用时 [engineCommand] 返回 null，引擎命令行与改造前**逐字节一致**（Termux 档）。
+     *
+     * 三态由 [com.dsh.android.runtime.AlpineRuntime.availability] 给出：
+     *   NotProvisioned（assets 有 rootfs 但没解包）/ ProotMissing（缺 libproot.so）/ Ready。
+     */
+    private val alpineRuntime by lazy {
+        AlpineRuntime.create(context, dshHome, workspaceDir)
+    }
 
     /** 引擎解包目录：filesDir/engine */
     private val engineDir get() = File(context.filesDir, "engine")
@@ -6901,6 +6914,13 @@ class EngineManager private constructor(private val context: Context) {
 
     /** 启动引擎，等待其打印带 token 的 URL。 */
     suspend fun start() = withContext(Dispatchers.IO) {
+        // ★ G-03 首启供给：把 assets/runtime 里那份 rootfs 解到 filesDir/runtime/alpine。
+        //   已就绪时只做一次 status() 探测（读 manifest + 查 .ready/执行位），不解包。
+        //   **失败不阻断启动** —— 引擎会回退 Termux 档，App 不会因为"没拉 rootfs"变哑。
+        runCatching { AlpineProvisioner(context).provision() }
+            .onSuccess { Log.i(TAG, "alpine 供给完成: ${it.absolutePath}") }
+            .onFailure { Log.w(TAG, "alpine 供给失败（回退 Termux）: ${it.message}") }
+        Log.i(TAG, "运行时档位: ${alpineRuntime.availability().describe()}")
         if (process?.isAlive == true) {
             Log.i(TAG, "引擎已在运行")
             // ⚠️ **早返回也必须跑特权通道自愈。** 这一段原先直接 return，于是
@@ -7286,7 +7306,10 @@ class EngineManager private constructor(private val context: Context) {
         // ⚠️ 存下来给试启动用（见 [activeOverlays]）：试启动必须与真实启动
         //   用**同一份** overlay，否则「探测能过、真实过不了」无法排查。
         activeOverlays = overlays
-        val cmd = buildEngineArgs(nodeBin, binJs, targetProfile, overlays, resolveWebPort())
+        // ★ G-03：Alpine 档就绪 → 用 proot 起 musl 版 node；否则原样走 Termux（逐字节不变）
+        val webPort = resolveWebPort()
+        val cmd = alpineRuntime.engineCommand(targetProfile, overlays, webPort)
+            ?: buildEngineArgs(nodeBin, binJs, targetProfile, overlays, webPort)
 
         Log.i(TAG, "启动引擎: ${cmd.joinToString(" ")}")
 
@@ -7386,6 +7409,11 @@ class EngineManager private constructor(private val context: Context) {
             // 缺失时 runner 只走 legacy 5555，行为与改动前完全一致。
             adbWireless?.let { put("DSH_ADB_HOME", it.absolutePath) }
         }
+
+        // ★ G-03 Alpine 档：删掉指向 bionic 世界的键（PREFIX/PATH/SSL_CERT_FILE/NODE_OPTIONS…）
+        //   并补 proot 三件套。档位不可用时该方法直接 return，上面写的 env 一行都不变。
+        //   位置必须在 env 块**之后** —— Termux 那一套刚刚才被写进去。
+        alpineRuntime.prepareProcessEnvironment(pb.environment())
 
         // ⚠️ 存下这一份给试启动用（见 [activeEnv]）：试启动必须与真实启动**逐项相同**，
         //   否则「探测能过、真实过不了」无法排查。**必须在 pb.start() 之前存**，
