@@ -52,18 +52,13 @@ jobs:
         run: |
           set -euo pipefail
           REL="https://api.github.com/repos/$GITHUB_REPOSITORY/releases/tags/assets-v1"
-          URL=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" "$REL" | python3 -c "
-import json, sys
-d = json.load(sys.stdin)
-a = [x for x in d.get('assets', []) if x['name'] == 'dsh-assets-v1.zip']
-print(a[0]['url'] if a else '')
-")
-          [ -n "$URL" ] || { echo "::error::release assets-v1 里没有 dsh-assets-v1.zip"; exit 1; }
+          URL=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" "$REL" | python3 -c "import json,sys;print(next((x['url'] for x in json.load(sys.stdin).get('assets',[]) if x['name']=='dsh-assets-v1.zip'),''))")
+          if [ -z "$URL" ]; then echo "::error::release assets-v1 里没有 dsh-assets-v1.zip"; exit 1; fi
           curl -sL -H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/octet-stream" "$URL" -o /tmp/assets.zip
           ls -lh /tmp/assets.zip
           mkdir -p app/src/main/assets
           unzip -o -q /tmp/assets.zip -d app/src/main/assets
-          echo "== assets 恢复后：$(ls -1 app/src/main/assets | wc -l) 项，$(du -sh app/src/main/assets | cut -f1)"
+          echo "assets 恢复后: $(ls -1 app/src/main/assets | wc -l) 项 / $(du -sh app/src/main/assets | cut -f1)"
           ls -1 app/src/main/assets | head -12
 
       - name: 现做 rootfs（含 node 24 断言）
