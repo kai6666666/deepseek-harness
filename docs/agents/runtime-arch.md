@@ -34,11 +34,11 @@ bash tools/dsh-runtime.sh gc --all   # 清工具链层（Alpine 不受影响）
 | arm64 源用了 archive | 404 或只找到 x86 包 | 必须 `ubuntu-ports` + deb822 |
 | `edit` 后可执行位丢失 | 脚本"找不到" | 判据用 `-f` 不用 `-x`（靠 `bash` 调起） |
 
-## 还没补的（P0）
+## P0 现状（2026-10-24 更新）
 
 - **G-01** 档位枚举还是 `alpine|termux` 两个 → 单档收口未做
-- **G-02** Alpine rootfs 真实产物未出（PRoot 内 `apk.static` SIGBUS）→ 要 CI
-- **G-03** Kotlin 侧零接入（`EngineManager.kt` 10 123 行，接入点只有一处）
-- **G-04** `assets/` 里没有 `alpine-rootfs.tar.gz`
+- ✅ **G-02 已完成**：CI `alpine-rootfs` success（run `40114426384`），产物 `nodejs 24.22.1-r0` / 55.4 MB / sha256 `d253d66f…`
+- ✅ **G-04 已完成**：`app/src/main/assets/runtime/` 已就位（gz 56 MB / 解包 165 MB / 7515 条目），`verify-runtime-assets.sh` exit 0
+- **G-03** Kotlin 侧零接入（`EngineManager.kt` 10 123 行，接入点只有一处）→ **现在是唯一阻塞项**
 
 完整 22 条见主文档 §5。
