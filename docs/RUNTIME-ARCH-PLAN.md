@@ -126,7 +126,7 @@ docs/agents             37 篇（索引式，按"坑"组织）
 | **P2** | 插件供给：`dsh-android-toolchain` + 装前判定 | `plugin-src/`、`dsh-plugin-compat.sh` | 20 样本实测 17 纯 JS / 3 原生 | ✅ 完成【实测】 |
 | **P3** | Alpine 骨架：构建/启动/映射/切档/验收 | `tools/alpine-runtime/` 6 文件 + **真 rootfs** | pathmap 9/9；CI `run 40114426384` success；产物 `nodejs 24.22.1-r0` / 55.4 MB / 解包 165 MB | ✅ **rootfs 已产出** |
 | **P4** | 工具链三层：apt overlay / deb 提取 / ABI 守卫 | `tools/toolchain-overlay/` 7 文件 | `--dry-run` 探测到 24.04.5 + sha256；hello deb 真解包 | ✅ 完成【实测】 |
-| **P5** | **接 App**：Kotlin 接入 + 资产入包 + preBuild 验收 | 待写 | 装 APK 后首次启动能自检并落到 Alpine | ⬜ **未开始（最大缺口）** |
+| **P5** | **接 App**：Kotlin 接入 + 资产入包 + preBuild 验收 | `runtime/` 4 文件 + `EngineManager` 3 处 + `tools/proot/README.md` | 资产入包、preBuild 闸门生效；Kotlin 侧括号/引用静态检查通过 | ✅ **代码完成**，缺 proot 二进制（G-23） |
 | **P6** | 上游 PR：`android-arm64` 平台包 | `tools/upstream-pr/` | 官方接受 | ⬜ 待提 |
 
 ---
@@ -141,7 +141,8 @@ docs/agents             37 篇（索引式，按"坑"组织）
 |---|---|---|---|---|
 | **G-01** | `engine/` 未按档分离，且**单档改造未落地** | `backend-select.mjs` 仍枚举 `alpine\|termux`；`proot-launch.sh` 仍有 termux 直通分支 | 若误切 termux，bionic `.node` 与 musl `.node` 混放 → 启动即崩 | 把档位枚举收成 `alpine`，termux 降为 `toolchain` 模式（只装不跑）；迁移脚本搬走 bionic 产物 |
 | **G-02** | ~~**Alpine rootfs 真实产物未产出**~~ ✅ **已完成** | CI run `40114426384` = success；产物 `nodejs 24.22.1-r0` / 55.4 MB / sha256 `d253d66f…` | 已解决 | 后续只需在换包集时重跑 workflow |
-| **G-03** | **App 侧零接入** | `grep preBuild app/build.gradle.kts` 空；`assets/` 只有 4 个 `.mjs` | 脚本再好也只是"仓库外挂"，用户装 APK 用不到 | 见 §5.1 接口草案；新增 `RuntimeBackend.kt` / `AlpineProvisioner.kt` / `RuntimePaths.kt` |
+| **G-03** | ~~**App 侧零接入**~~ ✅ **代码已接入** | `com.dsh.android.runtime` 5 文件 + `EngineManager` 3 处改动；缺 proot 时**零行为变化** | 只剩 proot 供给 | 见 **G-23** |
+| **G-23** | **缺 `libproot.so` / `proot-loader.so`** | `AlpineRuntime.candidates()` 找不到 → `ProotMissing` → 回退 Termux | Alpine 档无法真正启用 | `tools/proot/README.md`：自编（NDK 交叉）或从 Operit APK 抠 |
 | ~~G-04~~ ✅ | ~~assets 无 rootfs~~ | **已落地**：CI 产出 tarball 55.4 MB（`nodejs 24.22.1-r0`，7515 条目，**解包 165 MB**），已拉到 `app/src/main/assets/runtime/`，闸门 exit 0 | —— | 随 APK 分发；rootfs 本体不入 git，只入库 manifest + 摘要 |
 
 ### P1（真实场景会翻车）
