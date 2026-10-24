@@ -139,10 +139,10 @@ docs/agents             37 篇（索引式，按"坑"组织）
 
 | # | 缺口 | 现状证据 | 影响 | 补法 |
 |---|---|---|---|---|
-| **G-01** | `engine/` 未按档分离，且**单档改造未落地** | `backend-select.mjs` 仍枚举 `alpine\|termux`；`proot-launch.sh` 仍有 termux 直通分支 | 若误切 termux，bionic `.node` 与 musl `.node` 混放 → 启动即崩 | 把档位枚举收成 `alpine`，termux 降为 `toolchain` 模式（只装不跑）；迁移脚本搬走 bionic 产物 |
+| ~~G-01~~ ✅ | ~~档位仍枚举 termux~~ | **已完成单档收口**：`backend-select.mjs switch termux` 现在**直接拒绝（rc=2）**并提示"只作工具链模式"；`switch alpine` 正常写入；`engine/` 只可能有一份 | —— | `proot-launch.sh` 仍保留 termux 直通分支，但仅作兜底（Alpine 不可用时才走） |
 | **G-02** | ~~**Alpine rootfs 真实产物未产出**~~ ✅ **已完成** | CI run `40114426384` = success；产物 `nodejs 24.22.1-r0` / 55.4 MB / sha256 `d253d66f…` | 已解决 | 后续只需在换包集时重跑 workflow |
 | **G-03** | ~~**App 侧零接入**~~ ✅ **已接入且编译通过** | `com.dsh.android.runtime` 4 文件 + `EngineManager` 3 处；`compileSystemDebugKotlin` **BUILD SUCCESSFUL**（CI run `40116990495`）；缺 proot 时**零行为变化** | 只剩 proot 供给 | 见 **G-23** |
-| **G-23** | **缺 `libproot.so` / `proot-loader.so`** | `AlpineRuntime.candidates()` 找不到 → `ProotMissing` → 回退 Termux | Alpine 档无法真正启用 | `tools/proot/README.md`：自编（NDK 交叉）或从 Operit APK 抠 |
+| ~~G-23~~ ✅ | ~~缺 proot 二进制~~ | **已完成**：Termux `proot 5.1.107.101` + `libtalloc 2.5.0` + `libandroid-shmem 0.7` 放进 `jniLibs/arm64-v8a/`；**真机日志实证 `DSH/AlpineRuntime: 已切到 alpine 档：rootfs=alpine proot=libproot.so`**，且进程表里 `com.dsh.android → node` 父子链成立 | —— | 换 proot 版本时按 `tools/proot/README.md` 重做 |
 | ~~G-04~~ ✅ | ~~assets 无 rootfs~~ | **已落地**：CI 产出 tarball 55.4 MB（`nodejs 24.22.1-r0`，7515 条目，**解包 165 MB**），已拉到 `app/src/main/assets/runtime/`，闸门 exit 0 | —— | 随 APK 分发；rootfs 本体不入 git，只入库 manifest + 摘要 |
 
 ### P1（真实场景会翻车）

@@ -136,11 +136,20 @@ switch (cmd) {
   }
 
   case "switch": {
-    if (arg !== "alpine" && arg !== "termux") {
-      console.error("用法: backend-select.mjs switch <alpine|termux>");
+    // ★ G-01 单档收口：termux 不再是「可切换的运行档」，只保留为工具链模式。
+    //   理由（ADR-1）：两套 engine 的 .node ABI 互斥，切过去必然污染。
+    //   要装东西用它没关系（dsh-runtime.sh doctor / tc-run.sh），别拿它跑引擎。
+    if (arg === "termux") {
+      console.error("✗ termux 已不再是运行档（单档收口，见 docs/RUNTIME-ARCH-PLAN.md ADR-1）");
+      console.error("  它只作为「工具链模式」存在：装依赖可以，不承载引擎。");
+      console.error("  要跑引擎：node backend-select.mjs switch alpine");
       process.exit(2);
     }
-    const target = arg === "alpine" ? alpine : termux;
+    if (arg !== "alpine") {
+      console.error("用法: backend-select.mjs switch alpine");
+      process.exit(2);
+    }
+    const target = alpine;
     if (!target.available && process.env.DSH_ALLOW_UNAVAILABLE !== "1") {
       console.error(`✗ ${arg} 档当前不可用（缺依赖）。加 DSH_ALLOW_UNAVAILABLE=1 可强制写入。`);
       printProbe(target);
