@@ -1,0 +1,76 @@
+name: kotlin-compile
+
+# G-03 的编译验证：只需要「这 4 个 Kotlin 文件能不能过编译」，
+# 所以只跑 `compileSystemDebugKotlin`（system flavor 不拉 geckoview 那 86 MB）。
+#
+# 关键点：
+#   - DSH_SKIP_ASSET_CHECK=1 —— CI 里没有 assets/runtime/*.tar.gz（故意不进 git），
+#     否则 preBuild 的 verifyRuntimeAssets 会先失败，掩盖真正的编译错误。
+#   - JDK 17（本工程 sourceCompatibility=17 / jvmTarget=17）
+#   - 日志 tee 到 compile.log 并作为 artifact 上传，失败时也能拿到完整错误
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "app/src/main/java/**"
+      - "app/build.gradle.kts"
+      - "gradle/**"
+      - ".github/workflows/kotlin-compile.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kotlin-compile-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compile:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Gradle 缓存
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: 补 SDK 组件（runner 镜像不一定带 35）
+        run: |
+          set -euo pipefail
+          SDK="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          echo "SDK=$SDK"
+          ls "$SDK/platforms" 2>/dev/null | tail -5 || true
+          if [ -x "$SDK/cmdline-tools/latest/bin/sdkmanager" ]; then
+            yes | "$SDK/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null 2>&1 || true
+            "$SDK/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0" >/dev/null 2>&1 || true
+          fi
+
+      - name: 编译 system flavor（唯一目的：暴露 Kotlin 错误）
+        env:
+          DSH_SKIP_ASSET_CHECK: "1"
+        run: |
+          set -uo pipefail
+          chmod +x gradlew
+          ./gradlew :app:compileSystemDebugKotlin \
+            --no-daemon --console=plain --stacktrace 2>&1 | tee compile.log
+          rc=${PIPESTATUS[0]}
+          echo "gradle exit=$rc"
+          echo "=== Kotlin 错误摘要（如果有）==="
+          grep -nE "^e: |error:|Unresolved reference|Type mismatch|Expecting|Overload resolution" compile.log | head -60 || true
+          exit "$rc"
+
+      - name: 上传编译日志
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: compile-log
+          path: compile.log
+          retention-days: 14
+          if-no-files-found: warn
