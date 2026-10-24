@@ -84,14 +84,25 @@ else
     tar -xzf "talloc-$TALLOC_VER.tar.gz" || die "解包 talloc 失败" 4
   fi
   cd "talloc-$TALLOC_VER" || die "进不去 talloc 目录"
-  # talloc 用 waf：--host 触发交叉，--disable-shared 只要静态库
-  ./configure --host=aarch64-linux-android \
-    --prefix="$PREFIX" \
-    --disable-shared --enable-static \
-    --disable-python --without-gettext \
-    CC="$CC" AR="$AR" RANLIB="$RANLIB" CFLAGS="$BASE_CFLAGS" 2>&1 | tail -20
-  make -j"$JOBS" 2>&1 | tail -20 || die "talloc 编译失败" 5
-  make install 2>&1 | tail -10 || die "talloc 安装失败" 5
+  # talloc 用 waf：选项在不同版本里不一样（实测 2.4.2 不认 --disable-shared），
+  # 所以先问 --help，只拼它支持的选项。
+  ./configure --help > waf-help.txt 2>&1 || true
+  OPTS=(--host=aarch64-linux-android --prefix="$PREFIX")
+  for o in --disable-python --without-gettext --disable-shared --enable-static; do
+    grep -q -- "$o" waf-help.txt && OPTS+=("$o")
+  done
+  say "   configure ${OPTS[*]}"
+  ./configure "${OPTS[@]}" CC="$CC" AR="$AR" RANLIB="$RANLIB" CFLAGS="$BASE_CFLAGS" 2>&1 | tail -15 \
+    || die "talloc configure 失败" 5
+  make -j"$JOBS" 2>&1 | tail -15 || die "talloc 编译失败" 5
+  make install 2>&1 | tail -8 || true      # install 失败不算错，下面用 find 兜底
+  LIB="$(find . -name 'libtalloc.a' | head -1)"
+  [ -n "$LIB" ] || die "找不到 libtalloc.a（talloc 构建没产出静态库）" 5
+  mkdir -p "$PREFIX/lib" "$PREFIX/include"
+  cp -f "$LIB" "$PREFIX/lib/libtalloc.a"
+  HDR="$(find . -name 'talloc.h' | head -1)"
+  [ -n "$HDR" ] && cp -f "$HDR" "$PREFIX/include/"
+  say "   ✓ libtalloc.a $(stat -c%s "$PREFIX/lib/libtalloc.a") B"
 fi
 
 # ── 2) libandroid-shmem（bionic 没有 SysV shm） ──────────────────────
@@ -105,9 +116,16 @@ else
     git clone --depth 1 "$SHMEM_REPO" 2>&1 | tail -3 || die "clone libandroid-shmem 失败" 3
   fi
   cd libandroid-shmem || die "进不去 libandroid-shmem"
-  "$CC" -O2 -fPIC -DBIONIC -c shm.c -o shm.o -I. 2>&1 | tail -10 || die "libandroid-shmem 编译失败" 5
+  # 源码文件名各版本不同（shm.c / shm_open.c / src/*.c），直接找
+  SHM_SRC="$(find . -maxdepth 2 -name '*.c' | head -1)"
+  [ -n "$SHM_SRC" ] || { ls -la; die "找不到 libandroid-shmem 的 .c 源文件" 5; }
+  say "   src: $SHM_SRC"
+  "$CC" -O2 -fPIC -DBIONIC -c "$SHM_SRC" -o shm.o \
+    -I. -I"$(dirname "$SHM_SRC")" -Iinclude 2>&1 | tail -10 \
+    || die "libandroid-shmem 编译失败" 5
+  mkdir -p "$PREFIX/lib" "$PREFIX/include"
   "$AR" rcs "$PREFIX/lib/libandroid-shmem.a" shm.o || die "打包 libandroid-shmem.a 失败" 5
-  cp shm.h "$PREFIX/include/" 2>/dev/null || true
+  find . -name '*.h' -exec cp -f {} "$PREFIX/include/" \; 2>/dev/null || true
 fi
 
 # ── 3) proot ─────────────────────────────────────────────────────────
