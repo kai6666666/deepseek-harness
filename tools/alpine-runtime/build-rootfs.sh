@@ -17,6 +17,7 @@
 #   ./build-rootfs.sh --alpine 3.23.0 --out ./out
 #   ./build-rootfs.sh --pkgs "bash nodejs~24 npm pnpm python3 py3-pip openssh ca-certificates tzdata"
 set -u
+ORIG_ARGS=("$@")                                    # 自动提权要原样回放参数
 HERE="$(cd "$(dirname "$0")" && pwd)"
 
 ALPINE_VER="3.23.0"
@@ -47,6 +48,17 @@ while [ $# -gt 0 ]; do
     *) printf 'unknown arg: %s\n' "$1" >&2; exit 2 ;;
   esac
 done
+
+# ── 提权：apk-tools 3.x 拒绝以非 root 建 apk 数据库（GitHub runner 是 runner 用户） ──
+#   DSH_ROOTFS_NO_SUDO=1 可禁用自动提权（自己用 --usermode / fakeroot 时）。
+if [ "$DRY" != "1" ] && [ "$(id -u)" != "0" ] && [ "${DSH_ROOTFS_NO_SUDO:-0}" != "1" ]; then
+  if command -v sudo >/dev/null 2>&1; then
+    printf ' ! 非 root：自动 sudo 重新执行（apk-tools 3.x 需要 root 建库）\n'
+    exec sudo -E bash "$0" "${ORIG_ARGS[@]}"
+  fi
+  printf '✗ apk-tools 3.x 需要 root（当前 uid=%s）。用 sudo 跑，或 DSH_ROOTFS_NO_SUDO=1 并自行 --usermode\n' "$(id -u)" >&2
+  exit 13
+fi
 
 BRANCH="v${ALPINE_VER%.*}"                          # 3.23.0 → v3.23
 ROOT="$WORK/rootfs"

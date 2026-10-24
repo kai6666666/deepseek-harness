@@ -64,6 +64,9 @@ jobs:
           fi
           echo "== build-rootfs.sh ${ARGS[*]}"
           bash tools/alpine-runtime/build-rootfs.sh "${ARGS[@]}"
+          # 脚本内部会 sudo 提权（apk-tools 3.x 要 root 建库）→ dist 归 root，
+          # 改回 runner，否则后续 artifact 上传可能读不到。
+          sudo chown -R "$(id -u):$(id -g)" dist
 
       - name: 产物自检（大小 / 结构 / 关键文件）
         run: |
