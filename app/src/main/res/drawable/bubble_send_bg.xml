@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  气泡里「发送」按钮的底：蓝色圆角。
+
+  蓝色取 #3B6FE0：与官方 Web GUI 的主色（dsw-alias-interactive-bg-primary 一族）
+  同色系，气泡看起来才像是 App 的一部分而不是外来物。
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="#3B6FE0" />
+    <corners android:radius="12dp" />
+</shape>

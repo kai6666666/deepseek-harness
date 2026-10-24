@@ -1,0 +1,18 @@
+# Android 沙箱 overlay：把 sandbox-local 的 runner 换成自带的 boo-sandbox-run
+#
+# 写法依据 docs/agents/sandbox.md：
+#   - provider 留了 runnerCommand 口子；非空时跳过平台探测，按 bwrap 方言拼参数
+#   - patch 是「整行替换 config」，不是合并 —— 所以必须把需要的 config 一并重述
+#   - runnerFailureSignatures 不能为空，否则整个 sandbox 服务注册失败，
+#     症状是新建会话直接报 waiting for ... workflowEngine
+#
+# 安装后由 apply-patches.mjs 写入 $DSH_HOME/sandbox.patch.yml
+
+- id: sandbox-local
+  config:
+    # 指向 App 私有目录里解出来的 runner（每次启动覆盖写，无需版本戳）
+    runnerCommand:
+      - "/data/data/com.dsh.android/files/boo-sandbox-run"
+    # runner 自己挂掉时的致命 stderr 前缀，与 boo-sandbox-run.c 的 fail-closed 输出同构
+    runnerFailureSignatures:
+      - "boo-sandbox-run: "

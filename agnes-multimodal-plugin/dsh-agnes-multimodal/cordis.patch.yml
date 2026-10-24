@@ -1,0 +1,13 @@
+# dsh-agnes-multimodal bundle patch — one loader entry mounting the plugin package.
+#
+# 融合包：单个 loader entry 同时挂载「多模态配置」设置页、generate_image 与
+# generate_video 两个模型工具，以及配套的会话内卡片 UI。
+#
+# 浏览器半由 dsh-client-modules 通过 package.json 的 dsh.client 声明 +
+# exports["./client"] 自动编入，无需在此声明。
+#
+# Manual mount: add the same row to the profile's cordis.patch.yml, or install
+# the package with `dsh plugin --profile <name> add dsh-agnes-multimodal`.
+- insert:
+    - id: agnes-multimodal
+      name: 'dsh-agnes-multimodal'

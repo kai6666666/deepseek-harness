@@ -1,0 +1,125 @@
+{
+  "url": "http://127.0.0.1:40119/",
+  "viewport": {
+    "w": 360,
+    "h": 764,
+    "dpr": 3
+  },
+  "dpr": 3,
+  "shots": [
+    {
+      "id": "hero",
+      "title": "空会话（Hero）",
+      "shot": "hero.png",
+      "bytes": 116363
+    },
+    {
+      "id": "settings",
+      "title": "设置面板",
+      "shot": "settings.png",
+      "bytes": 105663
+    },
+    {
+      "id": "settings-general",
+      "title": "设置 › 通用设置",
+      "shot": "settings-general.png",
+      "bytes": 173394
+    },
+    {
+      "id": "settings-group",
+      "title": "设置 › 交流群",
+      "shot": "settings-group.png",
+      "bytes": 471345
+    },
+    {
+      "id": "settings-plugins",
+      "title": "设置 › 内置插件",
+      "shot": "settings-plugins.png",
+      "bytes": 282741
+    },
+    {
+      "id": "settings-model",
+      "title": "设置 › 模型",
+      "shot": "settings-model.png",
+      "bytes": 100917
+    },
+    {
+      "id": "settings-preset",
+      "title": "设置 › Agent 预设",
+      "shot": "settings-preset.png",
+      "bytes": 312859
+    },
+    {
+      "id": "settings-priv",
+      "title": "设置 › 特权权限",
+      "shot": "settings-priv.png",
+      "bytes": 365310
+    },
+    {
+      "id": "settings-bubble",
+      "title": "设置 › 悬浮气泡",
+      "shot": "settings-bubble.png",
+      "bytes": 169219
+    },
+    {
+      "id": "plugins-panel",
+      "title": "插件面板",
+      "shot": "plugins-panel.png",
+      "bytes": 270417
+    },
+    {
+      "id": "model-picker",
+      "title": "模型选择器",
+      "shot": "model-picker.png",
+      "bytes": 119973
+    },
+    {
+      "id": "access-mode",
+      "title": "访问模式选择器",
+      "shot": "access-mode.png",
+      "bytes": 130559
+    },
+    {
+      "id": "preset-picker",
+      "title": "Agent 预设选择器",
+      "shot": "preset-picker.png",
+      "bytes": 347807
+    },
+    {
+      "id": "drawer",
+      "title": "会话抽屉（左侧栏展开）",
+      "shot": "drawer.png",
+      "bytes": 112257
+    },
+    {
+      "id": "right-sidebar",
+      "title": "右侧边栏",
+      "shot": "right-sidebar.png",
+      "bytes": 77001
+    },
+    {
+      "id": "workfiles",
+      "title": "右侧边栏 › 工作区文件",
+      "shot": "workfiles.png",
+      "bytes": 58654
+    },
+    {
+      "id": "terminal",
+      "title": "右侧边栏 › 终端",
+      "shot": "terminal.png",
+      "bytes": 49470
+    },
+    {
+      "id": "settings-style",
+      "title": "设置 › AI 回复风格",
+      "shot": "settings-style.png",
+      "bytes": 289758
+    },
+    {
+      "id": "settings-multimodal",
+      "title": "设置 › 多模态配置",
+      "shot": "settings-multimodal.png",
+      "bytes": 259267
+    }
+  ]
+}

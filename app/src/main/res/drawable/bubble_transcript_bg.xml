@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  会话转录区（消息列表）的底：比面板底略深一档的灰，把对话与面板边框分开。
+
+  取 #F7F8FA（与原「输出正文」那块同色）：面板底是纯白，转录区略灰能形成
+  「卡片里嵌了一块内容区」的层次，而不需要额外的描边。
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="#F7F8FA" />
+    <corners android:radius="12dp" />
+</shape>

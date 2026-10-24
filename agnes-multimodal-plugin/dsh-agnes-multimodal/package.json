@@ -1,0 +1,46 @@
+{
+  "name": "dsh-agnes-multimodal",
+  "version": "1.0.0",
+  "description": "Agnes AI 多模态融合插件：一个包同时提供「多模态配置」设置页（账号池，写入 $DSH_HOME/ag-multimodal.json）、generate_image 图片生成工具与 generate_video 视频生成工具，以及三者共用的一套会话内卡片 UI。融合自 dsh-agconfig + dsh-agimage + dsh-agvideo。",
+  "license": "MIT",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/index.js",
+    "lib/client.js",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "agnes",
+    "multimodal",
+    "image-generation",
+    "video-generation"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-renderer"
+      ],
+      "platform": "web",
+      "immediately": true
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "react": "^18.2.0"
+  }
+}

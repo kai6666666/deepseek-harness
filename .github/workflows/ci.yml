@@ -1,0 +1,157 @@
+name: 仓库卫生检查
+
+# 本工作流**不构建 APK** —— 构建需要约 135 MB 资产（engine.bin / node-runtime.bin /
+# bootstrap 等），它们不在仓库里（见 README「构建资产需要自备」）。
+# 这里只做不需要资产的静态检查，保证 PR 不会把密钥、凭据、大文件带进来。
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  secrets-guard:
+    name: 敏感文件与密钥扫描
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 禁止入库的文件必须未被跟踪
+        run: |
+          fail=0
+          # 这些文件本身就是敏感信息载体：密钥明文、签名私钥、本机配置。
+          for f in \
+            agnes-keys.properties \
+            agnes-keys-guide.md \
+            app/src/main/jni/keyinject-keys.h \
+            app/src/main/assets/keyinject.bin \
+            keystore.properties \
+            local.properties
+          do
+            if git ls-files --error-unmatch "$f" >/dev/null 2>&1; then
+              echo "::error file=$f::敏感文件被提交了，必须从索引移除并确认 .gitignore 覆盖"
+              fail=1
+            fi
+          done
+          if git ls-files | grep -E '\.(jks|keystore)$' | grep -q .; then
+            echo "::error::签名私钥（*.jks / *.keystore）被提交了"
+            fail=1
+          fi
+          if git ls-files | grep -E 'agnes-keys\.properties\.bak' | grep -q .; then
+            echo "::error::密钥清单备份文件被提交了"
+            fail=1
+          fi
+          [ "$fail" -eq 0 ] && echo "✅ 敏感文件均未被跟踪"
+          exit $fail
+
+      - name: 源码中不得出现真实 API 密钥
+        run: |
+          # 两类例外，都按前缀排除，避免把完整密钥在这个文件里再写一遍：
+          #
+          # 1. `sk-ANON…` 占位符 —— 设计的一部分，是 TLS 层注入前的位置标记。
+          #    它在代码注释、常量和文档示例里出现，必须放行。
+          # 2. `sk-2BsAq…` —— 维护者**有意公开**的多模态插件兜底密钥（国内站）。
+          #    它不是号池成员，也不会被替换成别的号；公开是刻意的决定。
+          #    若要改这一条，先确认该密钥已作废。
+          hits=$(grep -rInE 'sk-[A-Za-z0-9]{40,}' \
+                   --include='*.kt' --include='*.java' --include='*.c' --include='*.h' \
+                   --include='*.js' --include='*.mjs' --include='*.ts' --include='*.json' \
+                   . 2>/dev/null \
+                 | grep -vE 'sk-ANON[0-9]+' \
+                 | grep -vF 'sk-2BsAqJq1Orbc' \
+                 || true)
+          if [ -n "$hits" ]; then
+            echo "::error::发现疑似真实 API 密钥，请改用占位符 + 内置号池注入"
+            echo "$hits"
+            exit 1
+          fi
+          echo "✅ 未发现计划外的真实 API 密钥"
+
+      - name: 禁止提交超大文件
+        run: |
+          # 单文件上限 5 MB。构建资产走「自备」路线，不进仓库。
+          big=$(git ls-files -z | xargs -0 -r du -k 2>/dev/null | awk '$1 > 5120 {print $1" KB  "$2}')
+          if [ -n "$big" ]; then
+            echo "::error::存在超过 5 MB 的被跟踪文件"
+            echo "$big"
+            exit 1
+          fi
+          echo "✅ 无超大文件"
+
+  docs-check:
+    name: 文档结构与链接
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 必备文件与一级标题
+        run: |
+          fail=0
+          for f in README.md README.en.md CONTRIBUTING.md SECURITY.md \
+                   CODE_OF_CONDUCT.md CHANGELOG.md AGENTS.md; do
+            if [ ! -f "$f" ]; then
+              echo "::error::缺少 $f"
+              fail=1
+              continue
+            fi
+            if ! head -1 "$f" | grep -qE '^# '; then
+              echo "::error file=$f::首行必须是一级标题"
+              fail=1
+            fi
+          done
+          if [ ! -f LICENSE ]; then
+            echo "::error::缺少 LICENSE"
+            fail=1
+          fi
+          [ "$fail" -eq 0 ] && echo "✅ 必备文档齐全"
+          exit $fail
+
+      - name: 相对链接必须指向存在的文件
+        run: |
+          # 只校验仓库内的相对 .md 链接；跳过 http(s)、绝对路径、纯锚点。
+          # 用 python 做，避免 shell 子管道吞掉退出码。
+          python3 - <<'PY'
+          import re, subprocess, sys, os
+
+          # ⚠️ **必须用 `-z` + 按 NUL 切分。**
+          #
+          #   默认 `git ls-files` 会给非 ASCII 文件名**加引号并八进制转义**，
+          #   于是 `docs/guides/从零做….md` 变成 `"docs/guides/\344\273\216….md"`
+          #   （带引号、反斜杠），后面 `open()` 必然 No such file。
+          #   症状是：只要仓库里有中文文件名的 .md，这项检查就永远失败，
+          #   而报错信息看起来像「文档链接坏了」，实际与链接无关。
+          #
+          #   `-z` 输出 NUL 分隔的原始字节，中文文件名原样保留。
+          raw = subprocess.run(["git", "ls-files", "-z", "*.md"],
+                               capture_output=True, check=True).stdout
+          files = [f for f in raw.decode("utf-8", errors="surrogateescape").split("\0") if f]
+          link_re = re.compile(r'\]\(([^)\s]+?\.md)(#[^)]*)?\)')
+          broken = []
+
+          for md in files:
+              d = os.path.dirname(md)
+              try:
+                  text = open(md, encoding="utf-8", errors="replace").read()
+              except OSError as e:
+                  broken.append((md, f"<无法读取: {e}>"))
+                  continue
+              for m in link_re.finditer(text):
+                  link = m.group(1)
+                  if link.startswith(("http://", "https://", "/")):
+                      continue
+                  target = os.path.normpath(os.path.join(d, link))
+                  if not os.path.isfile(target):
+                      broken.append((md, link))
+
+          for md, link in broken:
+              print(f"::error file={md}::链接指向不存在的文件: {link}")
+
+          print(f"✅ 相对链接全部有效（检查 {len(files)} 个 md）" if not broken
+                else f"❌ {len(broken)} 个失效链接")
+          sys.exit(1 if broken else 0)
+          PY

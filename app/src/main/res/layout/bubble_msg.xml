@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  会话转录里的**一条**消息。由 FloatingBubble.renderTranscript() inflate，
+  再按 role 调整对齐与配色。
+
+  ⚠️ 为什么用「模板 + 代码改属性」而不是每条消息都在代码里 new TextView：
+     项目的既有风格是布局写 XML（见 bubble_window.xml / bubble_status.xml），
+     而且这条模板里有 3 个层级（行 → 头部 → 正文），纯代码构造会变成一坨
+     难读的 addView 链。
+
+  ⚠️ 左右对齐由**行容器的 gravity** 决定，不是靠 margin：用户消息靠右、助手靠左，
+     两者共用同一个模板，只有 gravity 与背景不同（见 renderTranscript）。
+
+  ⚠️ 正文 `maxLines` 不设上限：这里就是要看**完整**内容。行数多靠外层
+     ScrollView 滚，不靠截断 —— 截断正是本轮要修掉的问题。
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginBottom="6dp"
+    android:orientation="vertical">
+
+    <!-- 角色标签 + 运行中标记（工具调用、错误会显示；用户消息不显示） -->
+    <TextView
+        android:id="@+id/msgRole"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="2dp"
+        android:ellipsize="end"
+        android:maxLines="1"
+        android:textColor="#8A9099"
+        android:textSize="10sp"
+        android:visibility="gone" />
+
+    <!-- 消息本体 -->
+    <TextView
+        android:id="@+id/msgBody"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:lineSpacingExtra="2dp"
+        android:paddingStart="10dp"
+        android:paddingTop="7dp"
+        android:paddingEnd="10dp"
+        android:paddingBottom="7dp"
+        android:textColor="#1A1D21"
+        android:textIsSelectable="true"
+        android:textSize="12.5sp" />
+</LinearLayout>

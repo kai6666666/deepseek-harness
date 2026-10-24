@@ -1,0 +1,15 @@
+{
+  "name": "dsh-android-statusbar",
+  "version": "1.0.0",
+  "description": "DSH Android 客户端的系统栏配色工具：把「改状态栏 / 导航栏的颜色」暴露成一个独立工具，让模型像改自己的 web 界面一样改这两条系统栏。",
+  "type": "module",
+  "main": "./lib/index.js",
+  "exports": {
+    ".": {
+      "default": "./lib/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "license": "MIT",
+  "private": true
+}

@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 🔒 安全漏洞
+    url: https://github.com/pht88888888/DSHAPP/security/advisories/new
+    about: 请勿用公开 Issue 报告安全漏洞，走 Security Advisories。
+  - name: 📖 开发文档
+    url: https://github.com/pht88888888/DSHAPP/blob/main/docs/agents/README.md
+    about: 改代码前先查这里 —— 35 篇分册，按「你要改什么」索引。
+  - name: 💬 使用问题 / 讨论
+    url: https://github.com/pht88888888/DSHAPP/discussions
+    about: 不确定是不是 bug、想问问怎么用，来这里。

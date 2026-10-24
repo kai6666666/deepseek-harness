@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  缩放手柄：底边一条横线 + 右端一个小方块（桌面端窗口 resize grip 的视觉语言）。
+
+  ⚠️ 图形只画在右端：手柄 View 是整条 28dp 高，但用户需要看到的只是"右下角
+     可以拖"。整条都画线会让人以为那是分隔线而不是把手。
+
+  ⚠️ 用 layer-list 的两层（线 + 方块）而不是一张 PNG：本项目所有气泡资源都是
+     矢量/XML，加 PNG 会带来各密度适配的额外负担，而这两笔形状用 XML 一行就够。
+-->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- 底边细线：暗示这里是面板的边界，也是可拖的区域 -->
+    <item
+        android:height="1dp"
+        android:gravity="bottom"
+        android:start="6dp"
+        android:end="34dp"
+        android:bottom="6dp">
+        <shape android:shape="rectangle">
+            <solid android:color="#1F000000" />
+        </shape>
+    </item>
+
+    <!-- 右端的把手：一个小圆角方块 -->
+    <item
+        android:width="10dp"
+        android:height="10dp"
+        android:gravity="bottom|end"
+        android:end="10dp"
+        android:bottom="4dp">
+        <shape android:shape="rectangle">
+            <solid android:color="#B9BFC7" />
+            <corners android:radius="3dp" />
+        </shape>
+    </item>
+</layer-list>

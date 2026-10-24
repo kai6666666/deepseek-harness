@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  悬浮气泡（收起态）的圆形底。
+
+  ⚠️ 刻意不做成纯色圆：加一圈极淡的描边，白色气泡落在浅色页面上（比如微信、
+     Chrome）时才有边界，否则会"融进"背景看不见。描边透明度取 0x14 ≈ 8%，
+     在深浅两种底色上都够用。
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="oval">
+    <solid android:color="#FFFFFF" />
+    <stroke
+        android:width="1dp"
+        android:color="#14000000" />
+</shape>

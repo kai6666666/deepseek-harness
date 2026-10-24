@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  贴边态的薄片底：一条窄圆角竖条。
+
+  ⚠️ 尺寸（宽/高/圆角）由代码按球的尺寸与形状算出来（见 FloatingBubble 的
+     `applyAppearance`），XML 里这几项只是占位默认值 —— 因为薄片的高度必须
+     跟随球，而球的尺寸是插件可配的，写死在 XML 里就会分成两处。
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="#F2FFFFFF" />
+    <corners android:radius="3dp" />
+    <stroke
+        android:width="1dp"
+        android:color="#26000000" />
+</shape>

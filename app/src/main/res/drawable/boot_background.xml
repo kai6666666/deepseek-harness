@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  启动层背景：深色径向渐变。
+
+  为什么用径向而不是纯色：纯色大屏在 OLED 上是一整块死黑，头像会显得"贴"在
+  上面；中心略亮能让视线自然收到中间。渐变中心稍微偏上（0.5, 0.42）——
+  内容块的重心本来就在视觉中心偏上，同心的话下方会显得空。
+
+  颜色取自图标的深蓝系（#122B76）压暗后的夜色，与 #0F1115 同族，
+  所以从启动层淡出到 WebView 时不会出现色相跳变。
+-->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="rectangle">
+            <gradient
+                android:type="radial"
+                android:centerX="0.5"
+                android:centerY="0.42"
+                android:gradientRadius="78%p"
+                android:startColor="#16203A"
+                android:centerColor="#111726"
+                android:endColor="#0B0E18" />
+        </shape>
+    </item>
+</layer-list>

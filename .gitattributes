@@ -1,0 +1,29 @@
+# 默认：让 Git 自动判断文本/二进制，并做换行符归一化
+* text=auto eol=lf
+
+# Windows 专用脚本必须保持 CRLF，否则 cmd.exe 无法执行
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+gradlew.bat text eol=crlf
+
+# Unix 脚本保持 LF
+gradlew text eol=lf
+*.sh text eol=lf
+
+# 二进制资产：不做换行转换，也不在 diff 里展示
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.gif binary
+*.ico binary
+*.zip binary
+*.bin binary
+*.jks binary
+*.keystore binary
+*.so binary
+
+# 不需要在 GitHub 上统计语言占比 / 折叠展示
+gradle/wrapper/gradle-wrapper.jar binary
+tools/ui-map-real-frontend.json linguist-generated=true

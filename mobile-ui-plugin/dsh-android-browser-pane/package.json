@@ -1,0 +1,24 @@
+{
+  "name": "dsh-android-browser-pane",
+  "version": "1.0.0",
+  "description": "DSH Android 客户端的右侧栏「AI 浏览器」入口：在官方右侧边栏里注册一项，点开即打开原生 WebView 浏览器。",
+  "type": "module",
+  "main": "./lib/index.js",
+  "exports": {
+    ".": {
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "default": "./lib/client.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "client": {
+      "inject": [],
+      "platform": "web"
+    }
+  },
+  "license": "MIT",
+  "private": true
+}

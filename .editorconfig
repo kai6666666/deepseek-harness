@@ -1,0 +1,37 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+# Kotlin / Java / C
+[*.{kt,kts,java,c,h}]
+indent_size = 4
+
+# Gradle（Kotlin DSL）
+[*.{gradle,gradle.kts}]
+indent_size = 4
+
+# JS / TS / JSON / YAML
+[*.{js,mjs,cjs,ts,tsx,json,yml,yaml}]
+indent_size = 2
+
+# Markdown：尾随空格在 Markdown 里是硬换行，不能裁
+[*.md]
+trim_trailing_whitespace = false
+
+# PowerShell：Windows 上通常是 CRLF
+[*.ps1]
+end_of_line = crlf
+
+# Windows 批处理必须是 CRLF
+[*.{bat,cmd}]
+end_of_line = crlf
+
+# Shell 脚本
+[*.sh]
+indent_size = 2

@@ -1,0 +1,184 @@
+{
+  "url": "http://127.0.0.1:45781/",
+  "viewport": {
+    "w": 360,
+    "h": 764,
+    "dpr": 3
+  },
+  "dpr": 3,
+  "screens": [
+    {
+      "id": "hero",
+      "title": "空会话（Hero）",
+      "ok": true,
+      "html": "hero.html",
+      "htmlBytes": 34561,
+      "extraCss": null
+    },
+    {
+      "id": "settings",
+      "title": "设置面板",
+      "ok": true,
+      "html": "settings.html",
+      "htmlBytes": 58528,
+      "extraCss": null
+    },
+    {
+      "id": "settings-general",
+      "title": "设置 › 通用设置",
+      "ok": true,
+      "html": "settings-general.html",
+      "htmlBytes": 58632,
+      "extraCss": null
+    },
+    {
+      "id": "settings-group",
+      "title": "设置 › 交流群",
+      "ok": true,
+      "html": "settings-group.html",
+      "htmlBytes": 134203,
+      "extraCss": null
+    },
+    {
+      "id": "settings-plugins",
+      "title": "设置 › 内置插件",
+      "ok": true,
+      "html": "settings-plugins.html",
+      "htmlBytes": 79780,
+      "extraCss": null
+    },
+    {
+      "id": "settings-model",
+      "title": "设置 › 模型",
+      "ok": true,
+      "html": "settings-model.html",
+      "htmlBytes": 53025,
+      "extraCss": null
+    },
+    {
+      "id": "settings-preset",
+      "title": "设置 › Agent 预设",
+      "ok": true,
+      "html": "settings-preset.html",
+      "htmlBytes": 60196,
+      "extraCss": null
+    },
+    {
+      "id": "settings-priv",
+      "title": "设置 › 特权权限",
+      "ok": true,
+      "html": "settings-priv.html",
+      "htmlBytes": 63279,
+      "extraCss": null
+    },
+    {
+      "id": "settings-bubble",
+      "title": "设置 › 悬浮气泡",
+      "ok": true,
+      "html": "settings-bubble.html",
+      "htmlBytes": 55808,
+      "extraCss": null
+    },
+    {
+      "id": "plugins-panel",
+      "title": "插件面板",
+      "ok": true,
+      "html": "plugins-panel.html",
+      "htmlBytes": 32263,
+      "extraCss": null
+    },
+    {
+      "id": "model-picker",
+      "title": "模型选择器",
+      "ok": true,
+      "html": "model-picker.html",
+      "htmlBytes": 35901,
+      "extraCss": null
+    },
+    {
+      "id": "access-mode",
+      "title": "访问模式选择器",
+      "ok": true,
+      "html": "access-mode.html",
+      "htmlBytes": 38798,
+      "extraCss": null
+    },
+    {
+      "id": "preset-picker",
+      "title": "Agent 预设选择器",
+      "ok": true,
+      "html": "preset-picker.html",
+      "htmlBytes": 36962,
+      "extraCss": null
+    },
+    {
+      "id": "drawer",
+      "title": "会话抽屉（左侧栏展开）",
+      "ok": true,
+      "html": "drawer.html",
+      "htmlBytes": 60776,
+      "extraCss": null
+    },
+    {
+      "id": "right-sidebar",
+      "title": "右侧边栏",
+      "ok": true,
+      "html": "right-sidebar.html",
+      "htmlBytes": 37958,
+      "extraCss": null
+    },
+    {
+      "id": "workfiles",
+      "title": "右侧边栏 › 工作区文件",
+      "ok": true,
+      "html": "workfiles.html",
+      "htmlBytes": 38801,
+      "extraCss": null
+    },
+    {
+      "id": "terminal",
+      "title": "右侧边栏 › 终端",
+      "ok": true,
+      "html": "terminal.html",
+      "htmlBytes": 42047,
+      "extraCss": "extra-terminal.css"
+    },
+    {
+      "id": "settings-style",
+      "title": "设置 › AI 回复风格",
+      "ok": true,
+      "html": "settings-style.html",
+      "htmlBytes": 54339,
+      "extraCss": null
+    },
+    {
+      "id": "settings-multimodal",
+      "title": "设置 › 多模态配置",
+      "ok": true,
+      "html": "settings-multimodal.html",
+      "htmlBytes": 52780,
+      "extraCss": null
+    }
+  ],
+  "titles": {
+    "hero": "空会话（Hero）",
+    "settings": "设置面板",
+    "settings-general": "设置 › 通用设置",
+    "settings-group": "设置 › 交流群",
+    "settings-plugins": "设置 › 内置插件",
+    "settings-model": "设置 › 模型",
+    "settings-preset": "设置 › Agent 预设",
+    "settings-priv": "设置 › 特权权限",
+    "settings-bubble": "设置 › 悬浮气泡",
+    "plugins-panel": "插件面板",
+    "model-picker": "模型选择器",
+    "access-mode": "访问模式选择器",
+    "preset-picker": "Agent 预设选择器",
+    "drawer": "会话抽屉（左侧栏展开）",
+    "right-sidebar": "右侧边栏",
+    "workfiles": "右侧边栏 › 工作区文件",
+    "terminal": "右侧边栏 › 终端",
+    "settings-style": "设置 › AI 回复风格",
+    "settings-multimodal": "设置 › 多模态配置"
+  }
+}

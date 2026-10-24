@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DSH Android · 布局比例方案预览</title>
+<style>
+:root{
+  --bg:#0d0f12; --panel:#14171c; --line:#242931;
+  --fg:#e8ebf0; --dim:#8b95a3; --mute:#5d6674;
+  --blue:#3b76f0; --warn:#e5484d; --ok:#3aa76d; --amber:#d99b1f;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{-webkit-font-smoothing:antialiased}
+body{
+  background:var(--bg);color:var(--fg);
+  font:14px/1.65 system-ui,-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  padding:60px 44px 130px;
+}
+
+/* ══ 页头 ══ */
+.head{max-width:1200px;margin:0 auto 68px}
+.kicker{font:600 10.5px/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--mute);margin-bottom:16px}
+h1{font-size:31px;line-height:1.22;font-weight:650;letter-spacing:-.015em}
+h1 span{color:var(--dim);font-weight:400}
+.lede{margin-top:16px;max-width:660px;color:var(--dim);font-size:14.5px}
+.lede b{color:var(--fg);font-weight:600}
+.facts{display:flex;gap:34px;margin-top:30px;padding-top:24px;border-top:1px solid var(--line)}
+.fact{display:flex;flex-direction:column;gap:3px}
+.fact .k{font:500 10.5px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--mute)}
+.fact .v{font:600 19px/1.2 var(--mono);letter-spacing:-.02em}
+.fact .v small{font-size:11px;font-weight:400;color:var(--dim);letter-spacing:0}
+
+/* ══ 区块 ══ */
+section{max-width:1200px;margin:0 auto 84px}
+.sec-head{display:flex;align-items:baseline;gap:16px;margin-bottom:8px}
+.sec-no{font:600 11px/1 var(--mono);color:var(--mute);letter-spacing:.1em}
+h2{font-size:19px;font-weight:620;letter-spacing:-.01em}
+.sec-note{margin:0 0 34px 34px;color:var(--dim);font-size:13.5px;max-width:760px}
+
+/* ══ 设备网格 ══ */
+.grid{display:flex;flex-wrap:wrap;gap:44px 40px;align-items:flex-start}
+figure{display:flex;flex-direction:column;gap:0}
+
+/* 屏幕框：内部用真实 CSS px，外层 scale */
+.frame{
+  position:relative;
+  width:calc(var(--w) * var(--s) * 1px);
+  height:calc(var(--h) * var(--s) * 1px);
+  border-radius:11px;
+  background:#fff;
+  box-shadow:0 0 0 1px #2c323b, 0 18px 40px -14px rgba(0,0,0,.75);
+  transition:transform .3s cubic-bezier(.22,1,.36,1), box-shadow .3s;
+}
+figure:hover .frame{transform:translateY(-4px);box-shadow:0 0 0 1px #3a424e,0 26px 52px -16px rgba(0,0,0,.85)}
+.sc{
+  position:absolute;top:0;left:0;
+  width:calc(var(--w) * 1px);
+  height:calc(var(--h) * 1px);
+  transform:scale(var(--s));
+  transform-origin:top left;
+  border-radius:calc(11px / var(--s));
+  overflow:hidden;
+  display:flex;flex-direction:column;
+  background:#fff;color:#1a1d21;
+  font-size:13px;
+}
+
+/* ══ 屏幕内部零件（真实 px，会被整体缩放）══ */
+.sb{flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;padding:0 14px;font-size:12.5px;font-weight:600;color:#15181c;letter-spacing:.01em}
+.sb .r{display:flex;align-items:center;gap:7px;font-size:11px;font-weight:600;color:#2a2f36}
+.sb .ic{width:11px;height:11px;border-radius:2px;background:#c3c9d2}
+.hd{flex:0 0 auto;display:flex;align-items:center;gap:10px;padding:0 12px;border-bottom:1px solid #eceef1}
+.hd .burger{width:26px;height:26px;display:grid;place-items:center;flex:0 0 auto}
+.hd .burger i{display:block;width:15px;height:1.8px;background:#20242a;border-radius:1px;position:relative}
+.hd .burger i::before,.hd .burger i::after{content:"";position:absolute;left:0;width:15px;height:1.8px;background:#20242a;border-radius:1px}
+.hd .burger i::before{top:-5px}
+.hd .burger i::after{top:5px}
+.hd .tt{flex:1 1 auto;min-width:0;text-align:center}
+.hd .tt .t1{font-size:14px;font-weight:600;color:#14171b;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hd .tt .t2{font-size:11px;color:#9aa1ab;line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hd .act{display:flex;align-items:center;gap:4px;flex:0 0 auto;color:#8d949e;font-size:14px}
+.hd .act .dot3{letter-spacing:1px;font-weight:700;line-height:1}
+.hd .act .split{width:14px;height:14px;border:1.5px solid #b8bfc9;border-radius:2px;position:relative}
+.hd .act .split::after{content:"";position:absolute;left:50%;top:0;bottom:0;width:1.5px;background:#b8bfc9;transform:translateX(-50%)}
+
+.bd{flex:1 1 auto;min-height:0;padding:0 16px;overflow:hidden;position:relative;background:#fff}
+.bd .tool{display:flex;align-items:center;gap:8px;padding:13px 0 12px;color:#9ba2ac;font-size:13.5px}
+.bd .tool .ico{width:13px;height:13px;border-radius:3px;border:1.5px solid #c3c9d2;flex:0 0 auto}
+.bd .think{display:flex;align-items:center;gap:8px;padding:10px 0;border-top:1px solid #f0f2f4;color:#3b76f0;font-size:13.5px;font-weight:500}
+.bd .think .arr{width:13px;height:13px;flex:0 0 auto;border:1.5px solid #3b76f0;border-radius:2px;transform:rotate(-45deg);border-right:0;border-bottom:0}
+.bd .fade{position:absolute;left:0;right:0;bottom:0;height:34px;background:linear-gradient(#fff0,#fff)}
+
+.cp{flex:0 0 auto;padding:0 12px}
+.cp .card{border:1px solid #e3e6ea;border-radius:16px;background:#fff;box-shadow:0 2px 10px -4px rgba(16,24,40,.1);padding:10px 12px}
+.cp .ph{color:#a7aeb8;font-size:13.5px;line-height:1.45;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cp .bar{display:flex;align-items:center;gap:8px;margin-top:9px}
+.cp .plus{width:26px;height:26px;border-radius:50%;background:#f2f4f6;display:grid;place-items:center;color:#4b5563;font-size:15px;font-weight:400;flex:0 0 auto;line-height:1}
+.cp .perm{display:flex;align-items:center;gap:4px;color:#4b5563;font-size:12.5px;flex:0 0 auto}
+.cp .perm .sh{width:11px;height:11px;border:1.5px solid #9aa1ab;border-radius:50% 50% 3px 3px}
+.cp .grow{flex:1 1 auto}
+.cp .model{color:#8d949e;font-size:12.5px;white-space:nowrap;flex:0 0 auto}
+.cp .send{width:34px;height:34px;border-radius:50%;background:#3b76f0;flex:0 0 auto;display:grid;place-items:center}
+.cp .send i{width:10px;height:10px;border-radius:2px;background:#fff}
+.stats{flex:0 0 auto;display:flex;align-items:center;justify-content:center;gap:16px;color:#9aa1ab;font-size:11.5px;padding:0 12px}
+.stats span{display:flex;align-items:center;gap:4px;white-space:nowrap}
+.stats .d{width:9px;height:9px;border-radius:50%;border:1.5px solid #c3c9d2}
+.nv{flex:0 0 auto;display:grid;place-items:center;background:#fff}
+.nv i{display:block;width:34%;height:3px;border-radius:2px;background:#c9cfd6}
+
+/* 官方布局（方案 A）专用：折叠图标条侧栏 */
+.sc.official{flex-direction:row}
+.sc.official .rail{flex:0 0 auto;background:#fafbfc;border-right:1px solid #eceef1;display:flex;flex-direction:column;align-items:center;padding-top:10px;gap:14px}
+.sc.official .rail .logo{width:22px;height:22px;border-radius:6px;background:#e8ebef}
+.sc.official .rail .ri{width:18px;height:18px;border-radius:5px;background:#e2e6ea}
+.sc.official .rail .ri.on{background:#c9d6f5}
+.sc.official .main{flex:1 1 auto;min-width:0;display:flex;flex-direction:column}
+.sc.official .ohd{flex:0 0 auto;display:flex;align-items:center;gap:10px;padding:0 16px;border-bottom:1px solid #eceef1}
+.sc.official .ohd .t1{font-size:13.5px;font-weight:600;color:#14171b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sc.official .ohd .t2{font-size:11px;color:#9aa1ab}
+.sc.official .obd{flex:1 1 auto;min-height:0;padding:12px 18px;overflow:hidden}
+.sc.official .obd .ln{height:9px;border-radius:4px;background:#f0f2f5;margin-bottom:9px}
+.sc.official .obd .ln.w1{width:62%}
+.sc.official .obd .ln.w2{width:88%}
+.sc.official .obd .ln.w3{width:74%}
+.sc.official .obd .ln.w4{width:41%}
+.sc.official .ocp{flex:0 0 auto;padding:8px 16px 10px}
+.sc.official .ocp .ocard{border:1px solid #e3e6ea;border-radius:12px;padding:9px 12px;display:flex;align-items:center;gap:10px}
+.sc.official .ocp .ph{color:#a7aeb8;font-size:13px;flex:1 1 auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sc.official .ocp .send{width:28px;height:28px;border-radius:50%;background:#3b76f0;display:grid;place-items:center;flex:0 0 auto}
+.sc.official .ocp .send i{width:9px;height:9px;border-radius:2px;background:#fff}
+
+/* ══ 说明文字 ══ */
+figcaption{margin-top:16px;width:calc(var(--w) * var(--s) * 1px);min-width:240px}
+.cap-top{display:flex;align-items:center;gap:9px;margin-bottom:5px}
+.cap-name{font-size:13.5px;font-weight:600;letter-spacing:-.005em}
+.tag{font:600 9.5px/1 var(--mono);letter-spacing:.09em;text-transform:uppercase;padding:4px 6px;border-radius:4px;white-space:nowrap}
+.tag.now{background:#2a2f38;color:#98a2b0}
+.tag.bad{background:rgba(229,72,77,.16);color:#f2777a}
+.tag.ok{background:rgba(58,167,109,.16);color:#5cc48d}
+.tag.try{background:rgba(217,155,31,.16);color:#e3b34f}
+.cap-dim{font:500 11.5px/1.5 var(--mono);color:var(--mute);letter-spacing:.01em}
+
+/* 占比条 */
+.stack{display:flex;height:7px;border-radius:4px;overflow:hidden;margin-top:12px;background:#1b1f25;gap:1px}
+.stack i{display:block;height:100%}
+.stack .s-sys{background:#3a424d}
+.stack .s-hd{background:#5b6470}
+.stack .s-cp{background:#7d6a4e}
+.stack .s-ct{background:var(--blue)}
+.legend{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:9px;font:500 11px/1.5 var(--mono);color:var(--mute)}
+.legend b{color:#aab3c0;font-weight:600}
+.verdict{margin-top:10px;font-size:12.5px;line-height:1.6;color:var(--dim)}
+.verdict b{color:var(--fg);font-weight:600}
+
+/* ══ 结论块 ══ */
+.callout{max-width:1200px;margin:0 auto;padding:26px 28px;border:1px solid var(--line);border-radius:12px;background:var(--panel)}
+.callout h3{font-size:15px;font-weight:620;margin-bottom:14px}
+.callout ol{margin-left:18px;display:flex;flex-direction:column;gap:9px;color:var(--dim);font-size:13.5px}
+.callout ol b{color:var(--fg);font-weight:600}
+.callout .fine{margin-top:18px;padding-top:16px;border-top:1px solid var(--line);font-size:12.5px;color:var(--mute)}
+
+/* 淡入 */
+@media (prefers-reduced-motion:no-preference){
+  figure{animation:rise .5s cubic-bezier(.22,1,.36,1) both}
+  @keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+  figure:nth-child(1){animation-delay:.02s}
+  figure:nth-child(2){animation-delay:.08s}
+  figure:nth-child(3){animation-delay:.14s}
+  figure:nth-child(4){animation-delay:.2s}
+  figure:nth-child(5){animation-delay:.26s}
+}
+</style>
+</head>
+<body>
+
+<div class="head">
+  <div class="kicker">DSH Android · Layout Audit</div>
+  <h1>不同尺寸比例下的界面效果<br><span>现状 vs 三个候选方案</span></h1>
+  <p class="lede">
+    按<b>真实 CSS 像素</b>绘制，非示意图。判定依据是本机实测：
+    1080×2400 物理 ÷ density 3 = 竖屏 360×792，横屏 <b>792×360</b>。
+    每个屏幕下方的堆叠条是垂直空间的真实分配。
+  </p>
+  <div class="facts">
+    <div class="fact"><span class="k">手机竖屏</span><span class="v">360 × 792 <small>比 0.45</small></span></div>
+    <div class="fact"><span class="k">手机横屏</span><span class="v">792 × 360 <small>比 2.20</small></span></div>
+    <div class="fact"><span class="k">现状判据</span><span class="v">innerWidth &lt; 1024</span></div>
+    <div class="fact"><span class="k">横屏内容占比</span><span class="v" style="color:#e5484d">30%</span></div>
+  </div>
+</div>
+
+<!-- ══════════ 1. 现状 ══════════ -->
+<section>
+  <div class="sec-head"><span class="sec-no">01</span><h2>现状：只看宽度，横屏被误判</h2></div>
+  <p class="sec-note">
+    当前判定是 <code style="font:500 12.5px var(--mono);color:#aab3c0">innerWidth &lt; 1024 &amp;&amp; !鼠标设备</code>。
+    手机横屏 792 仍小于 1024，于是套上了为竖屏设计的手机 UI —— 而这套 UI 的
+    header 与 composer 都是按「垂直空间充裕」的前提定高的，横屏后它们不吃这一套。
+  </p>
+
+  <div class="grid">
+
+    <!-- 手机竖屏 -->
+    <figure>
+      <div class="frame" style="--w:360;--h:792;--s:.44">
+        <div class="sc">
+          <div class="sb" style="height:30px"><span>17:50</span><span class="r"><i class="ic"></i><i class="ic"></i>28%</span></div>
+          <div class="hd" style="height:55px">
+            <div class="burger"><i></i></div>
+            <div class="tt"><div class="t1">询问操作浏览器的能力</div><div class="t2">标准模式 · 4 个后台任务</div></div>
+            <div class="act"><span class="dot3">…</span><span class="split"></span></div>
+          </div>
+          <div class="bd">
+            <div class="tool"><i class="ico"></i>准备运行命令</div>
+            <div class="think"><i class="arr"></i>深度求索中，用时 10 分 3 秒…</div>
+            <div class="tool" style="border-top:1px solid #f0f2f4"><i class="ico"></i>读取工作区文件</div>
+            <div class="think" style="color:#9aa1ab"><i class="arr" style="border-color:#c3c9d2"></i>已完成，用时 2 秒</div>
+            <div class="fade"></div>
+          </div>
+          <div class="cp" style="padding-bottom:0">
+            <div class="card">
+              <div class="ph">发消息或创建任务，/ 调用指令，@ 文件或对话</div>
+              <div class="bar">
+                <div class="plus">+</div>
+                <div class="perm"><i class="sh"></i>完全权限</div>
+                <div class="grow"></div>
+                <div class="model">deepseek-v4.1-flash</div>
+                <div class="send"><i></i></div>
+              </div>
+            </div>
+          </div>
+          <div class="stats" style="height:15px"><span><i class="d"></i>210 tok/s</span><span><i class="d"></i>缓存命中 92%</span><span><i class="d"></i>54%</span></div>
+          <div class="nv" style="height:20px"><i></i></div>
+        </div>
+      </div>
+      <figcaption>
+        <div class="cap-top"><span class="cap-name">手机竖屏</span><span class="tag ok">正确</span></div>
+        <div class="cap-dim">360 × 792 · 内容 542px（69%）</div>
+        <div class="stack">
+          <i class="s-sys" style="flex:50"></i><i class="s-hd" style="flex:55"></i>
+          <i class="s-ct" style="flex:542"></i><i class="s-cp" style="flex:145"></i>
+        </div>
+        <div class="legend"><span><b>内容</b> 542</span><span>header 55</span><span>composer 145</span><span>系统栏 50</span></div>
+        <p class="verdict">这套 UI 就是为它设计的，<b>保持现状</b>。</p>
+      </figcaption>
+    </figure>
+
+    <!-- 手机横屏（问题） -->
+    <figure>
+      <div class="frame" style="--w:792;--h:360;--s:.44">
+        <div class="sc">
+          <div class="sb" style="height:29px"><span>17:50</span><span class="r"><i class="ic"></i><i class="ic"></i>28%</span></div>
+          <div class="hd" style="height:54px">
+            <div class="burger"><i></i></div>
+            <div class="tt"><div class="t1">询问操作浏览器的能力</div><div class="t2">标准模式 · 4 个后台任务</div></div>
+            <div class="act"><span class="dot3">…</span><span class="split"></span></div>
+          </div>
+          <div class="bd">
+            <div class="tool"><i class="ico"></i>准备运行命令</div>
+            <div class="think"><i class="arr"></i>深度求索中，用时 10 分 3 秒…</div>
+            <div class="fade"></div>
+          </div>
+          <div class="cp" style="padding-bottom:0">
+            <div class="card">
+              <div class="ph">发消息或创建任务，/ 调用指令，@ 文件或对话</div>
+              <div class="bar">
+                <div class="plus">+</div>
+                <div class="perm"><i class="sh"></i>完全权限</div>
+                <div class="grow"></div>
+                <div class="model">deepseek-v4.1-flash</div>
+                <div class="send"><i></i></div>
+              </div>
+            </div>
+          </div>
+          <div class="stats" style="height:19px"><span><i class="d"></i>210 tok/s</span><span><i class="d"></i>缓存命中 92%</span><span><i class="d"></i>54%</span></div>
+          <div class="nv" style="height:48px"><i></i></div>
+        </div>
+      </div>
+      <figcaption>
+        <div class="cap-top"><span class="cap-name">手机横屏</span><span class="tag bad">问题</span></div>
+        <div class="cap-dim">792 × 360 · 内容 <b style="color:#f2777a">109px（30%）</b></div>
+        <div class="stack">
+          <i class="s-sys" style="flex:77"></i><i class="s-hd" style="flex:54"></i>
+          <i class="s-ct" style="flex:109"></i><i class="s-cp" style="flex:120"></i>
+        </div>
+        <div class="legend"><span style="color:#f2777a"><b>内容</b> 109</span><span>header 54</span><span>composer 120</span><span>系统栏 77</span></div>
+        <p class="verdict">两行标题 + 三行 composer + 手势条，<b>固定开销吃掉 70%</b>。内容区只够放两行。</p>
+      </figcaption>
+    </figure>
+
+    <!-- 平板竖屏 8寸 -->
+    <figure>
+      <div class="frame" style="--w:800;--h:1280;--s:.30">
+        <div class="sc">
+          <div class="sb" style="height:28px"><span>17:50</span><span class="r"><i class="ic"></i><i class="ic"></i>28%</span></div>
+          <div class="hd" style="height:55px">
+            <div class="burger"><i></i></div>
+            <div class="tt"><div class="t1">询问操作浏览器的能力</div><div class="t2">标准模式 · 4 个后台任务</div></div>
+            <div class="act"><span class="dot3">…</span><span class="split"></span></div>
+          </div>
+          <div class="bd">
+            <div class="tool"><i class="ico"></i>准备运行命令</div>
+            <div class="think"><i class="arr"></i>深度求索中，用时 10 分 3 秒…</div>
+            <div class="tool" style="border-top:1px solid #f0f2f4"><i class="ico"></i>读取工作区文件</div>
+            <div class="think" style="color:#9aa1ab"><i class="arr" style="border-color:#c3c9d2"></i>已完成，用时 2 秒</div>
+            <div class="tool" style="border-top:1px solid #f0f2f4"><i class="ico"></i>执行 shell 命令</div>
+            <div class="fade"></div>
+          </div>
+          <div class="cp" style="padding-bottom:0">
+            <div class="card">
+              <div class="ph">发消息或创建任务，/ 调用指令，@ 文件或对话</div>
+              <div class="bar">
+                <div class="plus">+</div>
+                <div class="perm"><i class="sh"></i>完全权限</div>
+                <div class="grow"></div>
+                <div class="model">deepseek-v4.1-flash</div>
+                <div class="send"><i></i></div>
+              </div>
+            </div>
+          </div>
+          <div class="stats" style="height:15px"><span><i class="d"></i>210 tok/s</span><span><i class="d"></i>缓存命中 92%</span><span><i class="d"></i>54%</span></div>
+          <div class="nv" style="height:24px"><i></i></div>
+        </div>
+      </div>
+      <figcaption>
+        <div class="cap-top"><span class="cap-name">平板竖屏 8″</span><span class="tag bad">问题</span></div>
+        <div class="cap-dim">800 × 1280 · 内容 1026px（80%）</div>
+        <div class="stack">
+          <i class="s-sys" style="flex:52"></i><i class="s-hd" style="flex:55"></i>
+          <i class="s-ct" style="flex:1026"></i><i class="s-cp" style="flex:147"></i>
+        </div>
+        <div class="legend"><span><b>内容</b> 1026</span><span>header 55</span><span>composer 147</span><span>系统栏 52</span></div>
+        <p class="verdict">垂直空间够，但 <b>800px 宽被浪费</b> —— 内容单列铺满，一行字横跨 770px，读起来眼累。<b>这才是平板真正的问题</b>。</p>
+      </figcaption>
+    </figure>
+
+    <!-- 平板横屏 -->
+    <figure>
+      <div class="frame" style="--w:1280;--h:800;--s:.30">
+        <div class="sc official">
+          <div class="rail" style="width:56px">
+            <div class="logo"></div>
+            <div class="ri on"></div><div class="ri"></div><div class="ri"></div><div class="ri"></div>
+          </div>
+          <div class="main">
+            <div class="sb" style="height:28px"><span>17:50</span><span class="r"><i class="ic"></i><i class="ic"></i>28%</span></div>
+            <div class="ohd" style="height:48px">
+              <div style="min-width:0"><div class="t1">询问操作浏览器的能力</div><div class="t2">标准模式 · 4 个后台任务</div></div>
+            </div>
+            <div class="obd">
+              <div class="ln w1"></div><div class="ln w2"></div><div class="ln w3"></div><div class="ln w4"></div>
+            </div>
+            <div class="ocp">
+              <div class="ocard"><div class="ph">发消息或创建任务，/ 调用指令，@ 文件或对话</div><div class="send"><i></i></div></div>
+            </div>
+            <div class="nv" style="height:24px"><i></i></div>
+          </div>
+        </div>
+      </div>
+      <figcaption>
+        <div class="cap-top"><span class="cap-name">平板横屏 10″</span><span class="tag ok">正确</span></div>
+        <div class="cap-dim">1280 × 800 · 官方布局（侧栏折叠成 56px）</div>
+        <div class="stack">
+          <i class="s-sys" style="flex:52"></i><i class="s-hd" style="flex:48"></i>
+          <i class="s-ct" style="flex:588"></i><i class="s-cp" style="flex:112"></i>
+        </div>
+        <div class="legend"><span><b>内容</b> 588</span><span>header 48</span><span>composer 112</span><span>侧栏 56 宽</span></div>
+        <p class="verdict">宽度 ≥ 1024，<b>已经走官方布局</b>。官方侧栏自动折叠，比例合理。</p>
+      </figcaption>
+    </figure>
+
+  </div>
+</section>
+
+<!-- ══════════ 2. 手机横屏三方案 ══════════ -->
+<section>
+  <div class="sec-head"><span class="sec-no">02</span><h2>手机横屏 792×360：三个候选方案</h2></div>
+  <p class="sec-note">
+    这是问题最集中的场景。三个方案都在这一个尺寸下画，方便直接比。
+  </p>
+
+  <div class="grid">
+
+    <!-- 方案 A：退回官方 -->
+    <figure>
+      <div class="frame" style="--w:792;--h:360;--s:.50">
+        <div class="sc official">
+          <div class="rail" style="width:48px">
+            <div class="logo" style="width:18px;height:18px"></div>
+            <div class="ri" style="width:15px;height:15px"></div>
+            <div class="ri on" style="width:15px;height:15px"></div>
+            <div class="ri" style="width:15px;height:15px"></div>
+          </div>
+          <div class="main">
+            <div class="sb" style="height:29px"><span>17:50</span><span class="r"><i class="ic"></i><i class="ic"></i>28%</span></div>
+            <div class="ohd" style="height:44px">
+              <div style="min-width:0"><div class="t1">询问操作浏览器的能力</div><div class="t2">标准模式 · 4 个后台任务</div></div>
+            </div>
+            <div class="obd" style="padding:10px 16px">
+              <div class="ln w1"></div><div class="ln w2"></div><div class="ln w3"></div><div class="ln w4"></div>
+            </div>
+            <div class="ocp" style="padding:6px 14px 8px">
+              <div class="ocard" style="padding:7px 10px"><div class="ph">发消息或创建任务，/ 调用指令…</div><div class="send"><i></i></div></div>
+            </div>
+            <div class="nv" style="height:48px"><i></i></div>
+          </div>
+        </div>
+      </div>
+      <figcaption>
+        <div class="cap-top"><span class="cap-name">方案 A · 退回官方</span><span class="tag try">待实测</span></div>
+        <div class="cap-dim">792 × 360 · 内容 ~230px（64%）</div>
+        <div class="stack">
+          <i class="s-sys" style="flex:77"></i><i class="s-hd" style="flex:44"></i>
+          <i class="s-ct" style="flex:230"></i><i class="s-cp" style="flex:95"></i>
+        </div>
+        <div class="legend"><span><b>内容</b> ~230</span><span>header 44</span><span>composer 95</span><span>系统栏 77</span></div>
+        <p class="verdict">
+          <b>零新增 CSS</b>，只改判定。侧栏折叠成图标条，横向空间被利用。
+          但官方 composer 在 360px 高下是否更挤<b>需要实测</b>——这是唯一的不确定项。
+        </p>
+      </figcaption>
+    </figure>
+
+    <!-- 方案 B：横屏紧凑 -->
+    <figure>
+      <div class="frame" style="--w:792;--h:360;--s:.50">
+        <div class="sc">
+          <!-- 吃进状态栏，header 单行 36 -->
+          <div class="hd" style="height:36px;border-bottom:1px solid #eceef1;padding:0 10px;gap:6px">
+            <div class="burger" style="width:22px;height:22px"><i style="width:13px"></i></div>
+            <div class="tt" style="text-align:left;display:flex;align-items:center;gap:8px;flex:1 1 auto;min-width:0">
+              <div class="t1" style="font-size:13px">询问操作浏览器的能力</div>
+              <div class="t2" style="font-size:10.5px">标准模式 · 4 后台</div>
+            </div>
+            <div class="act" style="font-size:12px"><span class="dot3">…</span><span class="split" style="width:12px;height:12px"></span></div>
+          </div>
+          <div class="bd" style="padding:0 14px">
+            <div class="tool" style="padding:8px 0 7px;font-size:12.5px"><i class="ico" style="width:11px;height:11px"></i>准备运行命令</div>
+            <div class="think" style="padding:7px 0;font-size:12.5px"><i class="arr" style="width:11px;height:11px"></i>深度求索中，用时 10 分 3 秒…</div>
+            <div class="tool" style="border-top:1px solid #f0f2f4;padding:7px 0;font-size:12.5px"><i class="ico" style="width:11px;height:11px"></i>读取工作区文件</div>
+            <div class="think" style="color:#9aa1ab;padding:7px 0;font-size:12.5px"><i class="arr" style="width:11px;height:11px;border-color:#c3c9d2"></i>已完成，用时 2 秒</div>
+            <div class="fade"></div>
+          </div>
+          <!-- composer 两行 55，无 stats；吃掉导航条 -->
+          <div class="cp" style="padding:0 12px 6px">
+            <div class="card" style="padding:6px 10px;border-radius:14px">
+              <div class="ph" style="font-size:12.5px">发消息或创建任务，/ 调用指令，@ 文件或对话</div>
+              <div class="bar" style="margin-top:6px;gap:6px">
+                <div class="plus" style="width:22px;height:22px;font-size:13px">+</div>
+                <div class="perm" style="font-size:11.5px"><i class="sh" style="width:9px;height:9px"></i>完全权限</div>
+                <div class="grow"></div>
+                <div class="model" style="font-size:11.5px">deepseek-v4.1-flash</div>
+                <div class="send" style="width:28px;height:28px"><i style="width:8px;height:8px"></i></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <figcaption>
+        <div class="cap-top"><span class="cap-name">方案 B · 横屏紧凑</span><span class="tag ok">推荐</span></div>
+        <div class="cap-dim">792 × 360 · 内容 ~269px（75%）</div>
+        <div class="stack">
+          <i class="s-sys" style="flex:0"></i><i class="s-hd" style="flex:36"></i>
+          <i class="s-ct" style="flex:269"></i><i class="s-cp" style="flex:55"></i>
+        </div>
+        <div class="legend"><span><b>内容</b> ~269</span><span>header 36</span><span>composer 55</span><span>系统栏 0</span></div>
+        <p class="verdict">
+          三处压缩：header 两行→一行（54→36）、composer 去 stats 行（120→55）、
+          <b>edge-to-edge 吃掉手势条（省 48）</b>。内容从 109 涨到 269，<b>翻 2.5 倍</b>。
+        </p>
+      </figcaption>
+    </figure>
+
+    <!-- 方案 C：A + B 自动 -->
+    <figure>
+      <div class="frame" style="--w:792;--h:360;--s:.50">
+        <div class="sc">
+          <div class="hd" style="height:36px;border-bottom:1px solid #eceef1;padding:0 10px;gap:6px;background:#fbfcfd">
+            <div class="burger" style="width:22px;height:22px"><i style="width:13px"></i></div>
+            <div class="tt" style="text-align:left;display:flex;align-items:center;gap:8px;flex:1 1 auto;min-width:0">
+              <div class="t1" style="font-size:13px">询问操作浏览器的能力</div>
+              <div class="t2" style="font-size:10.5px">标准模式 · 4 后台</div>
+            </div>
+            <div class="act" style="font-size:12px"><span class="dot3">…</span><span class="split" style="width:12px;height:12px"></span></div>
+          </div>
+          <div style="flex:1 1 auto;min-height:0;display:flex">
+            <!-- 左：消息 -->
+            <div class="bd" style="flex:1 1 62%;min-width:0;padding:0 14px;border-right:1px solid #f0f2f4">
+              <div class="tool" style="padding:8px 0 7px;font-size:12.5px"><i class="ico" style="width:11px;height:11px"></i>准备运行命令</div>
+              <div class="think" style="padding:7px 0;font-size:12.5px"><i class="arr" style="width:11px;height:11px"></i>深度求索中，用时 10 分 3 秒…</div>
+              <div class="tool" style="border-top:1px solid #f0f2f4;padding:7px 0;font-size:12.5px"><i class="ico" style="width:11px;height:11px"></i>读取工作区文件</div>
+              <div class="fade"></div>
+            </div>
+            <!-- 右：工具/详情面板 -->
+            <div style="flex:1 1 38%;min-width:0;background:#fafbfc;padding:9px 12px">
+              <div style="font-size:10.5px;font-weight:600;color:#6b7480;letter-spacing:.04em;text-transform:uppercase;margin-bottom:8px">会话详情</div>
+              <div class="ln" style="height:7px;border-radius:3px;background:#eceff3;margin-bottom:7px;width:80%"></div>
+              <div class="ln" style="height:7px;border-radius:3px;background:#eceff3;margin-bottom:7px;width:62%"></div>
+              <div class="ln" style="height:7px;border-radius:3px;background:#eceff3;margin-bottom:7px;width:74%"></div>
+              <div style="margin-top:12px;display:flex;gap:6px;flex-wrap:wrap">
+                <span style="font-size:10px;color:#5b6472;background:#eef1f5;border-radius:4px;padding:2px 6px">210 tok/s</span>
+                <span style="font-size:10px;color:#5b6472;background:#eef1f5;border-radius:4px;padding:2px 6px">缓存 92%</span>
+                <span style="font-size:10px;color:#5b6472;background:#eef1f5;border-radius:4px;padding:2px 6px">54%</span>
+              </div>
+            </div>
+          </div>
+          <div class="cp" style="padding:0 12px 6px">
+            <div class="card" style="padding:6px 10px;border-radius:14px">
+              <div class="ph" style="font-size:12.5px">发消息或创建任务，/ 调用指令，@ 文件或对话</div>
+              <div class="bar" style="margin-top:6px;gap:6px">
+                <div class="plus" style="width:22px;height:22px;font-size:13px">+</div>
+                <div class="perm" style="font-size:11.5px"><i class="sh" style="width:9px;height:9px"></i>完全权限</div>
+                <div class="grow"></div>
+                <div class="model" style="font-size:11.5px">deepseek-v4.1-flash</div>
+                <div class="send" style="width:28px;height:28px"><i style="width:8px;height:8px"></i></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <figcaption>
+        <div class="cap-top"><span class="cap-name">方案 C · 紧凑 + 双栏</span><span class="tag try">进阶</span></div>
+        <div class="cap-dim">792 × 360 · 内容 ~269px + 横向分栏</div>
+        <div class="stack">
+          <i class="s-hd" style="flex:36"></i>
+          <i class="s-ct" style="flex:269"></i><i class="s-cp" style="flex:55"></i>
+        </div>
+        <div class="legend"><span><b>内容</b> 269（左 62% / 右 38%）</span><span>header 36</span><span>composer 55</span></div>
+        <p class="verdict">
+          在 B 的基础上把宽出来的 792px 也用起来：左边聊天、右边详情/工具面板。
+          <b>横屏的真正优势是横向空间</b>，只压缩高度等于浪费。实现成本最高，建议 B 验证后再做。
+        </p>
+      </figcaption>
+    </figure>
+
+  </div>
+</section>
+
+<!-- ══════════ 3. 平板 ══════════ -->
+<section>
+  <div class="sec-head"><span class="sec-no">03</span><h2>平板：真正要解决的是「太宽」不是「太矮」</h2></div>
+  <p class="sec-note">
+    手机横屏的问题是高度不够；平板竖屏的问题反过来——高度充足，但内容单列铺满 800px 宽，
+    一行字横跨整个屏幕，阅读体验反而比手机差。这两个场景的正确解法不同。
+  </p>
+
+  <div class="grid">
+
+    <!-- 平板竖屏 现状 -->
+    <figure>
+      <div class="frame" style="--w:800;--h:1280;--s:.30">
+        <div class="sc">
+          <div class="sb" style="height:28px"><span>17:50</span><span class="r"><i class="ic"></i><i class="ic"></i>28%</span></div>
+          <div class="hd" style="height:55px">
+            <div class="burger"><i></i></div>
+            <div class="tt"><div class="t1">询问操作浏览器的能力</div><div class="t2">标准模式 · 4 个后台任务</div></div>
+            <div class="act"><span class="dot3">…</span><span class="split"></span></div>
+          </div>
+          <div class="bd">
+            <div class="tool"><i class="ico"></i>准备运行命令</div>
+            <div class="think"><i class="arr"></i>深度求索中，用时 10 分 3 秒…</div>
+            <div class="tool" style="border-top:1px solid #f0f2f4"><i class="ico"></i>读取工作区文件</div>
+            <div class="think" style="color:#9aa1ab"><i class="arr" style="border-color:#c3c9d2"></i>已完成，用时 2 秒</div>
+            <div class="fade"></div>
+          </div>
+          <div class="cp" style="padding-bottom:0">
+            <div class="card">
+              <div class="ph">发消息或创建任务，/ 调用指令，@ 文件或对话</div>
+              <div class="bar">
+                <div class="plus">+</div>
+                <div class="perm"><i class="sh"></i>完全权限</div>
+                <div class="grow"></div>
+                <div class="model">deepseek-v4.1-flash</div>
+                <div class="send"><i></i></div>
+              </div>
+            </div>
+          </div>
+          <div class="stats" style="height:15px"><span><i class="d"></i>210 tok/s</span><span><i class="d"></i>缓存命中 92%</span><span><i class="d"></i>54%</span></div>
+          <div class="nv" style="height:24px"><i></i></div>
+        </div>
+      </div>
+      <figcaption>
+        <div class="cap-top"><span class="cap-name">平板竖屏 现状</span><span class="tag bad">问题</span></div>
+        <div class="cap-dim">800 × 1280 · 单列铺满 770px</div>
+        <div class="stack">
+          <i class="s-sys" style="flex:52"></i><i class="s-hd" style="flex:55"></i>
+          <i class="s-ct" style="flex:1026"></i><i class="s-cp" style="flex:147"></i>
+        </div>
+        <div class="legend"><span><b>内容</b> 1026（80%）</span><span>但宽度利用率 0%</span></div>
+        <p class="verdict">
+          高度不是问题，<b>横向空间被浪费</b>。阅读行长 770px 远超舒适的 60–75 字符。
+        </p>
+      </figcaption>
+    </figure>
+
+    <!-- 平板竖屏 建议 -->
+    <figure>
+      <div class="frame" style="--w:800;--h:1280;--s:.30">
+        <div class="sc official">
+          <div class="rail" style="width:64px">
+            <div class="logo"></div>
+            <div class="ri on"></div><div class="ri"></div><div class="ri"></div><div class="ri"></div><div class="ri"></div>
+          </div>
+          <div class="main">
+            <div class="sb" style="height:28px"><span>17:50</span><span class="r"><i class="ic"></i><i class="ic"></i>28%</span></div>
+            <div class="ohd" style="height:48px">
+              <div style="min-width:0"><div class="t1">询问操作浏览器的能力</div><div class="t2">标准模式 · 4 个后台任务</div></div>
+            </div>
+            <div style="flex:1 1 auto;min-height:0;display:flex">
+              <div class="obd" style="flex:1 1 auto;min-width:0;padding:14px 22px">
+                <div class="ln w1"></div><div class="ln w2"></div><div class="ln w3"></div><div class="ln w4"></div>
+                <div class="ln w2" style="margin-top:14px"></div><div class="ln w3"></div><div class="ln w1"></div>
+              </div>
+              <div style="flex:0 0 210px;border-left:1px solid #eceef1;background:#fafbfc;padding:14px 16px">
+                <div style="font-size:10.5px;font-weight:600;color:#6b7480;letter-spacing:.04em;text-transform:uppercase;margin-bottom:10px">会话详情</div>
+                <div class="ln" style="height:8px;border-radius:3px;background:#eceff3;margin-bottom:8px;width:78%"></div>
+                <div class="ln" style="height:8px;border-radius:3px;background:#eceff3;margin-bottom:8px;width:60%"></div>
+                <div class="ln" style="height:8px;border-radius:3px;background:#eceff3;margin-bottom:8px;width:70%"></div>
+              </div>
+            </div>
+            <div class="ocp">
+              <div class="ocard"><div class="ph">发消息或创建任务，/ 调用指令，@ 文件或对话</div><div class="send"><i></i></div></div>
+            </div>
+            <div class="nv" style="height:24px"><i></i></div>
+          </div>
+        </div>
+      </div>
+      <figcaption>
+        <div class="cap-top"><span class="cap-name">平板竖屏 建议</span><span class="tag ok">推荐</span></div>
+        <div class="cap-dim">800 × 1280 · 官方布局 + 右侧详情栏</div>
+        <div class="stack">
+          <i class="s-sys" style="flex:52"></i><i class="s-hd" style="flex:48"></i>
+          <i class="s-ct" style="flex:1068"></i><i class="s-cp" style="flex:112"></i>
+        </div>
+        <div class="legend"><span><b>内容</b> 1068</span><span>侧栏 64 宽</span><span>详情栏 210 宽</span></div>
+        <p class="verdict">
+          <b>800px 宽直接走官方布局</b>（侧栏折叠成图标条），正文宽度自然收窄到 ~500px，
+          右侧再挂详情栏。这才是平板该有的样子。
+        </p>
+      </figcaption>
+    </figure>
+
+  </div>
+</section>
+
+<!-- ══════════ 结论 ══════════ -->
+<div class="callout">
+  <h3>我的判断</h3>
+  <ol>
+    <li><b>手机竖屏（360×792）保持现状</b> —— 这套 UI 就是为它设计的，内容占 69%，没必要动。</li>
+    <li><b>手机横屏（792×360）走方案 B</b> —— 只退回官方不够（官方 composer 高度未验证），
+        真正的解法是把 header 压成单行、composer 去掉 stats、吃掉手势条。内容 109 → 269。</li>
+    <li><b>平板（宽度 ≥ 768 且非手机）走官方布局</b> —— 平板的痛点是「太宽」不是「太矮」，
+        退回官方让侧栏折叠成图标条，正文宽度自然收窄，比任何手机 UI 变体都合适。</li>
+    <li><b>判定用宽高比，不用宽度</b> —— 手机竖屏 0.45、手机横屏 2.20、平板竖屏 0.63、平板横屏 1.60。
+        以 <b>1.0</b> 为界分「竖」与「横」就够，再配合宽度兜底。</li>
+  </ol>
+  <p class="fine">
+    注：方案 A / B 里的 header 与 composer 高度是按目标设计的取值，不是实测值。
+    方案 B 的 269px 内容高度需要真机验证后才能确认；官方布局在 360px 高下是否更优也待实测。
+  </p>
+</div>
+
+</body>
+</html>

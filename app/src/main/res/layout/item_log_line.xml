@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  日志列表的一行。
+
+  三行结构：`时间 级别 tag` / 正文 / 可选堆栈。
+  ⚠️ 正文用等宽字体（monospace）：日志里有对齐的表格、路径、JSON，
+  比例字体下会错位到读不出来。这是排查界面，可读性优先于好看。
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingStart="14dp"
+    android:paddingTop="7dp"
+    android:paddingEnd="14dp"
+    android:paddingBottom="7dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+
+        <!-- 时间：只到毫秒的后三位意义不大，这里保留 时:分:秒.毫秒 -->
+        <TextView
+            android:id="@+id/rowTime"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:fontFamily="monospace"
+            android:textColor="#4A5A70"
+            android:textSize="10.5sp" />
+
+        <!-- 级别：E 红 / W 橙 / I 灰蓝 / D 暗灰，一眼能扫出错误 -->
+        <TextView
+            android:id="@+id/rowLevel"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="7dp"
+            android:fontFamily="monospace"
+            android:textSize="10.5sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/rowTag"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="7dp"
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:fontFamily="monospace"
+            android:maxLines="1"
+            android:textColor="#6E82A0"
+            android:textSize="10.5sp" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/rowMsg"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:fontFamily="monospace"
+        android:lineSpacingExtra="2dp"
+        android:textColor="#C8D6E8"
+        android:textIsSelectable="true"
+        android:textSize="11.5sp" />
+</LinearLayout>

@@ -1,0 +1,59 @@
+{
+  "schema": 1,
+  "engine": {
+    "name": "@deepseek-ai/dsh",
+    "range": "0.2.1-rc.2",
+    "note": "range 只用于记录与提示；真正判据是每条 patch 的 requireCount 命中数。"
+  },
+  "engineRoot": "${DSH_ENGINE_ROOT}",
+  "patches": [
+    {
+      "id": "flock-android",
+      "kind": "text",
+      "why": "bionic 有 flock(2)，但官方 flock.ts 的平台白名单只有 linux/darwin。补上 android 后不再需要运行时静默跳过。",
+      "upstream": "native/system/packages/entry/src/flock.ts",
+      "file": "node_modules/@deepseek-ai/node-addon-system/lib/flock.js",
+      "find": "platform !== 'linux' && platform !== 'darwin'",
+      "replace": "platform !== 'linux' && platform !== 'darwin' && platform !== 'android'",
+      "requireCount": 1,
+      "optional": true,
+      "skipIfExists": "node_modules/@deepseek-ai/node-addon-system-android-arm64/package.json",
+      "skipWhen": "已安装 @deepseek-ai/node-addon-system-android-arm64 时自动跳过"
+    },
+    {
+      "id": "flock-libc-branch",
+      "kind": "text",
+      "why": "android 走 bionic 子目录，不能落进 glibc/musl 二选一。",
+      "upstream": "native/system/packages/entry/src/flock.ts",
+      "file": "node_modules/@deepseek-ai/node-addon-system/lib/flock.js",
+      "find": "if (platform === 'linux') {",
+      "replace": "if (platform === 'android') { filename = join('bionic', filename) } else if (platform === 'linux') {",
+      "requireCount": 1,
+      "optional": true
+    },
+    {
+      "id": "sandbox-runner",
+      "kind": "overlay",
+      "why": "Android 没有 bwrap/Landlock，用官方 runnerCommand 口子挂 boo-sandbox-run。",
+      "writesTo": "$DSH_HOME/sandbox.patch.yml",
+      "contentTemplate": "sandbox.patch.yml.tmpl",
+      "verify": ["node -e \"require('node:fs').readFileSync(process.env.DSH_HOME + '/sandbox.patch.yml','utf8').includes('runnerFailureSignatures') || process.exit(1)\""]
+    },
+    {
+      "id": "mobile-ui-webview-compat",
+      "kind": "asset",
+      "why": "老 WebView 需要 chrome73 语法降级的前端 bundle；资产由 assets/webview-compat.zip 提供，不 patch 源码。",
+      "asset": "assets/webview-compat.zip",
+      "requireStamp": "MOBILE_UI_VERSION"
+    }
+  ],
+  "stamps": {
+    "note": "四个资产版本戳必须与 versions.json 同源，改资产必须同时 bump。",
+    "files": {
+      "engine": "app/src/main/java/com/dsh/android/MainActivity.kt::assetStamp",
+      "node": "app/src/main/java/com/dsh/android/termux/TermuxBootstrap.kt::NODE_VERSION",
+      "pnpm": "app/src/main/java/com/dsh/android/EngineManager.kt::PNPM_VERSION",
+      "mobileUi": "app/src/main/java/com/dsh/android/EngineManager.kt::MOBILE_UI_VERSION"
+    }
+  }
+}

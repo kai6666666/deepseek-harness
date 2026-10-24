@@ -1,0 +1,290 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  日志界面（LogViewerActivity）。
+
+  ## 为什么是纯原生、零依赖
+
+  这个界面存在的**唯一理由**是「App 打不开的时候还能看日志」。所以它不能依赖
+  引擎、不能依赖 WebView、不能依赖任何需要初始化才能用的东西 ——
+  一旦它自己起不来，用户就彻底没有出口了。
+
+  因此这里全部用框架自带的控件（ListView / TextView / EditText），
+  **不引入任何新依赖**（连 RecyclerView 都不用，它在本工程只有 1.0.0 的
+  传递版本，显式依赖一个新版本反而可能和 material 打架）。
+
+  ## 配色
+
+  与启动层（boot_background.xml，深蓝夜色 #0F1115 系）同族，所以从启动层
+  或崩溃浮层跳进来时不会出现色相跳变。
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#0F1115"
+    android:fitsSystemWindows="true"
+    android:orientation="vertical">
+
+    <!-- ══ 顶部：结论条 ══════════════════════════════════════════════════
+         刻意把「结论」放在最上面而不是日志列表里：用户打开这个界面时想知道的
+         第一件事是「有没有问题」，而不是「第 3000 行写了什么」。
+         没有这一条，用户只能把几千行日志截图发过来。 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="#141A26"
+        android:orientation="vertical"
+        android:paddingStart="16dp"
+        android:paddingTop="12dp"
+        android:paddingEnd="16dp"
+        android:paddingBottom="12dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:letterSpacing="0.16"
+                android:text="@string/logs_title"
+                android:textColor="#EAF0FA"
+                android:textSize="17sp"
+                android:textStyle="bold" />
+
+            <!-- 关闭：回上一屏。崩溃浮层跳进来时，用户要能退回去。 -->
+            <TextView
+                android:id="@+id/logClose"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:background="@drawable/overlay_button_bg"
+                android:clickable="true"
+                android:focusable="true"
+                android:paddingStart="14dp"
+                android:paddingTop="7dp"
+                android:paddingEnd="14dp"
+                android:paddingBottom="7dp"
+                android:text="@string/logs_close"
+                android:textColor="#DCE6F5"
+                android:textSize="12.5sp" />
+        </LinearLayout>
+
+        <!-- 自动结论摘要（来自 diagnosis.json 的那句话） -->
+        <TextView
+            android:id="@+id/logSummary"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="9dp"
+            android:lineSpacingExtra="3dp"
+            android:textColor="#8FA3C0"
+            android:textSize="12sp" />
+
+        <!-- 版本与环境一行 —— 反馈问题时第一句要说的就是这些 -->
+        <TextView
+            android:id="@+id/logEnv"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="5dp"
+            android:textColor="#5A6B85"
+            android:textSize="11sp" />
+    </LinearLayout>
+
+    <!-- ══ 筛选条 ════════════════════════════════════════════════════════ -->
+    <HorizontalScrollView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="#111726"
+        android:scrollbars="none">
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingStart="12dp"
+            android:paddingTop="8dp"
+            android:paddingEnd="12dp"
+            android:paddingBottom="8dp">
+
+            <TextView
+                android:id="@+id/logLevelAll"
+                style="@style/LogChip"
+                android:text="@string/logs_level_all" />
+
+            <TextView
+                android:id="@+id/logLevelWarn"
+                style="@style/LogChip"
+                android:text="@string/logs_level_warn" />
+
+            <TextView
+                android:id="@+id/logLevelError"
+                style="@style/LogChip"
+                android:text="@string/logs_level_error" />
+
+            <View
+                android:layout_width="1dp"
+                android:layout_height="18dp"
+                android:layout_marginStart="8dp"
+                android:layout_marginEnd="8dp"
+                android:background="#26314A" />
+
+            <TextView
+                android:id="@+id/logSrcAll"
+                style="@style/LogChip"
+                android:text="@string/logs_src_all" />
+
+            <TextView
+                android:id="@+id/logSrcApp"
+                style="@style/LogChip"
+                android:text="@string/logs_src_app" />
+
+            <TextView
+                android:id="@+id/logSrcEngine"
+                style="@style/LogChip"
+                android:text="@string/logs_src_engine" />
+
+            <TextView
+                android:id="@+id/logSrcWeb"
+                style="@style/LogChip"
+                android:text="@string/logs_src_web" />
+
+            <TextView
+                android:id="@+id/logSrcCrash"
+                style="@style/LogChip"
+                android:text="@string/logs_src_crash" />
+        </LinearLayout>
+    </HorizontalScrollView>
+
+    <!-- ══ 搜索 ══════════════════════════════════════════════════════════ -->
+    <EditText
+        android:id="@+id/logSearch"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="#111726"
+        android:hint="@string/logs_search_hint"
+        android:importantForAutofill="no"
+        android:inputType="text"
+        android:maxLines="1"
+        android:paddingStart="16dp"
+        android:paddingTop="10dp"
+        android:paddingEnd="16dp"
+        android:paddingBottom="10dp"
+        android:textColor="#DCE6F5"
+        android:textColorHint="#4A5A70"
+        android:textSize="13sp" />
+
+    <!-- ══ 列表 ══════════════════════════════════════════════════════════ -->
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <ListView
+            android:id="@+id/logList"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:divider="#1A2130"
+            android:dividerHeight="1px"
+            android:scrollbarStyle="outsideOverlay"
+            android:stackFromBottom="true"
+            android:transcriptMode="disabled" />
+
+        <!-- 空态。刻意给一句可执行的话，而不是「暂无数据」。 -->
+        <TextView
+            android:id="@+id/logEmpty"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:gravity="center"
+            android:lineSpacingExtra="4dp"
+            android:text="@string/logs_empty"
+            android:textColor="#4A5A70"
+            android:textSize="12.5sp"
+            android:visibility="gone" />
+    </FrameLayout>
+
+    <!-- ══ 底部动作 ══════════════════════════════════════════════════════
+         ⚠️ 上传按钮**必须**在这里，不能只靠崩溃后自动传。
+         理由见 LogUploader 的类注释：崩溃当场传不出去（进程马上要死），
+         只能落盘、下次启动补传 —— 而「用户崩溃后再也不打开 App」是真的会发生。
+         手动入口是唯一的补充手段。 -->
+    <HorizontalScrollView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="#141A26"
+        android:scrollbars="none">
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingStart="12dp"
+            android:paddingTop="10dp"
+            android:paddingEnd="12dp"
+            android:paddingBottom="10dp">
+
+            <!--
+              插件开关 —— **本界面上唯一能改变 App 状态的动作**。
+
+              ## 为什么必须在这里
+
+              真机现场（OPPO PHY110）：用户写插件写到一半退出 App，留下的
+              `client.js` 里多了一个 `)`，而前端把**所有插件的 client 半合并成
+              一批**下发 —— 一个坏段让整批解析失败，界面变成
+              「Failed to load plugins」整页错误。引擎完全健康、数据完好，
+              用户却进不去对话。
+
+              当时唯一的救法是在电脑上用 adb 改 `profiles/web/package.json`
+              （把坏 bundle 从 `dsh.profile.bundles` 里摘掉）再重启。
+              而普通用户手上没有 adb、没有电脑、也进不去设置页 ——
+              只能卸载重装，那会清掉全部会话与凭据。
+
+              ## 为什么放在这个界面
+
+              因为它是**唯一在界面打不开时仍然可达的原生界面**
+              （入口是启动层上那个任何状态都显示的「查看日志」按钮，
+              见 activity_main.xml 的 overlayLogs）。放在 Web GUI 的设置页里
+              没用 —— 那个页面恰恰就是打不开的那一环。
+
+              ## 动作边界
+
+              只做两件事：把某个 bundle 从清单里摘掉 / 装回去，然后重启引擎。
+              **官方 bundle（`@deepseek-ai/*`）不可摘**（摘了引擎就废），
+              所以它们压根不出现在列表里 —— 用「不显示」代替「禁用了但看得见」，
+              少一层状态。
+            -->
+            <TextView
+                android:id="@+id/logPlugins"
+                style="@style/LogAction"
+                android:text="@string/logs_plugins" />
+
+            <TextView
+                android:id="@+id/logExport"
+                style="@style/LogAction"
+                android:text="@string/logs_export" />
+
+            <TextView
+                android:id="@+id/logUpload"
+                style="@style/LogAction"
+                android:text="@string/logs_upload" />
+
+            <TextView
+                android:id="@+id/logCopy"
+                style="@style/LogAction"
+                android:text="@string/logs_copy" />
+
+            <TextView
+                android:id="@+id/logRefresh"
+                style="@style/LogAction"
+                android:text="@string/logs_refresh" />
+
+            <TextView
+                android:id="@+id/logClear"
+                style="@style/LogAction"
+                android:text="@string/logs_clear" />
+        </LinearLayout>
+    </HorizontalScrollView>
+</LinearLayout>

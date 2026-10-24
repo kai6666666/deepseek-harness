@@ -1,0 +1,317 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-10-15T16:31:27.439Z",
+  "registry": "https://registry.npmjs.org",
+  "keywords": {
+    "community": "dshapp-plugin",
+    "featured": "dshapp-plugin-featured"
+  },
+  "truncated": false,
+  "counts": {
+    "featured": 7,
+    "community": 2,
+    "total": 9
+  },
+  "plugins": [
+    {
+      "name": "@jiuling/dsh-mcp-manager",
+      "version": "1.0.2",
+      "description": "MCP 服务器管理器：在 DSH Web GUI 的设置界面中可视化新增 / 编辑 / 删除 / 启停 @deepseek-ai/dsh-mcp-client 配置行，直接读写当前 profile 的 cordis.patch.yml。",
+      "keywords": [
+        "dsh",
+        "dsh-plugin",
+        "dsh-bundle",
+        "deepseek-harness",
+        "mcp",
+        "model-context-protocol",
+        "server-manager",
+        "dshapp-plugin",
+        "dshapp-plugin-featured"
+      ],
+      "license": "MIT",
+      "author": null,
+      "publisher": "jiuling",
+      "homepage": null,
+      "repository": null,
+      "engines": {
+        "node": ">=18"
+      },
+      "dsh": {
+        "bundle": true,
+        "client": true,
+        "manifestVersion": null,
+        "dshReleases": null
+      },
+      "installable": true,
+      "risks": [],
+      "publishedAt": "2026-10-15T10:46:57.222Z",
+      "featured": true
+    },
+    {
+      "name": "dsh-app-pet",
+      "version": "1.0.2",
+      "description": "把 DSH Android 的悬浮球变成 dsh-pet 风格的桌面宠物：24 段透明 webm 动画、随机动作链、点击回应、拖拽抛掷、七个运行状态联动。素材随包分发，装上即用。",
+      "keywords": [
+        "dsh",
+        "dsh-plugin",
+        "deepseek-harness",
+        "desktop-pet",
+        "pet",
+        "android",
+        "bubble",
+        "dshapp-plugin",
+        "dshapp-plugin-featured"
+      ],
+      "license": "MIT",
+      "author": null,
+      "publisher": "jiuling",
+      "homepage": null,
+      "repository": null,
+      "engines": {
+        "node": ">=22.12.0"
+      },
+      "dsh": {
+        "bundle": true,
+        "client": false,
+        "manifestVersion": 1,
+        "dshReleases": {
+          "0.2.0-rc.2": "compatible"
+        }
+      },
+      "installable": true,
+      "risks": [],
+      "publishedAt": "2026-10-15T08:42:12.312Z",
+      "featured": true
+    },
+    {
+      "name": "dsh-compaction-threshold",
+      "version": "1.0.4",
+      "description": "在上下文监控卡片内直接调节自动压缩的触发阈值。host 半在运行时替换 @deepseek-ai/dsh-compaction-basic 已挂载引擎的 thresholdRatio 并持久化，client 半把滑块画进卡片面板。",
+      "keywords": [
+        "dsh",
+        "dsh-plugin",
+        "compaction",
+        "context",
+        "threshold",
+        "dshapp-plugin",
+        "dshapp-plugin-featured"
+      ],
+      "license": "MIT",
+      "author": null,
+      "publisher": "jiuling",
+      "homepage": null,
+      "repository": null,
+      "engines": {
+        "node": ">=18"
+      },
+      "dsh": {
+        "bundle": true,
+        "client": true,
+        "manifestVersion": null,
+        "dshReleases": null
+      },
+      "installable": true,
+      "risks": [],
+      "publishedAt": "2026-10-15T16:30:00.682Z",
+      "featured": true
+    },
+    {
+      "name": "dsh-core-memory",
+      "version": "1.0.1",
+      "description": "Cross-session persistent memory for DeepSeek Harness: OpenClaw-style core memory always injected into every session, plus archival notes with seven model tools and a user-configurable AI reply-style (persona) settings page.",
+      "keywords": [
+        "dsh",
+        "dsh-plugin",
+        "deepseek-harness",
+        "cordis",
+        "plugin",
+        "memory",
+        "cross-session",
+        "long-term-memory",
+        "persona",
+        "markdown",
+        "dshapp-plugin",
+        "dshapp-plugin-featured"
+      ],
+      "license": "MIT",
+      "author": null,
+      "publisher": "jiuling",
+      "homepage": null,
+      "repository": null,
+      "engines": {
+        "node": ">=22"
+      },
+      "dsh": {
+        "bundle": true,
+        "client": true,
+        "manifestVersion": null,
+        "dshReleases": null
+      },
+      "installable": true,
+      "risks": [],
+      "publishedAt": "2026-10-15T08:40:12.314Z",
+      "featured": true
+    },
+    {
+      "name": "dsh-ppt-master",
+      "version": "1.0.8",
+      "description": "PPT Master for DeepSeek Harness — agent preset 形式提供全套 ppt_* 工具（源文档→逐页手写 SVG→质检→导出可编辑 PPTX），只在选中该预设的会话里生效，不占用其他会话的上下文。",
+      "keywords": [
+        "dsh",
+        "dsh-bundle",
+        "dsh-plugin",
+        "dsh-preset",
+        "deepseek-harness",
+        "ppt-master",
+        "ppt",
+        "pptx",
+        "presentation",
+        "svg",
+        "powerpoint",
+        "dshapp-plugin",
+        "dshapp-plugin-featured"
+      ],
+      "license": "MIT",
+      "author": "jiuling",
+      "publisher": "jiuling",
+      "homepage": null,
+      "repository": null,
+      "engines": {
+        "node": ">=22"
+      },
+      "dsh": {
+        "bundle": true,
+        "client": false,
+        "manifestVersion": null,
+        "dshReleases": null
+      },
+      "installable": true,
+      "risks": [],
+      "publishedAt": "2026-10-15T08:57:38.318Z",
+      "featured": true
+    },
+    {
+      "name": "dsh-preset-razor",
+      "version": "1.0.1",
+      "description": "DSH agent preset「快准狠模式（通用）」：一行 loader 声明，装完即出现在新会话的预设选择器里。",
+      "keywords": [
+        "dsh",
+        "dsh-bundle",
+        "agent-preset",
+        "dshapp-plugin",
+        "dshapp-plugin-featured"
+      ],
+      "license": "MIT",
+      "author": null,
+      "publisher": "jiuling",
+      "homepage": null,
+      "repository": null,
+      "engines": {
+        "node": ">=18"
+      },
+      "dsh": {
+        "bundle": true,
+        "client": false,
+        "manifestVersion": null,
+        "dshReleases": null
+      },
+      "installable": true,
+      "risks": [],
+      "publishedAt": "2026-10-15T08:39:47.546Z",
+      "featured": true
+    },
+    {
+      "name": "dsh-preset-su",
+      "version": "1.0.1",
+      "description": "DSH agent preset「苏」：一行 loader 声明，装完即出现在新会话的预设选择器里。",
+      "keywords": [
+        "dsh",
+        "dsh-bundle",
+        "agent-preset",
+        "dshapp-plugin",
+        "dshapp-plugin-featured"
+      ],
+      "license": "MIT",
+      "author": null,
+      "publisher": "jiuling",
+      "homepage": null,
+      "repository": null,
+      "engines": {
+        "node": ">=18"
+      },
+      "dsh": {
+        "bundle": true,
+        "client": false,
+        "manifestVersion": null,
+        "dshReleases": null
+      },
+      "installable": true,
+      "risks": [],
+      "publishedAt": "2026-10-15T08:41:16.127Z",
+      "featured": true
+    },
+    {
+      "name": "dsh-jiuling-remote-desktop",
+      "version": "1.0.5",
+      "description": "DSH 远程目录（电脑端）：把本机 DSH 会话的事件流经 Cloudflare 隧道搬到手机，手机进入电脑目录并发起对话，公网只传文本。",
+      "keywords": [
+        "dshapp-plugin",
+        "dsh",
+        "dsh-plugin",
+        "deepseek-harness",
+        "remote",
+        "cloudflare-tunnel"
+      ],
+      "license": "MIT",
+      "author": null,
+      "publisher": "jiuling",
+      "homepage": null,
+      "repository": null,
+      "engines": {
+        "node": ">=20"
+      },
+      "dsh": {
+        "bundle": true,
+        "client": false,
+        "manifestVersion": null,
+        "dshReleases": null
+      },
+      "installable": true,
+      "risks": [],
+      "publishedAt": "2026-10-15T15:20:39.997Z",
+      "featured": false
+    },
+    {
+      "name": "dsh-jiuling-remote-mobile",
+      "version": "1.0.5",
+      "description": "DSH 远程目录（手机端）：在选文件夹流程里多出「电脑」页签，进入电脑目录、在电脑上发起对话，并把电脑的实时消息流同步到手机本地界面（只传文本，不映射桌面）。",
+      "keywords": [
+        "dshapp-plugin",
+        "dsh",
+        "dsh-plugin",
+        "deepseek-harness",
+        "remote",
+        "android",
+        "cloudflare-tunnel"
+      ],
+      "license": "MIT",
+      "author": null,
+      "publisher": "jiuling",
+      "homepage": null,
+      "repository": null,
+      "engines": {
+        "node": ">=20"
+      },
+      "dsh": {
+        "bundle": true,
+        "client": true,
+        "manifestVersion": null,
+        "dshReleases": null
+      },
+      "installable": true,
+      "risks": [],
+      "publishedAt": "2026-10-15T15:23:01.937Z",
+      "featured": false
+    }
+  ]
+}

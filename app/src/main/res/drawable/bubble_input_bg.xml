@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  气泡输入框的底：浅灰填充 + 圆角，与官方 composer 的观感对齐。
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="#F4F5F7" />
+    <corners android:radius="14dp" />
+</shape>

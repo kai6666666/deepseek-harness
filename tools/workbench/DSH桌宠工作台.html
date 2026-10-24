@@ -1,0 +1,1368 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DSH 桌宠工作台</title>
+<style>
+  :root{
+    --bg:#0f1115; --panel:#171a21; --panel2:#1e222b; --line:#2a2f3a;
+    --text:#e6e9ef; --dim:#8b93a3; --accent:#4c8dff; --accent2:#3a6fd8;
+    --ok:#35c46a; --warn:#f0a92e; --bad:#e5484d;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font:14px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  }
+  header{
+    padding:18px 24px; border-bottom:1px solid var(--line);
+    display:flex; align-items:center; gap:14px; flex-wrap:wrap;
+  }
+  header h1{font-size:17px; margin:0; font-weight:600; letter-spacing:.3px}
+  header .sub{color:var(--dim); font-size:12.5px}
+  .wrap{max-width:1080px; margin:0 auto; padding:22px 24px 80px}
+
+  .step{
+    background:var(--panel); border:1px solid var(--line); border-radius:12px;
+    margin-bottom:18px; overflow:hidden;
+  }
+  .step-h{
+    padding:14px 18px; display:flex; align-items:center; gap:11px;
+    border-bottom:1px solid var(--line); background:var(--panel2);
+  }
+  .step-n{
+    width:23px; height:23px; border-radius:50%; background:var(--accent);
+    color:#fff; font-size:12.5px; font-weight:700;
+    display:flex; align-items:center; justify-content:center; flex:none;
+  }
+  .step-t{font-weight:600; font-size:14.5px}
+  .step-d{color:var(--dim); font-size:12.5px; margin-left:auto}
+  .step-b{padding:18px}
+
+  .drop{
+    border:2px dashed var(--line); border-radius:10px; padding:34px 20px;
+    text-align:center; cursor:pointer; transition:.15s; background:var(--panel2);
+  }
+  .drop:hover,.drop.over{border-color:var(--accent); background:#1b2230}
+  .drop .big{font-size:15px; margin-bottom:6px}
+  .drop .sm{color:var(--dim); font-size:12.5px}
+
+  .row{display:flex; gap:14px; flex-wrap:wrap; align-items:center}
+  .field{display:flex; flex-direction:column; gap:5px; min-width:130px}
+  .field label{font-size:12.5px; color:var(--dim)}
+  input[type=text],input[type=number],select{
+    background:var(--panel2); border:1px solid var(--line); color:var(--text);
+    padding:7px 10px; border-radius:7px; font-size:13px; outline:none; width:100%;
+  }
+  input:focus,select:focus{border-color:var(--accent)}
+  input[type=range]{width:100%; accent-color:var(--accent)}
+
+  button{
+    background:var(--accent); color:#fff; border:0; padding:9px 17px;
+    border-radius:8px; font-size:13.5px; cursor:pointer; font-weight:500;
+  }
+  button:hover{background:var(--accent2)}
+  button:disabled{opacity:.4; cursor:not-allowed}
+  button.ghost{background:transparent; border:1px solid var(--line); color:var(--text)}
+  button.ghost:hover{background:var(--panel2)}
+
+  .preview{
+    display:flex; gap:16px; flex-wrap:wrap; margin-top:16px;
+  }
+  .pv{
+    background:var(--panel2); border:1px solid var(--line); border-radius:9px;
+    padding:11px; flex:1; min-width:190px;
+  }
+  .pv .t{font-size:12px; color:var(--dim); margin-bottom:7px}
+  .pv .box{
+    background:
+      repeating-conic-gradient(#2b3040 0% 25%, #232833 0% 50%) 50%/16px 16px;
+    border-radius:6px; display:flex; align-items:center; justify-content:center;
+    min-height:150px; overflow:hidden;
+  }
+  .pv canvas,.pv img{max-width:100%; max-height:190px; display:block}
+
+  .stats{display:flex; gap:18px; flex-wrap:wrap; margin-top:13px; font-size:12.5px}
+  .stat{display:flex; gap:6px; align-items:baseline}
+  .stat .k{color:var(--dim)}
+  .stat .v{font-weight:600; font-variant-numeric:tabular-nums}
+
+  .bar{height:5px; background:var(--panel2); border-radius:3px; overflow:hidden; margin-top:12px}
+  .bar>i{display:block; height:100%; width:0; background:var(--accent); transition:width .15s}
+
+  .msg{margin-top:12px; padding:10px 13px; border-radius:8px; font-size:13px; display:none}
+  .msg.show{display:block}
+  .msg.ok{background:#12291b; border:1px solid #1e4a2e; color:#7ee2a0}
+  .msg.warn{background:#2b2413; border:1px solid #4a3d1e; color:#f0c674}
+  .msg.bad{background:#2b1416; border:1px solid #4a1e21; color:#f08a8e}
+
+  table{width:100%; border-collapse:collapse; font-size:12.5px}
+  th,td{text-align:left; padding:7px 9px; border-bottom:1px solid var(--line)}
+  th{color:var(--dim); font-weight:500}
+  td input,td select{padding:5px 8px; font-size:12.5px}
+
+  .tag{
+    display:inline-block; padding:2px 7px; border-radius:5px;
+    font-size:11.5px; font-weight:500;
+  }
+  .tag.ok{background:#12291b; color:#7ee2a0}
+  .tag.bad{background:#2b1416; color:#f08a8e}
+
+  .hint{color:var(--dim); font-size:12.5px; margin-top:9px; line-height:1.65}
+  code{
+    background:var(--panel2); padding:1.5px 5px; border-radius:4px;
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px;
+  }
+  .flex1{flex:1}
+  .mt{margin-top:14px}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🐾 DSH 桌宠工作台</h1>
+  <span class="sub">本地处理，不上传任何文件</span>
+</header>
+
+<div class="wrap">
+
+  <!-- ── 步骤 1 ─────────────────────────────────────── -->
+  <div class="step">
+    <div class="step-h">
+      <div class="step-n">1</div>
+      <div class="step-t">导入素材</div>
+      <div class="step-d">视频 / GIF / 图片，都行</div>
+    </div>
+    <div class="step-b">
+      <div class="drop" id="drop">
+        <div class="big">把视频拖进来，或点击选择</div>
+        <div class="sm">
+          支持 mp4 / mov / webm / gif / png 序列 ——
+          <b>有背景也行，会自动抠掉</b>
+        </div>
+        <input type="file" id="file" multiple accept="video/*,image/*" hidden>
+      </div>
+
+      <div class="row mt">
+        <div class="field" style="min-width:200px">
+          <label style="display:flex;gap:7px;align-items:center;color:var(--text);font-size:13px">
+            <input type="checkbox" id="autoBg" checked style="width:auto">
+            自动抠掉纯色背景
+          </label>
+        </div>
+        <div class="field" style="min-width:200px">
+          <label style="display:flex;gap:7px;align-items:center;color:var(--text);font-size:13px">
+            <input type="checkbox" id="autoCrop" checked style="width:auto">
+            自动裁掉透明空白
+          </label>
+        </div>
+      </div>
+      <div class="msg" id="msg1"></div>
+      <div class="preview" id="pv1" style="display:none">
+        <div class="pv">
+          <div class="t">原始（第 1 帧）</div>
+          <div class="box"><canvas id="cvOrig"></canvas></div>
+        </div>
+        <div class="pv">
+          <div class="t">自动裁剪后</div>
+          <div class="box"><canvas id="cvCrop"></canvas></div>
+        </div>
+      </div>
+      <div class="stats" id="stats1" style="display:none"></div>
+    </div>
+  </div>
+
+  <!-- ── 步骤 2 ─────────────────────────────────────── -->
+  <div class="step">
+    <div class="step-h">
+      <div class="step-n">2</div>
+      <div class="step-t">调整与导出视频</div>
+      <div class="step-d">生成透明 WebM</div>
+    </div>
+    <div class="step-b">
+      <div class="row">
+        <div class="field" style="min-width:170px">
+          <label>帧率 <span id="fpsV">24</span> fps</label>
+          <input type="range" id="fps" min="8" max="30" value="24">
+        </div>
+        <div class="field" style="min-width:170px">
+          <label>输出宽度 <span id="wV">—</span> px</label>
+          <input type="range" id="outW" min="120" max="640" value="360">
+        </div>
+        <div class="field" style="min-width:170px">
+          <label>画质 <span id="qV">中</span></label>
+          <input type="range" id="quality" min="10" max="100" value="55">
+        </div>
+        <div class="field" style="min-width:120px">
+          <label>&nbsp;</label>
+          <label style="display:flex;gap:7px;align-items:center;color:var(--text);font-size:13px">
+            <input type="checkbox" id="crop" checked style="width:auto"> 裁掉空白
+          </label>
+        </div>
+      </div>
+
+      <div class="row mt">
+        <button id="btnExport" disabled>生成视频</button>
+        <button id="btnPlay" class="ghost" disabled>预览动画</button>
+        <span class="hint" style="margin:0" id="exportHint">先导入素材</span>
+      </div>
+
+      <div class="bar"><i id="bar"></i></div>
+      <div class="msg" id="msg2"></div>
+
+      <div class="preview" id="pv2" style="display:none">
+        <div class="pv">
+          <div class="t">预览（拖动滑块看帧）</div>
+          <div class="box"><canvas id="cvPrev"></canvas></div>
+          <input type="range" id="frameScrub" min="0" max="0" value="0" style="margin-top:9px">
+        </div>
+        <div class="pv">
+          <div class="t">导出结果</div>
+          <div class="box"><video id="vOut" loop muted playsinline style="max-width:100%"></video></div>
+          <div class="hint" id="outInfo"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── 步骤 3 ─────────────────────────────────────── -->
+  <div class="step">
+    <div class="step-h">
+      <div class="step-n">3</div>
+      <div class="step-t">配置动作与状态</div>
+      <div class="step-d">生成 preset.json</div>
+    </div>
+    <div class="step-b">
+      <div class="row">
+        <div class="field flex1" style="min-width:200px">
+          <label>宠物名字</label>
+          <input type="text" id="petName" value="我的宠物" placeholder="随便起">
+        </div>
+        <div class="field" style="min-width:140px">
+          <label>动作名（英文）</label>
+          <input type="text" id="actionName" value="idle-main" placeholder="idle-main">
+        </div>
+      </div>
+      <div class="hint">
+        动作名只能用 <code>a-z 0-9 - _</code>，最多 24 字符，<b>不能中文</b>。
+        每个动作先在这里导出视频、填好名字，再点下面的按钮登记。
+      </div>
+      <div class="row mt">
+        <button id="btnAddAction" disabled>＋ 登记这个动作为「待机」</button>
+      </div>
+
+      <div class="mt">
+        <table id="actionTable">
+          <thead>
+            <tr><th style="width:150px">动作名</th><th style="width:90px">大小</th>
+                <th style="width:110px">用途</th><th></th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <div class="hint" id="actionEmpty">还没有动作。导入素材 → 导出视频 → 登记。</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── 步骤 4 ─────────────────────────────────────── -->
+  <div class="step">
+    <div class="step-h">
+      <div class="step-n">4</div>
+      <div class="step-t">下载</div>
+      <div class="step-d">配置 + 素材打包</div>
+    </div>
+    <div class="step-b">
+      <div class="row">
+        <button id="btnPreset" disabled>下载 preset.json</button>
+        <button id="btnZip" class="ghost" disabled>下载完整包（zip）</button>
+      </div>
+      <div class="msg" id="msg4"></div>
+      <div class="hint" id="presetHint">
+        先在步骤 3 至少登记一个动作。
+      </div>
+      <div class="mt">
+        <div class="t" style="font-size:12.5px;color:var(--dim);margin-bottom:7px">preset.json 预览</div>
+        <pre id="jsonPreview" style="background:var(--panel2);border:1px solid var(--line);
+          border-radius:8px;padding:13px;overflow:auto;max-height:340px;font-size:12px;
+          font-family:ui-monospace,Menlo,monospace;margin:0;color:#b8c4d9">（还没有内容）</pre>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+
+<script>
+// ── 极简 ZIP 写入器（store 模式，无依赖）─────────────────────────
+// webm 本身已是压缩格式，zip 再压一遍收益极低，所以用 store 模式。
+const MiniZip = (() => {
+  const crcTable = (() => {
+    const t = new Uint32Array(256);
+    for (let n = 0; n < 256; n++) {
+      let c = n;
+      for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+      t[n] = c >>> 0;
+    }
+    return t;
+  })();
+
+  function crc32(buf) {
+    let c = 0xFFFFFFFF;
+    for (let i = 0; i < buf.length; i++) c = crcTable[(c ^ buf[i]) & 0xFF] ^ (c >>> 8);
+    return (c ^ 0xFFFFFFFF) >>> 0;
+  }
+
+  function u16(v) { return [v & 0xFF, (v >>> 8) & 0xFF]; }
+  function u32(v) { return [v & 0xFF, (v >>> 8) & 0xFF, (v >>> 16) & 0xFF, (v >>> 24) & 0xFF]; }
+
+  /** 当前时间 → DOS 日期/时间（zip 用的是 1980 纪元的打包格式）。 */
+  function dosDateTime() {
+    const d = new Date();
+    const time = (d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1);
+    const date = ((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate();
+    return { time, date };
+  }
+
+  /** @param {Array<{name: string, data: Uint8Array}>} files */
+  function build(files) {
+    const parts = [];
+    const central = [];
+    let offset = 0;
+
+    for (const f of files) {
+      const nameBytes = new TextEncoder().encode(f.name);
+      const crc = crc32(f.data);
+      const size = f.data.length;
+
+      // 本地文件头
+      const dt = dosDateTime();
+      const local = [
+        ...u32(0x04034b50), ...u16(20), ...u16(0), ...u16(0),
+        ...u16(dt.time), ...u16(dt.date),
+        ...u32(crc), ...u32(size), ...u32(size),
+        ...u16(nameBytes.length), ...u16(0),
+        ...nameBytes,
+      ];
+      parts.push(new Uint8Array(local), f.data);
+
+      // 中央目录项
+      central.push([
+        ...u32(0x02014b50), ...u16(20), ...u16(20), ...u16(0), ...u16(0),
+        ...u16(dt.time), ...u16(dt.date),
+        ...u32(crc), ...u32(size), ...u32(size),
+        ...u16(nameBytes.length), ...u16(0), ...u16(0),
+        ...u16(0), ...u16(0), ...u32(0),
+        ...u32(offset),
+        ...nameBytes,
+      ]);
+
+      offset += local.length + size;
+    }
+
+    const centralStart = offset;
+    let centralSize = 0;
+    for (const c of central) { parts.push(new Uint8Array(c)); centralSize += c.length; }
+
+    const end = [
+      ...u32(0x06054b50), ...u16(0), ...u16(0),
+      ...u16(files.length), ...u16(files.length),
+      ...u32(centralSize), ...u32(centralStart),
+      ...u16(0),
+    ];
+    parts.push(new Uint8Array(end));
+
+    return new Blob(parts, { type: 'application/zip' });
+  }
+
+  return { build };
+})();
+
+/**
+ * 素材处理引擎 —— 把用户导入的「任何东西」变成可用的透明 webm。
+ *
+ * ## 支持的输入
+ *
+ * | 输入 | 处理方式 |
+ * |---|---|
+ * | 视频（mp4/mov/webm/mkv…） | 逐帧解码 → 自动抠背景（如需要）→ 重编码 |
+ * | GIF | 拆帧 → 自动抠背景（如需要） |
+ * | PNG/JPG 序列 | 直接读帧 → 自动抠背景（如需要） |
+ *
+ * ## 为什么要自动抠背景
+ *
+ * 用户手上的素材绝大多数是**有背景**的：AI 生成的白底图、剪映导出的 mp4。
+ * 要求用户自己先抠图是最大的门槛。所以引擎会：
+ *
+ * 1. 取画面四角像素，判断是不是纯色背景
+ * 2. 是 → 把接近该颜色的像素变透明（带容差与边缘羽化）
+ * 3. 不是（已经透明，或背景复杂）→ 原样保留
+ *
+ * ## 为什么能输出透明 webm
+ *
+ * Chrome 的 `MediaRecorder` 在录制 canvas 时会保留 alpha：
+ * canvas 的透明像素 → 编码后 `TAG:alpha_mode=1`。
+ * （Firefox / Safari 不支持，所以工作台会检测并提示用 Chrome。）
+ *
+ * 全部在浏览器本地完成，不上传任何数据。
+ */
+const PetEngine = (() => {
+
+  // ── 状态 ────────────────────────────────────────────────────────────
+  let frames = [];          // [{ bitmap: ImageBitmap, w, h, delay }]
+  let sourceName = '';
+  let sourceKind = '';      // 'video' | 'gif' | 'images'
+  let bbox = null;          // 所有帧的并集包围盒 { x0, y0, x1, y1 }
+  let warnings = [];
+  let detectedBg = null;    // 检测到的背景色 [r,g,b]；null = 无需抠图
+  let bgRemoved = false;    // 是否已执行过抠图
+
+  // ── 工具 ────────────────────────────────────────────────────────────
+
+  /** 读文件为 ImageBitmap。失败返回 null。 */
+  async function loadBitmap(file) {
+    try {
+      return await createImageBitmap(file);
+    } catch {
+      return null;
+    }
+  }
+
+  /** 按文件名里的数字自然排序（frame_2 要排在 frame_10 前面）。 */
+  function naturalSort(a, b) {
+    const num = (s) => {
+      const m = s.match(/(\d+)(?!.*\d)/);
+      return m ? parseInt(m[1], 10) : 0;
+    };
+    return num(a.name) - num(b.name) || a.name.localeCompare(b.name);
+  }
+
+  /** 把 video 元素 seek 到指定时间并等它画得出来。 */
+  function seekTo(video, t) {
+    return new Promise(resolve => {
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        video.onseeked = null;
+        resolve();
+      };
+      video.onseeked = finish;
+      // ⚠️ 有些格式 seek 完不触发 `seeked`（尤其是末帧），必须兜底超时，
+      //    否则整个导入会卡死在最后一帧。
+      setTimeout(finish, 800);
+      try { video.currentTime = t; } catch { finish(); }
+    });
+  }
+
+  /** 解码 GIF 的所有帧（用 ImageDecoder，Chrome 支持）。 */
+  async function decodeGif(file) {
+    if (typeof ImageDecoder === 'undefined') return null;
+    try {
+      const data = await file.arrayBuffer();
+      const dec = new ImageDecoder({ data, type: file.type || 'image/gif' });
+      await dec.tracks.ready;
+      const track = dec.tracks.selectedTrack;
+      const count = track.frameCount;
+      const out = [];
+      for (let i = 0; i < count; i++) {
+        const { image } = await dec.decode({ frameIndex: i });
+        const delay = (image.duration || 40000) / 1000;   // μs → ms
+        out.push({ bitmap: image, w: image.displayWidth, h: image.displayHeight, delay });
+      }
+      return out;
+    } catch {
+      return null;
+    }
+  }
+
+  // ── 背景检测与抠除 ──────────────────────────────────────────────────
+
+  /**
+   * 判断一帧是否有「纯色背景」需要抠。
+   *
+   * 判据：
+   * 1. 四角若已透明 ⇒ 素材本来就有 alpha，不用抠
+   * 2. 四角颜色必须彼此接近（否则是复杂背景）
+   * 3. 与该颜色相近的像素占比 ≥ 25%（否则可能整屏都是角色）
+   *
+   * @returns {[number,number,number]|null} 背景色，或 null（无需抠）
+   */
+  function detectBackground(data, w, h) {
+    const sample = (x, y) => {
+      const o = (y * w + x) * 4;
+      return [data[o], data[o + 1], data[o + 2], data[o + 3]];
+    };
+
+    const corners = [
+      sample(2, 2), sample(w - 3, 2), sample(2, h - 3), sample(w - 3, h - 3),
+    ];
+
+    // ① 已经是透明背景
+    const transparentCorners = corners.filter(c => c[3] < 40).length;
+    if (transparentCorners >= 3) return null;
+
+    // ② 四角颜色必须接近
+    const base = corners[0];
+    const close = corners.every(c =>
+      Math.abs(c[0] - base[0]) + Math.abs(c[1] - base[1]) + Math.abs(c[2] - base[2]) < 60
+    );
+    if (!close) return null;
+
+    // ③ 背景占比
+    let similar = 0;
+    let sampled = 0;
+    for (let y = 0; y < h; y += 3) {
+      for (let x = 0; x < w; x += 3) {
+        const o = (y * w + x) * 4;
+        const d = Math.abs(data[o] - base[0])
+                + Math.abs(data[o + 1] - base[1])
+                + Math.abs(data[o + 2] - base[2]);
+        if (d < 60) similar++;
+        sampled++;
+      }
+    }
+    if (sampled === 0) return null;
+    if (similar / sampled < 0.25) return null;
+
+    return [base[0], base[1], base[2]];
+  }
+
+  /**
+   * 把接近背景色的像素变透明。
+   *
+   * ## 容差与羽化
+   *
+   * - 距离 ≤ `tolerance` ⇒ 全透明
+   * - `tolerance` ~ `tolerance+feather` ⇒ 线性过渡（避免锯齿硬边）
+   *
+   * ⚠️ **不能只做「等于背景色 → 透明」**：视频有压缩噪点，
+   *    严格相等几乎命中不了几个像素，结果是背景纹丝不动。
+   *
+   * ⚠️ 用**欧氏距离**而不是曼哈顿距离：后者对深色背景会误伤太多。
+   */
+  function removeBackground(data, w, h, bg, tolerance = 42, feather = 30) {
+    const [br, bgc, bb] = bg;
+    let removed = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      const dr = data[i] - br;
+      const dg = data[i + 1] - bgc;
+      const db = data[i + 2] - bb;
+      const dist = Math.sqrt(dr * dr + dg * dg + db * db);
+
+      if (dist <= tolerance) {
+        data[i + 3] = 0;
+        removed++;
+      } else if (dist < tolerance + feather) {
+        const t = (dist - tolerance) / feather;
+        data[i + 3] = Math.round(data[i + 3] * t);
+      }
+    }
+    return removed;
+  }
+
+  /**
+   * 对全部帧执行抠背景。
+   *
+   * 用**第一帧**检测背景色（视频里背景通常不变），然后套用到所有帧。
+   */
+  async function applyBgRemoval() {
+    if (frames.length === 0) return;
+
+    const W = frames[0].w, H = frames[0].h;
+    const cv = new OffscreenCanvas(W, H);
+    const ctx = cv.getContext('2d', { willReadFrequently: true });
+
+    ctx.clearRect(0, 0, W, H);
+    ctx.drawImage(frames[0].bitmap, 0, 0, W, H);
+    const first = ctx.getImageData(0, 0, W, H);
+    const bg = detectBackground(first.data, W, H);
+
+    if (!bg) return;   // 已透明，或背景太复杂
+
+    detectedBg = bg;
+    bgRemoved = true;
+
+    for (let k = 0; k < frames.length; k++) {
+      const fr = frames[k];
+      ctx.clearRect(0, 0, W, H);
+      ctx.drawImage(fr.bitmap, 0, 0, W, H);
+      const img = ctx.getImageData(0, 0, W, H);
+      removeBackground(img.data, W, H, bg);
+      ctx.putImageData(img, 0, 0);
+
+      // ⚠️ 必须换回 ImageBitmap：直接留着被 putImageData 污染的 canvas
+      //   会在下一轮被 clearRect 覆盖，等于白抠。
+      fr.bitmap = await createImageBitmap(cv);
+    }
+  }
+
+  // ── 导入 ────────────────────────────────────────────────────────────
+
+  /**
+   * 导入文件（视频 / GIF / 图片序列都行）。
+   *
+   * @param {FileList|File[]} fileList
+   * @param {object} opt
+   * @param {boolean} opt.autoBg 是否自动抠背景（默认 true）
+   * @param {number}  opt.fps    视频抽帧帧率（默认 24，上限 30）
+   */
+  async function importFiles(fileList, opt = {}) {
+    const autoBg = opt.autoBg !== false;
+    const files = Array.from(fileList || []);
+    if (files.length === 0) {
+      return { ok: false, message: '没有文件', count: 0, kind: '' };
+    }
+
+    frames = [];
+    warnings = [];
+    bbox = null;
+    detectedBg = null;
+    bgRemoved = false;
+
+    // ── 情况 1：视频（用户最可能的输入）──────────────────────────
+    const videoFile = files.find(f =>
+      /^video\//.test(f.type) || /\.(mp4|mov|webm|mkv|avi|m4v)$/i.test(f.name)
+    );
+    if (videoFile) {
+      sourceKind = 'video';
+      sourceName = videoFile.name;
+      return await importVideo(videoFile, autoBg, opt.fps);
+    }
+
+    // ── 情况 2：单个 GIF ──────────────────────────────────────────
+    if (files.length === 1 && /\.gif$/i.test(files[0].name)) {
+      const gifFrames = await decodeGif(files[0]);
+      if (gifFrames && gifFrames.length > 0) {
+        frames = gifFrames;
+        sourceKind = 'gif';
+        sourceName = files[0].name;
+        if (autoBg) await applyBgRemoval();
+        computeBBox();
+        return {
+          ok: true,
+          message: `GIF 拆出 ${frames.length} 帧`,
+          count: frames.length,
+          kind: 'gif',
+        };
+      }
+      warnings.push('这个浏览器解不了 GIF 动画，只取到第一帧。建议用 Chrome。');
+    }
+
+    // ── 情况 3：图片序列 ─────────────────────────────────────────
+    const imgs = files.filter(f =>
+      /\.(png|jpe?g|webp|bmp)$/i.test(f.name) || /^image\//.test(f.type)
+    );
+    if (imgs.length === 0) {
+      return { ok: false, message: '不支持的文件类型', count: 0, kind: '' };
+    }
+    imgs.sort(naturalSort);
+    for (const f of imgs) {
+      const bmp = await loadBitmap(f);
+      if (bmp) frames.push({ bitmap: bmp, w: bmp.width, h: bmp.height, delay: null });
+    }
+    if (frames.length === 0) {
+      return { ok: false, message: '图片解码失败', count: 0, kind: '' };
+    }
+    sourceKind = 'images';
+    sourceName = imgs.length === 1 ? imgs[0].name : `${imgs.length} 张图`;
+
+    if (autoBg) await applyBgRemoval();
+    computeBBox();
+    return {
+      ok: true,
+      message: `已导入 ${frames.length} 帧`,
+      count: frames.length,
+      kind: 'images',
+    };
+  }
+
+  /**
+   * 从视频里抽帧。
+   *
+   * ⚠️ 用 `currentTime` seek 逐帧取，而不是边播边录：
+   *   播放有掉帧，而 seek 能保证拿到的是**确定的**那一帧。
+   */
+  async function importVideo(file, autoBg, fpsOverride) {
+    const url = URL.createObjectURL(file);
+    const video = document.createElement('video');
+    video.src = url;
+    video.muted = true;
+    video.playsInline = true;
+
+    try {
+      await new Promise((res, rej) => {
+        video.onloadedmetadata = res;
+        video.onerror = () => rej(new Error('视频加载失败（格式不支持？）'));
+        setTimeout(() => rej(new Error('视频加载超时')), 15000);
+      });
+
+      const W = video.videoWidth, H = video.videoHeight;
+      if (!W || !H) throw new Error('读不到视频尺寸');
+
+      const dur = video.duration;
+      if (!isFinite(dur) || dur <= 0) throw new Error('读不到视频时长');
+
+      const fps = Math.min(fpsOverride || 24, 30);
+      let total = Math.round(dur * fps);
+
+      // 上限 120 帧：再多会让内存和录制时间都失控
+      const MAX_FRAMES = 120;
+      if (total > MAX_FRAMES) {
+        total = MAX_FRAMES;
+        warnings.push(
+          `视频较长（${dur.toFixed(1)}s），只抽了前 ${MAX_FRAMES} 帧` +
+          `（约 ${(MAX_FRAMES / fps).toFixed(1)} 秒）`
+        );
+      }
+      if (total < 1) total = 1;
+
+      const cv = new OffscreenCanvas(W, H);
+      const ctx = cv.getContext('2d', { willReadFrequently: true });
+
+      for (let i = 0; i < total; i++) {
+        await seekTo(video, i / fps);
+        ctx.clearRect(0, 0, W, H);
+        ctx.drawImage(video, 0, 0, W, H);
+        const bmp = await createImageBitmap(cv);
+        frames.push({ bitmap: bmp, w: W, h: H, delay: 1000 / fps });
+      }
+
+      if (autoBg) await applyBgRemoval();
+      computeBBox();
+
+      return {
+        ok: true,
+        message: `从视频抽出 ${frames.length} 帧（${W}×${H}，${dur.toFixed(1)}s）`,
+        count: frames.length,
+        kind: 'video',
+      };
+    } finally {
+      video.src = '';
+      URL.revokeObjectURL(url);
+    }
+  }
+
+  // ── 包围盒 ──────────────────────────────────────────────────────────
+
+  /**
+   * 计算所有帧的**并集**包围盒（去掉透明空白）。
+   *
+   * ⚠️ 必须并集：逐帧各裁会让尺寸不一致，切换动作时角色跳。
+   */
+  function computeBBox(alphaThreshold = 8) {
+    if (frames.length === 0) return null;
+
+    const W = frames[0].w, H = frames[0].h;
+    const cv = new OffscreenCanvas(W, H);
+    const ctx = cv.getContext('2d', { willReadFrequently: true });
+
+    let x0 = W, y0 = H, x1 = -1, y1 = -1;
+
+    for (const fr of frames) {
+      ctx.clearRect(0, 0, W, H);
+      ctx.drawImage(fr.bitmap, 0, 0, W, H);
+      const data = ctx.getImageData(0, 0, W, H).data;
+
+      for (let y = 0; y < H; y++) {
+        const row = y * W * 4;
+        for (let x = 0; x < W; x++) {
+          if (data[row + x * 4 + 3] > alphaThreshold) {
+            if (x < x0) x0 = x;
+            if (x > x1) x1 = x;
+            if (y < y0) y0 = y;
+            if (y > y1) y1 = y;
+          }
+        }
+      }
+    }
+
+    if (x1 < 0) {
+      warnings.push('所有帧都是全透明的 —— 检查一下素材？');
+      bbox = { x0: 0, y0: 0, x1: W - 1, y1: H - 1, W, H };
+      return bbox;
+    }
+
+    bbox = { x0, y0, x1, y1, W, H };
+    return bbox;
+  }
+
+  /** 当前状态摘要。 */
+  function info() {
+    return {
+      frameCount: frames.length,
+      width: frames[0]?.w ?? 0,
+      height: frames[0]?.h ?? 0,
+      sourceName,
+      sourceKind,
+      bbox,
+      detectedBg,
+      bgRemoved,
+      warnings: [...warnings],
+    };
+  }
+
+  // ── 渲染 ────────────────────────────────────────────────────────────
+
+  function drawFrame(ctx, i, opt) {
+    const fr = frames[i];
+    if (!fr) return;
+
+    const { crop, outW, outH } = opt;
+    const box = crop && bbox
+      ? { x: bbox.x0, y: bbox.y0, w: bbox.x1 - bbox.x0 + 1, h: bbox.y1 - bbox.y0 + 1 }
+      : { x: 0, y: 0, w: fr.w, h: fr.h };
+
+    ctx.clearRect(0, 0, outW, outH);
+    ctx.drawImage(fr.bitmap, box.x, box.y, box.w, box.h, 0, 0, outW, outH);
+  }
+
+  // ── 导出 ────────────────────────────────────────────────────────────
+
+  /**
+   * 把全部帧录成透明 webm。
+   *
+   * 原理：canvas → `captureStream(fps)` → `MediaRecorder('vp9')`。
+   * Chrome 保留 canvas 的 alpha，输出带 `alpha_mode=1`。
+   *
+   * ⚠️ **必须实时录制**：MediaRecorder 按 wall clock 采样，
+   *    24 帧 @24fps 就是 1 秒真实时间，不能"瞬间"生成。
+   */
+  async function exportWebm(opt) {
+    const { crop, fps, outW, outH, quality, onProgress } = opt;
+
+    if (frames.length === 0) throw new Error('没有素材');
+    if (typeof MediaRecorder === 'undefined') {
+      throw new Error('这个浏览器不支持 MediaRecorder，请用 Chrome / Edge');
+    }
+    const mime = 'video/webm;codecs=vp9';
+    if (!MediaRecorder.isTypeSupported(mime)) {
+      throw new Error('这个浏览器不支持 VP9 编码，请用 Chrome / Edge');
+    }
+
+    const cv = document.createElement('canvas');
+    cv.width = outW;
+    cv.height = outH;
+    const ctx = cv.getContext('2d', { alpha: true });
+
+    const frameMs = frames.map(fr => (fr.delay && fr.delay > 10 ? fr.delay : 1000 / fps));
+    const totalMs = frameMs.reduce((a, b) => a + b, 0);
+
+    const stream = cv.captureStream(fps);
+    const bitrate = Math.round((0.3 + quality * 3.7) * 1_000_000);
+    const rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: bitrate });
+
+    const chunks = [];
+    rec.ondataavailable = e => { if (e.data && e.data.size > 0) chunks.push(e.data); };
+    const stopped = new Promise(res => { rec.onstop = res; });
+
+    drawFrame(ctx, 0, { crop, outW, outH });
+    rec.start();
+
+    const t0 = performance.now();
+    let elapsed = 0;
+
+    for (let i = 0; i < frames.length; i++) {
+      drawFrame(ctx, i, { crop, outW, outH });
+      if (onProgress) onProgress(Math.min(1, elapsed / totalMs));
+      await new Promise(r => setTimeout(r, frameMs[i]));
+      elapsed += frameMs[i];
+    }
+
+    await new Promise(r => setTimeout(r, 1000 / fps));
+    rec.stop();
+    await stopped;
+    if (onProgress) onProgress(1);
+
+    const blob = new Blob(chunks, { type: 'video/webm' });
+    return { blob, size: blob.size, durationMs: performance.now() - t0 };
+  }
+
+  return {
+    importFiles,
+    computeBBox,
+    info,
+    drawFrame,
+    exportWebm,
+    get frames() { return frames; },
+    get bbox() { return bbox; },
+  };
+})();
+
+</script>
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+
+  // 已登记的动作：{ name, blob, size, role }
+  const actions = [];
+
+  // 当前导入的素材（导出后的 blob 暂存在这里）
+  let currentBlob = null;
+  let currentSize = 0;
+  let playing = false;
+
+  // ── 工具 ─────────────────────────────────────────
+  function showMsg(el, kind, text) {
+    el.className = 'msg show ' + kind;
+    el.textContent = text;
+  }
+  function hideMsg(el) { el.className = 'msg'; }
+
+  function fmtSize(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / 1048576).toFixed(2) + ' MB';
+  }
+
+  // 动作名校验：a-z 0-9 - _ ，≤24
+  function validActionName(s) {
+    return /^[a-z0-9_-]{1,24}$/.test(s);
+  }
+
+  // ── 步骤 1：导入 ─────────────────────────────────
+  const drop = $('drop'), fileInput = $('file');
+
+  drop.onclick = () => fileInput.click();
+  drop.ondragover = e => { e.preventDefault(); drop.classList.add('over'); };
+  drop.ondragleave = () => drop.classList.remove('over');
+  drop.ondrop = e => {
+    e.preventDefault(); drop.classList.remove('over');
+    handleFiles(e.dataTransfer.files);
+  };
+  fileInput.onchange = () => handleFiles(fileInput.files);
+
+  async function handleFiles(files) {
+    if (!files || files.length === 0) return;
+    hideMsg($('msg1'));
+    $('pv1').style.display = 'none';
+    $('stats1').style.display = 'none';
+
+    // 视频导入可能较慢（逐帧 seek），先给个反馈
+    const isVideo = Array.from(files).some(f => /^video\//.test(f.type));
+    if (isVideo) showMsg($('msg1'), 'ok', '正在读视频并逐帧提取…');
+
+    const r = await PetEngine.importFiles(files, {
+      autoBg: $('autoBg').checked,
+    });
+    if (!r.ok) {
+      showMsg($('msg1'), 'bad', r.message);
+      return;
+    }
+
+    const box = PetEngine.computeBBox(8);
+    const info = PetEngine.info();
+
+    // 预览
+    $('pv1').style.display = 'flex';
+    $('stats1').style.display = 'flex';
+
+    // 原始
+    const c1 = $('cvOrig');
+    c1.width = info.width; c1.height = info.height;
+    PetEngine.drawFrame(c1.getContext('2d'), 0, { crop: false, outW: info.width, outH: info.height });
+
+    // 裁剪后
+    const bw = box.x1 - box.x0 + 1, bh = box.y1 - box.y0 + 1;
+    const c2 = $('cvCrop');
+    c2.width = bw; c2.height = bh;
+    PetEngine.drawFrame(c2.getContext('2d'), 0, { crop: true, outW: bw, outH: bh });
+
+    const bgLabel = info.bgRemoved
+      ? `已抠掉 rgb(${info.detectedBg.join(',')})`
+      : (info.sourceKind === 'video' ? '无需抠图' : '背景已透明');
+
+    $('stats1').innerHTML = `
+      <div class="stat"><span class="k">来源</span><span class="v">${
+        { video: '视频', gif: 'GIF', images: '图片' }[info.sourceKind] || '—'
+      }</span></div>
+      <div class="stat"><span class="k">帧数</span><span class="v">${info.frameCount}</span></div>
+      <div class="stat"><span class="k">原始</span><span class="v">${info.width}×${info.height}</span></div>
+      <div class="stat"><span class="k">裁剪后</span><span class="v">${bw}×${bh}</span></div>
+      <div class="stat"><span class="k">空白减少</span><span class="v">${(100 - bw * bh / (info.width * info.height) * 100).toFixed(0)}%</span></div>
+      <div class="stat"><span class="k">背景</span><span class="v" style="color:${
+        info.bgRemoved ? 'var(--ok)' : 'var(--dim)'
+      }">${bgLabel}</span></div>
+    `;
+
+    // 输出宽度默认值：跟随裁剪后宽度（上限 640）
+    $('outW').value = Math.min(640, bw);
+    $('wV').textContent = $('outW').value;
+
+    // 帧滑块
+    $('frameScrub').max = info.frameCount - 1;
+    $('frameScrub').value = 0;
+    $('pv2').style.display = 'flex';
+    drawPreview(0);
+
+    if (info.warnings.length) {
+      showMsg($('msg1'), 'warn', info.warnings.join('；'));
+    } else {
+      const extra = info.bgRemoved
+        ? `，已自动抠掉 rgb(${info.detectedBg.join(',')}) 背景`
+        : '';
+      showMsg($('msg1'), 'ok', r.message + extra);
+    }
+
+    $('btnExport').disabled = false;
+    $('exportHint').textContent = '可以生成了';
+
+    // 换素材后旧的导出结果作废
+    currentBlob = null;
+    $('btnAddAction').disabled = true;
+    $('vOut').removeAttribute('src');
+    $('outInfo').textContent = '';
+  }
+
+  // 预览某一帧（应用当前裁剪与宽度设置）
+  function drawPreview(idx) {
+    const info = PetEngine.info();
+    if (info.frameCount === 0) return;
+    const box = PetEngine.bbox;
+    const crop = $('crop').checked;
+    const outW = Number($('outW').value);
+    const bw = crop ? (box.x1 - box.x0 + 1) : info.width;
+    const bh = crop ? (box.y1 - box.y0 + 1) : info.height;
+    const outH = Math.max(1, Math.round(outW * bh / bw));
+
+    const cv = $('cvPrev');
+    cv.width = outW; cv.height = outH;
+    PetEngine.drawFrame(cv.getContext('2d'), idx, { crop, outW, outH });
+  }
+
+  $('frameScrub').oninput = e => drawPreview(Number(e.target.value));
+  $('crop').onchange = () => drawPreview(Number($('frameScrub').value));
+  $('outW').oninput = e => {
+    $('wV').textContent = e.target.value;
+    drawPreview(Number($('frameScrub').value));
+  };
+  $('fps').oninput = e => { $('fpsV').textContent = e.target.value; };
+  $('quality').oninput = e => {
+    const v = Number(e.target.value);
+    $('qV').textContent = v < 30 ? '低' : v < 65 ? '中' : v < 85 ? '高' : '最高';
+  };
+
+  // ── 步骤 2：导出 ─────────────────────────────────
+  let exporting = false;
+
+  $('btnExport').onclick = async () => {
+    if (exporting) return;
+    const info = PetEngine.info();
+    if (info.frameCount === 0) return;
+
+    exporting = true;
+    $('btnExport').disabled = true;
+    $('btnPlay').disabled = true;
+    hideMsg($('msg2'));
+    $('bar').style.width = '0%';
+
+    const crop = $('crop').checked;
+    const box = PetEngine.bbox;
+    const outW = Number($('outW').value);
+    const bw = crop ? (box.x1 - box.x0 + 1) : info.width;
+    const bh = crop ? (box.y1 - box.y0 + 1) : info.height;
+    const outH = Math.max(1, Math.round(outW * bh / bw));
+
+    try {
+      const r = await PetEngine.exportWebm({
+        crop,
+        fps: Number($('fps').value),
+        outW,
+        outH,
+        quality: Number($('quality').value) / 100,
+        onProgress: p => { $('bar').style.width = (p * 100).toFixed(0) + '%'; },
+      });
+
+      currentBlob = r.blob;
+      currentSize = r.size;
+
+      const url = URL.createObjectURL(r.blob);
+      const v = $('vOut');
+      v.src = url;
+      v.play().catch(() => {});
+
+      $('outInfo').innerHTML =
+        `${outW}×${outH} · ${fmtSize(r.size)} · 录制耗时 ${(r.durationMs / 1000).toFixed(1)}s`;
+
+      // 体积检查
+      if (r.size > 6 * 1048576) {
+        showMsg($('msg2'), 'warn',
+          `视频 ${fmtSize(r.size)}，超过单个动作 6 MB 上限。` +
+          `把「画质」调低，或减小「输出宽度」后重试。`);
+      } else {
+        showMsg($('msg2'), 'ok',
+          `生成成功：${fmtSize(r.size)}（${outW}×${outH}）。` +
+          `在步骤 3 填个动作名登记它。`);
+      }
+
+      $('btnPlay').disabled = false;
+      $('btnAddAction').disabled = false;
+
+    } catch (err) {
+      showMsg($('msg2'), 'bad', '生成失败：' + err.message);
+    } finally {
+      exporting = false;
+      $('btnExport').disabled = false;
+    }
+  };
+
+  // 预览动画（循环播放所有帧）
+  $('btnPlay').onclick = () => {
+    if (playing) return;
+    const info = PetEngine.info();
+    if (info.frameCount === 0) return;
+
+    playing = true;
+    $('btnPlay').disabled = true;
+    let i = 0;
+    const fps = Number($('fps').value);
+    const interval = 1000 / fps;
+
+    const timer = setInterval(() => {
+      drawPreview(i);
+      $('frameScrub').value = i;
+      i = (i + 1) % info.frameCount;
+      if (!playing) clearInterval(timer);
+    }, interval);
+
+    setTimeout(() => {
+      playing = false;
+      clearInterval(timer);
+      $('btnPlay').disabled = false;
+      drawPreview(0);
+      $('frameScrub').value = 0;
+    }, interval * info.frameCount * 3);   // 播 3 轮
+  };
+
+  // ── 步骤 3：动作登记 ─────────────────────────────
+  $('actionName').oninput = e => {
+    const ok = validActionName(e.target.value);
+    e.target.style.borderColor = e.target.value === '' ? '' : (ok ? '#35c46a' : '#e5484d');
+  };
+
+  $('btnAddAction').onclick = () => {
+    const name = $('actionName').value.trim();
+    if (!validActionName(name)) {
+      showMsg($('msg2'), 'bad',
+        '动作名只能用 a-z 0-9 - _ ，最多 24 字符，不能中文');
+      return;
+    }
+    if (!currentBlob) {
+      showMsg($('msg2'), 'bad', '先生成视频');
+      return;
+    }
+    if (actions.some(a => a.name === name)) {
+      showMsg($('msg2'), 'bad', `动作「${name}」已存在，换个名字`);
+      return;
+    }
+    if (actions.reduce((s, a) => s + a.size, 0) + currentSize > 12 * 1048576) {
+      showMsg($('msg2'), 'warn',
+        '全部动作合计超过 12 MB 上限了，再添加会下发失败。');
+    }
+
+    actions.push({
+      name,
+      blob: currentBlob,
+      size: currentSize,
+      role: actions.length === 0 ? 'idle' : 'extra',
+    });
+
+    // 自动推荐下一个名字
+    $('actionName').value = 'action-' + (actions.length + 1);
+
+    renderActions();
+    showMsg($('msg2'), 'ok', `已登记「${name}」。继续导入下一段素材。`);
+
+    // 清空当前，方便做下一个
+    currentBlob = null;
+    $('btnAddAction').disabled = true;
+  };
+
+  function renderActions() {
+    const tb = $('actionTable').querySelector('tbody');
+    tb.innerHTML = '';
+    $('actionEmpty').style.display = actions.length ? 'none' : 'block';
+
+    const ROLES = [
+      ['idle', '待机（必填）'],
+      ['thinking', '思考'],
+      ['working', '干活'],
+      ['waiting', '等待'],
+      ['error', '出错'],
+      ['result', '整理'],
+      ['success', '完成'],
+      ['click', '点击回应'],
+      ['drag', '拖拽'],
+      ['move', '走路'],
+    ];
+
+    actions.forEach((a, i) => {
+      const tr = document.createElement('tr');
+
+      // 动作名
+      const td1 = document.createElement('td');
+      const inp = document.createElement('input');
+      inp.type = 'text'; inp.value = a.name;
+      inp.onchange = () => {
+        const v = inp.value.trim();
+        if (!validActionName(v) || actions.some((x, j) => j !== i && x.name === v)) {
+          inp.style.borderColor = '#e5484d';
+          inp.value = a.name;
+          return;
+        }
+        a.name = v;
+        inp.style.borderColor = '';
+        updateJson();
+      };
+      td1.appendChild(inp);
+
+      // 大小
+      const td2 = document.createElement('td');
+      td2.textContent = fmtSize(a.size);
+      td2.style.color = 'var(--dim)';
+
+      // 用途
+      const td3 = document.createElement('td');
+      const sel = document.createElement('select');
+      ROLES.forEach(([v, t]) => {
+        const o = document.createElement('option');
+        o.value = v; o.textContent = t;
+        if (a.role === v) o.selected = true;
+        sel.appendChild(o);
+      });
+      sel.onchange = () => { a.role = sel.value; updateJson(); };
+      td3.appendChild(sel);
+
+      // 删除
+      const td4 = document.createElement('td');
+      const del = document.createElement('button');
+      del.textContent = '删除';
+      del.className = 'ghost';
+      del.style.padding = '4px 10px';
+      del.onclick = () => { actions.splice(i, 1); renderActions(); };
+      td4.appendChild(del);
+
+      tr.append(td1, td2, td3, td4);
+      tb.appendChild(tr);
+    });
+
+    updateJson();
+  }
+
+  // ── 步骤 4：生成 preset ──────────────────────────
+  function buildPreset() {
+    const actionMap = {};
+    const pools = { idle: [], click: [], drag: [], move: [] };
+
+    for (const a of actions) {
+      if (a.role === 'idle') { actionMap.idle = a.name; pools.idle.push(a.name); }
+      else if (['thinking', 'working', 'waiting', 'error', 'result', 'success'].includes(a.role)) {
+        actionMap[a.role] = a.name;
+      }
+      else if (['click', 'drag', 'move'].includes(a.role)) {
+        pools[a.role].push(a.name);
+      }
+    }
+
+    // 清掉空池
+    for (const k of Object.keys(pools)) {
+      if (pools[k].length === 0) delete pools[k];
+    }
+
+    // 没配 idle 时兜底用第一个动作
+    if (!actionMap.idle && actions.length > 0) {
+      actionMap.idle = actions[0].name;
+      pools.idle = [actions[0].name];
+    }
+
+    const preset = {
+      name: $('petName').value.trim() || '我的宠物',
+      assets: 'assets',
+      actions: Object.fromEntries(actions.map(a => [a.name, a.name])),
+      pools,
+      actionMap,
+      appearance: {
+        size: 160,
+        bgOpacity: 0,
+        avatar: 'none',
+        showDot: false,
+        flipOnTurn: true,
+        throwEnabled: true,
+      },
+      statusAutoHideMs: 4000,
+    };
+
+    if (pools.idle && pools.idle.length > 0) {
+      preset.poolWeights = { idle: 10 };
+    }
+
+    return preset;
+  }
+
+  function updateJson() {
+    const has = actions.length > 0;
+    $('btnPreset').disabled = !has;
+    $('btnZip').disabled = !has;
+
+    if (!has) {
+      $('jsonPreview').textContent = '（还没有内容）';
+      $('presetHint').textContent = '先在步骤 3 至少登记一个动作。';
+      return;
+    }
+
+    const preset = buildPreset();
+    $('jsonPreview').textContent = JSON.stringify(preset, null, 2);
+    $('presetHint').innerHTML =
+      `已登记 <b>${actions.length}</b> 个动作，合计 ` +
+      `<b>${fmtSize(actions.reduce((s, a) => s + a.size, 0))}</b>。`;
+  }
+
+  $('btnPreset').onclick = () => {
+    const preset = buildPreset();
+    const blob = new Blob([JSON.stringify(preset, null, 2)], { type: 'application/json' });
+    download(blob, 'preset.json');
+    showMsg($('msg4'), 'ok', 'preset.json 已下载');
+  };
+
+  $('btnZip').onclick = async () => {
+    showMsg($('msg4'), 'ok', '正在打包…');
+
+    const preset = buildPreset();
+    const files = [{
+      name: 'preset.json',
+      data: new TextEncoder().encode(JSON.stringify(preset, null, 2)),
+    }];
+
+    for (const a of actions) {
+      const buf = new Uint8Array(await a.blob.arrayBuffer());
+      files.push({ name: 'assets/' + a.name + '.webm', data: buf });
+    }
+
+    const out = MiniZip.build(files);
+    download(out, 'my-pet.zip');
+    showMsg($('msg4'), 'ok',
+      `完整包已下载（${fmtSize(out.size)}）：preset.json + ${actions.length} 个视频`);
+  };
+
+  function download(blob, name) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+  }
+
+  // ── 启动检查 ─────────────────────────────────────
+  if (typeof MediaRecorder === 'undefined' ||
+      !MediaRecorder.isTypeSupported('video/webm;codecs=vp9')) {
+    showMsg($('msg1'), 'bad',
+      '这个浏览器不支持 VP9 录制，生成不了透明视频。请用 Chrome 或 Edge 打开。');
+  }
+
+  updateJson();
+})();
+</script>
+</body>
+</html>

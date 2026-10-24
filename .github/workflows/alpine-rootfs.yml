@@ -1,0 +1,136 @@
+name: alpine-rootfs
+
+# G-02：产出真实可用的 aarch64 Alpine rootfs（PRoot 里 apk.static 会 SIGBUS，只能在原生 x86_64 runner 上做）
+#
+# 产物：alpine-rootfs.tar.gz + .sha256 + rootfs.manifest.json
+# 落地：手动跑 tools/fetch-rootfs-into-assets.sh 拉进 app/src/main/assets/runtime/（G-04：随 APK）
+
+on:
+  workflow_dispatch:
+    inputs:
+      alpine:
+        description: "Alpine 版本（如 3.23.0）"
+        required: false
+        default: "3.23.0"
+      pkgs:
+        description: "覆盖默认包集（空格分隔，留空用脚本默认）"
+        required: false
+        default: ""
+      node_major:
+        description: "断言 Node 主版本"
+        required: false
+        default: "24"
+  push:
+    tags: ["v*"]
+    paths:
+      - "tools/alpine-runtime/**"
+      - ".github/workflows/alpine-rootfs.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: alpine-rootfs-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - name: 检出
+        uses: actions/checkout@v4
+
+      - name: 环境信息（留档，出问题时能对齐）
+        run: |
+          set -euo pipefail
+          uname -a
+          cat /etc/os-release | head -3
+          ldd --version | head -1
+          python3 -V
+          tar --version | head -1
+          df -h / | tail -1
+
+      - name: 构建 aarch64 rootfs
+        env:
+          ALPINE_VER: ${{ inputs.alpine || '3.23.0' }}
+          NODE_MAJOR: ${{ inputs.node_major || '24' }}
+          PKGS_EXTRA: ${{ inputs.pkgs }}
+        run: |
+          set -euo pipefail
+          ARGS=(--alpine "$ALPINE_VER" --out dist --expect-node-major "$NODE_MAJOR")
+          if [ -n "${PKGS_EXTRA:-}" ]; then
+            ARGS+=(--pkgs "$PKGS_EXTRA")
+          fi
+          echo "== build-rootfs.sh ${ARGS[*]}"
+          bash tools/alpine-runtime/build-rootfs.sh "${ARGS[@]}"
+
+      - name: 产物自检（大小 / 结构 / 关键文件）
+        run: |
+          set -euo pipefail
+          ls -l dist
+          test -s dist/alpine-rootfs.tar.gz
+          test -s dist/alpine-rootfs.tar.gz.sha256
+          test -s dist/rootfs.manifest.json
+          BYTES=$(stat -c%s dist/alpine-rootfs.tar.gz)
+          echo "tarball bytes = $BYTES"
+          [ "$BYTES" -gt 20000000 ] || { echo "::error::tarball 小于 20 MB，几乎肯定没装上包"; exit 1; }
+          [ "$BYTES" -lt 120000000 ] || { echo "::error::tarball 大于 120 MB，包集失控"; exit 1; }
+          echo "== 清单"
+          cat dist/rootfs.manifest.json
+          echo "== 摘要"
+          cat dist/alpine-rootfs.tar.gz.sha256
+
+      - name: 真跑 node（qemu-user-static，断言不是"文件在但跑不起来"）
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq qemu-user-static >/dev/null
+          mkdir -p /tmp/rf
+          tar -xzf dist/alpine-rootfs.tar.gz -C /tmp/rf
+          echo "== loader"
+          ls /tmp/rf/lib/ld-musl-* 2>/dev/null || ls /tmp/rf/lib | head
+          echo "== node 版本"
+          qemu-aarch64-static -L /tmp/rf /tmp/rf/usr/bin/node --version
+          echo "== node 是 musl 还是别的"
+          qemu-aarch64-static -L /tmp/rf /tmp/rf/usr/bin/node -p "process.platform + '/' + process.arch + ' / ' + process.report.getReport().header.glibcVersionRuntime"
+          echo "== 关键二进制"
+          for b in bin/sh usr/bin/node usr/bin/npm usr/bin/python3; do
+            [ -e "/tmp/rf/$b" ] && echo "  ✓ $b" || { echo "::error::缺 $b"; exit 1; }
+          done
+
+      - name: 上传 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: alpine-rootfs-aarch64
+          path: |
+            dist/alpine-rootfs.tar.gz
+            dist/alpine-rootfs.tar.gz.sha256
+            dist/rootfs.manifest.json
+          retention-days: 30
+          compression-level: 0
+
+      - name: 打 tag 时挂到 Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/alpine-rootfs.tar.gz
+            dist/alpine-rootfs.tar.gz.sha256
+            dist/rootfs.manifest.json
+          fail_on_unmatched_files: true
+
+      - name: 摘要
+        run: |
+          {
+            echo "### alpine-rootfs 构建完成"
+            echo ""
+            echo "| 项 | 值 |"
+            echo "|---|---|"
+            echo "| Alpine | ${{ inputs.alpine || '3.23.0' }} |"
+            echo "| tarball | \`$(stat -c%s dist/alpine-rootfs.tar.gz)\` B |"
+            echo "| sha256 | \`$(cut -c1-32 dist/alpine-rootfs.tar.gz.sha256)\`… |"
+            echo "| Node | \`$(python3 -c "import json;print(json.load(open('dist/rootfs.manifest.json'))['nodejs'])")\` |"
+            echo ""
+            echo "下载后本地执行：\`bash tools/fetch-rootfs-into-assets.sh --from <解压目录>\`"
+          } >> "$GITHUB_STEP_SUMMARY"

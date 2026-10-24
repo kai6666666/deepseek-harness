@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  日志界面的两个小样式。
+
+  ⚠️ 用 TextView + style 而不是 Button：主题是 `Theme.Material3.*`，
+  它会给 Button 套一层自己的实心紫底，把 android:background 顶掉
+  （真机实测显示成一大块实心紫）。启动浮层上的「安全模式」按钮
+  踩过同一个坑，这里照抄既有写法。
+-->
+<resources>
+
+    <!-- 筛选条上的胶囊按钮。选中态由代码切 background 与 textColor。 -->
+    <style name="LogChip">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:paddingStart">12dp</item>
+        <item name="android:paddingTop">6dp</item>
+        <item name="android:paddingEnd">12dp</item>
+        <item name="android:paddingBottom">6dp</item>
+        <item name="android:layout_marginEnd">6dp</item>
+        <item name="android:textSize">12sp</item>
+        <item name="android:textColor">#8FA3C0</item>
+        <item name="android:background">@drawable/log_chip_bg</item>
+        <item name="android:clickable">true</item>
+        <item name="android:focusable">true</item>
+    </style>
+
+    <!-- 底部动作按钮。 -->
+    <style name="LogAction">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:paddingStart">16dp</item>
+        <item name="android:paddingTop">9dp</item>
+        <item name="android:paddingEnd">16dp</item>
+        <item name="android:paddingBottom">9dp</item>
+        <item name="android:layout_marginEnd">8dp</item>
+        <item name="android:textSize">12.5sp</item>
+        <item name="android:textColor">#DCE6F5</item>
+        <item name="android:background">@drawable/overlay_button_bg</item>
+        <item name="android:clickable">true</item>
+        <item name="android:focusable">true</item>
+    </style>
+</resources>

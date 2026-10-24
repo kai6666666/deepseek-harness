@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  筛选胶囊的**选中态**底：填充变亮、描边变蓝。
+
+  ⚠️ 刻意不用实心高饱和蓝：那在本工程是"主操作"的语言（见 bubble_send_bg）。
+  筛选器选中只是一个状态，用提亮填充 + 蓝色描边就够了。
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="#24344E" />
+    <stroke
+        android:width="1dp"
+        android:color="#4A7FC1" />
+    <corners android:radius="14dp" />
+</shape>

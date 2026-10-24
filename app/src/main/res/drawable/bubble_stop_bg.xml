@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  气泡里「停止」按钮的底：红色圆角。
+
+  红色取 #E5484D：与发送按钮的蓝色拉开距离 —— 中断是不可逆操作，
+  两个按钮挨在一起时颜色必须能一眼分清，不能靠读文字。
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="#E5484D" />
+    <corners android:radius="12dp" />
+</shape>

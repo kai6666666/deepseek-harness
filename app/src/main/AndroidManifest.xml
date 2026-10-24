@@ -1,0 +1,241 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!--
+        申请「忽略电池优化」白名单。国产 ROM（华为/OPPO 等）会在息屏后冻结后台应用，
+        仅靠前台服务 + WakeLock 仍会被杀。侧载分发，不受 Google Play 对该权限的限制。
+    -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
+    <!--
+        悬浮气泡（设备自动化时 App 退到后台仍能看到 AI 在干什么、并能继续对话）。
+
+        ⚠️ 这是**特殊权限**，不能靠运行时请求拿到：必须由用户在系统设置里手动开
+        「显示在其他应用上层」。`Settings.canDrawOverlays()` 只读，授权动作只能
+        引导用户去 `ACTION_MANAGE_OVERLAY_PERMISSION`。侧载也绕不过去。
+
+        没授权时气泡整个不显示（`WindowManager.addView` 抛
+        `BadTokenException: permission denied for window type 2038`），
+        所以设置页那张引导卡是必需品。见 FloatingBubble.kt。
+    -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+
+    <!--
+        外部存储读写。用途只有一个：让 **app 身份** 能读 uid 2000（`shell` 工具）
+        写进 /sdcard 的文件。
+
+        uid 2000 在 /sdcard 上建的文件属主是 `root:sdcard_rw`、模式 `640`
+        （sdcardfs 的固定行为，`chmod 666` 改不动），而 app 进程默认的附加组里
+        没有 `sdcard_rw`（实测引擎进程 `Groups: 3003 9997 20324 50324`），
+        于是 `shell` 截的图 `bash` 读不了。
+
+        ⚠️ 机制**不是**「授权后进程多一个 GID」—— 实测同一个 pid 在授权前后
+        `Groups` 一个字节都没变，platform.xml 里这两条权限也确实没有 gid 属性。
+        真正变的是 **sdcardfs 按权限把 /storage/emulated 绑到不同的 runtime 视图**：
+
+            未授权 -> /storage/emulated ... gid=1015(sdcard_rw), mask=6   ← default 视图
+            已授权 -> /storage/emulated ... gid=9997(everybody), mask=7   ← write 视图
+            对照：launcher（无写权限）-> gid=9997, mask=23
+
+        进程自带 9997 组、**不带** 1015 —— 所以未授权时它落在 gid=1015 的 default
+        视图里，组对不上，读不了；授权后切到 gid=9997 的 write 视图，组对上了，
+        再配合 `derive_gid`（底层文件的 gid 1015 被派生映射成视图的 gid 9997），
+        就凭自带的 9997 组读得到那个 `root:sdcard_rw 640` 的文件。
+
+        换句话说：**授权是解开跨身份读取的唯一钥匙**，没有别的办法
+        （`chmod` 改不动 sdcardfs 的属主）。
+
+        targetSdk = 28，系统仍走 legacy 存储模型（无分区存储），这两个权限在
+        Android 10 上照旧生效，不必申请 MANAGE_EXTERNAL_STORAGE。
+        用户拒绝时只是退回原状（跨身份交接需绕道 app 自己的外部目录），不影响其它功能。
+    -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+
+    <!--
+        麦克风：语音输入（`dsh-experimental-client-ui-voice-input`）。
+
+        ⚠️ **光声明这一个权限没用**，这是本项目反复踩的第三处「默认实现静默失败」
+        （前两处是 ⑦ 的文件选择器、⑦.5 的下载器）。整条链有三层，缺一层就
+        「点了没反应、也没有任何报错」：
+
+            ① 本声明            ← Android 层许可
+            ② 运行时申请         ← Android 6+ 必须在代码里弹框拿（见 MainActivity）
+            ③ 内核授权回调       ← WebView 的 onPermissionRequest /
+                                   GeckoView 的 permissionDelegate
+
+        第 ③ 层最容易漏：两个内核的**默认实现都是 deny**。也就是说不覆写它，
+        页面的 `getUserMedia` 一定抛 `NotAllowedError`，而前端的错误处理把它
+        翻译成 `RecordingError("permission")`，界面上就是「麦克风权限被拒绝」——
+        **即使前两层都齐了也是这句话**，极具误导性。
+
+        ⚠️ 页面跑在 `http://127.0.0.1:3080`，看着像非安全上下文，但 `127.0.0.1`
+          属于浏览器规范的 localhost 例外、**算 secure context**，所以
+          `navigator.mediaDevices` 存在、`getUserMedia` 可调用。不需要 https。
+
+        ⚠️ 语音数据流向：页面用 MediaRecorder 录一段音频**上传给引擎**做识别
+          （本地 SenseVoice，首次使用时下载模型，约 239 MB），不是录成文件存本地。
+    -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
+    <application
+        android:name=".DshApplication"
+        android:allowBackup="false"
+        android:extractNativeLibs="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.DSH"
+        android:usesCleartextTraffic="true"
+        tools:targetApi="35">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize|uiMode"
+            android:launchMode="singleTask"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!--
+            Shizuku 特权通道（uid 2000 的第二条来源）。
+
+            ## 为什么需要它
+
+            原有的 uid 2000 通道**全部**要求「设备上的 adbd 能被我们连上」：
+            legacy 5555（要 PC 先跑 `adb tcpip 5555`）或 Android 11+ 的无线调试。
+            而 Android 10 及以下**没有**无线调试，`persist.adb.tcp.port` 又写不进去，
+            于是每次重启都得 PC 再来一次 —— 更糟的是 App 自己**造不出** 5555：
+            发 `adb tcpip` 本身就需要一条活的 adb 连接，形成循环依赖。
+
+            Shizuku 绕开了全部这些前提：它由 root 或 adb 起一个常驻 `app_process`
+            （uid 2000），经 binder 提供服务。**不需要 adbd 监听 5555**，
+            也**不需要**校验我们那把 adbkey。所以「Shizuku 能用、我们的特权通道
+            用不了」在用户那边是常态。
+
+            ## 这个 provider 是干什么的
+
+            Shizuku 服务端在**应用进程启动时**把它的 binder 送到这个 provider，
+            `ShizukuProvider` 收到后存进 `rikka.shizuku.Shizuku`。
+            没有它，`Shizuku.pingBinder()` 永远为 false。
+
+            ⚠️ 三个属性的取值**不能改**（RikkaApps 的文档逐条给过理由）：
+            - `android:exported="true"`：Shizuku 服务端以 adb/root 身份运行，
+                 **是外部进程**，不导出它根本送不进来；
+            - `android:multiprocess="false"`：Shizuku 只在应用进程**启动那一次**
+                 送来 binder，多进程会让别的进程也去要，而它不会给；
+            - `android:permission="…INTERACT_ACROSS_USERS_FULL"`：**这是保护** ——
+                 该权限只有 `com.android.shell` 之类的系统身份持有，普通应用拿不到，
+                 于是别的应用无法借这个 provider 蹭到我们的 binder。
+                 ⚠️ 别因为「看着像要申请一个危险权限」就删掉它，它是**接收方**的守卫。
+
+            ⚠️ `authorities` 用 `${applicationId}` 占位：本工程有两个 flavor
+               （`com.dsh.android` / `com.dsh.webview`），两包可同装一台机器 ——
+               写死会让第二个包装不上（authorities 冲突）。
+        -->
+        <provider
+            android:name="rikka.shizuku.ShizukuProvider"
+            android:authorities="${applicationId}.shizuku"
+            android:exported="true"
+            android:multiprocess="false"
+            android:enabled="true"
+            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
+
+        <service
+            android:name=".EngineService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Local AI agent engine keeps a long-running conversation session" />
+        </service>
+
+        <!--
+            键盘哨兵（无障碍服务）：让它看到输入法窗口的位置与高度。
+
+            ## 为什么必须是无障碍
+
+            普通应用拿不到「全局键盘可见性」——`WindowInsets.Type.ime()` 只属于
+            自己获得焦点的那扇窗，而悬浮球在后台、没有焦点。`dumpsys input_method`
+            能读，但那要 uid 2000 在线且每次起进程轮询。无障碍的
+            `getWindows()` 是唯一零特权、事件驱动的一条。
+
+            ## 三个属性的理由
+
+            - `android:exported="true"`：**系统**（不是我们的进程）要能 bind 它，
+              不导出则服务永远不会被拉起；
+            - `android:permission="…BIND_ACCESSIBILITY_SERVICE"`：这是**保护**，
+              只有系统持有该权限，别的应用无法 bind 进来借我们的窗口列表；
+            - `android:label`：无障碍设置列表里显示的就是它，用户在那一屏决定
+              要不要授权，所以必须是看得懂的中文名（见 strings.xml）。
+
+            ⚠️ 服务没有在代码里 startService —— 启用后由系统按需拉起，这是
+              无障碍服务的设计，别改成手动启动。
+        -->
+        <service
+            android:name=".BubbleA11yService"
+            android:exported="true"
+            android:label="@string/bubble_a11y_label"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/bubble_accessibility_service" />
+        </service>
+
+        <!--
+            运行日志界面（入口②）。
+
+            ⚠️ **必须 `exported="false"`**：它是本进程内的诊断界面，没有任何
+            外部调用场景，导出等于给别的应用开一个读日志的口子（日志里可能含
+            设备信息与路径）。
+
+            ⚠️ **刻意不加 `launchMode="singleTask"`**（MainActivity 是 singleTask，
+            这里不是）：日志界面要能从浮层与设置页各自拉起、各自关闭回原处。
+            用 singleTask 会让第二次拉起点复用已有实例，用户从设置页打开后
+            关掉、再从浮层打开时行为会不一致。
+
+            ⚠️ `excludeFromRecents` 不设：用户从崩溃浮层跳进来看日志时，
+            这个界面出现在最近任务里是合理的（他可能想切出去发截图再切回来）。
+        -->
+        <activity
+            android:name=".LogViewerActivity"
+            android:exported="false"
+            android:label="@string/logs_title"
+            android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize|uiMode"
+            android:windowSoftInputMode="adjustResize" />
+
+        <!--
+            接收通知栏「直接回复」里输入的无线调试配对码，以及通知上的「取消」动作。
+
+            ⚠️ 必须静态声明（不能动态注册）：通知可能在 App 进程已被系统回收时
+            仍留在通知栏，那时动态注册的接收器已经不存在了，用户回复的配对码
+            会石沉大海。
+
+            ⚠️ 「取消」这个 action 尤其依赖静态声明：常驻通知划不掉，用户唯一能
+            中止配对监听的方式就是点它，进程被回收后它必须还能工作。
+        -->
+        <receiver
+            android:name=".AdbPairingReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.dsh.android.action.PAIRING_REPLY" />
+                <action android:name="com.dsh.android.action.PAIRING_CANCEL" />
+            </intent-filter>
+        </receiver>
+
+    </application>
+</manifest>

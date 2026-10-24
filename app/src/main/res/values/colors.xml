@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 自适应图标背景层：取自头像原图的粉底中位色，与前景抠图边缘无缝衔接。
+         前景层是带透明通道的 PNG（drawable-*/ic_launcher_foreground.png），
+         换遮罩（圆形/水滴/方形）时不会露出方形边界。 -->
+    <color name="ic_launcher_background">#FEDFE3</color>
+</resources>

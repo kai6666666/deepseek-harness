@@ -1,0 +1,398 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DSH Android · 主题实验室</title>
+<style>
+  :root {
+    --bg: #0d1117; --panel: #161b22; --line: #30363d;
+    --fg: #e6edf3; --dim: #8b949e; --brand: #58a6ff; --ok: #3fb950;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg); color: var(--fg); display: flex;
+    font: 13px/1.5 -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+  }
+
+  /* ── 左：变量面板 ───────────────────────────────────────────── */
+  #side {
+    width: 400px; flex: none; border-right: 1px solid var(--line);
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  #side header { padding: 14px 16px 10px; border-bottom: 1px solid var(--line); }
+  #side h1 { margin: 0 0 4px; font-size: 15px; }
+  #side .hint { color: var(--dim); font-size: 12px; }
+  #side .btns { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+  button {
+    background: #21262d; color: var(--fg); border: 1px solid var(--line);
+    border-radius: 6px; padding: 5px 10px; font-size: 12px; cursor: pointer;
+  }
+  button:hover { background: #30363d; }
+  button.on { background: var(--brand); border-color: var(--brand); color: #04121f; font-weight: 600; }
+
+  #groups { overflow: auto; flex: 1; padding: 8px 10px 40px; }
+  .grp { margin-bottom: 6px; }
+  .grp > summary {
+    cursor: pointer; padding: 6px 8px; border-radius: 6px;
+    font-weight: 600; color: var(--brand); user-select: none;
+  }
+  .grp > summary:hover { background: #161b22; }
+  .grp > summary .n { color: var(--dim); font-weight: 400; font-size: 11px; }
+
+  .row { display: flex; align-items: center; gap: 8px; padding: 4px 8px 4px 14px; border-radius: 5px; }
+  .row:hover { background: #161b22; }
+  .row.changed { background: #12261a; }
+  .row label { flex: 1; font-size: 11px; color: var(--dim); word-break: break-all; }
+  .row.changed label { color: var(--ok); }
+  .row input[type=color] {
+    width: 30px; height: 22px; padding: 0; border: 1px solid var(--line);
+    border-radius: 4px; background: none; cursor: pointer; flex: none;
+  }
+  .row input[type=text] {
+    width: 96px; flex: none; background: #0d1117; color: var(--fg);
+    border: 1px solid var(--line); border-radius: 4px; padding: 2px 5px; font-size: 11px;
+    font-family: ui-monospace, Consolas, monospace;
+  }
+  .row .warn { color: #d29922; font-size: 11px; flex: none; }
+  .search { padding: 8px 16px; border-bottom: 1px solid var(--line); }
+  .search input {
+    width: 100%; background: #0d1117; color: var(--fg); border: 1px solid var(--line);
+    border-radius: 6px; padding: 6px 9px; font-size: 12px;
+  }
+
+  /* ── 右：预览 ──────────────────────────────────────────────── */
+  #main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  #pick {
+    padding: 8px 12px; border-bottom: 1px solid var(--line);
+    display: flex; gap: 5px; flex-wrap: wrap; overflow-y: auto; max-height: 116px;
+  }
+  #pick button { font-size: 11px; padding: 4px 8px; }
+  #stage {
+    flex: 1; display: flex; gap: 22px; overflow: auto; padding: 22px;
+    background:
+      linear-gradient(45deg, #ffffff08 25%, transparent 25%, transparent 75%, #ffffff08 75%) 0 0/22px 22px,
+      #010409;
+  }
+  .phone { flex: none; }
+  .phone .cap {
+    color: var(--dim); font-size: 11px; margin-bottom: 6px;
+    text-align: center; font-family: ui-monospace, monospace;
+  }
+  .phone iframe {
+    width: 360px; height: 764px; border: 1px solid var(--line);
+    border-radius: 10px; background: #fff; display: block;
+  }
+  .phone .id { color: #484f58; font-size: 10px; text-align: center; margin-top: 4px; }
+
+  #out {
+    border-top: 1px solid var(--line); padding: 8px 12px;
+    display: flex; gap: 8px; align-items: center;
+  }
+  #out textarea {
+    flex: 1; height: 92px; background: #0d1117; color: var(--fg);
+    border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px;
+    font: 11px/1.5 ui-monospace, Consolas, monospace; resize: vertical;
+  }
+  #out .note { color: var(--dim); font-size: 11px; max-width: 210px; }
+</style>
+</head>
+<body>
+
+<div id="side">
+  <header>
+    <h1>主题实验室</h1>
+    <div class="hint">
+      改下面的 CSS 变量，右侧手机实时更新。<br>
+      满意后点「导出 theme.css」写进 <code>assets/theme.css</code>，19 屏全部生效。
+    </div>
+    <div class="btns">
+      <button onclick="applyPreset('light')">官方浅色</button>
+      <button onclick="applyPreset('dark')">官方深色</button>
+      <button onclick="applyPreset('reset')">清空改动</button>
+      <button onclick="exportCss()">导出 theme.css</button>
+    </div>
+  </header>
+  <div class="search"><input id="q" placeholder="搜索变量名，如 label / bg / brand …" oninput="renderVars()"></div>
+  <div id="groups"></div>
+</div>
+
+<div id="main">
+  <div id="pick"></div>
+  <div id="stage"></div>
+  <div id="out">
+    <textarea id="css" readonly placeholder="点「导出 theme.css」后，改好的 CSS 会出现在这里"></textarea>
+    <div class="note">
+      这个页面只是**预览**。真正生效的是
+      <code>docs/ui-themes/assets/theme.css</code> —— 把左边框里的内容贴进去即可。
+    </div>
+  </div>
+</div>
+
+<!-- 内联数据：让本页在 file:// 下**双击直接打开**也能用（fetch 在 file:// 下被浏览器禁掉）。
+     由 tools/ui-snapshot-html.mjs 在抓取时一并生成；不存在时下面会退回 fetch。 -->
+<script src="lab-data.js"></script>
+<script>
+// ══════════════════════════════════════════════════════════════════════
+// 数据 —— 优先用 lab-data.js（file:// 可用），否则退回 fetch manifest.json
+// ══════════════════════════════════════════════════════════════════════
+const SCREENS = window.__SCREENS__ || [];
+const TOKENS  = window.__TOKENS__  || {};   // 变量名 → 官方值
+
+// 改动集：变量名 → 新值。只存改动过的，导出时只输出这些。
+const changed = {};
+
+// ── 变量分组（按名字前缀归到一起，便于找）────────────────────────────
+function groupOf(name) {
+  const n = name.replace(/^--dsw-alias-/, '');
+  if (/^bg-/.test(n))                  return '背景 bg-*';
+  if (/^label-/.test(n))               return '文字 label-*';
+  if (/^border-/.test(n))              return '描边 border-*';
+  if (/^button-/.test(n))              return '按钮 button-*';
+  if (/^brand-/.test(n))               return '品牌 brand-*';
+  if (/^state-/.test(n))               return '状态 state-*';
+  if (/^markdown-|^code-|^file-diff-|^shiki-/.test(n)) return '代码与 Markdown';
+  if (/^interactive-/.test(n))         return '交互态 interactive-*';
+  if (/^scrollbar-/.test(n))           return '滚动条';
+  if (/^menu-|^toast-|^tooltip-|^settings-|^onboarding-/.test(n)) return '浮层与设置';
+  return '其他';
+}
+
+const NAMED = {
+  '--dsw-alias-bg-base':        '页面底色',
+  '--dsw-alias-bg-layer-1':     '卡片层 1',
+  '--dsw-alias-bg-layer-2':     '卡片层 2',
+  '--dsw-alias-bg-layer-3':     '卡片层 3',
+  '--dsw-alias-bg-overlay':     '浮层底',
+  '--dsw-alias-label-primary':  '正文',
+  '--dsw-alias-label-secondary':'次要文字',
+  '--dsw-alias-label-tertiary': '三级文字',
+  '--dsw-alias-label-dimmed':   '弱化文字',
+  '--dsw-alias-label-link':     '链接',
+  '--dsw-alias-border-l1':      '一级描边',
+  '--dsw-alias-border-l2':      '二级描边',
+  '--dsw-alias-brand-primary':  '品牌主色',
+  '--dsw-alias-brand-text':     '品牌文字色',
+  '--dsw-alias-button-primary-fill': '主按钮底色',
+  '--dsw-alias-button-primary-hover':'主按钮悬停',
+  '--dsw-alias-button-contrast-fill':'对比按钮底',
+};
+
+// ── 颜色工具 ──────────────────────────────────────────────────────────
+/** 把任意 CSS 颜色转成 #rrggbb（解析不了返回 null —— var()/关键字都算解析不了）。 */
+function toHex(v) {
+  if (!v) return null;
+  v = v.trim();
+  if (/^#[0-9a-f]{6}$/i.test(v)) return v.toLowerCase();
+  if (/^#[0-9a-f]{3}$/i.test(v)) {
+    return '#' + v[1] + v[1] + v[2] + v[2] + v[3] + v[3];
+  }
+  const m = /^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/i.exec(v);
+  if (m) {
+    const h = (x) => Math.round(+x).toString(16).padStart(2, '0');
+    return '#' + h(m[1]) + h(m[2]) + h(m[3]);
+  }
+  return null;
+}
+
+// ⚠️ 官方令牌里有些是**复合值**（`transparent`、`var(...)`、渐变、`#fff8` 八位色），
+//    `<input type=color>` 表达不了 —— 这类只给文本框，避免调色盘显示错误的值。
+function needsTextOnly(v) {
+  const h = toHex(v);
+  return !h || /^(transparent|none|inherit|currentcolor)$/i.test(v.trim());
+}
+
+// ── 渲染变量列表 ──────────────────────────────────────────────────────
+function renderVars() {
+  const q = (document.getElementById('q').value || '').trim().toLowerCase();
+  const groups = new Map();
+  for (const name of Object.keys(TOKENS)) {
+    if (q && !name.toLowerCase().includes(q)) continue;
+    const g = groupOf(name);
+    if (!groups.has(g)) groups.set(g, []);
+    groups.get(g).push(name);
+  }
+
+  const host = document.getElementById('groups');
+  host.innerHTML = '';
+  if (!groups.size) { host.innerHTML = '<div style="color:#8b949e;padding:12px">没有匹配的变量</div>'; return; }
+
+  for (const [g, names] of [...groups].sort((a, b) => a[0].localeCompare(b[0], 'zh'))) {
+    const d = document.createElement('details');
+    d.className = 'grp';
+    // 搜索时全展开，否则默认只展开前 3 组
+    d.open = !!q || ['背景 bg-*', '文字 label-*', '品牌 brand-*'].includes(g);
+
+    const s = document.createElement('summary');
+    s.innerHTML = `${g} <span class="n">${names.length}</span>`;
+    d.appendChild(s);
+
+    for (const name of names.sort()) {
+      const row = document.createElement('div');
+      row.className = 'row' + (changed[name] !== undefined ? ' changed' : '');
+
+      const lab = document.createElement('label');
+      lab.textContent = NAMED[name] ? `${NAMED[name]} · ${name}` : name;
+      lab.title = name;
+      row.appendChild(lab);
+
+      const cur = changed[name] !== undefined ? changed[name] : TOKENS[name];
+      const textOnly = needsTextOnly(cur);
+
+      if (!textOnly) {
+        const picker = document.createElement('input');
+        picker.type = 'color';
+        picker.value = toHex(cur);
+        picker.oninput = () => { setVar(name, picker.value); txt.value = picker.value; };
+        row.appendChild(picker);
+      } else {
+        const warn = document.createElement('span');
+        warn.className = 'warn';
+        warn.textContent = '非纯色';
+        warn.title = `官方值：${TOKENS[name]}（不是纯色，只能用文本框改）`;
+        row.appendChild(warn);
+      }
+
+      const txt = document.createElement('input');
+      txt.type = 'text';
+      txt.value = cur || '';
+      txt.oninput = () => {
+        const v = txt.value.trim();
+        if (!v) { delete changed[name]; } else { changed[name] = v; }
+        const h = toHex(v);
+        if (h && !textOnly) row.querySelector('input[type=color]').value = h;
+        row.classList.toggle('changed', changed[name] !== undefined);
+        push();
+      };
+      row.appendChild(txt);
+
+      d.appendChild(row);
+    }
+    host.appendChild(d);
+  }
+}
+
+function setVar(name, value) {
+  changed[name] = value;
+  renderVars();
+  push();
+}
+
+// ── 实时预览 ──────────────────────────────────────────────────────────
+const frames = [];   // { el, id }
+
+function buildStage() {
+  const stage = document.getElementById('stage');
+  const pick = document.getElementById('pick');
+  for (const sc of SCREENS) {
+    const w = document.createElement('div');
+    w.className = 'phone';
+    w.innerHTML = `<div class="cap">${sc.title}</div>` +
+      `<iframe src="pages/${sc.id}.html" loading="eager"></iframe>` +
+      `<div class="id">${sc.id}</div>`;
+    stage.appendChild(w);
+    frames.push({ el: w.querySelector('iframe'), id: sc.id });
+
+    const b = document.createElement('button');
+    b.textContent = sc.title;
+    b.onclick = () => {
+      w.scrollIntoView({ behavior: 'smooth', inline: 'start' });
+      [...pick.children].forEach((x) => x.classList.remove('on'));
+      b.classList.add('on');
+    };
+    pick.appendChild(b);
+  }
+}
+
+/** 把改动集推给所有 iframe（经 URL 参数，因为 file:// 下跨源读不到文档）。 */
+function push() {
+  const enc = encodeURIComponent(JSON.stringify(changed));
+  for (const f of frames) {
+    // 每次都换 query（加个计数器）避免浏览器复用旧文档
+    f.el.src = `pages/${f.id}.html?theme=${enc}`;
+  }
+}
+
+// ── 预设 ──────────────────────────────────────────────────────────────
+function applyPreset(kind) {
+  for (const k of Object.keys(changed)) delete changed[k];
+  if (kind === 'dark') Object.assign(changed, DARK_PRESET);
+  renderVars();
+  push();
+}
+
+// ⚠️ 这两个预设只是**起点示例**，值取自官方深色主题的常见搭配；不是唯一正确解。
+const DARK_PRESET = {
+  '--dsw-alias-bg-base':      '#0d1117',
+  '--dsw-alias-bg-layer-1':   '#161b22',
+  '--dsw-alias-bg-layer-2':   '#1c2128',
+  '--dsw-alias-bg-overlay':   '#161b22',
+  '--dsw-alias-label-primary':'#e6edf3',
+  '--dsw-alias-label-secondary':'#8b949e',
+  '--dsw-alias-label-tertiary':'#6e7681',
+  '--dsw-alias-border-l1':    '#30363d',
+  '--dsw-alias-border-l2':    '#21262d',
+  '--dsw-alias-brand-primary':'#58a6ff',
+};
+
+// ── 导出 ──────────────────────────────────────────────────────────────
+function exportCss() {
+  const names = Object.keys(changed).sort();
+  const lines = names.map((n) => `  ${n}: ${changed[n]};`).join('\n');
+  const css =
+`/* DSH Android 主题覆盖 —— 由主题实验室导出
+   作用于 docs/ui-themes/pages/*.html（19 屏）。
+
+   它加载在官方基线 theme-base.css **之后**，所以同名变量会被这里的值盖住。
+
+   导出时间: ${new Date().toLocaleString('zh-CN')}
+   改动项数: ${names.length}
+*/
+:root, body {
+${lines || '  /* 还没有任何改动 */'}
+}
+`;
+  document.getElementById('css').value = css;
+  return css;
+}
+
+// ── 数据加载 ──────────────────────────────────────────────────────────
+(async function boot() {
+  try {
+    // ① 首选内联数据（lab-data.js）—— file:// 下也能用，双击即可打开
+    if (SCREENS.length > 0 && Object.keys(TOKENS).length > 0) {
+      document.getElementById('groups').innerHTML =
+        `<div style="color:#8b949e;padding:12px">已载入 ${SCREENS.length} 屏 / ${Object.keys(TOKENS).length} 个变量</div>`;
+      buildStage(); renderVars(); push();
+      return;
+    }
+    // ② 退回 fetch（走本地服务器时）
+    const m = await (await fetch('manifest.json')).json();
+    window.__SCREENS__ = m.screens.filter((s) => s.ok).map((s) => ({ id: s.id, title: s.title }));
+    SCREENS.length = 0; SCREENS.push(...window.__SCREENS__);
+    // 令牌值从 theme-base.css 里解析（那是官方基线，值就是官方值）
+    const css = await (await fetch('assets/theme-base.css')).text();
+    const re = /(--(?:dsw|ds)-[a-z0-9\-]+)\s*:\s*([^;]+);/gi;
+    let mt;
+    while ((mt = re.exec(css))) {
+      const name = mt[1], val = mt[2].trim();
+      // 后出现的声明覆盖先出现的（近似 CSS 层叠）
+      TOKENS[name] = val;
+    }
+    document.getElementById('groups').innerHTML =
+      `<div style="color:#8b949e;padding:12px">已载入 ${SCREENS.length} 屏 / ${Object.keys(TOKENS).length} 个变量</div>`;
+    buildStage();
+    renderVars();
+    push();
+  } catch (e) {
+    document.getElementById('groups').innerHTML =
+      `<div style="color:#f85149;padding:12px">载入失败：${e.message}<br><br>` +
+      `⚠️ 请用<b>本地服务器</b>打开本页（fetch 在 file:// 下被浏览器禁止）：<br>` +
+      `<code>cd docs/ui-themes && python -m http.server 8080</code><br>` +
+      `然后访问 http://127.0.0.1:8080/lab.html</div>`;
+  }
+})();
+</script>
+</body>
+</html>

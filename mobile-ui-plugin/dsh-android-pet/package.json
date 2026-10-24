@@ -1,0 +1,15 @@
+{
+  "name": "dsh-android-pet",
+  "version": "1.0.0",
+  "description": "DSH Android 客户端的状态桥：订阅引擎的 session/event，把「AI 现在在干什么」翻译成运行状态播报给悬浮球，让悬浮球能当桌面宠物按状态换动作。",
+  "type": "module",
+  "main": "./lib/index.js",
+  "exports": {
+    ".": {
+      "default": "./lib/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "license": "MIT",
+  "private": true
+}

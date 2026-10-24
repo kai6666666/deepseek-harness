@@ -1,0 +1,14 @@
+# dsh-core-memory bundle layer —— 由 DSH Android 客户端安装时写进 profile。
+#
+# 声明成 profile bundle（而不是主机 overlay 里的 `insert`）是**刻意的**：
+#   · bundle 会出现在「插件 → 已安装插件」列表里，用户能自己开关；
+#   · 关掉只是从 `dsh.profile.bundles` 里摘掉这个名字，包本身留在 node_modules，
+#     数据（$DSH_HOME/memory）也原样保留，随时能再打开；
+#   · 主机 overlay 的 `insert` 没有身份、不能单独关闭，用户只能整块卸载。
+#
+# `name` 用裸包名：bundle 层的 patch 由 `loadOverlayPatches` 在**引擎自己的模块
+# 解析上下文**里解析，而本包就在 `<profileDir>/node_modules/` 下 —— 那是
+# `resolveBundleDir` 的第二个锚点，pnpm 也把它的依赖 hoist 到同一棵树里。
+- insert:
+    - id: dsh-core-memory
+      name: 'dsh-core-memory'

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    键盘哨兵的服务配置。
+
+    ⚠️ `flagRetrieveInteractiveWindows` 是**唯一必需**的开关：没有它
+    `getWindows()` 返回空列表，键盘窗口根本看不见。
+    `canRetrieveWindowContent` 设成 true 只是为了让部分 ROM 返回窗口列表，
+    本服务**从不调用** `getRootInActiveWindow()`，不读任何控件文本。
+
+    ⚠️ 事件类型只留两种窗口级事件：键盘弹出/收起都由它们触发。
+    加上 `typeAllMask` 会让服务在每次界面刷新时都被唤醒，代价大且无收益。
+-->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:accessibilityEventTypes="typeWindowsChanged|typeWindowStateChanged|typeViewFocused"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:accessibilityFlags="flagRetrieveInteractiveWindows"
+    android:canRetrieveWindowContent="true"
+    android:description="@string/bubble_a11y_desc"
+    android:notificationTimeout="40" />

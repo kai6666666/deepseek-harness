@@ -1,0 +1,341 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  悬浮气泡的根布局。三种形态共用一个 View，靠 visibility 切换：
+
+    · circle   —— 收起态：圆形/方形按钮（尺寸、形状、底色、头像由插件配置）
+    · edge     —— 贴边态：只剩一条薄片，贴在屏幕边缘（拖出屏幕时自动进入）
+    · panel    —— 展开态：可拖动、可缩放的面板，含**完整会话转录**
+
+  ⚠️ 用 FrameLayout 而不是 ViewAnimator：切换靠手写 alpha+scale 动画
+     （ViewAnimator 的默认动画不可控，且会在拖动时抖动）。
+
+  ⚠️ 根布局**不能**设 clickable=true：那会把触摸事件全吃掉，
+     拖动逻辑（FloatingBubble 的 onTouchListener）就再也收不到 DOWN 了。
+
+  ⚠️ 面板里**不能**再挂长按手势：消息列表是 ScrollView，长按会被它吃掉。
+     面板的收起靠顶栏那个明确的「收起」按钮（见下方注释）。
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content">
+
+    <!-- ══ 收起态：头像气泡 ══ -->
+    <!--
+      ⚠️ 用 BubbleTouchFrame 而不是 FrameLayout：内容层可能是 WebView（视频素材），
+         而 WebView 会在 native 层吃掉 ACTION_DOWN，导致挂在父容器上的拖动/点击
+         逻辑完全收不到事件（症状：球能显示，但拖不动、点不开）。
+         BubbleTouchFrame 在**内容层真的有视频**时才开启拦截，其余情况与普通
+         FrameLayout 逐字相同 —— 没有视频素材的用户不存在回归面。
+    -->
+    <com.dsh.android.BubbleTouchFrame
+        android:id="@+id/bubbleCircle"
+        android:layout_width="44dp"
+        android:layout_height="44dp"
+        android:background="@drawable/bubble_circle_bg"
+        android:elevation="8dp">
+
+        <!--
+          头像：与 App 图标同一个角色（蓝发女仆装 Q 版）。
+
+          资源是**预先裁成圆形**的（各密度一份，见 drawable-*/bubble_avatar.png），
+          不是靠 scaleType 裁 —— 因为裁切要按"非透明包围盒"居中，而 ImageView
+          的 centerCrop 是按图片矩形居中，源图四周各有 15% 空白，直接用会让人物
+          偏小且呆毛被切。裁切框比例取 1.20（相对包围盒），在"不切呆毛"与
+          "人物够大"之间取的折中值。
+
+          ⚠️ 插件可以换掉它（`avatar` 字段）：`none` 时本视图 GONE、露出球的底色，
+             给 data URI 时由代码 setImageBitmap（落盘到 filesDir/bubble-avatar.bin）。
+        -->
+        <ImageView
+            android:id="@+id/bubbleAvatar"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:contentDescription="@string/bubble_avatar_desc"
+            android:scaleType="fitCenter"
+            android:src="@drawable/bubble_avatar" />
+
+        <!--
+          视频层宿主：带 alpha 通道的 webm 在这里被 WebView 渲染。
+
+          ⚠️ 它在 ImageView **之上**（XML 顺序在后 = z 序在上）：两者是互斥的内容层，
+             同一时刻只有一个可见。放上面的理由是**失败兜底** —— 视频解码不出来时
+             WebView 是透明的，下层的帧集/头像会直接露出来，而不是整个球空白。
+             反过来放（视频在下）就永远看不到兜底，因为不透明的头像会盖住它。
+
+          ⚠️ 它整个默认 GONE：没有视频素材时连 WebView 都不创建（几十 MB 内存）。
+        -->
+        <FrameLayout
+            android:id="@+id/bubbleVideoHost"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:visibility="gone" />
+
+        <!--
+          状态指示点：在跑=实心绿，空闲=空心灰。
+
+          ⚠️ 位置从"居中"挪到了**右下角**：以前圆形气泡里只有这一个点，居中最好看；
+          现在底下是头像，居中会正好糊在脸上。
+
+          ⚠️ margin 取 5dp 而不是 1dp：头像本身是圆形，点贴到右下角会被推到圆外
+          （父布局的裁剪是矩形，不管圆形背景），看起来像悬空。5dp 让点**微微压住
+          圆边**，正是头像状态角标该有的样子。
+
+          ⚠️ 白边由 `paintDot()` 用 LayerDrawable 画（见那里的注释）：头像的头发是
+          深蓝色，深色圆点直接贴上去看不清。
+        -->
+        <View
+            android:id="@+id/bubbleDot"
+            android:layout_width="14dp"
+            android:layout_height="14dp"
+            android:layout_gravity="bottom|end"
+            android:layout_marginEnd="5dp"
+            android:layout_marginBottom="5dp" />
+    </com.dsh.android.BubbleTouchFrame>
+
+    <!-- ══ 贴边态：拖出屏幕后剩下的那条薄片 ══ -->
+    <!--
+      用户把球往屏幕外拖时自动进入本形态：只剩一条窄条贴在边缘。
+      点它即弹回完整球并展开面板（见 FloatingBubble.onTapped）。
+
+      ⚠️ 宽高由代码按球的尺寸算（`applyAppearance`），XML 里这两项只是占位 ——
+         薄片必须跟随球的尺寸，而球尺寸是插件可配的，写死就会分成两处。
+
+      ⚠️ **这里刻意不写 `background` 与 `elevation`。** 它们由代码按当前形态决定：
+         有图 ⇒ 全不设（否则人物周围会套一个带阴影的白色圆角框，真机反馈为
+         「碰撞箱边缘有暗影」）；纯色薄片（`edgeImage:"none"`）⇒ 代码补上。
+         写在 XML 里的话，初始化那一帧会先把框画出来再被代码抹掉，看起来像闪一下。
+    -->
+    <FrameLayout
+        android:id="@+id/bubbleEdge"
+        android:layout_width="28dp"
+        android:layout_height="44dp"
+        android:visibility="gone">
+
+        <!--
+          贴边态的图片层（默认是「探头」形象，见 drawable-*/bubble_edge_default.png）。
+
+          ⚠️ 必须 `fitCenter` 而不是 `fitXY`：探头形象是竖长条，而可见框的
+             长宽比由用户/插件配的 edgeWidth × edgeHeight 决定，拉伸会把人物压扁。
+             留白处是透明的，看起来就是"从边里探出头"。
+
+          ⚠️ 用 `adjustViewBounds` + 不设固定尺寸不够：这里必须**严格填满**
+             父容器（`match_parent`），因为父容器尺寸就是"可点击区域"——
+             图片比框小的话，用户点到透明留白处仍应能唤出球。
+        -->
+        <ImageView
+            android:id="@+id/edgeImage"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:scaleType="fitCenter"
+            android:contentDescription="@null"
+            android:importantForAccessibility="no" />
+
+        <View
+            android:id="@+id/edgeDot"
+            android:layout_width="4dp"
+            android:layout_height="4dp"
+            android:layout_gravity="center" />
+    </FrameLayout>
+
+    <!-- ══ 展开态：会话面板 ══ -->
+    <!--
+      ⚠️ 外层是 FrameLayout 而不是 LinearLayout：缩放手柄要叠在内容之上
+         （右下角），LinearLayout 做不到叠放。
+    -->
+    <FrameLayout
+        android:id="@+id/bubblePanel"
+        android:layout_width="260dp"
+        android:layout_height="wrap_content"
+        android:background="@drawable/bubble_panel_bg"
+        android:elevation="8dp"
+        android:paddingStart="14dp"
+        android:paddingTop="12dp"
+        android:paddingEnd="14dp"
+        android:paddingBottom="12dp"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <!--
+              顶行：状态点 + 当前动作 + 回到 App + 收起。
+
+              ⚠️ 本行是面板的**拖动把手**（由 FloatingBubble 挂 onTouchListener）。
+                 消息列表自己会滚、输入框要收文字，都不能拿来拖；顶栏这块是
+                 唯一不会打架的区域。
+            -->
+            <LinearLayout
+                android:id="@+id/panelHeader"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <View
+                    android:id="@+id/panelDot"
+                    android:layout_width="8dp"
+                    android:layout_height="8dp"
+                    android:layout_marginEnd="7dp" />
+
+                <TextView
+                    android:id="@+id/panelAction"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:ellipsize="end"
+                    android:maxLines="2"
+                    android:text="空闲"
+                    android:textColor="#1A1D21"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/panelOpenApp"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:background="?android:attr/selectableItemBackgroundBorderless"
+                    android:padding="6dp"
+                    android:text="打开"
+                    android:textColor="#3B6FE0"
+                    android:textSize="12sp" />
+
+                <!--
+                  收起按钮是**必需**的：展开态把圆形气泡换掉了，用户必须有明确的路
+                  退回圆形。原先想用「长按面板收起」，但面板上装着 ScrollView 与
+                  EditText，长按手势会被它们吃掉，试了不灵。
+                -->
+                <TextView
+                    android:id="@+id/panelCollapse"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="2dp"
+                    android:background="?android:attr/selectableItemBackgroundBorderless"
+                    android:padding="6dp"
+                    android:text="收起"
+                    android:textColor="#8A9099"
+                    android:textSize="12sp" />
+            </LinearLayout>
+
+            <!-- 会话标题：同时开多个会话时用来分辨是哪个在跑 -->
+            <TextView
+                android:id="@+id/panelTitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="3dp"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:textColor="#8A9099"
+                android:textSize="11sp"
+                android:visibility="gone" />
+
+            <!--
+              会话转录：**完整**的对话内容 —— 用户消息、助手回复、每一次工具调用。
+
+              ⚠️ 从「单个 TextView 显示最近 400 字」改成「动态行列表」是本轮的核心
+                 改动：原来只能看到最后一条助手正文，用户在悬浮窗里看不到自己发过
+                 什么、也看不到 AI 调了哪些工具。现在由 ChatTranscript 驱动逐条渲染。
+
+              ⚠️ 固定高度而不是 wrap_content：内容长度不受控，wrap 会让面板在流式
+                 输出时不停长高/变矮，拖动时更是灾难。
+              ⚠️ 高度**可以在代码里改**（插件 `panelHeight` 字段 + 用户拖底部手柄）。
+            -->
+            <ScrollView
+                android:id="@+id/panelScroll"
+                android:layout_width="match_parent"
+                android:layout_height="150dp"
+                android:layout_marginTop="8dp"
+                android:background="@drawable/bubble_transcript_bg"
+                android:paddingStart="8dp"
+                android:paddingTop="8dp"
+                android:paddingEnd="8dp"
+                android:paddingBottom="8dp"
+                android:scrollbars="none">
+
+                <LinearLayout
+                    android:id="@+id/panelTranscript"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical" />
+            </ScrollView>
+
+            <!-- 输入行：输入框 + 发送 + 停止 -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:gravity="bottom"
+                android:orientation="horizontal">
+
+                <EditText
+                    android:id="@+id/panelInput"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:background="@drawable/bubble_input_bg"
+                    android:hint="发消息给 AI…"
+                    android:importantForAutofill="no"
+                    android:inputType="textMultiLine|textCapSentences"
+                    android:maxLines="4"
+                    android:minHeight="40dp"
+                    android:paddingStart="12dp"
+                    android:paddingTop="10dp"
+                    android:paddingEnd="12dp"
+                    android:paddingBottom="10dp"
+                    android:textColor="#1A1D21"
+                    android:textColorHint="#A0A6AE"
+                    android:textSize="13sp" />
+
+                <TextView
+                    android:id="@+id/panelSend"
+                    android:layout_width="wrap_content"
+                    android:layout_height="40dp"
+                    android:layout_marginStart="8dp"
+                    android:background="@drawable/bubble_send_bg"
+                    android:gravity="center"
+                    android:minWidth="56dp"
+                    android:paddingStart="12dp"
+                    android:paddingEnd="12dp"
+                    android:text="发送"
+                    android:textColor="#FFFFFF"
+                    android:textSize="13sp" />
+
+                <!--
+                  停止按钮：AI 在跑时才显示（由 applyStatus 控制 visibility）。
+                  它是气泡里唯一能中断 AI 的入口 —— 设备自动化时用户看着 AI 跑偏了
+                  要能立刻喊停，否则只能切回 App，而切回去的过程中 AI 可能已经做错事。
+                -->
+                <TextView
+                    android:id="@+id/panelStop"
+                    android:layout_width="wrap_content"
+                    android:layout_height="40dp"
+                    android:layout_marginStart="8dp"
+                    android:background="@drawable/bubble_stop_bg"
+                    android:gravity="center"
+                    android:minWidth="56dp"
+                    android:paddingStart="12dp"
+                    android:paddingEnd="12dp"
+                    android:text="停止"
+                    android:textColor="#FFFFFF"
+                    android:textSize="13sp"
+                    android:visibility="gone" />
+            </LinearLayout>
+
+            <!--
+              缩放手柄：面板**最底部**的一条，只有右端画着 grip 图形。
+
+              ⚠️ 刻意不做成右下角悬浮的小方块：那个位置正好压在「发送」按钮上，
+                 用户点发送的右半边会被判成 resize（实测布局重叠）。
+                 做成独立一行后，这一条上没有任何其它可交互元素，语义无歧义。
+
+              ⚠️ 触摸区域 = 整条（28dp 高），比图形大得多，手指按不准也能抓到。
+            -->
+            <View
+                android:id="@+id/panelResize"
+                android:layout_width="match_parent"
+                android:layout_height="28dp"
+                android:background="@drawable/bubble_resize_grip" />
+        </LinearLayout>
+    </FrameLayout>
+</FrameLayout>

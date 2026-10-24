@@ -1,0 +1,148 @@
+# 更新日志
+
+本文件记录本项目所有值得注意的变更。
+
+格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
+版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
+
+> **关于版本号**：`versionName` 表达「对外是不是同一版」，`versionCode` 才保证
+> 唯一性。历史上存在多个内容不同但 `versionName` 相同的构建（如 `0.2.9-rescue`
+> 对应 vc 21/22/23），那期间靠 `versionCode` 区分。自 **0.3.0** 起引入新产品能力
+> 时改前两位版本号。
+
+---
+
+## [0.4.1] — 2026-10-23
+
+### 修复
+
+- **AI 浏览器的入口不在约定的位置** —— 0.4.0 用的是右边缘贴边把手，而需求是
+  「从应用右侧边栏进入」。0.4.1 把它做到官方右侧边栏里。
+- 新增客户端插件 `dsh-android-browser-pane`：经 `sidebarRightTabs.register`
+  注册一种 tab + 经 `slots.register("sidebar.right.pane.tab")` 提供正文。
+  点开即调原生 `openAiBrowser()`（`PageBridge` 新增方法，两份 flavor 白名单
+  已同步）。**独立成包**，不动 `mobile-ui.zip` —— 那个 zip 是跨工作树共享的
+  符号链接资产，重打会把另一条分支的移动端修复整个回退掉。
+- 右边缘把手暂时保留作退路，侧栏入口确认可用后可删。
+
+---
+
+## [0.4.0] — 2026-10-23
+
+主题：**AI 拥有一台属于自己的手机浏览器**。
+
+### 新增
+
+- **AI 浏览器** —— 一个独立于官方界面的原生 WebView（`AiBrowserView`）。
+  引擎自带的侧栏浏览器是 `iframe`，而 GitHub（`X-Frame-Options: deny`）、
+  Google（CSP）拒绝被嵌入，那个方案连登录页都加载不出来；原生 WebView
+  没有这个限制，且渲染在本地、零延迟、不消耗服务器资源。
+- **完整的浏览器壳**：前进/后退/刷新/首页/地址栏/加载进度/多标签（上限 6）/
+  文件下载（落 App 专属外部 Download 目录，不需要存储权限）/ 文件上传 /
+  视口截图。
+- **`browser` 工具**（`dsh-android-browser`）—— 模型可以自己开网页、读页面、
+  点按钮、填表单、登录、截图。读页面回的是**可交互元素清单**（带稳定编号），
+  而不是一堆 HTML，因为让模型猜 CSS 选择器在真实站点上几乎必然落空。
+- **登录态持久**：Cookie 每次 `onPageFinished` 都 flush，App 重启后仍是登录状态。
+- **控制权仲裁**：AI 操作时吃掉所有触摸（避免用户随手一点让正在填的表单失焦），
+  顶部 chip 显示「AI 操作中」，用户点一下即可接管 —— 共享同一个浏览器。
+- **右边缘「浏览」把手**：启动层收起后常驻，浏览器打开时自动隐藏。
+
+### 修复
+
+- 工具栏按钮不显示 —— `ImageButton` 继承 `ImageView`、**不是 `ViewGroup`**，
+  `addView(tv)` 被隐式接收者解析成外层 `FrameLayout.addView`，文字被加到根布局
+  左上角（被页面盖住）。改为纯 `TextView` 按钮。
+- `type` 动作的 JS 里把 `var` 写成 `val`（Kotlin 笔误），会让所有输入操作抛
+  `SyntaxError`。已用 `node --check` 逐段验证拼接后的五段 JS。
+
+---
+
+## [Unreleased]
+
+### 计划中
+
+- 补齐开源仓库配置（README / LICENSE / CONTRIBUTING / SECURITY / CI）
+
+---
+
+## [0.3.0] — 2026-10-17
+
+### 新增
+
+- **Shizuku 权限通道** —— uid 2000 执行不再只依赖 adb。不需要 5555 端口、
+  不需要 adbkey 被信任、重启后依然有效。此前对「Android 10 且只有有线 adb」的
+  用户是结构性死锁。
+- **插件市场**（`dsh-android-market`）+ 远程目录双插件。
+- **配对服务端加固** + 管理面板；新增五组门禁测试。
+- **界面改三标签页**。
+
+### 修复
+
+- **白屏真根因（HTTP 431）** —— auth cookie 累积导致请求头超限；同时 GeckoView
+  不跟随 303 重定向。新增救援判据。
+- **救援判据漏报** —— `parseGatewayFailure` 无法识别 typert gateway 整体下线的场景。
+- **ELF 路径改写必须用运行时真实包名** —— 编译期常量在被改包名的安装上会指向
+  不存在的目录。
+- **补传诊断包跨进程互斥** —— 单靠 `AtomicBoolean` 挡不住重叠的主进程实例。
+- **L1 隔离作用在过期快照上** + quarantine 有一条完全静默的 `false` 分支。
+- **救援阶梯日志从不落盘** + `rescue/` 状态文件从不进诊断包。
+
+---
+
+## [0.2.9] — 2026-10-14
+
+### 新增
+
+- **内建 uid 2000 执行通道**（`shell` 工具）。
+- **悬浮球** —— 可自定义外观、帧动画、视频图层。
+- **`bubble` / `pet` / `ui` / `logs` 工具插件** —— 让模型自己操作悬浮窗、看屏幕、
+  查日志。
+- **四级救援阶梯 + 安全模式** —— 坏插件不再让 App 打不开。
+
+### 修复
+
+- **「界面反复出错」误报** —— 渲染重载计数没有时间窗，长期运行的内核回收会
+  累计成「反复崩溃」。
+- **界面重载永远判失败** —— 四层缺陷叠加，内核被回收后无法自动恢复。
+- **「已停止自动恢复」后仍在重载** —— 在飞的重载链没有失效机制。
+- **主线程卡死现场无栈** —— 补主线程栈快照，此前 4 份真实用户现场全部无法定位。
+- **文件上传任何格式都失败** —— 上传 Worker 改到主线程。
+- **号池「API 密钥无效、重启又恢复」** —— 固定槽位表耗尽。
+
+---
+
+## [0.2.7] — 2026-10-13
+
+### 新增
+
+- **内置 Web 内核版**（gecko flavor，GeckoView 140）—— 不依赖系统 WebView，
+  与 system 版 `applicationId` 不同，可同装一台机器。
+- **内置号池** —— TLS 层注入，密钥不落盘、不进 JS。
+
+### 修复
+
+- **旧 WebView 内核白屏** —— 改为把前端 bundle 按 chrome73 降级编译，而不是
+  只打 polyfill（polyfill 补不了语法）。
+
+---
+
+## [0.2.6] 及更早
+
+引入 `system` / `gecko` 双 flavor 之前的历史版本。核心适配工作在此阶段完成：
+
+- Termux 环境自举（bootstrap / node / pnpm）
+- **`link` 转译层** —— SELinux 不给 `link()` 权限
+- **自带沙箱 runner** —— Android 没有 bwrap / Landlock
+- **ripgrep / sharp / node-pty 的 android 变体**
+- WebView 文件选择器与下载器
+- 目录选择器接上手机存储
+
+细节见 [`docs/agents/`](docs/agents/README.md)。
+
+---
+
+## 链接
+
+- [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)
+- [语义化版本](https://semver.org/lang/zh-CN/)
