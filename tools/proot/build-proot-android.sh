@@ -103,10 +103,15 @@ else
   rm -rf bin build 2>/dev/null || true     # 上次失败可能留下半配置
   say "   configure ${OPTS[*]}"
   # CC/CFLAGS 必须用**环境变量**传；写成 `./configure ... CFLAGS=xxx` 会被 waf 当普通参数忽略
+  # ⚠️ 不能用 `./configure ... | tail`：pipeline 的退出码是 tail 的（0），永远进不了失败分支
   if ! env CC="$CC" AR="$AR" RANLIB="$RANLIB" CFLAGS="$BASE_CFLAGS" \
-      ./configure "${OPTS[@]}" 2>&1 | tail -12; then
-    say "   ! talloc configure 失败 → config.log 尾部："
+      ./configure "${OPTS[@]}" > talloc-conf.log 2>&1; then
+    say "   ! talloc configure 失败（末 25 行）："
+    tail -25 talloc-conf.log
+    say "   ! waf config.log（末 40 行）："
     tail -40 bin/config.log 2>/dev/null || true
+  else
+    tail -6 talloc-conf.log 2>/dev/null || true
   fi
   make -j"$JOBS" 2>&1 | tail -12 || true
   make install 2>&1 | tail -6 || true
@@ -118,7 +123,31 @@ else
     [ -n "$HDR" ] && cp -f "$HDR" "$PREFIX/include/"
     say "   ✓ libtalloc.a $(stat -c%s "$PREFIX/lib/libtalloc.a") B"
   else
-    say "   ! 没产出 libtalloc.a —— 继续试 proot（它可能自带 talloc.c）"
+    say "   ! waf 没产出 → 回退：直接手编 talloc.c（绕开 waf 的探测）"
+    TS="$(find . -maxdepth 2 -name 'talloc.c' | head -1)"
+    if [ -n "$TS" ]; then
+      TD="$(dirname "$TS")"
+      OBJS=()
+      for c in "$TS" $(find . -maxdepth 2 -name 'replace*.c' 2>/dev/null); do
+        o="$(basename "${c%.c}").o"
+        if "$CC" -O2 -fPIC -D_FILE_OFFSET_BITS=64 -D_GNU_SOURCE -I"$TD" -I. \
+             -c "$c" -o "$o" > "cc-$(basename "$c").log" 2>&1; then
+          OBJS+=("$o")
+        else
+          say "   ! $(basename "$c") 编译失败："
+          tail -6 "cc-$(basename "$c").log"
+        fi
+      done
+      if [ ${#OBJS[@]} -gt 0 ]; then
+        mkdir -p "$PREFIX/lib" "$PREFIX/include"
+        "$AR" rcs "$PREFIX/lib/libtalloc.a" "${OBJS[@]}"
+        find . -name 'talloc.h' -exec cp -f {} "$PREFIX/include/" \;
+        say "   ✓ 手编 libtalloc.a $(stat -c%s "$PREFIX/lib/libtalloc.a") B（${#OBJS[@]} 个 .o）"
+      fi
+    else
+      say "   ! talloc 包里找不到 talloc.c"
+    fi
+    [ -f "$PREFIX/lib/libtalloc.a" ] || say "   ! 仍无 libtalloc.a —— 继续试 proot（它可能自带）"
   fi
 fi
 
