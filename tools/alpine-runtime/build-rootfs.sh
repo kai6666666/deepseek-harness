@@ -250,6 +250,8 @@ fi
 say "== 7) 打包 + 校验 + 清单"
 if [ "$DRY" = "0" ]; then
   mkdir -p "$OUT"
+  # 必须绝对化：下面 `cd "$ROOT"` 之后，相对的 dist 会被解析成 $ROOT/dist（不存在）
+  OUT="$(cd "$OUT" && pwd)"
   TARBALL="$OUT/alpine-rootfs.tar.gz"
   ( cd "$ROOT" && tar --numeric-owner --owner=0 --group=0 -czf "$TARBALL" . )
   ( cd "$OUT" && sha256sum "$(basename "$TARBALL")" > "$(basename "$TARBALL").sha256" )
