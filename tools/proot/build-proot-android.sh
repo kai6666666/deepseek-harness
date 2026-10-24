@@ -102,17 +102,24 @@ else
   done
   rm -rf bin build 2>/dev/null || true     # 上次失败可能留下半配置
   say "   configure ${OPTS[*]}"
-  ./configure "${OPTS[@]}" CC="$CC" AR="$AR" RANLIB="$RANLIB" CFLAGS="$BASE_CFLAGS" 2>&1 | tail -15 \
-    || die "talloc configure 失败" 5
-  make -j"$JOBS" 2>&1 | tail -15 || die "talloc 编译失败" 5
-  make install 2>&1 | tail -8 || true      # install 失败不算错，下面用 find 兜底
+  # CC/CFLAGS 必须用**环境变量**传；写成 `./configure ... CFLAGS=xxx` 会被 waf 当普通参数忽略
+  if ! env CC="$CC" AR="$AR" RANLIB="$RANLIB" CFLAGS="$BASE_CFLAGS" \
+      ./configure "${OPTS[@]}" 2>&1 | tail -12; then
+    say "   ! talloc configure 失败 → config.log 尾部："
+    tail -40 bin/config.log 2>/dev/null || true
+  fi
+  make -j"$JOBS" 2>&1 | tail -12 || true
+  make install 2>&1 | tail -6 || true
   LIB="$(find . -name 'libtalloc.a' | head -1)"
-  [ -n "$LIB" ] || die "找不到 libtalloc.a（talloc 构建没产出静态库）" 5
-  mkdir -p "$PREFIX/lib" "$PREFIX/include"
-  cp -f "$LIB" "$PREFIX/lib/libtalloc.a"
-  HDR="$(find . -name 'talloc.h' | head -1)"
-  [ -n "$HDR" ] && cp -f "$HDR" "$PREFIX/include/"
-  say "   ✓ libtalloc.a $(stat -c%s "$PREFIX/lib/libtalloc.a") B"
+  if [ -n "$LIB" ]; then
+    mkdir -p "$PREFIX/lib" "$PREFIX/include"
+    cp -f "$LIB" "$PREFIX/lib/libtalloc.a"
+    HDR="$(find . -name 'talloc.h' | head -1)"
+    [ -n "$HDR" ] && cp -f "$HDR" "$PREFIX/include/"
+    say "   ✓ libtalloc.a $(stat -c%s "$PREFIX/lib/libtalloc.a") B"
+  else
+    say "   ! 没产出 libtalloc.a —— 继续试 proot（它可能自带 talloc.c）"
+  fi
 fi
 
 # ── 2) libandroid-shmem（bionic 没有 SysV shm） ──────────────────────
@@ -152,6 +159,10 @@ chmod +x src/makefile* 2>/dev/null || true
 PROOT_CFLAGS="$BASE_CFLAGS -DARG_MAX=131072 -I$PWD/src -I$PWD"
 PROOT_LDFLAGS="$BASE_LDFLAGS -ltalloc -landroid-shmem -llog -static-libgcc"
 
+say "   proot src 结构（前 30 项）："
+say "   $(ls src 2>/dev/null | head -30 | tr '\n' ' ')"
+say "   src/Makefile 里的 talloc 引用："
+grep -n 'talloc' src/Makefile 2>/dev/null | head -6 || say "   （无，可能自带 talloc.c）"
 say "   make -C src ..."
 make -C src -j"$JOBS" \
   CC="$CC" AR="$AR" RANLIB="$RANLIB" \
