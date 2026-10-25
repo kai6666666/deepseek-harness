@@ -105,6 +105,16 @@ class AlpineRuntime private constructor(
         }.onFailure { Log.w(TAG, "清理残留 proot 失败：${it.message}") }
     }
 
+    /** busybox applet 里引擎跑起来必需（或极常用）的那批，缺失就复制 busybox 顶上。 */
+    private val BUSYBOX_APPLETS = listOf(
+        "env", "sh", "ash", "ls", "cat", "cp", "mv", "rm", "mkdir", "rmdir", "ln",
+        "chmod", "chown", "grep", "egrep", "sed", "awk", "find", "tar", "gzip",
+        "gunzip", "touch", "head", "tail", "wc", "sort", "uniq", "xargs",
+        "basename", "dirname", "true", "false", "sleep", "kill", "ps", "du", "df",
+        "id", "whoami", "printf", "echo", "mktemp", "readlink", "stat", "cut", "tr",
+        "tee", "date", "uname", "test", "expr", "seq", "sed",
+    ).distinct()
+
     /**
      * 幂等修 rootfs 里的执行位 + 兜住 `/usr/bin/env` 缺失。
      *
@@ -130,14 +140,37 @@ class AlpineRuntime private constructor(
             }
         }
         val env = File(root, "usr/bin/env")
-        if (!env.exists()) {
-            val busybox = File(root, "bin/busybox")
-            if (busybox.isFile) {
+        // 真机日志实证：`env exists=false exec=false real=…/usr/bin/env busybox=true`
+        // —— 不是权限位问题，是 **`/usr/bin/env` 这一条压根不存在**。
+        // 原因：Alpine 的 busybox applet 在 tar 里是**硬链接**，我们的解包器只处理
+        // file/dir/symlink，硬链接条目被跳过 → env/sh/ls/cat… 全部消失。
+        // 现在按「复制 busybox 并按 argv[0] 当 applet 用」补齐（busybox 天然支持）。
+        val busybox = File(root, "bin/busybox")
+        if (busybox.isFile && busybox.canExecute()) {
+            var made = 0
+            BUSYBOX_APPLETS.forEach { name ->
+                val f = File(root, "usr/bin/$name")
+                if (f.exists()) return@forEach
                 runCatching {
-                    File(root, "usr/bin").mkdirs()
-                    android.system.Os.symlink("/bin/busybox", env.absolutePath)
-                }.onSuccess { Log.w(TAG, "补建 /usr/bin/env → /bin/busybox（rootfs 里缺这条）") }
+                    f.parentFile?.mkdirs()
+                    busybox.copyTo(f, overwrite = true)
+                    android.system.Os.chmod(f.absolutePath, 0b111_101_101)
+                }.onSuccess { made++ }
             }
+            // /bin/sh 必须存在：引擎 spawn 子进程、node 的 child_process 都靠它
+            val sh = File(root, "bin/sh")
+            if (!sh.exists()) {
+                runCatching {
+                    busybox.copyTo(sh, overwrite = true)
+                    android.system.Os.chmod(sh.absolutePath, 0b111_101_101)
+                }.onSuccess { Log.w(TAG, "补建 /bin/sh（复制 busybox）") }
+                    .onFailure { Log.e(TAG, "补建 /bin/sh 失败：${it.message}") }
+            }
+            if (made > 0) {
+                Log.w(TAG, "补建 busybox applet $made 个（rootfs 解包丢了硬链接条目）")
+            }
+        } else {
+            Log.e(TAG, "busybox 不可用：${busybox.absolutePath} exists=${busybox.exists()}")
         }
         val real = runCatching { env.canonicalPath }.getOrNull()
         Log.i(
