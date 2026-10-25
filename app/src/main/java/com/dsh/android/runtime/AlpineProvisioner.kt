@@ -26,12 +26,19 @@ class AlpineProvisioner(
 
     private val tag = "DSH/Alpine"
 
-    fun rootfsDir(): File = File(home, RuntimeBackend.ALPINE.dirName)
+    fun rootfsDir(): File =
+        RuntimePaths.assertExecutableRoot(File(home, RuntimeBackend.ALPINE.dirName), context.filesDir)
     private fun stampFile(): File = File(rootfsDir(), READY_STAMP)
     private fun stagingDir(): File = File(home, "alpine.tmp")
 
     /** 只读探测，给日志/诊断包用。 */
-    data class Status(val provisioned: Boolean, val detail: String, val sha256: String = "")
+    data class Status(
+        val provisioned: Boolean,
+        val detail: String,
+        val sha256: String = "",
+        /** G-05：上次解包的实测占用（0 = 没记过） */
+        val measuredBytes: Long = 0L,
+    )
 
     fun status(): Status {
         val manifest = RootfsManifest.load(context)
@@ -40,14 +47,22 @@ class AlpineProvisioner(
         if (!node.isFile) return Status(false, "rootfs 未解包：${rootfsDir().absolutePath}")
         val stamp = stampFile()
         if (!stamp.isFile) return Status(false, "缺 .ready 标记（上次解包未完成）", manifest.sha256)
-        val got = runCatching { stamp.readText().trim() }.getOrDefault("")
+        // .ready 三行：sha256 / 实测字节 / 时间戳（G-05：实测值用来校准下次预检）
+        val lines = runCatching { stamp.readLines() }.getOrDefault(emptyList())
+        val got = lines.firstOrNull()?.trim().orEmpty()
+        val measured = lines.getOrNull(1)?.trim()?.toLongOrNull() ?: 0L
         if (got != manifest.sha256) {
             return Status(false, "版本不一致：.ready=${got.take(12)}… manifest=${manifest.sha256.take(12)}…", manifest.sha256)
         }
         if (!node.canExecute()) {
             return Status(false, "usr/bin/node 没有执行位（解包权限丢失）", manifest.sha256)
         }
-        return Status(true, "就绪（node ${manifest.nodejs}，alpine ${manifest.alpine}）", manifest.sha256)
+        return Status(
+            true,
+            "就绪（node ${manifest.nodejs}，alpine ${manifest.alpine}，占用 ${measured / 1048576} MB）",
+            manifest.sha256,
+            measured,
+        )
     }
 
     /**
@@ -75,7 +90,14 @@ class AlpineProvisioner(
         }
 
         // ── G-05：空间预检 ────────────────────────────────────────────────
-        val need = manifest.bytes * RuntimeAssets.FREE_SPACE_FACTOR
+        // G-05：预检取「压缩包 ×3」与「上次实测占用 ×1.1」的较大值。
+        //   纯推测在压缩率变化的版本上会偏小；实测值才是硬数据。
+        val measured = lastMeasuredBytes()
+        val need = maxOf(
+            manifest.bytes * RuntimeAssets.FREE_SPACE_FACTOR,
+            (measured * 11L) / 10L,
+        )
+        Log.i(tag, "空间预检：need=${need / 1048576} MB（包=${manifest.bytes / 1048576} MB，上次实测=${measured / 1048576} MB）")
         val free = runCatching { StatFs(context.filesDir.absolutePath).availableBytes }.getOrDefault(-1L)
         if (free in 0 until need) {
             return Result.failure(
@@ -102,6 +124,9 @@ class AlpineProvisioner(
                     // 每 500 个条目报一次。用局部计数：entries 此时还没被赋值（恒为 0）
                     seen++
                     if (seen % 500 == 0) {
+                        // G-05：解包中实测水位。低空间设备不再「解到一半 ENOSPC」，
+                        //   而是在还剩 80 MB 时就停下、清 staging、报可读的错。
+                        checkWater(counting.count)
                         val p = if (manifest.bytes > 0) (counting.count * 90 / manifest.bytes).toInt() else 0
                         onProgress(p.coerceIn(1, 95), name.takeLast(48))
                     }
@@ -138,7 +163,10 @@ class AlpineProvisioner(
             }
             if (!staging.renameTo(finalDir)) throw IllegalStateException("rename 到 ${finalDir.absolutePath} 失败")
             bad.deleteRecursively()
-            stampFile().writeText(manifest.sha256)
+            // G-05：把实测占用一起记下，下次预检直接用真实值
+            val used = dirBytes(finalDir)
+            stampFile().writeText("${manifest.sha256}\n$used\n${System.currentTimeMillis()}\n")
+            Log.i(tag, "实测占用：${used / 1048576} MB（.ready 已记）")
             onProgress(100, "完成：$entries 个条目，node ${manifest.nodejs}")
             Log.i(tag, "解包完成：entries=$entries node=${manifest.nodejs} sha=${manifest.sha256.take(12)}")
             return Result.success(finalDir)
@@ -175,6 +203,24 @@ class AlpineProvisioner(
 
     /** G-07：回滚点是否在。 */
     fun hasPrevious(): Boolean = File(home, "alpine.prev").isDirectory
+
+    /** G-05：上次解包的实测占用（读 .ready 第二行）；没记过返回 0。 */
+    fun lastMeasuredBytes(): Long =
+        runCatching { stampFile().readLines().getOrNull(1)?.trim()?.toLongOrNull() ?: 0L }
+            .getOrDefault(0L)
+
+    /** G-05：解包中的水位检查——剩余可用低于 SAFETY_MARGIN 就中止。 */
+    private fun checkWater(written: Long) {
+        val free = runCatching {
+            StatFs(context.filesDir.absolutePath).availableBytes
+        }.getOrDefault(Long.MAX_VALUE)
+        if (free < SAFETY_MARGIN) {
+            throw IllegalStateException(
+                "解包中空间不足：剩余 ${free / 1048576} MB < ${SAFETY_MARGIN / 1048576} MB" +
+                    "（已写入 $written B）——已清理临时目录，可腾出空间后重试",
+            )
+        }
+    }
 
     /** 任意目录的字节数（prunePrevious 用；不动 installedBytes 的既有签名）。 */
     private fun dirBytes(dir: File): Long {
@@ -233,6 +279,9 @@ class AlpineProvisioner(
 
     private companion object {
         const val READY_STAMP = ".ready"
+
+        /** G-05：解包过程中必须保留的最小可用空间（低于它就中止，别把盘写满）。 */
+        const val SAFETY_MARGIN = 80L * 1024 * 1024
         const val MIN_TAR_BYTES = 20L * 1024 * 1024
     }
 }
