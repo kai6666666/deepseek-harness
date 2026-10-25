@@ -275,7 +275,7 @@ class AlpineRuntime private constructor(
 
         val argv = ArrayList<String>(48)
         argv += av.proot.absolutePath
-        argv += listOf("-r", av.rootfs.absolutePath, "-0", "-w", GUEST_WORKSPACE, "--link2symlink")
+        argv += listOf("-r", av.rootfs.absolutePath, "-w", GUEST_WORKSPACE, "--link2symlink")
         argv += listOf("-b", "/dev:/dev", "-b", "/proc:/proc")
         argv += listOf("-b", "${dshHome.absolutePath}:/dsh-home")
         // 引擎若不在 `$DSH_HOME/engine`（当前布局就是），单独 bind 进去 ——
@@ -334,7 +334,8 @@ class AlpineRuntime private constructor(
     }
 
     private fun guestEnv(): List<String> = listOf(
-        "HOME=/root",
+        // 去掉 `-0`（fake root）后 guest 内 uid 就是 app uid，`/root` 往往不可写 → 落到 /tmp。
+        "HOME=/tmp",
         "PREFIX=/usr",
         "LANG=C.UTF-8",
         "LC_ALL=C.UTF-8",
