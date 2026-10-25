@@ -71,7 +71,9 @@ jobs:
           # ⚠️ proot 的 GNUmakefile 里 `CC` 是**硬赋值**，光 export 不生效（日志里能看到它用宿主
           #   的 `gcc` 去链 `-ltalloc`，于是 `/usr/bin/ld: cannot find -ltalloc`）。
           #   必须以命令行变量传进去，CFLAGS/LDFLAGS 同理。
-          make -j4 \
+          # ⚠️ 只编 `proot` 目标：默认 `make` 会连带编 python 扩展，交叉编译时
+          #    `/usr/include/python3.12/pyconfig.h: fatal error: 'aarch64-linux-gnu/python3.12/pyconfig.h' not found`
+          make -j4 proot \
             CC="$CC" \
             CFLAGS="$CFLAGS" \
             LDFLAGS="$LDFLAGS" \
