@@ -86,7 +86,7 @@ jobs:
         run: |
           set -uo pipefail
           chmod +x gradlew
-          ./gradlew ":app:assemble${FLAVOR^}Debug" --no-daemon --console=plain --stacktrace 2>&1 | tail -60
+          ./gradlew ":app:assemble${FLAVOR^}Release" --no-daemon --console=plain --stacktrace 2>&1 | tail -60
           rc=${PIPESTATUS[0]}
           echo "gradle exit=$rc"
           find app/build/outputs -name '*.apk' -printf '%10s  %p\n' 2>/dev/null || true
@@ -96,7 +96,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: dsh-debug-apk
+          name: dsh-release-apk
           path: app/build/outputs/apk/**/*.apk
           retention-days: 14
           if-no-files-found: warn
@@ -108,7 +108,7 @@ jobs:
           {
             echo "### APK 构建"
             echo ""
-            ls -lh app/build/outputs/apk/*/debug/*.apk 2>/dev/null || echo "（没有 APK）"
+            ls -lh app/build/outputs/apk/*/release/*.apk 2>/dev/null || echo "（没有 APK）"
             echo ""
             echo "rootfs: $(du -h app/src/main/assets/runtime/alpine-rootfs.tar.gz 2>/dev/null | cut -f1)"
           } >> "$GITHUB_STEP_SUMMARY"
