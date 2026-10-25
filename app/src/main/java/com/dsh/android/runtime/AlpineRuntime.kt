@@ -89,10 +89,27 @@ class AlpineRuntime private constructor(
             Log.i(TAG, "alpine 档不可用，回退 Termux：${av.describe()}")
             return null
         }
-        val binJs = File(dshHome, "engine/node_modules/@deepseek-ai/dsh/lib/bin.js")
-        if (!binJs.isFile) {
-            Log.w(TAG, "engine 里没有 bin.js：${binJs.absolutePath}，回退 Termux")
+        // 引擎实际装在 `filesDir/engine`（EngineManager.engineDir），**不是** `$DSH_HOME/engine`。
+        // 以前只认 .dsh/engine → 真机永久命中「engine 里没有 bin.js」→ 一直回退 Termux；
+        // 而 Termux 档没有 per-guest 的 `--link2symlink`，引擎给 session 做原子写用的 link()
+        // 在部分设备/ROM 上直接 EACCES（真机实证：session.v4.jsonl.zstd.tmp → .zstd）。
+        // 顺序：先老布局（.dsh/engine），再当前布局（filesDir/engine）。
+        val engineCandidates = listOf(
+            File(dshHome, "engine"),
+            File(context.filesDir, "engine"),
+        )
+        val hostEngine = engineCandidates.firstOrNull {
+            File(it, "node_modules/@deepseek-ai/dsh/lib/bin.js").isFile
+        }
+        if (hostEngine == null) {
+            Log.w(
+                TAG,
+                "两处都没有引擎 bin.js（${engineCandidates.joinToString { it.absolutePath }}），回退 Termux",
+            )
             return null
+        }
+        if (hostEngine != engineCandidates[0]) {
+            Log.i(TAG, "引擎在 ${hostEngine.absolutePath}，将额外 bind 到 guest /dsh-home/engine")
         }
 
         val argv = ArrayList<String>(48)
@@ -100,6 +117,13 @@ class AlpineRuntime private constructor(
         argv += listOf("-r", av.rootfs.absolutePath, "-0", "-w", GUEST_WORKSPACE, "--link2symlink")
         argv += listOf("-b", "/dev:/dev", "-b", "/proc:/proc")
         argv += listOf("-b", "${dshHome.absolutePath}:/dsh-home")
+        // 引擎若不在 `$DSH_HOME/engine`（当前布局就是），单独 bind 进去 ——
+        // guest 内路径恒为 `/dsh-home/engine`，GUEST_ENGINE_BIN 因此不用改。
+        // proot 的 bind 允许后一条覆盖前一条的子路径，顺序敏感，别调换。
+        val legacyEngine = File(dshHome, "engine")
+        if (hostEngine != legacyEngine) {
+            argv += listOf("-b", "${hostEngine.absolutePath}:/dsh-home/engine")
+        }
         argv += listOf("-b", "${workspace.absolutePath}:$GUEST_WORKSPACE")
         argv += "--kill-on-exit"
         argv += "/usr/bin/env"
