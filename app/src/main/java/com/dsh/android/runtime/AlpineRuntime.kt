@@ -287,9 +287,15 @@ class AlpineRuntime private constructor(
         }
         argv += listOf("-b", "${workspace.absolutePath}:$GUEST_WORKSPACE")
         argv += "--kill-on-exit"
-        argv += "/usr/bin/env"
+        // ⚠️ 不要用 `/usr/bin/env`：Alpine 里它是 **busybox 的硬链接条目**，我们的
+        // TarGzExtractor 不解硬链接 → 真机上 `env exists=false`，于是 proot 第一条命令就
+        // `execve("/usr/bin/env"): Permission denied`（引擎 2.8 s 退出 → 连续 10 次 → 救援模式）。
+        // 直接调 `/bin/busybox env`：busybox 的 env applet 支持 `env K=V PROG` 语法，
+        // 不依赖任何被丢掉的硬链接。
+        val busyboxInGuest = "/bin/busybox"
+        argv += busyboxInGuest
+        argv += "env"
         argv += guestEnv()
-        argv += "--"
         argv += "/usr/bin/node"
         argv += GUEST_ENGINE_BIN
         argv += listOf("--profile", profile)
