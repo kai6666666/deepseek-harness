@@ -80,7 +80,7 @@ jobs:
         run: bash tools/fetch-rootfs-into-assets.sh --from dist
 
       - name: 自检（G-11 锚点重定位 / G-13 进程组）
-        run: node tools/selftest-g11-g13.mjs
+        run: node tools/selftest-g11-g13.mjs && node tools/gen-version-matrix.mjs --check
 
       - name: 闸门预检（与 preBuild 调的是同一个脚本）
         run: bash tools/verify-runtime-assets.sh

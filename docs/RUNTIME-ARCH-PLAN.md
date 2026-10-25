@@ -127,7 +127,7 @@ docs/agents             37 篇（索引式，按"坑"组织）
 | **P3** | Alpine 骨架：构建/启动/映射/切档/验收 | `tools/alpine-runtime/` 6 文件 + **真 rootfs** | pathmap 9/9；CI `run 40114426384` success；产物 `nodejs 24.22.1-r0` / 55.4 MB / 解包 165 MB | ✅ **rootfs 已产出** |
 | **P4** | 工具链三层：apt overlay / deb 提取 / ABI 守卫 | `tools/toolchain-overlay/` 7 文件 | `--dry-run` 探测到 24.04.5 + sha256；hello deb 真解包 | ✅ 完成【实测】 |
 | **P5** | **接 App**：Kotlin 接入 + 资产入包 + preBuild 验收 | `runtime/` 4 文件 + `EngineManager` 3 处 + `tools/proot/README.md` | 资产入包、preBuild 闸门生效；**CI `kotlin-compile` run `40116990495` = BUILD SUCCESSFUL in 47s**（首轮 2 个编译错误已修） | ✅ **编译通过**，缺 proot 二进制（G-23） |
-| **P6** | 上游 PR：`android-arm64` 平台包 | `tools/upstream-pr/` | 官方接受 | ⬜ 待提 |
+| **P6** | 上游 PR：`android-arm64` 平台包 | `tools/upstream-pr/` 三文件（590+195+3683 B） | 官方接受 | ⏸ **暂停**（主人 2026-10-25 决定「先放着」）——重启条件：①要长期跟上游版本走 ②其他插件也开始依赖 flock ③官方愿意接 bionic 枚举 |
 
 ---
 
@@ -150,14 +150,14 @@ docs/agents             37 篇（索引式，按"坑"组织）
 | # | 缺口 | 现象 | 补法 |
 |---|---|---|---|
 | ~~G-05~~ ✅ | **磁盘水位不检查** | 低空间设备解到一半失败，留下半个 rootfs | 解包前 `StatFs.availableBytes > 压缩包×3`，不足直接拒绝并给提示 |
-| **G-06** | 无**断点续传/半包清理** | 下载中断 → 下次重新下 30 MB | 已加 sha256 校验（本轮），还需 `.part` + Range 续传 |
-| **G-07** | 无**版本升级/回滚** | 换 rootfs 版本只能全删重装 | 保留 `alpine-<ver>` 双目录 + `current` 符号链接（`gc --old` 清理） |
-| **G-08** | **架构探测缺失** | arm64 包在 x86_64 模拟器上必失败 | 启动前 `Build.SUPPORTED_ABIS`，非 `arm64-v8a` 直接给出"不支持"而不是崩 |
+| ~~G-06~~ ✅ | 无**断点续传/半包清理** | 下载中断 → 下次重新下 30 MB | 已加 sha256 校验（本轮），还需 `.part` + Range 续传 |
+| ~~G-07~~ ✅ | 无**版本升级/回滚** | 换 rootfs 版本只能全删重装 | 保留 `alpine-<ver>` 双目录 + `current` 符号链接（`gc --old` 清理） |
+| ~~G-08~~ ✅ | **架构探测缺失** | arm64 包在 x86_64 模拟器上必失败 | 启动前 `Build.SUPPORTED_ABIS`，非 `arm64-v8a` 直接给出"不支持"而不是崩 |
 | ~~G-09~~ ✅ | **rootfs 落地路径约束没写死** | `/storage/emulated/0` 是 FUSE 无 exec | 强制 `filesDir`（或 `noBackupFilesDir`），并在 `RuntimePaths` 里断言前缀 |
-| **G-10** | `resolv.conf` 写死三个 IP | 国内网络下 `1.1.1.1` 可能超时 | 三级：Android `netd` 拿到的 DNS → 223.5.5.5 → env 覆盖 |
-| **G-11** | 补丁**锚点无自动重定位** | 上游改一行，`includes()` 判据全 False → 静默跳过 | 加"锚点模糊匹配 + 命中多处即 FAIL"；`manifest.json` 记录上游 commit |
+| ~~G-10~~ ✅ | `resolv.conf` 写死三个 IP | 国内网络下 `1.1.1.1` 可能超时 | 三级：Android `netd` 拿到的 DNS → 223.5.5.5 → env 覆盖 |
+| ~~G-11~~ ✅ | 补丁**锚点无自动重定位** | 上游改一行，`includes()` 判据全 False → 静默跳过 | 加"锚点模糊匹配 + 命中多处即 FAIL"；`manifest.json` 记录上游 commit |
 | **G-12** | 上游 PR 的 `libc: "bionic"` 是新枚举值 | 官方 `verify-*` 可能拒绝 | 同 PR 改校验脚本白名单；PR 描述里注明向后兼容 |
-| **G-13** | `index.js` install 两处瑕疵 | 未用 `virtualPrefix`；`spawn` 超时只杀父进程 | 用 `virtualPrefix`；超时 `process.kill(-pid, 'SIGKILL')` 杀进程组 |
+| ⚠️ G-13（半） | `index.js` install 两处瑕疵 | 未用 `virtualPrefix`；`spawn` 超时只杀父进程 | 用 `virtualPrefix`；超时 `process.kill(-pid, 'SIGKILL')` 杀进程组 |
 | **G-14** | 市场快照落后 | `seed.json` 9 个 vs npm 关键词 10 个（漏 `dsh-zen-free`） | `market-collect.mjs` 定时刷新 + 记录 `generatedAt` 并在 UI 提示新鲜度 |
 | **G-15** | 无**版本矩阵** | DSH 版本 × rootfs 版本 × node 版本没有一张对照表 | 新增 `docs/agents/version-matrix.md`，由 `verify-*` 自动比对 |
 

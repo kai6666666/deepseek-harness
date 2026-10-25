@@ -1,0 +1,21 @@
+{
+  "name": "dsh-android-toolchain",
+  "version": "1.0.0",
+  "description": "DSH Android 客户端的工具链探测/安装工具：识别依赖该装在 Alpine guest 还是宿主，按需装 apk 包，并在超时/取消时杀掉整个进程组（proot 拉起的 node 不会留孤儿）。",
+  "type": "module",
+  "main": "./lib/index.js",
+  "exports": {
+    ".": {
+      "default": "./lib/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "keywords": [
+    "dsh",
+    "android",
+    "alpine",
+    "toolchain"
+  ],
+  "license": "MIT",
+  "private": true
+}
