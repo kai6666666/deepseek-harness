@@ -1,0 +1,83 @@
+name: build-proot
+
+# 目的：拿到一个 **aarch64 静态 proot**，替换 jniLibs 里的 libproot.so（Termux 5.1.107.101），
+# 用来判定「Android 16 上 proot 内 execve 全 EACCES」到底是不是 Termux 那份二进制的问题。
+#
+# 为什么不用现成的：
+#   · Termux 源只有 5.1.107.101（就是现在失败的那个）
+#   · proot-me 的 release 资产实测是 **x86_64 静态**（e_machine=0x3e），arm64 必须自编
+#   · Alpine 仓库没有 proot 包（main / community 都查过）
+#
+# 编译链：NDK clang + 静态 talloc（proot 唯一的非 libc 依赖）
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 装依赖
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq patchelf file pkg-config make gcc
+
+      - name: 下载 NDK r26d
+        run: |
+          set -eux
+          curl -sL -o /tmp/ndk.zip https://dl.google.com/android/repository/android-ndk-r26d-linux.zip
+          ls -l /tmp/ndk.zip
+          sudo unzip -q /tmp/ndk.zip -d /opt
+          echo "NDK=/opt/android-ndk-r26d" >> "$GITHUB_ENV"
+
+      - name: 编译静态 talloc（2.4.2）
+        run: |
+          set -eux
+          TC="$NDK/toolchains/llvm/prebuilt/linux-x86_64"
+          curl -sL -o /tmp/talloc.tar.gz https://www.samba.org/ftp/talloc/talloc-2.4.2.tar.gz
+          tar xf /tmp/talloc.tar.gz
+          cd talloc-2.4.2
+          ./configure \
+            --host=aarch64-linux-android \
+            --disable-shared --enable-static \
+            --disable-python --disable-rpath \
+            --prefix="$GITHUB_WORKSPACE/out" \
+            CC="$TC/bin/aarch64-linux-android24-clang" \
+            AR="$TC/bin/llvm-ar" \
+            RANLIB="$TC/bin/llvm-ranlib" \
+            CFLAGS="-O2 -fPIC"
+          make -j4
+          make install
+          ls -l "$GITHUB_WORKSPACE/out/lib"
+
+      - name: 编译 proot 5.5.0（静态）
+        run: |
+          set -eux
+          TC="$NDK/toolchains/llvm/prebuilt/linux-x86_64"
+          git clone --depth 1 --branch v5.5.0 https://github.com/proot-me/proot.git
+          cd proot/src
+          export PKG_CONFIG_PATH="$GITHUB_WORKSPACE/out/lib/pkgconfig"
+          export CC="$TC/bin/aarch64-linux-android24-clang"
+          export AR="$TC/bin/llvm-ar"
+          export RANLIB="$TC/bin/llvm-ranlib"
+          export CFLAGS="-static -O2 -DARG_MAX=131072 -I$GITHUB_WORKSPACE/out/include"
+          export LDFLAGS="-static -L$GITHUB_WORKSPACE/out/lib"
+          make -j4 V=1 || true
+          echo '--- 产物 ---'
+          ls -l
+          find . -maxdepth 2 -type f -name 'proot*' -exec ls -l {} \;
+
+      - name: 校验 ELF（必须是 aarch64 且无 PT_INTERP）
+        run: |
+          python3 tools/check-proot.py proot/src/proot
+          file proot-arm64-static || true
+          ls -l proot-arm64-static
+
+      - name: 上传
+        uses: actions/upload-artifact@v4
+        with:
+          name: proot-aarch64-static
+          path: proot-arm64-static
+          if-no-files-found: error
