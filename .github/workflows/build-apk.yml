@@ -54,7 +54,9 @@ jobs:
           REL="https://api.github.com/repos/$GITHUB_REPOSITORY/releases/tags/assets-v1"
           URL=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" "$REL" | python3 -c "import json,sys;print(next((x['url'] for x in json.load(sys.stdin).get('assets',[]) if x['name']=='dsh-assets-v1.zip'),''))")
           if [ -z "$URL" ]; then echo "::error::release assets-v1 里没有 dsh-assets-v1.zip"; exit 1; fi
-          curl -sL -H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/octet-stream" "$URL" -o /tmp/assets.zip
+          # G-06/G-10：下载走三级回退（断点续传 → DNS 绕行 → 镜像），失败才 exit
+          . tools/net-fetch.sh
+          NF_AUTH="$GITHUB_TOKEN" NF_RETRY=5 net_fetch "$URL" /tmp/assets.zip || exit 4
           ls -lh /tmp/assets.zip
           mkdir -p app/src/main/assets
           unzip -o -q /tmp/assets.zip -d app/src/main/assets -x 'mobile-ui.zip' -x 'webview-compat.zip'
@@ -76,6 +78,9 @@ jobs:
 
       - name: 塞进 assets（sha256 + Node 主版本都会验）
         run: bash tools/fetch-rootfs-into-assets.sh --from dist
+
+      - name: 自检（G-11 锚点重定位 / G-13 进程组）
+        run: node tools/selftest-g11-g13.mjs
 
       - name: 闸门预检（与 preBuild 调的是同一个脚本）
         run: bash tools/verify-runtime-assets.sh

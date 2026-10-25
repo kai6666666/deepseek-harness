@@ -16,6 +16,24 @@ import java.io.File
  *    没有时这里会返回 [RuntimeAvailability.ProotMissing]，**不会假装成功**。
  *    取法见 tools/proot/README.md（从 Termux proot 包提取，或自己编）。
  */
+/**
+ * G-08：ABI 探测。
+ *
+ * 随包的 proot / rootfs 只有 aarch64（x86_64 留给模拟器变体）。armv7 / riscv 上
+ * 硬跑的典型症状是 proot 一启动就 `Exec format error`，比「启动失败」难查得多。
+ * 所以把判断提到最前面，判不了就明确说「不支持」，让引擎回 Termux 档。
+ */
+object Abi {
+    /** 随包二进制覆盖的 ABI 列表（顺序即优先级）。 */
+    val SUPPORTED = listOf("arm64-v8a", "x86_64")
+
+    fun best(abis: Array<String> = android.os.Build.SUPPORTED_ABIS): String? =
+        SUPPORTED.firstOrNull { it in abis }
+
+    fun deviceSummary(abis: Array<String> = android.os.Build.SUPPORTED_ABIS): String =
+        abis.joinToString(",").ifEmpty { "unknown" }
+}
+
 class AlpineRuntime private constructor(
     private val context: Context,
     private val dshHome: File,
@@ -42,6 +60,13 @@ class AlpineRuntime private constructor(
     }.filter { it.isFile && it.canExecute() }
 
     fun availability(): RuntimeAvailability {
+        // G-08：先判 ABI。跑到一半才 exec format error 是最难查的一种。
+        val abi = Abi.best()
+        if (abi == null) {
+            Log.w(TAG, "ABI 不受支持：设备=[${Abi.deviceSummary()}]，随包=[${Abi.SUPPORTED.joinToString()}]")
+            return RuntimeAvailability.UnsupportedAbi(android.os.Build.SUPPORTED_ABIS.toList())
+        }
+        Log.i(TAG, "运行时 ABI=$abi（设备=[${Abi.deviceSummary()}]）")
         val node = File(rootfs, "usr/bin/node")
         if (!node.isFile) {
             return RuntimeAvailability.NotProvisioned("rootfs 未解包：${rootfs.absolutePath}")

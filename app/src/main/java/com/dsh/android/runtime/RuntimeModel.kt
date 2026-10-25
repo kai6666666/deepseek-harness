@@ -51,12 +51,23 @@ sealed class RuntimeAvailability {
     /** 还没解包（首启、或 assets 里没有 rootfs）。 */
     data class NotProvisioned(val reason: String) : RuntimeAvailability()
 
+    /**
+     * G-08：设备 ABI 不在随包二进制之列。
+     *
+     * 随包的 proot / rootfs 只有 aarch64（x86_64 留给模拟器变体）。armv7、riscv
+     * 之类的设备上硬跑，症状是 proot 一启动就 `Exec format error`——比「启动失败」
+     * 更难查。所以探测放在最前面，判不了就明说。
+     */
+    data class UnsupportedAbi(val deviceAbis: List<String>) : RuntimeAvailability()
+
     val usable: Boolean get() = this is Ready
 
     fun describe(): String = when (this) {
         is Ready -> "alpine 就绪: ${rootfs.absolutePath}"
         is ProotMissing -> "alpine rootfs 已就绪，但缺 $missing —— 引擎回退 Termux 档"
         is NotProvisioned -> "alpine 未就绪: $reason"
+        is UnsupportedAbi ->
+            "设备 ABI 不受支持（${deviceAbis.joinToString(",")}）—— 随包 rootfs/proot 仅 arm64-v8a / x86_64，本档跳过"
     }
 }
 

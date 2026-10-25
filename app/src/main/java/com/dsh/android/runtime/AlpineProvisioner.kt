@@ -125,16 +125,19 @@ class AlpineProvisioner(
                 if (!node.canExecute()) throw IllegalStateException("usr/bin/node 无法置为可执行")
             }
 
-            // 原子替换：旧目录先挪开，成功后再删
+            // 原子替换 + 保留一版回滚点（G-07）：
+            //   alpine → alpine.prev（上一版，保留）    alpine.prev → alpine.bad（更老的，本轮删）
+            //   这样「新版起不来」时还有 rollback() 可退，而不是只能重下 55 MB。
             val finalDir = rootfsDir()
-            val old = File(home, "alpine.old")
-            if (old.exists()) old.deleteRecursively()
-            if (finalDir.exists() && !finalDir.renameTo(old)) {
+            val prev = File(home, "alpine.prev")
+            val bad = File(home, "alpine.bad")
+            if (bad.exists()) bad.deleteRecursively()
+            if (prev.exists() && !prev.renameTo(bad)) prev.deleteRecursively()
+            if (finalDir.exists() && !finalDir.renameTo(prev)) {
                 finalDir.deleteRecursively()
             }
             if (!staging.renameTo(finalDir)) throw IllegalStateException("rename 到 ${finalDir.absolutePath} 失败")
-            old.deleteRecursively()
-
+            bad.deleteRecursively()
             stampFile().writeText(manifest.sha256)
             onProgress(100, "完成：$entries 个条目，node ${manifest.nodejs}")
             Log.i(tag, "解包完成：entries=$entries node=${manifest.nodejs} sha=${manifest.sha256.take(12)}")
@@ -144,6 +147,64 @@ class AlpineProvisioner(
             staging.deleteRecursively()
             return Result.failure(t)
         }
+    }
+
+    /**
+     * G-07：回滚到上一版 rootfs（`alpine.prev` → `alpine`）。
+     *
+     * 使用场景：新解包的 rootfs 起不来（node 崩、缺库、架构不符），
+     * 手上又没法立刻重下 55 MB —— 直接把上一版换回来。
+     * 当前这版不删，改名成 `alpine.bad.<时间戳>` 留证，交给 [prunePrevious] 清。
+     */
+    fun rollback(): Result<File> = runCatching {
+        val finalDir = rootfsDir()
+        val prev = File(home, "alpine.prev")
+        require(prev.isDirectory) { "没有可回滚的上一版（缺 ${prev.absolutePath}）" }
+        val bad = File(home, "alpine.bad.${System.currentTimeMillis()}")
+        if (finalDir.exists() && !finalDir.renameTo(bad)) {
+            throw IllegalStateException("挪走当前版本失败：${finalDir.absolutePath}")
+        }
+        if (!prev.renameTo(finalDir)) {
+            // 换不回来就把坏的挪回去，别留下一个空目录
+            bad.renameTo(finalDir)
+            throw IllegalStateException("回滚 rename 失败：${prev.absolutePath}")
+        }
+        Log.w(tag, "已回滚到上一版 rootfs：${finalDir.absolutePath}（旧版留证 ${bad.name}）")
+        finalDir
+    }
+
+    /** G-07：回滚点是否在。 */
+    fun hasPrevious(): Boolean = File(home, "alpine.prev").isDirectory
+
+    /** 任意目录的字节数（prunePrevious 用；不动 installedBytes 的既有签名）。 */
+    private fun dirBytes(dir: File): Long {
+        var total = 0L
+        dir.walkTopDown().forEach { if (it.isFile) total += it.length() }
+        return total
+    }
+
+    /**
+     * G-05/G-07：清掉回滚点与所有 `alpine.bad*` 留证，腾空间。
+     * 返回释放的字节数。`keepPrevious=false` 时连 `alpine.prev` 一起删 ——
+     * 之后就**没得回滚**了，只有空间告急才这么干。
+     */
+    fun prunePrevious(keepPrevious: Boolean = true): Long {
+        var freed = 0L
+        home.listFiles()?.forEach { f ->
+            if (f.name == "alpine.bad" || f.name.startsWith("alpine.bad.")) {
+                freed += dirBytes(f)
+                f.deleteRecursively()
+            }
+        }
+        if (!keepPrevious) {
+            val prev = File(home, "alpine.prev")
+            if (prev.exists()) {
+                freed += dirBytes(prev)
+                prev.deleteRecursively()
+            }
+        }
+        if (freed > 0) Log.i(tag, "prunePrevious: 释放 $freed B（keepPrevious=$keepPrevious）")
+        return freed
     }
 
     /** 统计目录实际占用（诊断用）。 */
