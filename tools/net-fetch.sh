@@ -43,7 +43,7 @@ _nf_size() { stat -c%s "$1" 2>/dev/null || echo 0; }
 # 一级：直连（断点续传 + 重试）
 _nf_direct() {
   curl -fL -C - --retry "$NF_RETRY" --retry-all-errors --retry-delay 2 \
-    --connect-timeout 15 --max-time 1800 -o "$2" "${_nf_auth[@]}" "${_nf_accept[@]}" "$1"
+    --connect-timeout 15 --max-time 1800 -o "$2" "${_nf_hdrs[@]}" "$1"
 }
 
 # 二级：解析 IP 后 --resolve 绕开本地 DNS
@@ -56,7 +56,7 @@ _nf_by_ip() {
   [ -n "$ip" ] || return 1
   _nf_say "DNS 回退：$host → $ip（--resolve）"
   curl -fL -C - --retry "$NF_RETRY" --retry-all-errors --retry-delay 2 \
-    --connect-timeout 15 --max-time 1800 --resolve "$host:443:$ip" -o "$out" "${_nf_auth[@]}" "${_nf_accept[@]}" "$url"
+    --connect-timeout 15 --max-time 1800 --resolve "$host:443:$ip" -o "$out" "${_nf_hdrs[@]}" "$url"
 }
 
 # 三级：镜像前缀替换
@@ -66,7 +66,7 @@ _nf_via_mirror() {
   for m in $NF_MIRRORS; do
     _nf_say "镜像回退：${m}${url}"
     curl -fL -C - --retry "$NF_RETRY" --retry-all-errors --retry-delay 2 \
-      --connect-timeout 15 --max-time 1800 -o "$out" "${_nf_auth[@]}" "${_nf_accept[@]}" "${m}${url}" && return 0
+      --connect-timeout 15 --max-time 1800 -o "$out" "${_nf_hdrs[@]}" "${m}${url}" && return 0
   done
   return 1
 }
@@ -84,6 +84,11 @@ _nf_sniff() {
 }
 
 net_fetch() {
+  # 每次调用重建 header：调用方常写 `NF_ACCEPT=... net_fetch` 临时传，source 期算的数组拿不到
+  _nf_hdrs=()
+  [ -n "${NF_AUTH:-}" ] && _nf_hdrs+=(-H "Authorization: Bearer $NF_AUTH")
+  [ -n "${NF_ACCEPT:-}" ] && _nf_hdrs+=(-H "Accept: $NF_ACCEPT")
+  [ "${NF_DEBUG:-0}" = "1" ] && _nf_say "headers: ${_nf_hdrs[*]}"
   local url="$1" out="$2" exp_size="${3:-}" exp_sha="${4:-}"
   local before=0
   [ -f "$out" ] && before="$(_nf_size "$out")"
