@@ -32,17 +32,20 @@ jobs:
           sudo unzip -q /tmp/ndk.zip -d /opt
           echo "NDK=/opt/android-ndk-r26d" >> "$GITHUB_ENV"
 
-      - name: 编译静态 talloc（2.4.2）
+      - name: 编译静态 talloc（2.1.14）
         run: |
           set -eux
           TC="$NDK/toolchains/llvm/prebuilt/linux-x86_64"
-          curl -sL -o /tmp/talloc.tar.gz https://www.samba.org/ftp/talloc/talloc-2.4.2.tar.gz
+          # ⚠️ 用 2.1.14（autotools）：2.4.x 换成 waf 构建，不认 --disable-shared，
+          #    会直接 `waf: error: no such option: --disable-shared`。
+          curl -sL -o /tmp/talloc.tar.gz https://www.samba.org/ftp/talloc/talloc-2.1.14.tar.gz
           tar xf /tmp/talloc.tar.gz
-          cd talloc-2.4.2
+          cd talloc-2.1.14
+          chmod +x configure
           ./configure \
             --host=aarch64-linux-android \
             --disable-shared --enable-static \
-            --disable-python --disable-rpath \
+            --disable-python \
             --prefix="$GITHUB_WORKSPACE/out" \
             CC="$TC/bin/aarch64-linux-android24-clang" \
             AR="$TC/bin/llvm-ar" \
