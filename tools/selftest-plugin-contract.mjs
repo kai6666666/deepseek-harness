@@ -98,6 +98,14 @@ if (js) {
   else bad("index.js: 没读 backend.virtualPrefix —— 从 groups 层读永远是 undefined（②）");
   if (/spec\?\.virtualPrefix/.test(js)) bad("index.js: 仍在读 spec?.virtualPrefix（错的层级）");
 
+  // ⑤ 每个 register 都必须带 output —— 漏一个，整段 register 一起失败
+  //    真机实证：先只补了 android_toolchain，报错就换成了 android_native_precheck；
+  //    两个都补上之后 "注册失败/TypeError" 计数归零。
+  const regCount = (js.match(/ctx\.tools\.register\(\{/g) ?? []).length;
+  const outCount = (js.match(/output: \{/g) ?? []).length;
+  if (regCount > 0 && outCount >= regCount) ok(`index.js: ${regCount} 个工具都声明了 output`);
+  else bad(`index.js: register ${regCount} 个 / output ${outCount} 个 —— 漏一个则全部不注册`);
+
   // ④ G-13 进程组
   const detached = (js.match(/detached: true/g) ?? []).length;
   const killTreeCalls = (js.match(/killTree\(child\)[,;)]/g) ?? []).length;
