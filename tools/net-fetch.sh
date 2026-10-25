@@ -24,6 +24,9 @@ NF_QUIET="${NF_QUIET:-0}"
 # 私有 Release 资产需要 Authorization；设了 NF_AUTH 就统一带上 Bearer
 NF_AUTH="${NF_AUTH:-}"
 _nf_auth=()
+NF_ACCEPT="${NF_ACCEPT:-}"
+_nf_accept=()
+[ -n "$NF_ACCEPT" ] && _nf_accept=(-H "Accept: $NF_ACCEPT")
 [ -n "$NF_AUTH" ] && _nf_auth=(-H "Authorization: Bearer $NF_AUTH")
 
 _nf_say() { [ "$NF_QUIET" = "1" ] || printf '    %s\n' "$*" >&2; }
@@ -40,7 +43,7 @@ _nf_size() { stat -c%s "$1" 2>/dev/null || echo 0; }
 # 一级：直连（断点续传 + 重试）
 _nf_direct() {
   curl -fL -C - --retry "$NF_RETRY" --retry-all-errors --retry-delay 2 \
-    --connect-timeout 15 --max-time 1800 -o "$2" "${_nf_auth[@]}" "$1"
+    --connect-timeout 15 --max-time 1800 -o "$2" "${_nf_auth[@]}" "${_nf_accept[@]}" "$1"
 }
 
 # 二级：解析 IP 后 --resolve 绕开本地 DNS
@@ -53,7 +56,7 @@ _nf_by_ip() {
   [ -n "$ip" ] || return 1
   _nf_say "DNS 回退：$host → $ip（--resolve）"
   curl -fL -C - --retry "$NF_RETRY" --retry-all-errors --retry-delay 2 \
-    --connect-timeout 15 --max-time 1800 --resolve "$host:443:$ip" -o "$out" "${_nf_auth[@]}" "$url"
+    --connect-timeout 15 --max-time 1800 --resolve "$host:443:$ip" -o "$out" "${_nf_auth[@]}" "${_nf_accept[@]}" "$url"
 }
 
 # 三级：镜像前缀替换
@@ -63,9 +66,21 @@ _nf_via_mirror() {
   for m in $NF_MIRRORS; do
     _nf_say "镜像回退：${m}${url}"
     curl -fL -C - --retry "$NF_RETRY" --retry-all-errors --retry-delay 2 \
-      --connect-timeout 15 --max-time 1800 -o "$out" "${_nf_auth[@]}" "${m}${url}" && return 0
+      --connect-timeout 15 --max-time 1800 -o "$out" "${_nf_auth[@]}" "${_nf_accept[@]}" "${m}${url}" && return 0
   done
   return 1
+}
+
+_nf_sniff() {
+  case "$1" in
+    *.zip|*.bin|*.tar.gz|*.gz)
+      local f; f=$(head -c1 "$1" 2>/dev/null || true)
+      if [ "$f" = "{" ] || [ "$f" = "<" ]; then
+        _nf_err "下到的是错误页（首字节 [$f]），不是二进制：$1"
+        return 1
+      fi ;;
+  esac
+  return 0
 }
 
 net_fetch() {
@@ -85,6 +100,7 @@ net_fetch() {
     return 4
   fi
 
+  _nf_sniff "$out" || return 4
   if [ -n "$exp_size" ]; then
     local got; got="$(_nf_size "$out")"
     if [ "$got" != "$exp_size" ]; then

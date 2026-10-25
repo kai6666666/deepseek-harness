@@ -56,7 +56,7 @@ jobs:
           if [ -z "$URL" ]; then echo "::error::release assets-v1 里没有 dsh-assets-v1.zip"; exit 1; fi
           # G-06/G-10：下载走三级回退（断点续传 → DNS 绕行 → 镜像），失败才 exit
           . tools/net-fetch.sh
-          NF_AUTH="$GITHUB_TOKEN" NF_RETRY=5 net_fetch "$URL" /tmp/assets.zip || exit 4
+          NF_AUTH="$GITHUB_TOKEN" NF_ACCEPT=application/octet-stream NF_RETRY=5 net_fetch "$URL" /tmp/assets.zip || exit 4
           ls -lh /tmp/assets.zip
           mkdir -p app/src/main/assets
           unzip -o -q /tmp/assets.zip -d app/src/main/assets -x 'mobile-ui.zip' -x 'webview-compat.zip'
