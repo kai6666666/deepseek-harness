@@ -6,7 +6,7 @@ import java.io.File
 /**
  * G-09：runtime 落地路径**只允许** app 私有目录。
  *
- * `/storage/emulated/0`（sdcard）、`/sdcard`、`/mnt/*` 全是 FUSE + noexec：
+ * `/storage/emulated/0`（sdcard）、`/sdcard`、`/mnt/…` 全是 FUSE + noexec：
  * 把 rootfs 解到那儿能写、能读，但 `usr/bin/node` 一 exec 就是 EACCES/EPERM ——
  * 在设备上表现出来的样子是「node 莫名其妙崩了」，极难定位。
  *
