@@ -105,6 +105,48 @@ class AlpineRuntime private constructor(
         }.onFailure { Log.w(TAG, "清理残留 proot 失败：${it.message}") }
     }
 
+    /**
+     * 幂等修 rootfs 里的执行位 + 兜住 `/usr/bin/env` 缺失。
+     *
+     * 真机（Redmi / Android 16）表现：
+     *   proot error: execve("/usr/bin/env"): Permission denied
+     *   → 引擎 2846 ms 退出 → 界面「引擎启动失败」→ 连续 10 次 → 救援模式
+     *
+     * 两个成因一起治：
+     *   ① 解包丢了 tar 的 mode 位（一律 0644）→ 补 0755；
+     *   ② `/usr/bin/env` 在 Alpine 里是 busybox 的软链，若缺失/断链 → 补建 → /bin/busybox。
+     */
+    private fun repairExecBits(root: File) {
+        val dirs = listOf("bin", "sbin", "usr/bin", "usr/sbin", "usr/libexec", "lib", "usr/lib")
+        var fixed = 0
+        dirs.forEach { rel ->
+            val d = File(root, rel)
+            if (!d.isDirectory) return@forEach
+            d.walkTopDown().forEach { f ->
+                if (f.isFile && !f.canExecute()) {
+                    runCatching { android.system.Os.chmod(f.absolutePath, 0b111_101_101) }
+                        .onSuccess { fixed++ }
+                }
+            }
+        }
+        val env = File(root, "usr/bin/env")
+        if (!env.exists()) {
+            val busybox = File(root, "bin/busybox")
+            if (busybox.isFile) {
+                runCatching {
+                    File(root, "usr/bin").mkdirs()
+                    android.system.Os.symlink("/bin/busybox", env.absolutePath)
+                }.onSuccess { Log.w(TAG, "补建 /usr/bin/env → /bin/busybox（rootfs 里缺这条）") }
+            }
+        }
+        val real = runCatching { env.canonicalPath }.getOrNull()
+        Log.i(
+            TAG,
+            "rootfs 自检：env exists=${env.exists()} exec=${env.canExecute()} real=$real " +
+                "busybox=${File(root, "bin/busybox").canExecute()} 补位=$fixed",
+        )
+    }
+
     /** `files/runtime/native/` —— 自己掌控的 proot 依赖目录（含 `libtalloc.so.2`）。 */
     private fun nativeLibsDir(): File = File(File(context.filesDir, "runtime"), "native")
 
@@ -171,6 +213,10 @@ class AlpineRuntime private constructor(
         // proot+node 会变成 PPID=1 的孤儿并占着 3080 —— 新引擎于是「起了但连不上」。
         // 真机实证：杀完两个孤儿 (13689/19234) 后端口才回到手里。
         killStaleRuntime()
+        // 权限自愈（幂等）：rootfs 解包丢了 mode 位 → proot 起 guest 的第一条命令
+        // `/usr/bin/env` 直接 `execve: Permission denied`，引擎 2846 ms 就退出。
+        // 每次起引擎前都补一遍，只碰可执行目录；顺带把 env 实体与可执行状态打进日志。
+        repairExecBits(rootfs)
         // 引擎实际装在 `filesDir/engine`（EngineManager.engineDir），**不是** `$DSH_HOME/engine`。
         // 以前只认 .dsh/engine → 真机永久命中「engine 里没有 bin.js」→ 一直回退 Termux；
         // 而 Termux 档没有 per-guest 的 `--link2symlink`，引擎给 session 做原子写用的 link()
