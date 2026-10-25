@@ -7852,6 +7852,9 @@ class EngineManager private constructor(private val context: Context) {
             //
             // 改判据后文案才与事实一致，并且把等待时长一并写进原因里
             // （原来只有崩溃现场文件里才有，日志行里看不到）。
+            // alpine 档失败 → 降级 Termux（72 小时记忆），免得每次冷启动都撞同一个
+            // `proot error: execve(...): Permission denied`，也避免连续失败 10 次进救援模式。
+            alpineRuntime.forceTermux("引擎在打印 URL 前结束（waited=${System.currentTimeMillis() - startMs} ms）")
             val waited = System.currentTimeMillis() - startMs
             val reason = if (waited >= READY_TIMEOUT_MS) {
                 "等待 ${waited / 1000} 秒仍未打印 URL（确为超时）"

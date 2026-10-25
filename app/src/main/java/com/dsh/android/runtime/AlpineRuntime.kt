@@ -105,6 +105,36 @@ class AlpineRuntime private constructor(
         }.onFailure { Log.w(TAG, "清理残留 proot 失败：${it.message}") }
     }
 
+    /**
+     * 把「alpine 档起不来」变成一次**有记忆的降级**，而不是每次启动都撞同一堵墙。
+     *
+     * 真机（Redmi / Android 16 / 2026-10-25）现状：proot 能起、命令行正确、rootfs 完整可执行位也补齐，
+     * 但 guest 内所有 `execve` 都返回 EACCES（`/usr/bin/env`、`/bin/busybox` 都一样）。
+     * 这需要一个专项 A/B（proot 版本 / bin 目录 st_mode / seccomp），短期不能靠改一行代码收口。
+     * 因此：失败就降到 Termux 档，App 立刻可用；72 小时后自动再试一次 alpine。
+     */
+    fun forceTermux(reason: String) {
+        runCatching {
+            forceFlag().writeText("${System.currentTimeMillis()}\n$reason\n")
+            Log.w(TAG, "alpine 档已降级为 Termux（72 小时后自动重试）：$reason")
+        }
+    }
+
+    private fun forceFlag(): File = File(File(context.filesDir, "runtime"), "force-termux")
+
+    /** 标记存在且未过期 → 跳过 alpine，直接用 Termux。 */
+    private fun forcedToTermux(): Boolean {
+        val f = forceFlag()
+        if (!f.isFile) return false
+        val ts = runCatching { f.readLines().firstOrNull()?.toLongOrNull() }.getOrNull() ?: 0L
+        if (System.currentTimeMillis() - ts > 72L * 3600_000) {
+            runCatching { f.delete() }
+            Log.i(TAG, "Termux 降级标记已过期，重新尝试 alpine 档")
+            return false
+        }
+        return true
+    }
+
     /** busybox applet 里引擎跑起来必需（或极常用）的那批，缺失就复制 busybox 顶上。 */
     private val BUSYBOX_APPLETS = listOf(
         "env", "sh", "ash", "ls", "cat", "cp", "mv", "rm", "mkdir", "rmdir", "ln",
@@ -240,6 +270,10 @@ class AlpineRuntime private constructor(
         val av = availability()
         if (av !is RuntimeAvailability.Ready) {
             Log.i(TAG, "alpine 档不可用，回退 Termux：${av.describe()}")
+            return null
+        }
+        if (forcedToTermux()) {
+            Log.i(TAG, "上次 alpine 启动失败，本轮直接用 Termux 档（标记：${forceFlag().absolutePath}）")
             return null
         }
         // 上一轮若被 SIGKILL / 被 ROM 冻结，`--kill-on-exit` 收不到信号，
