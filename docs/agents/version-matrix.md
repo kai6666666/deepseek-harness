@@ -41,6 +41,9 @@
 | 落地路径 | 必须在 `filesDir` 之下（`RuntimePaths.assertExecutableRoot`） | `/storage`、`/sdcard` 是 FUSE noexec → node 无法 exec |
 | Node ABI | N-API 8（跨 Node 20/22/24/26 稳定） | 插件 `.node` 加载失败 |
 | 空间 | 解包需 ≥ `包体 × 3` 或 `上次实测 × 1.1`，且过程中留 80 MB | 半途 ENOSPC → 已清理 staging，可重试 |
+| **插件契约 ①** | `provision.json` 必须被打进 `dsh-android-toolchain.zip` | 缺它 → 插件降级成空表：工具注册成功但**任何后端都装不了**（日志只有一行 WARN） |
+| **插件契约 ②** | `virtualPrefix` 在 `backends.<name>` 层，不在 `groups.<key>.<backend>` | 读错层 → 永远 `undefined`，虚拟包组分支走不到 |
+| **插件契约 ③** | `export const inject` 必须含 `tools` | ctx 是 Proxy，未 inject 属性**在 getter 里就抛**，`ctx.tools?.` 救不了 → 工具静默不注册 |
 
 ## 4. 升级时要一起动的东西
 
