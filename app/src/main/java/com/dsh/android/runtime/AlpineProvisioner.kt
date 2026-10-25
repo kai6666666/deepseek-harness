@@ -60,6 +60,13 @@ class AlpineProvisioner(
         // 老版本只给 node 补过 0755，rootfs 里 `/usr/bin/env` 仍是 0644 →
         // `proot error: execve("/usr/bin/env"): Permission denied`（真机实证）。
         // 把「guest 第一条命令」也纳入就绪判定，命中就让上层重解包，由 fixExecBits 自愈。
+        // 解包器修好后必须重新落地一次：老 rootfs 里 `bin/busybox` 这条硬链接目标是
+        // `/usr/bin/busybox`（bin 是 `bin -> usr/bin` 的相对软链），而旧解包器把硬链接
+        // 目标算成了宿主绝对路径 → 两条都丢 → proot `execve("/bin/busybox")` 直接拒绝。
+        val busybox = File(rootfsDir(), "usr/bin/busybox")
+        if (!busybox.isFile || !busybox.canExecute()) {
+            return Status(false, "rootfs 缺可执行的 usr/bin/busybox（硬链接未落地，需重解包）", manifest.sha256)
+        }
         val guestEnv = File(rootfsDir(), "usr/bin/env")
         // 老 rootfs 里这条**不存在**（绝对 symlink 穿出 + 硬链接目标越界 → 条目被静默跳过），
         // 表现为 `proot error: execve("/usr/bin/env"): Permission denied`。
