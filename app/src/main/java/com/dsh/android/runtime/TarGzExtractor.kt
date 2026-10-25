@@ -67,7 +67,7 @@ class TarGzExtractor(private val onEntry: ((String) -> Unit)? = null) {
                     // 真机表现为 `/usr/bin/env`、`/bin/sh` 全都 exists=false。
                     val canon = out.absolutePath
                     // ZipSlip：只允许落在 destDir 内
-                    if (canon == destRoot.path || canon.startsWith(destRoot.path + File.separator)) {
+                    if (canon == destRoot || canon.startsWith(destRoot + File.separator)) {
                         when (type) {
                             '5' -> { out.mkdirs(); chmod(out, mode) }
                             '2' -> {
