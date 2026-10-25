@@ -43,3 +43,4 @@
 | [regen-assets.md](regen-assets.md) | 重新生成资产 | 各资产从哪来、怎么打 |
 | [desktop-relation.md](desktop-relation.md) | 与 DSH 桌面端的关系 | 哪些东西两端共用、哪些各管各的 |
 | [runtime-arch.md](runtime-arch.md) | ⑰ 运行时总体方案 | Alpine 单档 + 工具链三层、ABI 守卫、22 条缺口 → 全文 [../RUNTIME-ARCH-PLAN.md](../RUNTIME-ARCH-PLAN.md) |
+- `plugin-contract.md` — 插件契约五条（provision.json / inject / output / killTree），违反则 CI 不出包
