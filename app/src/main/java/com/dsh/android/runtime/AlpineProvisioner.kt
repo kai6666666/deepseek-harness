@@ -259,7 +259,7 @@ class AlpineProvisioner(
                 }
             }
         }
-        if (fixed > 0) Log.i(TAG, "补可执行位：$fixed 个文件（rootfs 解包 mode 丢失）")
+        if (fixed > 0) Log.i(tag, "补可执行位：$fixed 个文件（rootfs 解包 mode 丢失）")
     }
 
     /** 任意目录的字节数（prunePrevious 用；不动 installedBytes 的既有签名）。 */
