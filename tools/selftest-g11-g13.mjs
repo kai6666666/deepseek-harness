@@ -11,7 +11,7 @@
  *   两处超时路径、且超时路径里不再有裸 child.kill("SIGKILL")。
  */
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -19,7 +19,16 @@ import { fileURLToPath } from "node:url";
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, "..");
 const applier = join(here, "apply-patches.mjs");
-const idx = resolve(root, "..", "plugin-src/dsh-android-toolchain/lib/index.js");
+// plugin-src 的位置有两种：本地工作区（仓库外）与仓库内。都试一遍，别硬编码。
+const idxCandidates = [
+  join(root, "plugin-src/dsh-android-toolchain/lib/index.js"),
+  resolve(root, "..", "plugin-src/dsh-android-toolchain/lib/index.js"),
+];
+const idx = idxCandidates.find((p) => existsSync(p));
+if (!idx) {
+  console.error(`✗ 找不到 plugin index.js，试过：\n  ${idxCandidates.join("\n  ")}`);
+  process.exit(1);
+}
 
 let failed = 0;
 const ok = (msg) => console.log(`✓ ${msg}`);
