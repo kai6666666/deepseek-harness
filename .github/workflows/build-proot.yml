@@ -50,7 +50,8 @@ jobs:
             CC="$TC/bin/aarch64-linux-android24-clang" \
             AR="$TC/bin/llvm-ar" \
             RANLIB="$TC/bin/llvm-ranlib" \
-            CFLAGS="-O2 -fPIC"
+            CFLAGS="-O2 -fPIC" \
+            LDFLAGS="-Wl,--undefined-version"
           make -j4
           make install
           ls -l "$GITHUB_WORKSPACE/out/lib"
