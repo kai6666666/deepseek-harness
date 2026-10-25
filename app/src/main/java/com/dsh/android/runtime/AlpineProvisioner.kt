@@ -57,6 +57,13 @@ class AlpineProvisioner(
         if (!node.canExecute()) {
             return Status(false, "usr/bin/node 没有执行位（解包权限丢失）", manifest.sha256)
         }
+        // 老版本只给 node 补过 0755，rootfs 里 `/usr/bin/env` 仍是 0644 →
+        // `proot error: execve("/usr/bin/env"): Permission denied`（真机实证）。
+        // 把「guest 第一条命令」也纳入就绪判定，命中就让上层重解包，由 fixExecBits 自愈。
+        val guestEnv = File(rootfsDir(), "usr/bin/env")
+        if (guestEnv.isFile && !guestEnv.canExecute()) {
+            return Status(false, "usr/bin/env 没有执行位（老 rootfs 解包 mode 丢失，需重解包）", manifest.sha256)
+        }
         return Status(
             true,
             "就绪（node ${manifest.nodejs}，alpine ${manifest.alpine}，占用 ${measured / 1048576} MB）",
@@ -142,6 +149,11 @@ class AlpineProvisioner(
                 }
             }
 
+            // 权限位修复：`TarGzExtractor` 不保证保留 tar 的 mode 位，真机实证
+            // `proot error: execve("/usr/bin/env"): Permission denied` ——
+            // 只给 `usr/bin/node` 补 0755 不够，rootfs 里其余可执行文件（env/sh/busybox…）
+            // 一个都没执行位。这里在 rename 之前统一补一遍。
+            fixExecBits(staging)
             val node = File(staging, "usr/bin/node")
             if (!node.isFile) throw IllegalStateException("解包后没有 usr/bin/node")
             if (!node.canExecute()) {
@@ -220,6 +232,34 @@ class AlpineProvisioner(
                     "（已写入 $written B）——已清理临时目录，可腾出空间后重试",
             )
         }
+    }
+
+    /** rootfs 里应该带执行位的目录（相对路径）。 */
+    private val EXEC_DIRS = listOf("bin", "sbin", "usr/bin", "usr/sbin", "usr/libexec", "lib", "usr/lib")
+
+    /**
+     * 给 rootfs 里所有「应该有执行位」的文件补 0755。
+     *
+     * 为什么需要：`TarGzExtractor` 不恢复 tar 的 mode 位，解出来的文件一律 0644。
+     * proot 起 guest 的第一条命令就是 `/usr/bin/env`，没有执行位就直接：
+     *
+     *     proot error: execve("/usr/bin/env"): Permission denied
+     *
+     * （真机 2026-10-25 21:49:26 实证）。只补 `usr/bin/node` 修不好这一条。
+     */
+    private fun fixExecBits(root: File) {
+        var fixed = 0
+        EXEC_DIRS.forEach { rel ->
+            val d = File(root, rel)
+            if (!d.isDirectory) return@forEach
+            d.walkTopDown().forEach { f ->
+                if (f.isFile && !f.canExecute()) {
+                    runCatching { android.system.Os.chmod(f.absolutePath, 0b111_101_101) }
+                        .onSuccess { fixed++ }
+                }
+            }
+        }
+        if (fixed > 0) Log.i(TAG, "补可执行位：$fixed 个文件（rootfs 解包 mode 丢失）")
     }
 
     /** 任意目录的字节数（prunePrevious 用；不动 installedBytes 的既有签名）。 */
