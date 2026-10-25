@@ -115,27 +115,48 @@ class AlpineRuntime private constructor(
      */
     fun forceTermux(reason: String) {
         runCatching {
-            // 三行：时间戳 / 安装版本戳 / 原因。装新 APK 后 stamp 变 → 标记自动失效，
-            // 不必等 72 小时、也不用清数据。
-            forceFlag().writeText("${System.currentTimeMillis()}\n${installStamp()}\n$reason\n")
-            Log.w(TAG, "alpine 档已降级为 Termux（换包或 72 小时后自动重试）：$reason")
+            // 四行：时间戳 / 安装版本戳 / rootfs 指纹 / 原因。
+            forceFlag().writeText(
+                "${System.currentTimeMillis()}\n${installStamp()}\n${envFingerprint()}\n$reason\n",
+            )
+            Log.w(TAG, "alpine 档已降级为 Termux（rootfs 指纹变化时会自动重试）：$reason")
         }
     }
 
-    /** APK 的 lastUpdateTime —— 每次重装都会变，用来让降级标记「一次安装只挡一次」。 */
+    /** APK 的 lastUpdateTime —— 每次重装都会变。 */
     private fun installStamp(): Long = runCatching {
         context.packageManager.getPackageInfo(context.packageName, 0).lastUpdateTime
     }.getOrDefault(0L)
 
+    /**
+     * rootfs 关键二进制的 `mode + size` 指纹。
+     *
+     * 它变了 = 我们动过 rootfs（例如把 0755 降成 0555 试 W^X）→ 值得再试一次 alpine。
+     * 这样「降级」不会把新修法一起挡住，也不需要用户清数据。
+     */
+    private fun envFingerprint(): Long {
+        val f = File(rootfs, "bin/busybox")
+        return runCatching {
+            val st = android.system.Os.stat(f.absolutePath)
+            ((st.st_mode and 0x1FF).toLong() shl 32) or (st.st_size and 0xFFFFFFFFL)
+        }.getOrDefault(0L)
+    }
+
     private fun forceFlag(): File = File(File(context.filesDir, "runtime"), "force-termux")
 
-    /** 标记有效（同一次安装内且未过期）→ 跳过 alpine，直接用 Termux。 */
+    /** 标记有效（rootfs 指纹未变）→ 跳过 alpine，直接用 Termux。 */
     private fun forcedToTermux(): Boolean {
         val f = forceFlag()
         if (!f.isFile) return false
-        // 最保守策略：**只要标记在就用 Termux**。之前按「安装版本戳 + 72h」比较，
-        // 真机上会误判成「标记无效」→ 又去撞 alpine，白等 2 秒并累加失败次数。
-        Log.i(TAG, "降级标记命中（${f.length()} B），本轮用 Termux 档")
+        val lines = runCatching { f.readLines() }.getOrDefault(emptyList())
+        val saved = lines.getOrNull(2)?.toLongOrNull()
+        val now = envFingerprint()
+        if (saved == null || (now != 0L && saved != now)) {
+            runCatching { f.delete() }
+            Log.i(TAG, "rootfs 指纹变了（saved=$saved now=$now），清掉降级标记并重试 alpine")
+            return false
+        }
+        Log.i(TAG, "降级标记命中（rootfs 指纹未变），本轮用 Termux 档")
         return true
     }
 
@@ -188,9 +209,14 @@ class AlpineRuntime private constructor(
             val d = File(root, rel)
             if (!d.isDirectory) return@forEach
             d.walkTopDown().forEach { f ->
-                if (f.isFile && !f.canExecute()) {
-                    runCatching { android.system.Os.chmod(f.absolutePath, 0b111_101_101) }
-                        .onSuccess { fixed++ }
+                if (f.isFile) {
+                    // 统一 **0555**：Android 15/16 对 app 数据目录里 **owner 可写** 的文件
+                    // 另加了 execve 限制（W^X），命中时 kernel 直接回 EACCES —— 正是
+                    // `proot error: execve("/bin/busybox"): Permission denied` 的形状。
+                    // 已经 0755 的老 rootfs 也必须降权，所以这里不判 canExecute。
+                    val wasExec = f.canExecute()
+                    runCatching { android.system.Os.chmod(f.absolutePath, 0b101_101_101) }
+                        .onSuccess { if (!wasExec) fixed++ }
                 }
             }
         }
