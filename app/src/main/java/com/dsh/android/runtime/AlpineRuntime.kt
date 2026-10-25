@@ -115,18 +115,32 @@ class AlpineRuntime private constructor(
      */
     fun forceTermux(reason: String) {
         runCatching {
-            forceFlag().writeText("${System.currentTimeMillis()}\n$reason\n")
-            Log.w(TAG, "alpine 档已降级为 Termux（72 小时后自动重试）：$reason")
+            // 三行：时间戳 / 安装版本戳 / 原因。装新 APK 后 stamp 变 → 标记自动失效，
+            // 不必等 72 小时、也不用清数据。
+            forceFlag().writeText("${System.currentTimeMillis()}\n${installStamp()}\n$reason\n")
+            Log.w(TAG, "alpine 档已降级为 Termux（换包或 72 小时后自动重试）：$reason")
         }
     }
 
+    /** APK 的 lastUpdateTime —— 每次重装都会变，用来让降级标记「一次安装只挡一次」。 */
+    private fun installStamp(): Long = runCatching {
+        context.packageManager.getPackageInfo(context.packageName, 0).lastUpdateTime
+    }.getOrDefault(0L)
+
     private fun forceFlag(): File = File(File(context.filesDir, "runtime"), "force-termux")
 
-    /** 标记存在且未过期 → 跳过 alpine，直接用 Termux。 */
+    /** 标记有效（同一次安装内且未过期）→ 跳过 alpine，直接用 Termux。 */
     private fun forcedToTermux(): Boolean {
         val f = forceFlag()
         if (!f.isFile) return false
-        val ts = runCatching { f.readLines().firstOrNull()?.toLongOrNull() }.getOrNull() ?: 0L
+        val lines = runCatching { f.readLines() }.getOrDefault(emptyList())
+        val ts = lines.getOrNull(0)?.toLongOrNull() ?: 0L
+        val stamp = lines.getOrNull(1)?.toLongOrNull() ?: 0L
+        if (stamp != 0L && stamp != installStamp()) {
+            runCatching { f.delete() }
+            Log.i(TAG, "已装新版本（stamp 变了），清掉 Termux 降级标记，重新尝试 alpine")
+            return false
+        }
         if (System.currentTimeMillis() - ts > 72L * 3600_000) {
             runCatching { f.delete() }
             Log.i(TAG, "Termux 降级标记已过期，重新尝试 alpine 档")
@@ -156,7 +170,28 @@ class AlpineRuntime private constructor(
      *   ① 解包丢了 tar 的 mode 位（一律 0644）→ 补 0755；
      *   ② `/usr/bin/env` 在 Alpine 里是 busybox 的软链，若缺失/断链 → 补建 → /bin/busybox。
      */
-    private fun repairExecBits(root: File) {
+    private fun repairExecBits(root: File): Int {
+        // ① 目录位：目录缺 x 位时，proot 内 execve 一样返回 EACCES，而宿主侧
+        //    `File.canExecute()` 只看 owner 位，完全看不出来 —— 这是本轮要拿的真凭据。
+        var dirFixed = 0
+        listOf("", "bin", "sbin", "usr", "usr/bin", "usr/sbin", "usr/libexec", "lib", "usr/lib", "etc", "tmp")
+            .forEach { rel ->
+                val d = if (rel.isEmpty()) root else File(root, rel)
+                if (!d.isDirectory) return@forEach
+                val mode = runCatching {
+                    android.system.Os.stat(d.absolutePath).st_mode and 0x1FF
+                }.getOrDefault(0)
+                // 0755=493，01777=1023；0x49=0b001001001 是三个 x 位
+                val want = if (rel == "tmp") 1023 else 493
+                if ((mode and 0x49) != 0x49) {
+                    runCatching { android.system.Os.chmod(d.absolutePath, want) }
+                        .onSuccess { dirFixed++ }
+                    Log.w(TAG, "目录 $rel mode=${"%03o".format(mode)} → 补 ${"%03o".format(want)}")
+                } else if (rel == "bin" || rel == "usr/bin" || rel.isEmpty()) {
+                    Log.i(TAG, "目录 $rel mode=${"%03o".format(mode)}（正常）")
+                }
+            }
+        if (dirFixed > 0) Log.w(TAG, "目录缺执行位：已补 $dirFixed 个")
         val dirs = listOf("bin", "sbin", "usr/bin", "usr/sbin", "usr/libexec", "lib", "usr/lib")
         var fixed = 0
         dirs.forEach { rel ->
@@ -206,8 +241,9 @@ class AlpineRuntime private constructor(
         Log.i(
             TAG,
             "rootfs 自检：env exists=${env.exists()} exec=${env.canExecute()} real=$real " +
-                "busybox=${File(root, "bin/busybox").canExecute()} 补位=$fixed",
+                "busybox=${File(root, "bin/busybox").canExecute()} 补位=$fixed 目录补位=$dirFixed",
         )
+        return dirFixed
     }
 
     /** `files/runtime/native/` —— 自己掌控的 proot 依赖目录（含 `libtalloc.so.2`）。 */
@@ -272,6 +308,13 @@ class AlpineRuntime private constructor(
             Log.i(TAG, "alpine 档不可用，回退 Termux：${av.describe()}")
             return null
         }
+        // 权限自愈（幂等）：**必须在 forcedToTermux() 之前**，否则降级标记会把
+        // 「刚补好目录/文件执行位」的新版本也一起挡回 Termux，永远看不到 alpine 的真实结果。
+        val dirFixed = repairExecBits(rootfs)
+        if (dirFixed > 0) {
+            runCatching { forceFlag().delete() }
+            Log.i(TAG, "目录执行位已补 $dirFixed 个 → 清掉 Termux 降级标记，本轮继续尝试 alpine")
+        }
         if (forcedToTermux()) {
             Log.i(TAG, "上次 alpine 启动失败，本轮直接用 Termux 档（标记：${forceFlag().absolutePath}）")
             return null
@@ -280,10 +323,6 @@ class AlpineRuntime private constructor(
         // proot+node 会变成 PPID=1 的孤儿并占着 3080 —— 新引擎于是「起了但连不上」。
         // 真机实证：杀完两个孤儿 (13689/19234) 后端口才回到手里。
         killStaleRuntime()
-        // 权限自愈（幂等）：rootfs 解包丢了 mode 位 → proot 起 guest 的第一条命令
-        // `/usr/bin/env` 直接 `execve: Permission denied`，引擎 2846 ms 就退出。
-        // 每次起引擎前都补一遍，只碰可执行目录；顺带把 env 实体与可执行状态打进日志。
-        repairExecBits(rootfs)
         // 引擎实际装在 `filesDir/engine`（EngineManager.engineDir），**不是** `$DSH_HOME/engine`。
         // 以前只认 .dsh/engine → 真机永久命中「engine 里没有 bin.js」→ 一直回退 Termux；
         // 而 Termux 档没有 per-guest 的 `--link2symlink`，引擎给 session 做原子写用的 link()
