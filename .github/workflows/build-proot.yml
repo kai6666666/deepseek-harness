@@ -45,6 +45,8 @@ jobs:
           ./configure \
             --prefix="$GITHUB_WORKSPACE/out" \
             --disable-python \
+            --cross-compile \
+            --cross-execute=/bin/true \
             CC="$TC/bin/aarch64-linux-android24-clang" \
             AR="$TC/bin/llvm-ar" \
             RANLIB="$TC/bin/llvm-ranlib" \
