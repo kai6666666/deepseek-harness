@@ -73,6 +73,38 @@ class AlpineRuntime private constructor(
         return dst
     }
 
+    /**
+     * 清掉上一轮遗留的 proot / node 孤儿。
+     *
+     * 为什么需要：`--kill-on-exit` 只在 proot **正常退出**时收子进程。App 被 ROM 冻结、
+     * 被 SIGKILL、或进程直接崩掉时，proot+node 会挂到 init 下（PPID=1）并继续占着
+     * 3080/3081 —— 新一轮引擎「起了但 web 打不开」，表现就像启动失败。
+     *
+     * 只杀「PPID<=1 且命令行同时含 libproot.so 与本 rootfs 路径」的进程，
+     * 不碰 Termux 档、不碰本进程、不碰别的 App。
+     */
+    private fun killStaleRuntime() {
+        val self = android.os.Process.myPid()
+        runCatching {
+            val p = ProcessBuilder("ps", "-A", "-o", "PID,PPID,ARGS")
+                .redirectErrorStream(true)
+                .start()
+            val lines = p.inputStream.bufferedReader().use { it.readLines() }
+            p.waitFor()
+            var killed = 0
+            for (line in lines) {
+                if (!line.contains("libproot.so") || !line.contains(rootfs.absolutePath)) continue
+                val parts = line.trim().split(Regex("\\s+"), limit = 3)
+                val pid = parts.getOrNull(0)?.toIntOrNull() ?: continue
+                val ppid = parts.getOrNull(1)?.toIntOrNull() ?: continue
+                if (pid == self || ppid > 1) continue
+                runCatching { android.system.Os.kill(pid, android.system.OsConstants.SIGKILL) }
+                    .onSuccess { killed++ }
+            }
+            if (killed > 0) Log.w(TAG, "清理了 $killed 个残留 proot 孤儿（上一轮 kill-on-exit 没收到信号）")
+        }.onFailure { Log.w(TAG, "清理残留 proot 失败：${it.message}") }
+    }
+
     /** `files/runtime/native/` —— 自己掌控的 proot 依赖目录（含 `libtalloc.so.2`）。 */
     private fun nativeLibsDir(): File = File(File(context.filesDir, "runtime"), "native")
 
@@ -135,6 +167,10 @@ class AlpineRuntime private constructor(
             Log.i(TAG, "alpine 档不可用，回退 Termux：${av.describe()}")
             return null
         }
+        // 上一轮若被 SIGKILL / 被 ROM 冻结，`--kill-on-exit` 收不到信号，
+        // proot+node 会变成 PPID=1 的孤儿并占着 3080 —— 新引擎于是「起了但连不上」。
+        // 真机实证：杀完两个孤儿 (13689/19234) 后端口才回到手里。
+        killStaleRuntime()
         // 引擎实际装在 `filesDir/engine`（EngineManager.engineDir），**不是** `$DSH_HOME/engine`。
         // 以前只认 .dsh/engine → 真机永久命中「engine 里没有 bin.js」→ 一直回退 Termux；
         // 而 Termux 档没有 per-guest 的 `--link2symlink`，引擎给 session 做原子写用的 link()
