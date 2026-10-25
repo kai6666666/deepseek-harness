@@ -8,7 +8,7 @@
 | 组件 | 版本 | 来源（仓库内路径） |
 |---|---|---|
 | DSH Android 客户端 | `versionCode 38` / `0.4.1-debug` | `app/build.gradle.kts` |
-| Alpine rootfs | alpine `3.23.0` | `app/src/main/assets/runtime/alpine-rootfs.manifest.json` |
+| Alpine rootfs | alpine `3.23.0` | `tools/runtime-pin.json` |
 | Node（guest 内） | `24.22.1-r0` | 同上 |
 | rootfs 包体 | `58101022` B / sha256 `d253d66ff07a2d10…` | 同上 |
 | rootfs 构建时间 | `2026-10-24T17:04:21Z` | 同上 |

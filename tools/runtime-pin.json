@@ -1,0 +1,20 @@
+{
+  "_comment": "G-15：rootfs 的『钉死版本』。这是版本矩阵的唯一来源；换 rootfs 时必须同步改这里 4 个字段。为什么不在 gen 里直接读 assets/runtime/alpine-rootfs.manifest.json：CI 的『恢复二进制资产』会用 Release 附件覆盖 assets，那份 manifest 的 builtAt/fetchedAt 与仓库里的不同，会让 --check 在 CI 里必然红。",
+  "alpine": "3.23.0",
+  "nodejs": "24.22.1-r0",
+  "bytes": 58101022,
+  "sha256": "d253d66ff07a2d101ab54b9521c51b6486456c22df9760d3970bf38349a4e352",
+  "builtAt": "2026-10-24T17:04:21Z",
+  "packages": [
+    "bash",
+    "nodejs~24",
+    "npm",
+    "pnpm",
+    "python3",
+    "py3-pip",
+    "openssh",
+    "ca-certificates",
+    "tzdata"
+  ],
+  "source": "tools/alpine-runtime/build-rootfs.sh（CI alpine-rootfs.yml）"
+}

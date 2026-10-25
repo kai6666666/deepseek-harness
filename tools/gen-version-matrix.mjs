@@ -43,8 +43,23 @@ const gradle = read("app/build.gradle.kts");
 const versionCode = grab(gradle, /versionCode\s*=\s*(\d+)/);
 const versionName = grab(gradle, /versionName\s*=\s*"([^"]+)"/);
 
-const manifestPath = "app/src/main/assets/runtime/alpine-rootfs.manifest.json";
+const manifestPath = "tools/runtime-pin.json";
 const manifest = JSON.parse(read(manifestPath));
+
+// 顺带核对：assets 里的 manifest（CI 会用 Release 附件覆盖它）与 pin 是否一致。
+// ⚠️ 不一致只 warn、不 fail —— 那一份在 CI 里会被换成 Release 版，
+//    builtAt/fetchedAt 天然不同，拿它当闸门会让 CI 永远红。
+const assetsManifestPath = "app/src/main/assets/runtime/alpine-rootfs.manifest.json";
+try {
+  const am = JSON.parse(read(assetsManifestPath));
+  const drift = ["alpine", "nodejs", "bytes", "sha256"].filter((k) => String(am[k]) !== String(manifest[k]));
+  if (drift.length) {
+    console.warn(`⚠ assets 里的 manifest 与 tools/runtime-pin.json 有偏差：${drift.join(", ")}`);
+    console.warn("  （CI 里这是正常的：assets 会被 Release 附件覆盖；本地则建议重跑 fetch-rootfs-into-assets.sh）");
+  }
+} catch {
+  // assets 里没有 manifest（例如刚 clone、还没拉资产）也不该挡住生成
+}
 
 const jni = "app/src/main/jniLibs/arm64-v8a";
 const soFiles = ["libproot.so", "libtalloc.so", "libandroid-shmem.so"];
