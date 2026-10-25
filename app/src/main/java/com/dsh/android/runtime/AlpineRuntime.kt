@@ -133,19 +133,9 @@ class AlpineRuntime private constructor(
     private fun forcedToTermux(): Boolean {
         val f = forceFlag()
         if (!f.isFile) return false
-        val lines = runCatching { f.readLines() }.getOrDefault(emptyList())
-        val ts = lines.getOrNull(0)?.toLongOrNull() ?: 0L
-        val stamp = lines.getOrNull(1)?.toLongOrNull() ?: 0L
-        if (stamp != 0L && stamp != installStamp()) {
-            runCatching { f.delete() }
-            Log.i(TAG, "已装新版本（stamp 变了），清掉 Termux 降级标记，重新尝试 alpine")
-            return false
-        }
-        if (System.currentTimeMillis() - ts > 72L * 3600_000) {
-            runCatching { f.delete() }
-            Log.i(TAG, "Termux 降级标记已过期，重新尝试 alpine 档")
-            return false
-        }
+        // 最保守策略：**只要标记在就用 Termux**。之前按「安装版本戳 + 72h」比较，
+        // 真机上会误判成「标记无效」→ 又去撞 alpine，白等 2 秒并累加失败次数。
+        Log.i(TAG, "降级标记命中（${f.length()} B），本轮用 Termux 档")
         return true
     }
 
@@ -312,8 +302,7 @@ class AlpineRuntime private constructor(
         // 「刚补好目录/文件执行位」的新版本也一起挡回 Termux，永远看不到 alpine 的真实结果。
         val dirFixed = repairExecBits(rootfs)
         if (dirFixed > 0) {
-            runCatching { forceFlag().delete() }
-            Log.i(TAG, "目录执行位已补 $dirFixed 个 → 清掉 Termux 降级标记，本轮继续尝试 alpine")
+            Log.i(TAG, "目录执行位已补 $dirFixed 个（不删降级标记：修好一次就够，别让每轮都重撞 alpine）")
         }
         if (forcedToTermux()) {
             Log.i(TAG, "上次 alpine 启动失败，本轮直接用 Termux 档（标记：${forceFlag().absolutePath}）")
