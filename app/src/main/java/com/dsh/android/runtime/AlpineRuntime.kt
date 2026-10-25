@@ -42,9 +42,55 @@ class AlpineRuntime private constructor(
 
     val rootfs: File = File(File(context.filesDir, "runtime"), RuntimeBackend.ALPINE.dirName)
 
-    private fun findProot(): File? = candidates(PROOT_NAMES).firstOrNull()
+    /**
+     * proot 的 DT_NEEDED 是 **`libtalloc.so.2`**（带 soname 后缀），而 jniLibs 只能打
+     * `libtalloc.so` —— 系统解包目录 `nativeLibraryDir/` 里永远没有 `.so.2`，真机直接：
+     *
+     *     CANNOT LINK EXECUTABLE "…/lib/arm64/libproot.so": library "libtalloc.so.2" not found
+     *
+     * （2026-10-25 21:30:42 实证）。解法：把三件套解到 `files/runtime/native/`，
+     * **按 soname 补一份 `libtalloc.so.2`**，再让 proot 从那里加载
+     * （`LD_LIBRARY_PATH` 见 [prepareProcessEnvironment]）。
+     */
+    private fun ensureProotLibs(): File {
+        val dst = nativeLibsDir()
+        if (!dst.isDirectory) dst.mkdirs()
+        val src = context.applicationInfo.nativeLibraryDir
+        if (src.isNullOrEmpty()) return dst
+        fun put(from: String, to: String) {
+            val f = File(src, from)
+            if (!f.isFile) return
+            val t = File(dst, to)
+            if (t.isFile && t.length() == f.length()) return
+            runCatching { f.copyTo(t, overwrite = true) }
+                .onFailure { Log.w(TAG, "解出 $to 失败：${it.message}") }
+        }
+        put("libtalloc.so", "libtalloc.so.2")   // ← 真正的 soname，缺它 proot 起不来
+        put("libtalloc.so", "libtalloc.so")     // 兼容 dlopen("libtalloc.so") 的写法
+        put("libandroid-shmem.so", "libandroid-shmem.so")
+        put("libproot.so", "libproot.so")
+        File(dst, "libproot.so").takeIf { it.isFile }?.setExecutable(true)
+        return dst
+    }
 
-    private fun findLoader(): File? = candidates(LOADER_NAMES).firstOrNull()
+    /** `files/runtime/native/` —— 自己掌控的 proot 依赖目录（含 `libtalloc.so.2`）。 */
+    private fun nativeLibsDir(): File = File(File(context.filesDir, "runtime"), "native")
+
+    /** 优先用自己解出的副本（同目录带 `libtalloc.so.2`），再退回 jniLibs / Termux。 */
+    private fun findProot(): File? {
+        val local = File(ensureProotLibs(), "libproot.so")
+        if (local.isFile) {
+            if (!local.canExecute()) local.setExecutable(true)
+            return local
+        }
+        return candidates(PROOT_NAMES).firstOrNull()
+    }
+
+    private fun findLoader(): File? {
+        val local = File(nativeLibsDir(), "proot-loader.so")
+        if (local.isFile) return local
+        return candidates(LOADER_NAMES).firstOrNull()
+    }
 
     private fun candidates(names: List<String>): Sequence<File> = sequence {
         yieldAll(names.map { File(context.filesDir, it) })
@@ -160,6 +206,9 @@ class AlpineRuntime private constructor(
         // 只有外置 loader 存在时才设；内嵌 loader 的 proot 不认这个变量也无害
         av.loader?.let { env["PROOT_LOADER"] = it.absolutePath }
         env["TMPDIR"] = context.cacheDir.absolutePath
+        // proot 的 `libtalloc.so.2` 只有我们自己解出的目录里才有（见 ensureProotLibs），
+        // 系统 nativeLibraryDir 里那个叫 `libtalloc.so`，soname 对不上。
+        env["LD_LIBRARY_PATH"] = nativeLibsDir().absolutePath
         Log.i(TAG, "已切到 alpine 档：rootfs=${av.rootfs.name} proot=${av.proot.name}")
     }
 
