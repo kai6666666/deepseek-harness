@@ -24,6 +24,10 @@ const value = (name, fallback) => {
   return i >= 0 && argv[i + 1] ? argv[i + 1] : fallback;
 };
 
+// G-11：锚点重定位开关。默认开启；--no-relocate 回到「严格精确匹配」。
+//   --min-similarity 0.8  行窗口相似度阈值（低于此值不重定位，直接失败并诊断）
+const relocateOn = !flag("--no-relocate");
+const minSimilarity = Number(value("--min-similarity", "0.8"));
 const manifestPath = resolve(value("--manifest", "patches/manifest.json"));
 if (!existsSync(manifestPath)) {
   console.error(`✗ manifest 不存在: ${manifestPath}`);
@@ -90,6 +94,56 @@ function countOccurrences(haystack, needle) {
   }
 }
 
+/* ── G-11：锚点自动重定位 ──────────────────────────────────────────────
+ * 上游只是把缩进改了、或锚点前后各插了一行注释，旧的「精确子串匹配」就整体
+ * 失配并 fail-fast。这里用「行窗口 + 逐行相似度」找回最可能的区间，只替换
+ * 该区间，并且**一定打印重定位信息**——绝不静默改到别的地方。
+ */
+const normLine = (l) => l.trim().replace(/[ \t]+/g, " ");
+
+function lineSim(a, b) {
+  const n = Math.max(a.length, b.length);
+  if (!n) return 0;
+  let same = 0;
+  const k = Math.min(a.length, b.length);
+  for (let i = 0; i < k; i += 1) if (a[i] === b[i]) same += 1;
+  return same / n;
+}
+
+/** 返回 { start, span, sim }（行号 0 基），找不到或不达标返回 null。 */
+function relocate(before, find, minSim) {
+  const bRaw = before.split("\n");
+  const fRaw = find.split("\n");
+  while (fRaw.length && !normLine(fRaw[fRaw.length - 1])) fRaw.pop();
+  if (!fRaw.length) return null;
+  const fn = fRaw.map(normLine);
+  const bn = bRaw.map(normLine);
+  const span = fn.length;
+  if (span > bn.length) return null;
+  let best = { sim: 0, start: -1 };
+  for (let s = 0; s + span <= bn.length; s += 1) {
+    const sim = lineSim(bn.slice(s, s + span), fn);
+    if (sim > best.sim) best = { sim, start: s };
+  }
+  if (best.start < 0 || best.sim < minSim) return null;
+  return { start: best.start, span, sim: best.sim };
+}
+
+/** 失败诊断：给出最相似的 3 处，方便人肉判断是「上游真删了」还是「锚点过期」。 */
+function diagnose(before, find) {
+  const bRaw = before.split("\n");
+  const fn = find.split("\n").map(normLine).filter(Boolean);
+  if (!fn.length) return [];
+  const bn = bRaw.map(normLine);
+  const span = Math.max(1, Math.min(fn.length, bn.length));
+  const out = [];
+  for (let s = 0; s + span <= bn.length; s += 1) {
+    const sim = lineSim(bn.slice(s, s + span), fn);
+    if (sim > 0) out.push({ sim, line: s + 1, head: (bRaw[s] ?? "").trim().slice(0, 100) });
+  }
+  return out.sort((a, b) => b.sim - a.sim).slice(0, 3);
+}
+
 console.log(`引擎根目录: ${root}`);
 console.log(`清单:       ${manifestPath}`);
 console.log(`模式:       ${dryRun ? "dry-run（不写盘）" : "apply"}\n`);
@@ -132,7 +186,26 @@ for (const patch of manifest.patches) {
       }
     }
 
-    if (count !== patch.requireCount) {
+    // ── G-11：先精确匹配；失配则尝试锚点自动重定位（只替换对上的行窗口） ──
+    let after = null;
+    if (count === patch.requireCount) {
+      after = before.split(patch.find).join(patch.replace);
+    } else if (relocateOn && patch.requireCount === 1) {
+      const r = relocate(before, patch.find, minSimilarity);
+      if (r) {
+        const bLines = before.split("\n");
+        after = [
+          ...bLines.slice(0, r.start),
+          ...patch.replace.split("\n"),
+          ...bLines.slice(r.start + r.span),
+        ].join("\n");
+        console.log(
+          `↻ ${label}  锚点重定位：行 ${r.start + 1}–${r.start + r.span}，` +
+            `相似度 ${(r.sim * 100).toFixed(0)}%（精确匹配 miss，已按行窗口对齐）`,
+        );
+      }
+    }
+    if (after === null) {
       const msg = `${label}  命中 ${count} 次，期望 ${patch.requireCount}`;
       if (patch.optional) {
         console.log(`- ${msg}  跳过（optional）`);
@@ -140,11 +213,12 @@ for (const patch of manifest.patches) {
         continue;
       }
       console.error(`✗ ${msg}\n  锚点: ${JSON.stringify(patch.find)}\n  说明: ${patch.why}`);
+      for (const c of diagnose(before, patch.find)) {
+        console.error(`  候选 第${c.line}行  相似度 ${(c.sim * 100).toFixed(0)}%  ${c.head}`);
+      }
       failed += 1;
       continue;
     }
-
-    const after = before.split(patch.find).join(patch.replace);
     if (dryRun) {
       console.log(`~ ${label}  可应用（${before.length} → ${after.length} B, sha ${sha(Buffer.from(after))}）`);
       applied += 1;
