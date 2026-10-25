@@ -345,6 +345,40 @@ function precheck(pkgName, deps = []) {
 //   真机实测：只 inject webServer 时工具注册被跳过（引擎没崩，但工具没了）。
 export const inject = ["webServer", "tools"];
 
+/** 把工具结果渲染成模型可见文本（state / install 两种形状都要认）。 */
+function renderToolchain(value) {
+  if (!value || typeof value !== "object") return String(value);
+  // collectState()：带 backends / groups
+  if (Array.isArray(value.backends)) {
+    const lines = ["环境后端："];
+    for (const b of value.backends) {
+      lines.push(`  · ${b.name ?? b.key}: ${b.custom ?? (b.ok ? "可用" : "不可用")}`);
+    }
+    const gs = value.groups ?? [];
+    if (gs.length) {
+      lines.push("依赖组：");
+      for (const g of gs) {
+        const mark = g.installed ? "✓" : "✗";
+        const miss = Array.isArray(g.missing) && g.missing.length ? `（缺 ${g.missing.join(", ")}）` : "";
+        lines.push(`  ${mark} ${g.key}${g.label ? ` — ${g.label}` : ""}${miss}`);
+      }
+    }
+    return lines.join("\n");
+  }
+  // installGroups()
+  if (typeof value.ok === "boolean") {
+    const head = value.ok
+      ? "✓ 安装成功"
+      : `✗ 安装失败${value.busy ? "（已有任务在进行）" : ""}`;
+    const body = [head];
+    if (value.log) body.push(String(value.log));
+    if (Array.isArray(value.groups) && value.groups.length) body.push(`分组：${value.groups.join(", ")}`);
+    if (typeof value.code === "number") body.push(`退出码：${value.code}`);
+    return body.join("\n");
+  }
+  return JSON.stringify(value, null, 2);
+}
+
 export function apply(ctx) {
   try {
     ctx.effect(() =>
@@ -420,6 +454,26 @@ export function apply(ctx) {
                 return installGroups(args.groups ?? []);
               }
               return collectState();
+            },
+            // ⚠️ DSH 的工具契约要求**必须声明 output**，否则 register 直接抛：
+            //   TypeError: tool "android_toolchain" must declare output { schema, render, presentationMeta? }
+            //   真机实测：只写 parameters 会「注册失败，已跳过」，工具在列表里根本不出现。
+            //   schema 故意宽：state 与 install 两种返回形状不同，required 也不写死。
+            output: {
+              schema: {
+                type: "object",
+                additionalProperties: true,
+                properties: {
+                  ok: { type: "boolean" },
+                  busy: { type: "boolean" },
+                  log: { type: "string" },
+                  code: { oneOf: [{ type: "integer" }, { type: "null" }] },
+                  groups: { type: "array" },
+                  backends: { type: "array" },
+                  state: {},
+                },
+              },
+              render: (_args, value) => [{ type: "text", text: renderToolchain(value) }],
             },
           }),
         );
