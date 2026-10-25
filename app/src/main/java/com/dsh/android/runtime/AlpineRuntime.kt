@@ -138,8 +138,10 @@ class AlpineRuntime private constructor(
         val f = File(rootfs, "bin/busybox")
         return runCatching {
             val st = android.system.Os.stat(f.absolutePath)
-            ((st.st_mode and 0x1FF).toLong() shl 32) or (st.st_size and 0xFFFFFFFFL)
-        }.getOrDefault(0L)
+            (ARGV_REV.toLong() shl 56) or
+                ((st.st_mode and 0x1FF).toLong() shl 32) or
+                (st.st_size and 0xFFFFFFFFL)
+        }.getOrDefault(ARGV_REV.toLong() shl 56)
     }
 
     private fun forceFlag(): File = File(File(context.filesDir, "runtime"), "force-termux")
@@ -376,7 +378,10 @@ class AlpineRuntime private constructor(
             argv += listOf("-b", "${hostEngine.absolutePath}:/dsh-home/engine")
         }
         argv += listOf("-b", "${workspace.absolutePath}:$GUEST_WORKSPACE")
-        argv += "--kill-on-exit"
+        // A/B：去掉 `--kill-on-exit`。它在 proot 里会 `prctl(PR_SET_PDEATHSIG)` + 加重 seccomp，
+// Android 16（kernel 6.1）对这两项都有额外约束；一旦在 exec 前失败，proot 报的就是
+// execve 的 EACCES。先把它去掉，测「是否 proot 自身机制导致」。
+        // argv += "--kill-on-exit"
         // ⚠️ 不要用 `/usr/bin/env`：Alpine 里它是 **busybox 的硬链接条目**，我们的
         // TarGzExtractor 不解硬链接 → 真机上 `env exists=false`，于是 proot 第一条命令就
         // `execve("/usr/bin/env"): Permission denied`（引擎 2.8 s 退出 → 连续 10 次 → 救援模式）。
@@ -440,6 +445,8 @@ class AlpineRuntime private constructor(
 
     companion object {
         private const val TAG = "DSH/AlpineRuntime"
+        /** 每次改 proot 命令行参数就 +1：rootfs 指纹随之变化，降级标记自动失效 → 自动重试 alpine。 */
+        private const val ARGV_REV = 2L
         const val GUEST_WORKSPACE = "/workspace"
         const val GUEST_DSH_HOME = "/dsh-home"
         const val GUEST_ENGINE_BIN = "$GUEST_DSH_HOME/engine/node_modules/@deepseek-ai/dsh/lib/bin.js"
