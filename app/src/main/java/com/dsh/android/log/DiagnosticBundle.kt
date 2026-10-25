@@ -62,6 +62,9 @@ object DiagnosticBundle {
      */
     private const val MAX_STARTUP_LOGS = 5
 
+    /** G-21：诊断包里最多收几份 rootfs 体检 JSON（只留最近的）。 */
+    private const val MAX_VERIFY_JSON = 3
+
     /**
      * 读崩溃现场的 `bootId:` 时最多看几行。
      *
@@ -166,6 +169,20 @@ object DiagnosticBundle {
                 budget -= writeLogFile(zos, logDir, LogStore.ENGINE_LOG, budget, entriesWritten, completeness)
                 budget -= writeLogFile(zos, logDir, "${LogStore.APP_LOG}.1", budget, entriesWritten, completeness)
                 budget -= writeLogFile(zos, logDir, LogStore.APP_LOG, budget, entriesWritten, completeness)
+                // G-21：`verify-rootfs.sh BUNDLE=1` 落的体检 JSON。
+                //   以前它只留在 `$DSH_HOME/logs/`，诊断包里一个字都看不到，
+                //   于是「体检跑过了」这件事在事后排查时等于没发生。
+                //   这里跟着 logDir 收 —— 与上面那几份日志同一个入口，调用点不用改。
+                runCatching {
+                    logDir.listFiles { f ->
+                        f.isFile && f.name.startsWith("verify-rootfs-") && f.name.endsWith(".json")
+                    }
+                        ?.sortedByDescending { it.lastModified() }
+                        ?.take(MAX_VERIFY_JSON)
+                        ?.forEach { vf ->
+                            budget -= writeLogFile(zos, logDir, vf.name, budget, entriesWritten, completeness)
+                        }
+                }
 
                 // ── ④.5 引擎自己写的启动诊断 ──
                 budget -= writeEngineStartupLogs(zos, entriesWritten, completeness)

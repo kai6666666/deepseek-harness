@@ -1,0 +1,118 @@
+{
+  "schema": 1,
+  "note": "Android 侧环境供给表。体积为解包后估算值，仅用于 UI 提示，不参与任何校验。",
+  "backends": {
+    "alpine": {
+      "detect": { "file": "/etc/os-release", "match": "^ID=alpine" },
+      "query": ["apk", "info", "-e", "{pkg}"],
+      "install": ["apk", "add", "--no-cache", "{pkgs}"],
+      "virtualPrefix": "--virtual"
+    },
+    "termux": {
+      "detect": { "env": "PREFIX", "match": "(com\\.dsh\\.android|com\\.termux)/files/usr" },
+      "query": ["sh", "-c", "command -v {bin}"],
+      "install": ["pkg", "install", "-y", "{pkgs}"],
+      "virtualPrefix": null
+    },
+    "linux-glibc": {
+      "detect": { "file": "/etc/os-release", "match": "^ID=(ubuntu|debian)" },
+      "query": ["dpkg", "-s", "{pkg}"],
+      "install": ["apt-get", "install", "-y", "{pkgs}"],
+      "virtualPrefix": null
+    }
+  },
+  "groups": {
+    "node": {
+      "label": "Node.js 运行时",
+      "tier": "L1",
+      "default": true,
+      "locked": true,
+      "sizeMB": 45,
+      "reason": "DSH 引擎要求 ^22.19 || >=24；由 App 内置并锁定版本，环境配置只展示、不提供替换。",
+      "alpine": { "pkgs": ["nodejs"], "bins": ["node"] },
+      "termux": { "pkgs": ["nodejs-lts"], "bins": ["node"] },
+      "linux-glibc": { "pkgs": ["nodejs"], "bins": ["node"] }
+    },
+    "ssh": {
+      "label": "SSH 工具",
+      "tier": "L2",
+      "default": true,
+      "sizeMB": 8,
+      "reason": "fs-ssh / sandbox-ssh / 远端 workspace；不需要 ssh-helper 原生产物。",
+      "alpine": { "pkgs": ["openssh", "ca-certificates"], "bins": ["ssh"] },
+      "termux": { "pkgs": ["openssh", "ca-certificates"], "bins": ["ssh"] },
+      "linux-glibc": { "pkgs": ["openssh-client", "ca-certificates"], "bins": ["ssh"] },
+      "optional": {
+        "sshpass": { "sizeMB": 1, "bins": ["sshpass"], "reason": "非交互口令登录；密钥登录不需要" },
+        "sshd": { "sizeMB": 3, "alpine": ["openssh-server"], "termux": ["openssh"], "bins": ["sshd"], "reason": "反向隧道挂载本地文件系统" }
+      }
+    },
+    "python": {
+      "label": "Python 环境",
+      "tier": "L2",
+      "default": true,
+      "sizeMB": 70,
+      "reason": "解 ptc-runtime-python 与 tool-lsp(pyright)；纯 JS 插件不需要。",
+      "alpine": { "pkgs": ["python3", "py3-pip"], "bins": ["python3"] },
+      "termux": { "pkgs": ["python", "python-pip"], "bins": ["python"] },
+      "linux-glibc": { "pkgs": ["python3", "python3-pip"], "bins": ["python3"] }
+    },
+    "build": {
+      "label": "插件编译链",
+      "tier": "L2",
+      "default": false,
+      "sizeMB": 250,
+      "reason": "node-gyp 需要 cc/make/python；Alpine 走 build-base，Termux 的 clang 天生是 bionic target。",
+      "alpine": { "pkgs": ["build-base", "python3", "linux-headers"], "bins": ["cc", "make"] },
+      "termux": { "pkgs": ["clang", "make", "python"], "bins": ["clang", "make"] },
+      "linux-glibc": { "pkgs": ["build-essential", "python3"], "bins": ["cc", "make"] }
+    },
+    "rust": {
+      "label": "Rust (Cargo)",
+      "tier": "L3",
+      "default": false,
+      "sizeMB": 1100,
+      "reason": "仅当要自编 @napi-rs/* musl 变体或编 subagent-codex 时需要；运行时零依赖。",
+      "alpine": { "pkgs": ["rust", "cargo"], "bins": ["cargo"] },
+      "termux": { "pkgs": ["rust"], "bins": ["cargo"] },
+      "linux-glibc": { "pkgs": ["cargo"], "bins": ["cargo"] }
+    },
+    "java": {
+      "label": "Java 环境",
+      "tier": "L3",
+      "default": false,
+      "sizeMB": 300,
+      "reason": "运行时不需要。只有「在设备上构建 APK」这种开发场景才用，默认折叠。",
+      "alpine": { "pkgs": ["openjdk17-jdk"], "bins": ["java"] },
+      "termux": { "pkgs": ["openjdk-17"], "bins": ["java"] },
+      "linux-glibc": { "pkgs": ["openjdk-17-jdk-headless"], "bins": ["java"] }
+    },
+    "go": {
+      "label": "Go 环境",
+      "tier": "L3",
+      "default": false,
+      "sizeMB": 400,
+      "reason": "运行时不需要。只有装 Go 写的 MCP server / CLI 才用，默认折叠。",
+      "alpine": { "pkgs": ["go"], "bins": ["go"] },
+      "termux": { "pkgs": ["golang"], "bins": ["go"] },
+      "linux-glibc": { "pkgs": ["golang-go"], "bins": ["go"] }
+    }
+  },
+  "nativeSignals": {
+    "note": "命中即视为需要原生产物；用于 android_native_precheck 的判定，不用于拒绝安装。",
+    "packages": [
+      "^sharp$", "^@img/sharp-", "^@vscode/ripgrep$", "^node-pty$",
+      "^node-addon-", "^@deepseek-ai/node-addon-", "^better-sqlite3$",
+      "^@napi-rs/", "^koffi$", "^onnxruntime-node$", "^esbuild$", "^duckdb$"
+    ],
+    "wasmAlternatives": {
+      "sharp": "@jsquash/*",
+      "better-sqlite3": "sql.js / wa-sqlite",
+      "onnxruntime-node": "onnxruntime-web",
+      "@vscode/ripgrep": "静态 rg 二进制"
+    },
+    "neverPortable": [
+      "landlock", "bubblewrap", "docker", "ebpf", "io_uring"
+    ]
+  }
+}

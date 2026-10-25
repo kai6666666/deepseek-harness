@@ -157,7 +157,7 @@ docs/agents             37 篇（索引式，按"坑"组织）
 | ~~G-10~~ ✅ | `resolv.conf` 写死三个 IP | 国内网络下 `1.1.1.1` 可能超时 | 三级：Android `netd` 拿到的 DNS → 223.5.5.5 → env 覆盖 |
 | ~~G-11~~ ✅ | 补丁**锚点无自动重定位** | 上游改一行，`includes()` 判据全 False → 静默跳过 | 加"锚点模糊匹配 + 命中多处即 FAIL"；`manifest.json` 记录上游 commit |
 | **G-12** | 上游 PR 的 `libc: "bionic"` 是新枚举值 | 官方 `verify-*` 可能拒绝 | 同 PR 改校验脚本白名单；PR 描述里注明向后兼容 |
-| ⚠️ G-13（半） | `index.js` install 两处瑕疵 | 未用 `virtualPrefix`；`spawn` 超时只杀父进程 | 用 `virtualPrefix`；超时 `process.kill(-pid, 'SIGKILL')` 杀进程组 |
+| ~~G-13~~ ✅ | `index.js` install 两处瑕疵 | 未用 `virtualPrefix`；`spawn` 超时只杀父进程 | 用 `virtualPrefix`；超时 `process.kill(-pid, 'SIGKILL')` 杀进程组 |
 | **G-14** | 市场快照落后 | `seed.json` 9 个 vs npm 关键词 10 个（漏 `dsh-zen-free`） | `market-collect.mjs` 定时刷新 + 记录 `generatedAt` 并在 UI 提示新鲜度 |
 | **G-15** | 无**版本矩阵** | DSH 版本 × rootfs 版本 × node 版本没有一张对照表 | 新增 `docs/agents/version-matrix.md`，由 `verify-*` 自动比对 |
 
@@ -170,7 +170,7 @@ docs/agents             37 篇（索引式，按"坑"组织）
 | ~~G-18~~ ✅ | deb 层缺库只提示不装 | `verify --deb` 报 glibc 需 gcompat，但不自动装 | `deb-extract --auto-deps` 调 `apk add gcompat libstdc++` |
 | ~~G-19~~ ✅ | 无离线/随身包 | 首启必须联网 | 提供 `--offline` 产物（rootfs 打进 APK 的 `assets`） |
 | ~~G-20~~ ✅ | overlay 首次 `apt update` 在国内镜像可能慢 | 默认清华源已选好，但无回退 | 失败自动换 `aliyun` → `ports.ubuntu.com` |
-| ⚠️ G-21（半） | `verify-rootfs.sh` 未串到开机自检 | 只是命令行脚本 | 接 `DiagnosticBundle`，一键导出"档位+5 项" |
+| ~~G-21~~ ✅ | `verify-rootfs.sh` 未串到开机自检 | 只是命令行脚本 | 接 `DiagnosticBundle`，一键导出"档位+5 项" |
 | **G-22** | 文档缺运行时索引 | `docs/agents/README.md` 无 runtime 条目 | 本轮已补（见 §9） |
 
 ### 5.1 G-03 接口草案（Kotlin 侧，待实现）

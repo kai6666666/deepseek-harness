@@ -226,7 +226,21 @@ function installGroups(keys) {
     const spec = PROVISION.groups[key][backendName];
     for (const pkg of spec?.pkgs ?? []) pkgs.add(pkg);
   }
-  const argv = expand(backend.install, { pkgs: [...pkgs] });
+  // G-13：provision.json 里给每个后端声明了 `virtualPrefix`
+  //   （apk → "--virtual"，apt → null）。以前这个字段**只是配置、没人读**。
+  //   现在真用上：装成「一个虚拟包组」，整组可以用 `apk del <group>` 一次撤掉，
+  //   而不是逐个删包（删错一个就把别的工具带崩）。
+  // ⚠️ virtualPrefix 定义在 **backends.<name>** 这一层（不是 groups.<key>.<backend>），
+  //   所以这里必须读 `backend.virtualPrefix`；读 spec 会永远拿到 undefined，
+  //   于是「用上了 virtualPrefix」变成一句空话。真机验证要看下面那行 console.log。
+  const virtualGroup = backend.virtualPrefix ? `dsh-tc-${Date.now().toString(36)}` : null;
+  const pkgsArg = virtualGroup
+    ? [backend.virtualPrefix, virtualGroup, ...[...pkgs]].join(" ")
+    : [...pkgs].join(" ");
+  const argv = expand(backend.install, { pkgs: pkgsArg });
+  if (virtualGroup) {
+    console.log(`[dsh-android-toolchain] 虚拟包组: ${virtualGroup}（apk del ${virtualGroup} 可整组撤掉）`);
+  }
 
   installing = { groups: selected, argv, startedAt: Date.now() };
 

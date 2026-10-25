@@ -55,7 +55,8 @@ say ""
 # G-21：BUNDLE=1 时落一份 JSON，供 DiagnosticBundle / 崩溃现场直接引用，
 #   而不是让人从终端往上翻 5 项结果。
 if [ "${BUNDLE:-0}" = "1" ]; then
-  _dir="${DSH_HOME:-$HOME/.dsh}/logs"
+  # G-21：BUNDLE_DIR 可指向 filesDir/logs —— 那才是 DiagnosticBundle 会收的目录
+  _dir="${BUNDLE_DIR:-${DSH_HOME:-$HOME/.dsh}/logs}"
   _f="$_dir/verify-rootfs-$(date +%Y%m%d-%H%M%S).json"
   mkdir -p "$_dir" 2>/dev/null || true
   printf '{"tool":"verify-rootfs","fail":%s,"backend":"%s","ts":"%s"}\n' \
