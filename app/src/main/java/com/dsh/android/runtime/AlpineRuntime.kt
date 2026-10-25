@@ -348,7 +348,9 @@ class AlpineRuntime private constructor(
 
         val argv = ArrayList<String>(48)
         argv += av.proot.absolutePath
-        argv += listOf("-r", av.rootfs.absolutePath, "-w", GUEST_WORKSPACE, "--link2symlink")
+        // A/B：先去掉 `--link2symlink`。它在 proot 5.1 里会重写 hardlink 的解析路径，
+// 与 Android 16 的 execve 路径检查叠加时最容易出「一切权限都对、execve 却 EACCES」。
+        argv += listOf("-r", av.rootfs.absolutePath, "-w", GUEST_WORKSPACE)
         argv += listOf("-b", "/dev:/dev", "-b", "/proc:/proc")
         argv += listOf("-b", "${dshHome.absolutePath}:/dsh-home")
         // 引擎若不在 `$DSH_HOME/engine`（当前布局就是），单独 bind 进去 ——
