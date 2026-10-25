@@ -68,7 +68,14 @@ jobs:
           export RANLIB="$TC/bin/llvm-ranlib"
           export CFLAGS="-static -O2 -DARG_MAX=131072 -I$GITHUB_WORKSPACE/out/include"
           export LDFLAGS="-static -L$GITHUB_WORKSPACE/out/lib"
-          make -j4 V=1 || true
+          # ⚠️ proot 的 GNUmakefile 里 `CC` 是**硬赋值**，光 export 不生效（日志里能看到它用宿主
+          #   的 `gcc` 去链 `-ltalloc`，于是 `/usr/bin/ld: cannot find -ltalloc`）。
+          #   必须以命令行变量传进去，CFLAGS/LDFLAGS 同理。
+          make -j4 \
+            CC="$CC" \
+            CFLAGS="$CFLAGS" \
+            LDFLAGS="$LDFLAGS" \
+            || true
           echo '--- 产物 ---'
           ls -l
           find . -maxdepth 2 -type f -name 'proot*' -exec ls -l {} \;
