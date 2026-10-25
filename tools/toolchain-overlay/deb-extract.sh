@@ -202,7 +202,18 @@ WRAP="$DEB_ROOT/bin/$BIN"
 printf '   ✓ %s → %s\n' "$WRAP" "$REAL"
 printf '   %s MB\n' "$(du -sm "$DEST" | cut -f1)"
 
+# G-18：AUTO_DEPS=1 时直接把兼容层装上，而不是只打印一句「请自己装」
+if [ "${AUTO_DEPS:-0}" = "1" ]; then
+  printf '\n补兼容层（AUTO_DEPS=1）…\n'
+  if bash "$(dirname "$0")/../alpine-runtime/proot-launch.sh" -- apk add --no-cache gcompat libstdc++ libgcc; then
+    printf '   ✓ gcompat / libstdc++ / libgcc 已装\n'
+    DEPS_INSTALLED=1
+  else
+    printf '   ✗ 自动装失败，按下面第 1 步手动装\n'
+  fi
+fi
+
 printf '\n下一步：\n'
-printf '  1) Alpine 里补兼容层: bash ../alpine-runtime/proot-launch.sh -- apk add --no-cache gcompat libstdc++\n'
+[ "${DEPS_INSTALLED:-0}" = "1" ] || printf '  1) Alpine 里补兼容层: bash ../alpine-runtime/proot-launch.sh -- apk add --no-cache gcompat libstdc++\n'
 printf '  2) 直接跑: %s --version\n' "$WRAP"
 printf '  3) 若报 "not found" 但文件在: 说明缺 glibc 符号 → 改用 overlay（install-overlay.sh）\n'

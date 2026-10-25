@@ -198,8 +198,16 @@ KEYRING="$TC_ROOT/usr/share/keyrings/ubuntu-archive-keyring.gpg"
   printf 'Components: main universe restricted multiverse\n'
   if [ -f "$KEYRING" ]; then
     printf 'Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n'
-  else
+  elif [ "${APT_INSECURE:-0}" = "1" ]; then
+    # G-16：只有显式 APT_INSECURE=1 才允许关校验。
+    #   以前的写法是「没 keyring 就写 Trusted: yes」——等于静默把签名校验关掉，
+    #   日志里只有 keyring=no，没人会注意到装进来的包没验签。
+    say "   ⚠ APT_INSECURE=1：无 keyring，本次关闭 apt 签名校验（仅调试用）"
     printf 'Trusted: yes\n'
+  else
+    say "✗ 缺 keyring: $KEYRING" >&2
+    say "  → 先 ensure-rootfs 装 ubuntu-keyring；或显式 APT_INSECURE=1 承担风险" >&2
+    exit 33
   fi
 } > "$TC_ROOT/etc/apt/sources.list.d/ubuntu.sources"
 say "   source: $MIRROR ($SUITE, $ARCH)  keyring=$([ -f "$KEYRING" ] && echo yes || echo no)"
@@ -207,10 +215,24 @@ say "   source: $MIRROR ($SUITE, $ARCH)  keyring=$([ -f "$KEYRING" ] && echo yes
 # ── 4) apt-get update（走 tc-run，与运行时完全同一套 proot 参数） ─────
 if [ "$DO_UPDATE" = "1" ]; then
   say "== 4/5 apt-get update"
-  DSH_TC_ROOT="$TC_ROOT" DSH_PROOT="$DSH_PROOT" DSH_PROOT_LOADER="$DSH_PROOT_LOADER" \
-    bash "$HERE/tc-run.sh" --sandbox readonly -- apt-get update -qq \
-    || die "apt-get update 失败（网络/DNS/源）" 5
-  say "   update ok"
+  # G-20：三级源回退。国内网络下单个镜像抽风很常见，硬失败会让用户以为「装不了」。
+  SRC_FILE="$TC_ROOT/etc/apt/sources.list.d/ubuntu.sources"
+  update_ok=0
+  for fb in "$MIRROR" "https://mirrors.aliyun.com/ubuntu-ports" "http://ports.ubuntu.com/ubuntu-ports"; do
+    [ -n "$fb" ] || continue
+    if [ "$fb" != "$MIRROR" ]; then
+      say "   ↻ 回退到 $fb"
+      sed -i "s#^URIs: .*#URIs: $fb#" "$SRC_FILE"
+    fi
+    if DSH_TC_ROOT="$TC_ROOT" DSH_PROOT="$DSH_PROOT" DSH_PROOT_LOADER="$DSH_PROOT_LOADER" \
+      bash "$HERE/tc-run.sh" --sandbox readonly -- apt-get update -qq; then
+      update_ok=1
+      MIRROR="$fb"
+      break
+    fi
+  done
+  [ "$update_ok" = "1" ] || die "apt-get update 失败（3 个源都不可用：$MIRROR / aliyun / ports）" 5
+  say "   update ok（源=$MIRROR）"
 else
   say "== 4/5 跳过 update（--no-update）"
 fi

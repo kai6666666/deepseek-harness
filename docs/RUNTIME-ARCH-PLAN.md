@@ -165,12 +165,12 @@ docs/agents             37 篇（索引式，按"坑"组织）
 
 | # | 缺口 | 说明 | 补法 |
 |---|---|---|---|
-| **G-16** | overlay 源校验降级 | 无 keyring 时写 `Trusted: yes`（关校验） | 缺 keyring 就 `exit 33`，让用户显式 `--insecure` |
-| **G-17** | `proot -0` + 共享 `$DSH_HOME` | guest 内假 root 可写 `/dsh-home` 任意位置 | overlay 档改为 `readonly` + 只绑 `workspace`；写操作显式 `--allow-write` |
-| **G-18** | deb 层缺库只提示不装 | `verify --deb` 报 glibc 需 gcompat，但不自动装 | `deb-extract --auto-deps` 调 `apk add gcompat libstdc++` |
-| **G-19** | 无离线/随身包 | 首启必须联网 | 提供 `--offline` 产物（rootfs 打进 APK 的 `assets`） |
-| **G-20** | overlay 首次 `apt update` 在国内镜像可能慢 | 默认清华源已选好，但无回退 | 失败自动换 `aliyun` → `ports.ubuntu.com` |
-| **G-21** | `verify-rootfs.sh` 未串到开机自检 | 只是命令行脚本 | 接 `DiagnosticBundle`，一键导出"档位+5 项" |
+| ~~G-16~~ ✅ | overlay 源校验降级 | 无 keyring 时写 `Trusted: yes`（关校验） | 缺 keyring 就 `exit 33`，让用户显式 `--insecure` |
+| ~~G-17~~ ✅ | `proot -0` + 共享 `$DSH_HOME` | guest 内假 root 可写 `/dsh-home` 任意位置 | overlay 档改为 `readonly` + 只绑 `workspace`；写操作显式 `--allow-write` |
+| ~~G-18~~ ✅ | deb 层缺库只提示不装 | `verify --deb` 报 glibc 需 gcompat，但不自动装 | `deb-extract --auto-deps` 调 `apk add gcompat libstdc++` |
+| ~~G-19~~ ✅ | 无离线/随身包 | 首启必须联网 | 提供 `--offline` 产物（rootfs 打进 APK 的 `assets`） |
+| ~~G-20~~ ✅ | overlay 首次 `apt update` 在国内镜像可能慢 | 默认清华源已选好，但无回退 | 失败自动换 `aliyun` → `ports.ubuntu.com` |
+| ⚠️ G-21（半） | `verify-rootfs.sh` 未串到开机自检 | 只是命令行脚本 | 接 `DiagnosticBundle`，一键导出"档位+5 项" |
 | **G-22** | 文档缺运行时索引 | `docs/agents/README.md` 无 runtime 条目 | 本轮已补（见 §9） |
 
 ### 5.1 G-03 接口草案（Kotlin 侧，待实现）

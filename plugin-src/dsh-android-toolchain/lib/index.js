@@ -324,7 +324,12 @@ function precheck(pkgName, deps = []) {
 /* ─────────────────────────── 插件入口 ─────────────────────────── */
 
 /** 只依赖 webServer；tools 是可选的，缺了不报错。 */
-export const inject = ["webServer"];
+// ⚠️ 必须把 "tools" 也写进 inject：
+//   DSH 的 ctx 是 Proxy，访问未 inject 的属性会**直接抛**
+//   `cannot get property "tools" without inject` —— `ctx.tools?.register`
+//   里的 `?.` 救不了（异常发生在 getter 里，短路不到）。
+//   真机实测：只 inject webServer 时工具注册被跳过（引擎没崩，但工具没了）。
+export const inject = ["webServer", "tools"];
 
 export function apply(ctx) {
   try {

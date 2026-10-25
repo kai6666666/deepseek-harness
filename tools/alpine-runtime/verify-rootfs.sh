@@ -52,5 +52,15 @@ out=$(bash "$L" --strict -- /usr/bin/env node /dsh-home/engine/node_modules/@dee
 printf '%s' "$out" | grep -Eq '^-|id:|name:'; item "dump-config 有输出（$out）" "$?"
 
 say ""
+# G-21：BUNDLE=1 时落一份 JSON，供 DiagnosticBundle / 崩溃现场直接引用，
+#   而不是让人从终端往上翻 5 项结果。
+if [ "${BUNDLE:-0}" = "1" ]; then
+  _dir="${DSH_HOME:-$HOME/.dsh}/logs"
+  _f="$_dir/verify-rootfs-$(date +%Y%m%d-%H%M%S).json"
+  mkdir -p "$_dir" 2>/dev/null || true
+  printf '{"tool":"verify-rootfs","fail":%s,"backend":"%s","ts":"%s"}\n' \
+    "$fail" "${DSH_BACKEND:-alpine}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$_f" 2>/dev/null \
+    && say "bundle: $_f"
+fi
 say "FAIL=$fail"
 exit "$fail"
