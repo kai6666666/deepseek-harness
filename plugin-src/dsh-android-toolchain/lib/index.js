@@ -345,6 +345,26 @@ function precheck(pkgName, deps = []) {
 //   真机实测：只 inject webServer 时工具注册被跳过（引擎没崩，但工具没了）。
 export const inject = ["webServer", "tools"];
 
+/** 把 precheck 结果渲染成模型可见文本。 */
+function renderPrecheck(value) {
+  if (!value || typeof value !== "object") return String(value);
+  const lines = [`包：${value.pkg ?? "(未指定)"}`];
+  if (typeof value.portable === "boolean") lines.push(`可移植：${value.portable ? "是" : "否"}`);
+  const nativeDeps = value.native ?? value.details?.native;
+  if (Array.isArray(nativeDeps) && nativeDeps.length) {
+    lines.push("原生依赖：");
+    for (const d of nativeDeps) lines.push(`  · ${typeof d === "string" ? d : JSON.stringify(d)}`);
+  }
+  const alts = value.alternatives;
+  if (alts && typeof alts === "object" && Object.keys(alts).length) {
+    lines.push("wasm/替代：");
+    for (const [k, v] of Object.entries(alts)) lines.push(`  ${k} → ${v}`);
+  }
+  if (value.advice) lines.push(`建议：${value.advice}`);
+  if (lines.length === 1) return JSON.stringify(value, null, 2);
+  return lines.join("\n");
+}
+
 /** 把工具结果渲染成模型可见文本（state / install 两种形状都要认）。 */
 function renderToolchain(value) {
   if (!value || typeof value !== "object") return String(value);
@@ -492,6 +512,25 @@ export function apply(ctx) {
               required: ["pkg"],
             },
             execute: async (args) => precheck(String(args?.pkg ?? ""), args?.deps ?? []),
+            // 与 android_toolchain 同理：DSH 要求每个工具都声明 output。
+            //   真机实测：只给第一个加，第二个仍抛
+            //   TypeError: tool "android_native_precheck" must declare output { schema, render, ... }
+            //   —— 而且整段 register 会一起失败，两个工具都不出现。
+            output: {
+              schema: {
+                type: "object",
+                additionalProperties: true,
+                properties: {
+                  pkg: { type: "string" },
+                  portable: { type: "boolean" },
+                  native: { type: "array" },
+                  alternatives: {},
+                  advice: { type: "string" },
+                  details: {},
+                },
+              },
+              render: (_args, value) => [{ type: "text", text: renderPrecheck(value) }],
+            },
           }),
         );
       }
