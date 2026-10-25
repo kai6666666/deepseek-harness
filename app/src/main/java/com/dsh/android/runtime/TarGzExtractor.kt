@@ -28,7 +28,7 @@ class TarGzExtractor(private val onEntry: ((String) -> Unit)? = null) {
     /** @return 实际落地的条目数 */
     fun extract(stream: InputStream, destDir: File): Int {
         destDir.mkdirs()
-        val destRoot = destDir.canonicalFile
+        val destRoot = destDir.absolutePath
         val header = ByteArray(BLOCK)
         var count = 0
         var longName: String? = null
@@ -61,7 +61,11 @@ class TarGzExtractor(private val onEntry: ((String) -> Unit)? = null) {
                 val rel = rawName.removePrefix("./").trimEnd('/')
                 if (rel.isNotEmpty()) {
                     val out = File(destDir, rel)
-                    val canon = out.canonicalPath
+                    // ⚠️ 用 **字面路径** 判 ZipSlip，不要 canonicalPath：
+                    // Alpine 里 `bin -> /usr/bin` 是**绝对** symlink，canonical 会穿到
+                    // 宿主的 `/usr/bin` → 之后所有 `bin/*` 条目都被当越界跳过，
+                    // 真机表现为 `/usr/bin/env`、`/bin/sh` 全都 exists=false。
+                    val canon = out.absolutePath
                     // ZipSlip：只允许落在 destDir 内
                     if (canon == destRoot.path || canon.startsWith(destRoot.path + File.separator)) {
                         when (type) {
@@ -69,12 +73,25 @@ class TarGzExtractor(private val onEntry: ((String) -> Unit)? = null) {
                             '2' -> {
                                 out.parentFile?.mkdirs()
                                 runCatching { out.delete() }
-                                runCatching { Os.symlink(link, out.absolutePath) }
+                                // 绝对 target 必须转成**相对**再建，否则在宿主体内会穿出 rootfs
+                                // （`bin -> /usr/bin` 指到宿主的 /usr/bin，后续 bin/* 全丢）。
+                                // guest 内 proot 会按 rootfs 重新解析，相对路径语义完全等价。
+                                val resolved = if (link.startsWith("/")) {
+                                    runCatching {
+                                        File(destDir, link.removePrefix("/"))
+                                            .relativeTo(out.parentFile ?: destDir)
+                                            .invariantSeparatorsPath
+                                    }.getOrDefault(link)
+                                } else {
+                                    link
+                                }
+                                runCatching { Os.symlink(resolved, out.absolutePath) }
                                     .onFailure { if (it is SecurityException) throw it }
                             }
                             '1' -> {
                                 out.parentFile?.mkdirs()
-                                val target = File(destDir, link.removePrefix("./"))
+                                // 硬链接目标同样可能写成 `/bin/busybox`，必须落到 destDir 里
+                                val target = File(destDir, link.removePrefix("/").removePrefix("./"))
                                 val ok = runCatching {
                                     runCatching { out.delete() }
                                     Os.link(target.absolutePath, out.absolutePath)

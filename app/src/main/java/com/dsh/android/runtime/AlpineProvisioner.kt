@@ -61,7 +61,13 @@ class AlpineProvisioner(
         // `proot error: execve("/usr/bin/env"): Permission denied`（真机实证）。
         // 把「guest 第一条命令」也纳入就绪判定，命中就让上层重解包，由 fixExecBits 自愈。
         val guestEnv = File(rootfsDir(), "usr/bin/env")
-        if (guestEnv.isFile && !guestEnv.canExecute()) {
+        // 老 rootfs 里这条**不存在**（绝对 symlink 穿出 + 硬链接目标越界 → 条目被静默跳过），
+        // 表现为 `proot error: execve("/usr/bin/env"): Permission denied`。
+        // 命中就让上层重解包（解包器已修：绝对 symlink 转相对、硬链接目标落在 destDir 内）。
+        if (!guestEnv.exists()) {
+            return Status(false, "rootfs 缺 /usr/bin/env（解包未落地，需重解包）", manifest.sha256)
+        }
+        if (!guestEnv.canExecute()) {
             return Status(false, "usr/bin/env 没有执行位（老 rootfs 解包 mode 丢失，需重解包）", manifest.sha256)
         }
         return Status(
