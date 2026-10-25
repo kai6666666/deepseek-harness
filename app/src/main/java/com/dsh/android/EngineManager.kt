@@ -6975,6 +6975,41 @@ class EngineManager private constructor(private val context: Context) {
         true
     }
 
+    /**
+     * G-24：`$DSH_HOME` 权限自愈（只 chmod，不动数据）。
+     *
+     * 引擎给 session 做原子写用 `link(tmp, final)`，它要求所在目录**可写且属主是 app**。
+     * 早前 alpine 档以 `-0` 跑过，可能在 `.dsh/` 下留下权限/属主不对的目录，之后
+     * Termux 档（app uid）就再也写不进去 —— 用户看到的正是
+     * `EACCES: permission denied, link '….jsonl.zstd.<hex>.tmp' -> '….jsonl.zstd'`。
+     */
+    private fun healDshHomePerms() {
+        val root = dshHome
+        if (!root.isDirectory) return
+        var dirFixed = 0
+        var fileFixed = 0
+        var failed = 0
+        runCatching {
+            root.walkTopDown()
+                .onEnter { it.absolutePath.length < 512 }   // 防爆栈
+                .take(20000)
+                .forEach { f ->
+                    if (f.isDirectory) {
+                        val ok = runCatching { android.system.Os.chmod(f.absolutePath, 493) }.isSuccess
+                        if (ok) dirFixed++ else failed++
+                    } else if (f.isFile) {
+                        val ok = runCatching { android.system.Os.chmod(f.absolutePath, 420) }.isSuccess
+                        if (ok) fileFixed++ else failed++
+                    }
+                }
+        }.onFailure { Log.w(TAG, "DSH_HOME 权限扫描中断：${it.message}") }
+        if (failed > 0) {
+            Log.w(TAG, "DSH_HOME 权限自愈：目录 $dirFixed / 文件 $fileFixed，**$failed 个 chmod 失败**（属主可能不是 app）")
+        } else if (dirFixed > 0 || fileFixed > 0) {
+            Log.i(TAG, "DSH_HOME 权限自愈完成：目录 $dirFixed / 文件 $fileFixed")
+        }
+    }
+
     /** 启动引擎，等待其打印带 token 的 URL。 */
     suspend fun start() = withContext(Dispatchers.IO) {
         // ★ G-03 首启供给：把 assets/runtime 里那份 rootfs 解到 filesDir/runtime/alpine。
@@ -6986,6 +7021,18 @@ class EngineManager private constructor(private val context: Context) {
         provisioned?.onSuccess { Log.i(TAG, "alpine 供给完成: ${it.absolutePath}") }
         provisioned?.onFailure { Log.w(TAG, "alpine 供给失败（回退 Termux）: ${it.message}") }
         Log.i(TAG, "运行时档位: ${alpineRuntime.availability().describe()}")
+        // G-24：`$DSH_HOME` 权限自愈。
+        //
+        // 症状（用户实测）：Termux 档下保存会话时报
+        //   EACCES: permission denied, link '…/sessions/<id>/session.v4.jsonl.zstd.<hex>.tmp'
+        //     -> '…/sessions/<id>/session.v4.jsonl.zstd'
+        // 引擎给 session 做原子写用的是 link()，它要求**目录可写**且属主是 app 自己。
+        // 早前 alpine 档以 `-0`（fake root）跑过，可能在 `.dsh/` 下留下属主/权限不对的目录，
+        // 之后 Termux 档（app uid）就再也写不进去。
+        //
+        // 这里只做「能修就修」：目录补 0755、普通文件补 0644；chmod 失败（属主不是 app）
+        // 只记一条 WARN，不动任何数据 —— 挪目录留给确认之后再做。
+        healDshHomePerms()
         if (process?.isAlive == true) {
             Log.i(TAG, "引擎已在运行")
             // ⚠️ **早返回也必须跑特权通道自愈。** 这一段原先直接 return，于是
