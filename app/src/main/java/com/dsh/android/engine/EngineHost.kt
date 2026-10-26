@@ -7,7 +7,7 @@ import java.io.File
  *
  * 为什么需要它
  * ------------
- * 现在 `EngineManager` 里 60+ 个 `ensure*/patch*/write*` 函数同时承担两件事：
+ * 现在 `EngineManager` 里 60+ 个 `ensure*` / `patch*` / `write*` 函数同时承担两件事：
  *   ① 准备一个能跑 Node 的环境（Termux / proot / 远端）；
  *   ② 给引擎打 Android 适配层（沙箱 runner、rg、link 兼容、插件源…）。
  * 于是「换宿主」= 改 60 个函数。C 方案（proot glibc）只是第一个新宿主，
