@@ -203,6 +203,43 @@ APK：`163,344,475 B`（≈155.8 MiB）· 工件 `154.84 MB`。
 **资产覆盖 25/28**，只剩 3 项：`node-addon-android-arm64.zip`、
 `node-addon-system-android-arm64.zip`（需 NDK 编 C++ N-API 插件）、`webview-compat.zip`（随 engine 版本生成）。
 
+### 第七次绿跑（node-addon-system）：run 40327674561
+
+`tools/build-node-addon-system.sh` 从引擎副本里的 `src/flock.c + src/main.c` 现编：
+
+```text
+system.node  15,848 B
+NEEDED       libdl.so libc.so
+符号表        ✅ napi_register_module_v1（合法 N-API 模块）
+zip          bin/system.node + package.json + prebuilds.json
+```
+
+APK：`163,471,815 B` · 工件 `154.96 MB`。资产覆盖 **26/28**。
+
+---
+
+## 9. 资产自建总表（26/28）
+
+| 资产 | 脚本 | 来源 |
+|---|---|---|
+| `engine.bin` | `build-engine-bin.sh` | npm `@deepseek-ai/dsh@0.2.1-rc.3` → 裁剪 → zip |
+| `node-runtime.bin` | `build-node-runtime.sh` | Termux `nodejs` + `libicu/c-ares/libffi/libsqlite` |
+| `pnpm-android-arm64.zip` | `build-native-assets.sh` | npm `pnpm@11.28.3` |
+| `boosandbox.bin` / `boo-sandbox-run.bin` / `linkcompat.bin` | `build-native-assets.sh` | 仓库 `app/src/main/jni/*.c` + NDK 27 |
+| 15 个插件 zip | `build-plugin-assets.sh` | 仓库各插件目录（带字节一致校验） |
+| `node-pty-android-arm64.zip` | `build-node-pty.sh` | 引擎副本 `node-pty/src/unix/pty.cc` + NDK |
+| `sharp-wasm32.zip` | `build-extra-native.sh` | npm `@img/sharp-wasm32` + `@emnapi/*` |
+| `ripgrep-android-arm64.zip` | `build-extra-native.sh` | Termux `ripgrep` |
+| `adb-wireless-arm64.zip` | `build-extra-native.sh` | Termux `android-tools` + 9 个 Depends |
+| `node-addon-system-android-arm64.zip` | `build-node-addon-system.sh` | 引擎副本 `node-addon-system/src/*.c` + NDK |
+
+剩余 2 项：
+
+| 资产 | 为什么 CI 造不出 | 出路 |
+|---|---|---|
+| `node-addon-android-arm64.zip` | npm 包只发 JS（`lib/`），**不含 C 源码**；上游仓库在 GitHub（本机不可达） | 在能访问上游的机器上编一次，或把源码镜像进仓库 `native/` |
+| `webview-compat.zip` | 依赖 engine 版本 hash，由 `tools/build-webview-compat.ps1`（PowerShell）生成 | 把该脚本翻成 Python 后进 CI |
+
 同时修了一个真 bug：`NODE_VERSION` / `NODE_EXECUTABLE_VERSION` 原本写死 `26.4.0`，
 而 CI 装的 Termux node 是 **26.12.1** —— 不改就会 `nodeIsUsable()` 判「损坏」，
 **每次启动白重解包 32 MB**。现已对齐为 `26.12.1-1` / `v26.12.1`。
