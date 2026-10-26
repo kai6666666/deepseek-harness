@@ -2,26 +2,23 @@
 # build-node-runtime.sh —— 从 Termux 官方仓库重打包 assets/node-runtime.bin
 #
 # 产物布局必须与 TermuxBootstrap.installNodeRuntimeLocked() 对齐：
-#   bin/node                  → $PREFIX/bin/node（zip 里是普通文件，权限在运行期设）
-#   lib/libicuuc.so.78.3 …    → $PREFIX/lib/*
-#   LINKS.txt                 → 每行「链接路径(含 lib/ 前缀) 相对目标(裸名)」
+#   bin/node                        → $PREFIX/bin/node（zip 里是普通文件，权限在运行期设）
+#   lib/libicuuc.so.78.3 …          → $PREFIX/lib/*
+#   LINKS.txt                       → 每行「链接路径(含 lib/ 前缀) 相对目标(裸名)」
 #
-# 为什么不用 apt 装：构建机上没有 Termux，也不需要 rootfs；直接取 .deb 解包。
-# 为什么只挑 4 组库：libc++_shared / libcrypto / libssl / libz 由 bootstrap 提供，
+# 为什么不用 apt 装：构建机上没有 Termux，也不需要 rootfs；这里直接取 .deb 解包。
+# 为什么只挑 4 个库：libc++_shared / libcrypto / libssl / libz 由 bootstrap 提供，
 #   用同一时刻的 deb 覆盖会把包管理器的 ABI 换掉（见 installNodeRuntime 的 KDoc）。
 #
-# 实测：nodejs 26.12.1 + libicu 78.3 + c-ares 1.34.9 + libffi 3.8.0 + libsqlite 3.54.1
-#      ⇒ 11 个条目（bin/node + 9 库 + LINKS.txt）+ 14 条软链，产物 32 MB。
-#
 # 用法：
-#   ./tools/build-node-runtime.sh
+#   ./tools/build-node-runtime.sh                 # 输出 dist/node-runtime.bin
 #   MIRROR=https://packages.termux.dev/apt/termux-main ./tools/build-node-runtime.sh
 set -euo pipefail
 
 MIRROR="${MIRROR:-https://mirrors.tuna.tsinghua.edu.cn/termux/apt/termux-main}"
 OUT="${OUT:-dist/node-runtime.bin}"
 WORK="${WORK:-/tmp/dsh-node-runtime}"
-PKGS="${PKGS:-nodejs libicu c-ares libffi libsqlite}"
+PKGS="${PKGS:-nodejs libicu c-ares libffi libsqlite zlib openssl libc++}"
 
 mkdir -p "$WORK" "$(dirname "$OUT")"
 cd "$WORK"
@@ -32,7 +29,6 @@ echo "== 1/5 索引：$MIRROR"
 echo "    $(grep -c '^Package:' Packages) 个包"
 
 echo "== 2/5 选包：$PKGS"
-# 注意 "$PKGS" 必须加引号：不加的话 argv[2] 只拿到第一个包名
 mapfile -t URLS < <(python3 - Packages "$PKGS" <<'PY'
 import sys, re
 pkgs = set(sys.argv[2].split())
@@ -41,13 +37,14 @@ found = {}
 for stanza in text.split('\n\n'):
     name = re.search(r'^Package:\s*(\S+)', stanza, re.M)
     fn = re.search(r'^Filename:\s*(\S+)', stanza, re.M)
+    ver = re.search(r'^Version:\s*(\S+)', stanza, re.M)
     if name and fn and name.group(1) in pkgs:
-        found[name.group(1)] = fn.group(1)
+        found[name.group(1)] = (fn.group(1), ver.group(1) if ver else '?')
 for p in sorted(pkgs):
     if p not in found:
         print(f'MISSING {p}', file=sys.stderr)
         continue
-    print(found[p])
+    print(found[p][0])
 PY
 )
 if [ "${#URLS[@]}" -eq 0 ]; then echo "❌ 一个包都没匹配到"; exit 1; fi
@@ -66,24 +63,29 @@ if [ ! -f "root/$PREFIX_REL/bin/node" ]; then
   echo "❌ 解包后没有 bin/node"; ls -R root | head -20; exit 1
 fi
 
-echo "== 4/5 组装 zip（bin/node + 库 + LINKS.txt）"
+echo "== 4/5 组装 zip（bin/node + 4 组库 + LINKS.txt）"
 python3 - "$OUT" "root/$PREFIX_REL" "$PKGS" <<'PY'
-import os, sys, zipfile, re
+import os, sys, zipfile, re, tarfile, subprocess, glob
 
 out, root, pkgs = sys.argv[1], sys.argv[2], sys.argv[3].split()
-want_lib = re.compile(r'^lib(icu|icudata|icui18n|icuuc|icuio|c-ares|ffi|sqlite3).*\.so')
-entries = {'bin/node': os.path.join(root, 'bin', 'node')}
+want_lib = re.compile(r'^lib(icu|icudata|icui18n|icuuc|c-ares|ffi|sqlite3).*\.so')
+entries = {}
+
+node = os.path.join(root, 'bin', 'node')
+entries['bin/node'] = node
 
 libdir = os.path.join(root, 'lib')
 links = []
 for name in sorted(os.listdir(libdir)):
     p = os.path.join(libdir, name)
-    if not (os.path.isfile(p) or os.path.islink(p)):
+    if not os.path.isfile(p) and not os.path.islink(p):
         continue
     if not want_lib.match(name):
         continue
     if os.path.islink(p):
-        links.append(f'lib/{name} {os.path.basename(os.readlink(p))}')
+        target = os.readlink(p)
+        # LINKS.txt：第一列含 lib/ 前缀，第二列是相对目标（裸名）
+        links.append(f'lib/{name} {os.path.basename(target)}')
     else:
         entries[f'lib/{name}'] = p
 
@@ -103,7 +105,8 @@ PY
 echo "== 5/5 体检"
 python3 - "$OUT" <<'PY'
 import zipfile, sys
-with zipfile.ZipFile(sys.argv[1]) as z:
+p = sys.argv[1]
+with zipfile.ZipFile(p) as z:
     names = z.namelist()
     assert 'bin/node' in names, '缺少 bin/node'
     libs = [n for n in names if n.startswith('lib/')]
