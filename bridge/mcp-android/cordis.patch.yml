@@ -1,0 +1,26 @@
+# 把 mcp-android 挂进 dsh 的组合层。
+#
+# ⚠️ 这段的 `config` 形状以引擎自带的 `docs/config-catalog.zh.md`
+#    （`dsh --profile web --dump-config-schema` 可导出）为准；
+#    不同版本的 dsh-mcp-client 字段名可能微调，改前先 dump 一次。
+#
+# 安装位置二选一：
+#   A. profile 用户层：$DSH_HOME/profiles/web/cordis.patch.yml
+#   B. 一次性 overlay：dsh --profile web --patch <本文件>
+#
+# 路径里的 <USER> 换成实际用户；DSH_HOME 由宿主注入，server 自己会读。
+
+- id: mcp-android-client
+  name: '@deepseek-ai/dsh-mcp-client'
+  config:
+    servers:
+      - id: android
+        transport: stdio
+        command: node
+        args:
+          - '/data/data/com.dsh.android/files/bridge/mcp-android/server.mjs'
+        env:
+          DSH_HOME: '/data/data/com.dsh.android/files/home/.dsh'
+        # 工具名会以 `mcp_android_*` 或原名出现在模型工具表里；
+        # 若引擎版本要求显式白名单，把 tools 列全：
+        # tools: [android_ui_dump, android_tap, android_type, android_screenshot, android_shell, android_notify]

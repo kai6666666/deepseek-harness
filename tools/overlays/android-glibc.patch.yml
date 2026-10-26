@@ -1,0 +1,48 @@
+# C 方案（proot / glibc 宿主）的 overlay 模板
+#
+# 为什么是 overlay 而不是改代码：
+#   这些值全部是 `@deepseek-ai/dsh-sandbox-local` / `-session-query-sqlite` /
+#   `-plugin-manager` 的 **公开 Config**，用 `--patch` 声明即可，升级引擎不受影响。
+#   相比之下 EngineManager 里那些 `*_GUARD` 文本锚点是"引擎内部文本"，
+#   一升级就静默跳过（这就是本文件存在的理由）。
+#
+# 用法：
+#   dsh --profile web --patch /data/user/0/com.dsh.android/files/home/.dsh/android-glibc.patch.yml
+#
+# ⚠️ 三条硬约束：
+#   1. runnerCommand 与 runnerFailureSignatures 必须**同时**非空，
+#      否则 sandbox-local 构造时抛错，整条 sandbox 服务不注册
+#      （sandbox-local/src/index.ts:285-293）。
+#   2. 签名必须逐字等于 runner 自己每条 fail-closed 路径的输出前缀。
+#   3. path 必须是绝对路径；`/data/user/0/<pkg>` 与 `/data/data/<pkg>` 是同一目录的两种拼写，
+#      DSH 会把路径写进会话/配置，换拼写=历史会话 cwd 全部失效。
+
+- id: sandbox
+  config:
+    runnerCommand: ['/usr/local/bin/boo-sandbox-run']
+    runnerFailureSignatures: ['boo-sandbox-run: ']
+    probeTimeoutMs: 5000
+
+# 需要「能用但零隔离」时，把上面整段注释掉、改用下面这段：
+# （danger-full-access 会完全绕过 ctx.sandbox，见 bash-sandbox/src/index.ts:92）
+# - id: sandbox-policy
+#   config:
+#     mode: danger-full-access
+#     workspaceRoot: '/data/user/0/com.dsh.android/files/home/.dsh/workspace'
+
+# 上游 web profile 把全文检索默认关掉（openAt: never，bundle/web-app/cordis.patch.yml:27-30）。
+# 打开后 session_search / session_event_search 才可用；依赖 node:sqlite（Node 22+ 内置）。
+- id: session-query-sqlite
+  config:
+    path: '/data/user/0/com.dsh.android/files/home/.dsh/session-index.sqlite'
+    openAt: first-search
+
+# 手机端 .npmrc 被镜像探测写成 npmmirror 后，官方源入口会被前端去重合并掉
+# （docs/agents/plugin-source.md ⑬）。显式声明两项，装包先镜像、失败回退官方源。
+# ⚠️ URL 必须带尾斜杠；`name` 必须与 base 层逐字一致，否则 patch 静默跳过。
+- id: plugin-manager
+  config:
+    registry: 'https://registry.npmmirror.com/'
+    fallbackRegistries:
+      - 'https://registry.npmmirror.com/'
+      - 'https://registry.npmjs.org/'

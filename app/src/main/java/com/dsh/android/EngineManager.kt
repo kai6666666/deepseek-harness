@@ -22,8 +22,6 @@ import java.nio.file.Files
 import java.nio.file.attribute.PosixFilePermission
 import java.util.EnumSet
 import java.util.concurrent.TimeUnit
-import com.dsh.android.runtime.AlpineRuntime
-import com.dsh.android.runtime.AlpineProvisioner
 
 /**
  * 管理内置 DSH 引擎的生命周期。
@@ -241,17 +239,6 @@ class EngineManager private constructor(private val context: Context) {
 
     /** Termux 环境：提供 node 可执行文件与 $PREFIX。 */
     private val bootstrap by lazy { com.dsh.android.termux.TermuxBootstrap(context) }
-
-    /**
-     * Alpine 档（G-03）。**只有 rootfs + proot 都就绪时才可用**；
-     * 不可用时 [engineCommand] 返回 null，引擎命令行与改造前**逐字节一致**（Termux 档）。
-     *
-     * 三态由 [com.dsh.android.runtime.AlpineRuntime.availability] 给出：
-     *   NotProvisioned（assets 有 rootfs 但没解包）/ ProotMissing（缺 libproot.so）/ Ready。
-     */
-    private val alpineRuntime by lazy {
-        AlpineRuntime.create(context, dshHome, workspaceDir)
-    }
 
     /** 引擎解包目录：filesDir/engine */
     private val engineDir get() = File(context.filesDir, "engine")
@@ -4271,69 +4258,6 @@ class EngineManager private constructor(private val context: Context) {
      *
      * 与其它工具插件一样**不做版本戳**：包很小（两个文件），每次启动覆盖写。
      */
-    /**
-     * 解出**工具链**插件（`dsh-android-toolchain.zip` → `$DSH_HOME/toolchain/dsh-android-toolchain/`）。
-     *
-     * 与 [ensureLogsTool] 同构：不做版本戳（包很小），每次启动覆盖写；
-     * 装不上就只是没有这个工具，绝不拖垮引擎启动。
-     */
-    private fun ensureToolchainTool() {
-        val target = File(dshHome, "$TOOLCHAIN_TOOL_DIR/$TOOLCHAIN_TOOL_PACKAGE")
-        val entry = File(target, "lib/index.js")
-        try {
-            context.assets.open(TOOLCHAIN_TOOL_ASSET).use { input ->
-                java.util.zip.ZipInputStream(input.buffered()).use { zis ->
-                    var e = zis.nextEntry
-                    while (e != null) {
-                        if (!e.isDirectory) {
-                            val out = File(target, e.name)
-                            out.parentFile?.mkdirs()
-                            out.outputStream().use { zis.copyTo(it) }
-                        }
-                        zis.closeEntry()
-                        e = zis.nextEntry
-                    }
-                }
-            }
-            Log.i(TAG, "已安装工具链插件 $TOOLCHAIN_TOOL_PACKAGE (${entry.length()} 字节)")
-        } catch (t: Throwable) {
-            Log.w(TAG, "安装工具链插件失败: ${t.message}")
-        }
-    }
-
-    /**
-     * 写出挂载工具链插件的 overlay，返回其路径；入口不存在时返回 null。
-     *
-     * 与 [writeLogsToolPatch] 同构。
-     */
-    private fun writeToolchainToolPatch(): File? {
-        val patch = File(dshHome, TOOLCHAIN_TOOL_PATCH)
-        val entry = File(dshHome, "$TOOLCHAIN_TOOL_DIR/$TOOLCHAIN_TOOL_PACKAGE/lib/index.js")
-        if (!entry.isFile) {
-            if (patch.isFile) patch.delete()
-            Log.w(TAG, "工具链插件入口不存在，跳过挂载: ${entry.absolutePath}")
-            return null
-        }
-        return try {
-            val url = "file://${entry.absolutePath}"
-            patch.writeText(
-                """
-                # 由 DSH Android 客户端生成，请勿手改（每次启动会整体覆盖）。
-                # 挂载工具链插件：注册一个独立的 `toolchain` 工具，
-                # 让模型能按需把依赖装进 Alpine guest，并安全地杀掉残留进程组。
-                - insert:
-                    - id: $TOOLCHAIN_TOOL_PACKAGE
-                      name: '$url'
-                """.trimIndent() + "\n"
-            )
-            Log.i(TAG, "已写入工具链 overlay: ${patch.name}")
-            patch
-        } catch (t: Throwable) {
-            Log.w(TAG, "写入工具链 overlay 失败: ${t.message}")
-            null
-        }
-    }
-
     private fun ensureLogsTool() {
         val target = File(dshHome, "$LOGS_TOOL_DIR/$LOGS_TOOL_PACKAGE")
         val entry = File(target, "lib/index.js")
@@ -6975,64 +6899,8 @@ class EngineManager private constructor(private val context: Context) {
         true
     }
 
-    /**
-     * G-24：`$DSH_HOME` 权限自愈（只 chmod，不动数据）。
-     *
-     * 引擎给 session 做原子写用 `link(tmp, final)`，它要求所在目录**可写且属主是 app**。
-     * 早前 alpine 档以 `-0` 跑过，可能在 `.dsh/` 下留下权限/属主不对的目录，之后
-     * Termux 档（app uid）就再也写不进去 —— 用户看到的正是
-     * `EACCES: permission denied, link '….jsonl.zstd.<hex>.tmp' -> '….jsonl.zstd'`。
-     */
-    private fun healDshHomePerms() {
-        val root = dshHome
-        if (!root.isDirectory) return
-        var dirFixed = 0
-        var fileFixed = 0
-        var failed = 0
-        runCatching {
-            root.walkTopDown()
-                .onEnter { it.absolutePath.length < 512 }   // 防爆栈
-                .take(20000)
-                .forEach { f ->
-                    if (f.isDirectory) {
-                        val ok = runCatching { android.system.Os.chmod(f.absolutePath, 493) }.isSuccess
-                        if (ok) dirFixed++ else failed++
-                    } else if (f.isFile) {
-                        val ok = runCatching { android.system.Os.chmod(f.absolutePath, 420) }.isSuccess
-                        if (ok) fileFixed++ else failed++
-                    }
-                }
-        }.onFailure { Log.w(TAG, "DSH_HOME 权限扫描中断：${it.message}") }
-        if (failed > 0) {
-            Log.w(TAG, "DSH_HOME 权限自愈：目录 $dirFixed / 文件 $fileFixed，**$failed 个 chmod 失败**（属主可能不是 app）")
-        } else if (dirFixed > 0 || fileFixed > 0) {
-            Log.i(TAG, "DSH_HOME 权限自愈完成：目录 $dirFixed / 文件 $fileFixed")
-        }
-    }
-
     /** 启动引擎，等待其打印带 token 的 URL。 */
     suspend fun start() = withContext(Dispatchers.IO) {
-        // ★ G-03 首启供给：把 assets/runtime 里那份 rootfs 解到 filesDir/runtime/alpine。
-        //   已就绪时只做一次 status() 探测（读 manifest + 查 .ready/执行位），不解包。
-        //   **失败不阻断启动** —— 引擎会回退 Termux 档，App 不会因为"没拉 rootfs"变哑。
-        // ⚠️ provision() 本身返回 Result<File>；外面再套 runCatching 会得到
-        //   Result<Result<File>>，`it` 就成了 Result —— 编译期报 Unresolved reference 'absolutePath'。
-        val provisioned = runCatching { AlpineProvisioner(context).provision() }.getOrNull()
-        provisioned?.onSuccess { Log.i(TAG, "alpine 供给完成: ${it.absolutePath}") }
-        provisioned?.onFailure { Log.w(TAG, "alpine 供给失败（回退 Termux）: ${it.message}") }
-        Log.i(TAG, "运行时档位: ${alpineRuntime.availability().describe()}")
-        // G-24：`$DSH_HOME` 权限自愈。
-        //
-        // 症状（用户实测）：Termux 档下保存会话时报
-        //   EACCES: permission denied, link '…/sessions/<id>/session.v4.jsonl.zstd.<hex>.tmp'
-        //     -> '…/sessions/<id>/session.v4.jsonl.zstd'
-        // 引擎给 session 做原子写用的是 link()，它要求**目录可写**且属主是 app 自己。
-        // 早前 alpine 档以 `-0`（fake root）跑过，可能在 `.dsh/` 下留下属主/权限不对的目录，
-        // 之后 Termux 档（app uid）就再也写不进去。
-        //
-        // 这里只做「能修就修」：目录补 0755、普通文件补 0644；chmod 失败（属主不是 app）
-        // 只记一条 WARN，不动任何数据 —— 挪目录留给确认之后再做。
-        healDshHomePerms()
         if (process?.isAlive == true) {
             Log.i(TAG, "引擎已在运行")
             // ⚠️ **早返回也必须跑特权通道自愈。** 这一段原先直接 return，于是
@@ -7329,10 +7197,6 @@ class EngineManager private constructor(private val context: Context) {
         //   读日志不需要任何授权。必须早于引擎启动（overlay 要在 profile 解析前落盘）。
         ensureLogsTool()
         val logsToolPatch = writeLogsToolPatch()
-        // 工具链插件：让模型能把依赖装进 Alpine guest，并在超时时杀整个进程组。
-        // ⚠️ 与上面几条并列且独立；必须早于引擎启动（overlay 要在 profile 解析前落盘）。
-        ensureToolchainTool()
-        val toolchainToolPatch = writeToolchainToolPatch()
         // 定向隔离层（L1.5）：把上次定位到的坏插件条目在 patch 层禁掉。
         // ⚠️ 读的是 `RescueBoot` 的持久化状态，**不依赖**本轮启动的任何中间结果，
         //   所以放在这里（早于引擎启动、晚于所有 `- insert:` overlay 的生成）就够。
@@ -7410,7 +7274,6 @@ class EngineManager private constructor(private val context: Context) {
             petPatch,
             uiToolPatch,
             logsToolPatch,
-            toolchainToolPatch,
             browserToolPatch,
             // ⚠️ **必须排在最后**：这一层只做 `disabled: true`，而它要禁用的条目
             //   正是前面那些 `- insert:` 插进来的。`--patch` 按顺序应用，排在
@@ -7423,10 +7286,7 @@ class EngineManager private constructor(private val context: Context) {
         // ⚠️ 存下来给试启动用（见 [activeOverlays]）：试启动必须与真实启动
         //   用**同一份** overlay，否则「探测能过、真实过不了」无法排查。
         activeOverlays = overlays
-        // ★ G-03：Alpine 档就绪 → 用 proot 起 musl 版 node；否则原样走 Termux（逐字节不变）
-        val webPort = resolveWebPort()
-        val cmd = alpineRuntime.engineCommand(targetProfile, overlays, webPort)
-            ?: buildEngineArgs(nodeBin, binJs, targetProfile, overlays, webPort)
+        val cmd = buildEngineArgs(nodeBin, binJs, targetProfile, overlays, resolveWebPort())
 
         Log.i(TAG, "启动引擎: ${cmd.joinToString(" ")}")
 
@@ -7526,11 +7386,6 @@ class EngineManager private constructor(private val context: Context) {
             // 缺失时 runner 只走 legacy 5555，行为与改动前完全一致。
             adbWireless?.let { put("DSH_ADB_HOME", it.absolutePath) }
         }
-
-        // ★ G-03 Alpine 档：删掉指向 bionic 世界的键（PREFIX/PATH/SSL_CERT_FILE/NODE_OPTIONS…）
-        //   并补 proot 三件套。档位不可用时该方法直接 return，上面写的 env 一行都不变。
-        //   位置必须在 env 块**之后** —— Termux 那一套刚刚才被写进去。
-        alpineRuntime.prepareProcessEnvironment(pb.environment())
 
         // ⚠️ 存下这一份给试启动用（见 [activeEnv]）：试启动必须与真实启动**逐项相同**，
         //   否则「探测能过、真实过不了」无法排查。**必须在 pb.start() 之前存**，
@@ -7899,9 +7754,6 @@ class EngineManager private constructor(private val context: Context) {
             //
             // 改判据后文案才与事实一致，并且把等待时长一并写进原因里
             // （原来只有崩溃现场文件里才有，日志行里看不到）。
-            // alpine 档失败 → 降级 Termux（72 小时记忆），免得每次冷启动都撞同一个
-            // `proot error: execve(...): Permission denied`，也避免连续失败 10 次进救援模式。
-            alpineRuntime.forceTermux("引擎在打印 URL 前结束（waited=${System.currentTimeMillis() - startMs} ms）")
             val waited = System.currentTimeMillis() - startMs
             val reason = if (waited >= READY_TIMEOUT_MS) {
                 "等待 ${waited / 1000} 秒仍未打印 URL（确为超时）"
@@ -9878,19 +9730,6 @@ class EngineManager private constructor(private val context: Context) {
 
         /** 插件解包目录，相对 `$DSH_HOME`。⚠️ 同理，刻意在 pnpm 管辖之外。 */
         private const val LOGS_TOOL_DIR = "logs-tool"
-
-        // ── 工具链插件 ───────────────────────────────────────────────
-        //
-        // 与 bubble / statusbar / ui / logs **同一套做法**（独立工具 + 解到 $DSH_HOME 下
-        // 自己的目录，绕开 pnpm 管辖的 node_modules）。
-        //
-        // 它对外提供的能力：判断一个依赖该装进 Alpine guest 还是宿主、按需调 apk 装包、
-        // 并在超时/取消时杀掉**整个进程组**（proot 拉起的 node 不会留孤儿 —— G-13）。
-        /** 注册 toolchain 工具的 host 插件；打包成 zip 随 APK 分发。 */
-        private const val TOOLCHAIN_TOOL_ASSET = "dsh-android-toolchain.zip"
-        private const val TOOLCHAIN_TOOL_PACKAGE = "dsh-android-toolchain"
-        private const val TOOLCHAIN_TOOL_PATCH = "toolchain.patch.yml"
-        private const val TOOLCHAIN_TOOL_DIR = "toolchain"
 
         // ── 浏览器工具 ───────────────────────────────────────────────
         //

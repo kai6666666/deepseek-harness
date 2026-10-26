@@ -575,3 +575,84 @@ int faccessat(int dirfd, const char *path, int mode, int flags) {
   if ((mode & W_OK) && !allowed_at(dirfd, path)) return deny(path);
   return real(dirfd, path, mode, flags);
 }
+
+/* == C-scheme glibc additions == */
+/* ── C 方案（glibc）补充拦截面 ────────────────────────────────────────────
+ * 下面 8 个符号原文件没有；Ubuntu 默认开 _FORTIFY_SOURCE，程序会走
+ * __open*_2 这四个，不补就是一条写路径的缺口。
+ * 与文件既有风格一致：普通函数名 + dlsym(RTLD_NEXT)。
+ * glibc 允许这样覆盖 bits/fcntl2.h 里的 fortify inline（原文件的 open64
+ * 已经证明这条路可行）；同一个符号**不要**重复定义。
+ */
+
+int openat64(int dirfd, const char *path, int flags, ...) {
+  static int (*real)(int, const char *, int, ...) = NULL;
+  if (!real) real = dlsym(RTLD_NEXT, "openat64");
+  mode_t mode = 0;
+  if (flags & O_CREAT) {
+    va_list ap;
+    va_start(ap, flags);
+    mode = (mode_t)va_arg(ap, int);
+    va_end(ap);
+  }
+  if (writeish(flags) && !allowed_at(dirfd, path)) return deny(path);
+  return real(dirfd, path, flags, mode);
+}
+
+int creat64(const char *path, mode_t mode) {
+  static int (*real)(const char *, mode_t) = NULL;
+  if (!real) real = dlsym(RTLD_NEXT, "creat64");
+  if (!allowed(path)) return deny(path);
+  return real(path, mode);
+}
+
+int __open_2(const char *path, int flags) {
+  static int (*real)(const char *, int) = NULL;
+  if (!real) real = dlsym(RTLD_NEXT, "__open_2");
+  if (writeish(flags) && !allowed(path)) return deny(path);
+  return real ? real(path, flags) : -1;
+}
+
+int __open64_2(const char *path, int flags) {
+  static int (*real)(const char *, int) = NULL;
+  if (!real) real = dlsym(RTLD_NEXT, "__open64_2");
+  if (writeish(flags) && !allowed(path)) return deny(path);
+  return real ? real(path, flags) : -1;
+}
+
+int __openat_2(int dirfd, const char *path, int flags) {
+  static int (*real)(int, const char *, int) = NULL;
+  if (!real) real = dlsym(RTLD_NEXT, "__openat_2");
+  if (writeish(flags) && !allowed_at(dirfd, path)) return deny(path);
+  return real ? real(dirfd, path, flags) : -1;
+}
+
+int __openat64_2(int dirfd, const char *path, int flags) {
+  static int (*real)(int, const char *, int) = NULL;
+  if (!real) real = dlsym(RTLD_NEXT, "__openat64_2");
+  if (writeish(flags) && !allowed_at(dirfd, path)) return deny(path);
+  return real ? real(dirfd, path, flags) : -1;
+}
+
+FILE *freopen(const char *path, const char *mode, FILE *stream) {
+  static FILE *(*real)(const char *, const char *, FILE *) = NULL;
+  if (!real) real = dlsym(RTLD_NEXT, "freopen");
+  if (mode && (strchr(mode, 'w') || strchr(mode, 'a') || strchr(mode, '+')) &&
+      !allowed(path)) {
+    deny(path);
+    return NULL;
+  }
+  return real(path, mode, stream);
+}
+
+FILE *freopen64(const char *path, const char *mode, FILE *stream) {
+  static FILE *(*real)(const char *, const char *, FILE *) = NULL;
+  if (!real) real = dlsym(RTLD_NEXT, "freopen64");
+  if (!real) return freopen(path, mode, stream);
+  if (mode && (strchr(mode, 'w') || strchr(mode, 'a') || strchr(mode, '+')) &&
+      !allowed(path)) {
+    deny(path);
+    return NULL;
+  }
+  return real(path, mode, stream);
+}

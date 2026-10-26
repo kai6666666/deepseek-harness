@@ -428,26 +428,3 @@ dependencies {
     //   当前工具链下直接构建的最高版本。要再往上就得先升 AGP，那是另一件事。
     "geckoImplementation"("org.mozilla.geckoview:geckoview-arm64-v8a:140.0.20250707120347")
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// 运行时资产闸门（G-04：Alpine rootfs 随 APK 分发）
-//
-// 为什么放在 preBuild：assets 里缺 rootfs、或 sha256 与 manifest 对不上时，
-// 打出来的 APK 首启必崩。宁可构建期 3 秒失败，也不要让用户装完才发现。
-//
-// 临时跳过（纯 UI 调试、还没拉 rootfs 时）：
-//   DSH_SKIP_ASSET_CHECK=1 ./gradlew assembleDebug
-// ─────────────────────────────────────────────────────────────────────────────
-val verifyRuntimeAssets = tasks.register<org.gradle.api.tasks.Exec>("verifyRuntimeAssets") {
-    group = "verification"
-    description = "校验 app/src/main/assets/runtime 下的 Alpine rootfs 与 manifest 一致"
-    workingDir = rootProject.projectDir
-    commandLine("bash", "tools/verify-runtime-assets.sh")
-}
-
-if (System.getenv("DSH_SKIP_ASSET_CHECK") != "1") {
-    // 用 matching + configureEach：preBuild 由 AGP 注册，named 在这里可能还没注册
-    tasks.matching { it.name == "preBuild" }.configureEach {
-        dependsOn(verifyRuntimeAssets)
-    }
-}

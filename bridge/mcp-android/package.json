@@ -1,0 +1,11 @@
+{
+  "name": "mcp-android",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "把 Android 能力（UI dump/点击/输入/截图/shell/通知）暴露成标准 MCP server，供 dsh 或任何 agent 调用",
+  "bin": { "mcp-android": "./server.mjs" },
+  "files": ["server.mjs", "README.md", "cordis.patch.yml"],
+  "engines": { "node": ">=18" },
+  "license": "MIT"
+}

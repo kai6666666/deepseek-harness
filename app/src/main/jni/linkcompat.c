@@ -288,7 +288,8 @@ int link(const char *from, const char *to) {
   /* 先试原生：SELinux 若允许（例如 /dev 下的路径，或策略将来放宽）就直接走，
    * 零开销。只有被 SELinux 拒了才转译。 */
   if (real(from, to) == 0) return 0;
-  if (errno != EACCES && errno != EPERM) return -1; /* EEXIST/ENOENT 等原样返回 */
+  if (errno != EACCES && errno != EPERM && errno != ENOSYS &&
+      errno != EOPNOTSUPP) return -1; /* EEXIST/ENOENT 等原样返回 */
   return compat_link(AT_FDCWD, from, AT_FDCWD, to);
 }
 
@@ -305,6 +306,7 @@ int linkat(int olddirfd, const char *oldpath, int newdirfd, const char *newpath,
     return real(olddirfd, oldpath, newdirfd, newpath, flags);
   }
   if (real(olddirfd, oldpath, newdirfd, newpath, flags) == 0) return 0;
-  if (errno != EACCES && errno != EPERM) return -1;
+  if (errno != EACCES && errno != EPERM && errno != ENOSYS &&
+      errno != EOPNOTSUPP) return -1;
   return compat_link(olddirfd, oldpath, newdirfd, newpath);
 }
