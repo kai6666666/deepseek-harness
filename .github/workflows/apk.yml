@@ -71,6 +71,11 @@ jobs:
           packages: 'platforms;android-35 build-tools;35.0.0'
           log-accepted-android-sdk-licenses: true
 
+      # 仓库是从 Android 文件系统提交的，posix 可执行位全丢了（100644）。
+      # 不补这一步，后面的 ./gradlew 会直接 Permission denied（exit 126）。
+      - name: 修可执行位
+        run: chmod +x gradlew tools/*.sh || true
+
       - name: 铺构建资产
         env:
           GH_TOKEN: ${{ github.token }}
@@ -79,20 +84,20 @@ jobs:
       - name: 工具链自检
         run: |
           java -version
-          ./gradlew --version --console=plain | sed -n '1,12p'
+          bash ./gradlew --version --console=plain | sed -n '1,12p'
           echo "ASSETS_TAG=${ASSETS_TAG:-<none>}"
 
       - name: 编译门禁（engine 包，不需要资产）
         run: KTCACHE="$HOME/.kt" bash tools/verify-engine.sh
 
       - name: 构建 APK
-        run: ./gradlew :app:assembleSystemDebug --console=plain --stacktrace
+        run: bash ./gradlew :app:assembleSystemDebug --console=plain --stacktrace
 
       - name: 产物清单
         if: always()
         run: |
           echo '--- apk ---'
-          find app/build/outputs -name '*.apk' -exec ls -lh {} \;
+          find app/build/outputs -name '*.apk' -printf '%10s  %p\n' 2>/dev/null || echo '(no apk)'
           echo '--- 资产体积 ---'
           du -sh app/src/main/assets || true
 
