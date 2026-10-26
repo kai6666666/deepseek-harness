@@ -109,6 +109,7 @@
 ### P4 产品化（择机）
 | # | 任务 | 说明 |
 |---|---|---|
+| 4.0a | **出包硬断言** | `tools/check-apk-assets.py`：28 资产非空 / 包名 15 字符 / targetSdk≤28，失败即红 | ✅ 已接入（run 40356842844） |
 | 4.0 | **CI 出包** | `.github/workflows/apk.yml`（x86_64 + NDK27）；无 Release 时自建 **28/28 项资产**（`require-builtin` 用镜像源码编）：引擎/Node/三个 C 层/pnpm + 15 个插件 zip + `node-pty` + sharp wasm32 + ripgrep + adb + `node-addon-system` + `webview-compat`（Python 移植版，esbuild 降级 + 语法复检）。**28/28 全部可自建**：`node-addon-require-builtin` 的源码已从上游镜像（`native/require-builtin-src.zip`，52 文件 / 61 KB），CI 用 NDK 编出 374 KB 的 android 变体。运行时行为仍需真机验证（见 `docs/agents/node-addon-require-builtin.md` §5）。见 `docs/agents/ci-build.md` | ✅ 已跑通（run 40319322900，APK 151.6 MB） |
 | 4.1 | 远程引擎模式 | `--host` 绑具体 IP + `--trusted-host` + Tailscale/隧道 |
 | 4.2 | AVF 路线 | Android 15 QPR2+/16 的 Linux Terminal，真内核沙箱 |
