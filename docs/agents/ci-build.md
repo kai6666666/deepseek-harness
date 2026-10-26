@@ -171,6 +171,25 @@ assets 152 MB · APK 151,612,390 B（约 144.6 MiB）· 工件 143.65 MB
 `node-addon-android-arm64.zip`、`node-addon-system-android-arm64.zip`、`node-pty-android-arm64.zip`、
 `sharp-wasm32.zip`、`ripgrep-android-arm64.zip`、`adb-wireless-arm64.zip`、`webview-compat.zip`（随引擎版本生成）。
 
+### 第五次绿跑（node-pty）：run 40322232489
+
+`tools/build-node-pty.sh` 用 NDK 27 从引擎副本里的 `node-pty/src/unix/pty.cc` 现编：
+
+```text
+node-pty ← /tmp/dsh-engine-0.2.1-rc.3/node_modules/node-pty
+头文件   ← npmmirror v26.12.1 …-headers.tar.gz
+命令     aarch64-linux-android26-clang++ -shared -fPIC -O2 -std=c++17 -static-libstdc++
+产物     pty.node 688,072 B
+NEEDED   libm.so libdl.so libc.so        ← 无 libc++_shared，静态链生效
+zip 条目 node-pty/prebuilds/android-arm64/pty.node
+```
+
+APK：`151,825,101 B` · 工件 `143.86 MB`。资产覆盖升到 **22/28**；仍缺 6 项。
+
+同时修了一个真 bug：`NODE_VERSION` / `NODE_EXECUTABLE_VERSION` 原本写死 `26.4.0`，
+而 CI 装的 Termux node 是 **26.12.1** —— 不改就会 `nodeIsUsable()` 判「损坏」，
+**每次启动白重解包 32 MB**。现已对齐为 `26.12.1-1` / `v26.12.1`。
+
 APK 几乎等于 assets 总和，因为 `engine.bin` 本身就是 zip（内层 node_modules 已压缩），再压也压不动。
 若要把包压回 60 MB 量级，得回到 rc.2 的依赖集（`engine.bin` 55 MB），那是**降版**不是优化。
 有资产的包预计回到 ~60 MB 量级（engine.bin 压缩后约 55–60 MB）。
