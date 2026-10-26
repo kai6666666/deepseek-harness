@@ -24,6 +24,7 @@ on:
       - 'tools/build-plugin-assets.sh'
       - 'tools/build-node-pty.sh'
       - 'tools/build-extra-native.sh'
+      - 'tools/build-node-addon-system.sh'
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -109,6 +110,11 @@ jobs:
 
       - name: 现场构建 sharp / ripgrep / adb
         run: bash tools/build-extra-native.sh
+
+      # 需要 engine 副本里的 src/flock.c，所以只在「无 Release 现场装引擎」时跑。
+      - name: 现场编 node-addon-system（flock 绑定）
+        if: env.ASSETS_TAG == ''
+        run: bash tools/build-node-addon-system.sh
 
       - name: 工具链自检
         run: |
