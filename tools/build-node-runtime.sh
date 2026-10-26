@@ -68,7 +68,7 @@ python3 - "$OUT" "root/$PREFIX_REL" "$PKGS" <<'PY'
 import os, sys, zipfile, re, tarfile, subprocess, glob
 
 out, root, pkgs = sys.argv[1], sys.argv[2], sys.argv[3].split()
-want_lib = re.compile(r'^lib(icu|icudata|icui18n|icuuc|c-ares|ffi|sqlite3).*\.so')
+want_lib = re.compile(r'^lib(icu|icudata|icui18n|icuuc|icuio|c-ares|ffi|sqlite3|crypto|ssl|z\.so|c\+\+_shared|android-|log|dl).*\.so')
 entries = {}
 
 node = os.path.join(root, 'bin', 'node')
