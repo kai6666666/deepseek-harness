@@ -23,6 +23,7 @@ on:
       - 'tools/build-native-assets.sh'
       - 'tools/build-plugin-assets.sh'
       - 'tools/build-node-pty.sh'
+      - 'tools/build-extra-native.sh'
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -105,6 +106,9 @@ jobs:
       # -static-libstdc++ 是硬要求：动态链会拉 libc++_shared.so，Termux 里没有。
       - name: 现场编 node-pty 绑定
         run: bash tools/build-node-pty.sh
+
+      - name: 现场构建 sharp / ripgrep / adb
+        run: bash tools/build-extra-native.sh
 
       - name: 工具链自检
         run: |
