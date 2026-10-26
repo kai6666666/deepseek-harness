@@ -97,3 +97,15 @@ assembleSystemDebug      ❌ 无工具链    assembleSystemDebug     ✅ 出 APK
 
 验证方式：推一次带 `app/**` 改动的提交，Actions 里应出现 `构建 APK（x86_64 runner）`
 且 `assemble` job 绿；下载 `dsh-system-debug` 工件即可装机。
+
+## 8. 首次实战记录（两次真故障，已修）
+
+| # | 现象 | 根因 | 修法 |
+|---|---|---|---|
+| 1 | `./gradlew: Permission denied`，exit 126 | 仓库从 Android 文件系统（FUSE，noexec）提交，posix 可执行位全丢，git 里是 `100644` | 工作流加 `chmod +x gradlew tools/*.sh`，并把调用改为 `bash ./gradlew` |
+| 2 | `118 × Unresolved reference 'compose'`（`HostSettingsSection.kt`） | 该文件用 Compose 写的，而 `app` 模块**没有** compose 依赖 | 改写为 `android.widget.*` 纯 View 实现（零新增依赖） |
+
+关键教训：`tools/verify-engine.sh` 只编 `engine/` 包，**抓不到 `app/` 里的 Compose 误用**——这类错误只有真正跑 `assembleSystemDebug` 才会暴露。
+
+首次绿跑：run **40312131079**，`dsh-system-debug` 工件 **6.61 MB**（无资产版：APK 内没有引擎，装上可开界面）。
+有资产的包预计回到 ~60 MB 量级（engine.bin 压缩后约 55–60 MB）。
