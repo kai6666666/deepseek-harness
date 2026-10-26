@@ -71,6 +71,14 @@ jobs:
       - name: 修可执行位
         run: chmod +x gradlew tools/*.sh || true
 
+      # 固定 debug keystore：不然每个 runner 自带一份随机 debug key，
+      # 每次 CI 产物的签名都不同，设备上只能卸载重装（丢数据）。
+      - name: 固定 debug 签名
+        run: |
+          mkdir -p "$HOME/.android"
+          cp ci/debug.keystore "$HOME/.android/debug.keystore"
+          chmod 600 "$HOME/.android/debug.keystore"
+
       - name: 铺构建资产
         env:
           GH_TOKEN: ${{ github.token }}
