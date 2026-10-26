@@ -216,6 +216,30 @@ zip          bin/system.node + package.json + prebuilds.json
 
 APK：`163,471,815 B` · 工件 `154.96 MB`。资产覆盖 **26/28**。
 
+### 第八次绿跑（webview-compat）：run 40336517026
+
+`tools/build_webview_compat.py` 把 PowerShell 版移植到 Linux：esbuild 只装一次、8 线程并行。
+
+```text
+扫描 149 个 js/css（chrome74）
+需要降级 83 个：{'dist': 3, 'engine': 79, 'mobileui': 1}
+已生成 webview-compat.zip：条目 84 个，9,657,122 字节
+戳 = chrome74-v34
+APK 173,112,142 B · 工件 164.16 MB
+```
+
+两个移植差异（有意为之）：
+
+| 点 | PowerShell | Python |
+|---|---|---|
+| 运行时 API 审计 | 有缺口就 throw | 默认只报告，`--strict-audit` 才失败 |
+| 性能 | 逐文件 `npx esbuild` | 装一次 + 8 线程（手机上 3m30s，CI ~1min） |
+
+坑：CI 里 `check-frontend-syntax.mjs` 自装 acorn 会因 npm 告警返回 rc=2（＝跳检），
+所以工作流先 `npm i --no-save acorn@8` 预装。
+
+**资产覆盖 27/28**：只剩 `node-addon-android-arm64.zip`（npm 包无 C 源码）。
+
 ---
 
 ## 9. 资产自建总表（26/28）
