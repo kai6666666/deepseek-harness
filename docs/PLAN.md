@@ -101,7 +101,7 @@
 | # | 任务 | 说明 | 预估 |
 |---|---|---|---|
 | 3.1 | 引擎追平上游 | rc.2 → 当前 rc.3，跑锚点核对 | 2–3 人日 |
-| 3.2 | 文本锚点 fail-loud | `AnchorAudit` 5 项锚点 → `anchor-miss.json`（已接入 boot 流程）；UI 横幅待接 | ✅ 审计完成 |
+| 3.2 | 文本锚点 fail-loud | `AnchorAudit`：5 项锚点 → `anchor-miss.json` + 启动时通知（`McpWiring.notify`）；日志页/诊断包读同一文件 | ✅ 已完成 |
 | 3.3 | 全文检索开启 | `writeSessionSearchPatch()`（overlay：落盘索引 + `openAt: first-search`） | ✅ 已完成 |
 | 3.4 | Open In 支持 | Android Intent resolver | 2 人日 |
 | 3.5 | 自定义 android profile | 把 12 个 overlay 收成 `dsh-bundle-android` | 2 人日 |
