@@ -8087,11 +8087,21 @@ class EngineManager private constructor(private val context: Context) {
      * 为什么用「回调注入 baseUrl」而不是改 `start()` 签名：
      *   `start()` 被前台服务、救援、重开 App 至少四处调用，改返回值会波及一片；
      *   这里保持它原样，把「bionic 跑完之后的端点」通过 [legacyEndpointProvider] 交回来。
+     *
+     * 调用方（MainActivity / Application）在 `start()` 完成后设置：
+     *   `manager.legacyEndpointProvider = { EngineEndpoint(url, pid, log) }`
+     * 未设置时用 `http://127.0.0.1:<spec.port>` 兜底 —— 与旧行为一致。
      */
     @Volatile
     var legacyEndpointProvider: (() -> com.dsh.android.engine.EngineEndpoint)? = null
 
-    /** 启动引擎（宿主可切换）；proot/remote 起不来自动回落 bionic。 */
+    /**
+     * 启动引擎（宿主可切换）。
+     *
+     * 行为：
+     *   · `bionic`：走既有 [start]，行为与旧版逐字节一致；
+     *   · `proot` / `remote`：走新宿主；起不来**自动回落 bionic**（`degraded=true`）。
+     */
     suspend fun bootWithHost(
         prefs: android.content.SharedPreferences?,
     ): com.dsh.android.engine.EngineBootGate.BootResult =
