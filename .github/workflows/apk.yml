@@ -25,6 +25,7 @@ on:
       - 'tools/build-node-pty.sh'
       - 'tools/build-extra-native.sh'
       - 'tools/build-node-addon-system.sh'
+      - 'tools/build-webview_compat.py'
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -115,6 +116,11 @@ jobs:
       - name: 现场编 node-addon-system（flock 绑定）
         if: env.ASSETS_TAG == ''
         run: bash tools/build-node-addon-system.sh
+
+      # PowerShell 版的 Python 移植：esbuild 降级 + 语法复检 + 运行时 API 审计
+      - name: 现场生成 webview-compat
+        if: env.ASSETS_TAG == ''
+        run: python3 tools/build-webview_compat.py --engine /tmp/dsh-engine-0.2.1-rc.3
 
       - name: 工具链自检
         run: |
