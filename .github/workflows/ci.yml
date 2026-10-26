@@ -155,3 +155,22 @@ jobs:
                 else f"❌ {len(broken)} 个失效链接")
           sys.exit(1 if broken else 0)
           PY
+
+  engine-compile:
+    name: engine 包独立编译（无 Gradle / 无 SDK 许可）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: 缓存 kotlinc 与 android.jar（约 130 MB）
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/dsh-kotlinc
+          key: dsh-kotlinc-2.0.21-platform35-v1
+      - name: 编译 engine 包
+        run: |
+          chmod +x tools/verify-engine.sh
+          ./tools/verify-engine.sh
