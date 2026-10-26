@@ -93,7 +93,7 @@
 | # | 任务 | 交付 | 验收 | 预估 |
 |---|---|---|---|---|
 | 2.1 | MCP 桥 | `bridge/mcp-android` + `McpBridge.kt` | `initialize`/`tools/list`/`tools/call` 往返 | ✅ 已完成 |
-| 2.2 | 能力接线 | `McpWiring`（ui 协议复用 + 通知） | `android_ui_dump`/`tap`/`type`/`notify` 可用；shell/screenshot 待接 | ✅ 已完成（4/6） |
+| 2.2 | 能力接线 | `McpWiring` + `PrivilegedRunner` | 六件套全通；shell/screenshot 走 uid2000，未授权时显式 `privileged:false` | ✅ 已完成（6/6） |
 | 2.3 | computer-use provider | 插件注册 `ctx.computerUse` | 预设里出现 provider；工具可点屏 | 3–5 人日 |
 | 2.4 | browser-use provider | 复用原生 WebView | 可登录站点截图 | 5 人日 |
 
@@ -101,8 +101,8 @@
 | # | 任务 | 说明 | 预估 |
 |---|---|---|---|
 | 3.1 | 引擎追平上游 | rc.2 → 当前 rc.3，跑锚点核对 | 2–3 人日 |
-| 3.2 | 文本锚点 fail-loud | `AnchorAudit` 已落盘（5 项锚点 → `anchor-miss.json`）；UI 横幅待接 | 🟡 审计完成 |
-| 3.3 | 全文检索开启 | `session-query-sqlite.openAt: first-search` | 0.5 人日 |
+| 3.2 | 文本锚点 fail-loud | `AnchorAudit` 5 项锚点 → `anchor-miss.json`（已接入 boot 流程）；UI 横幅待接 | ✅ 审计完成 |
+| 3.3 | 全文检索开启 | `writeSessionSearchPatch()`（overlay：落盘索引 + `openAt: first-search`） | ✅ 已完成 |
 | 3.4 | Open In 支持 | Android Intent resolver | 2 人日 |
 | 3.5 | 自定义 android profile | 把 12 个 overlay 收成 `dsh-bundle-android` | 2 人日 |
 
@@ -115,6 +115,12 @@
 | 4.4 | 诊断包增强 | 收 `provision.json` / `verify-c.json` / `anchor-miss.json` |
 
 ---
+
+## 3.5 编译验证（新增门禁）
+
+`engine/` 包可在无 Gradle 环境下独立类型检查（kotlinc + android.jar + coroutines）。
+首次跑出 3 个“肉眼看不出、真机必炸”的错误（KDoc 里的 `*/` 提前闭合、`File.relativePath`、`Process.pid()`），已修。
+完整命令与记录见 [docs/agents/verification.md](agents/verification.md)。
 
 ## 4. 代码地图（改哪查哪）
 
