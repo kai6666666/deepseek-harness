@@ -26,6 +26,7 @@ on:
       - 'tools/build-extra-native.sh'
       - 'tools/build-node-addon-system.sh'
       - 'tools/build-webview_compat.py'
+      - 'tools/build-node-addon-require-builtin.sh'
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -116,6 +117,11 @@ jobs:
       - name: 现场编 node-addon-system（flock 绑定）
         if: env.ASSETS_TAG == ''
         run: bash tools/build-node-addon-system.sh
+
+      # 唯一造不出的一项：npm 包无 C 源码。有源码/外部产物就编，没有就 ::warning:: 并跳过。
+      - name: node-addon-require-builtin（插槽）
+        if: env.ASSETS_TAG == ''
+        run: bash tools/build-node-addon-require-builtin.sh
 
       # check-frontend-syntax.mjs 需要 acorn；CI 里它自装会因 npm 告警走到 rc=2（＝跳检）。
       - name: 预装 acorn
