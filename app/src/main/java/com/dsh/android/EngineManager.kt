@@ -8126,7 +8126,7 @@ class EngineManager private constructor(private val context: Context) {
                 runCatching { com.dsh.android.engine.AnchorAudit.audit(engineDir, dshHome) }
                 legacyEndpointProvider?.invoke() ?: com.dsh.android.engine.EngineEndpoint(
                     baseUrl = "http://127.0.0.1:${spec.port}",
-                    pid = process?.pid(),
+                    pid = com.dsh.android.engine.ProcPid.of(process),
                     logFile = File(dshHome, "logs/engine.log"),
                 )
             },
