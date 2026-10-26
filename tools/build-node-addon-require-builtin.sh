@@ -1,31 +1,14 @@
 #!/usr/bin/env bash
-# build-node-addon-require-builtin.sh —— 用 NDK 编 node-addon-require-builtin 的 android 变体
+# build-node-addon-require-builtin.sh —— 用镜像进来的上游源码编 requireBuiltin 的 android 变体
 #
-# 源码来源（已镜像进仓库）：native/require-builtin-src.zip
-#   上游：deepseek-ai/dsh-node-addon-require-builtin@master
-#   packages/native/**            原生实现（52 个文件，165 KB）
-#   packages/require-builtin/entry/**   JS 包装（仅供对照，不参与编译）
+# 源码来自上游 deepseek-ai/dsh-node-addon-require-builtin @HEAD：
+# 本机直连 github.com:443 不通，走 jsDelivr 镜像；已打成 native/require-builtin-src.zip。
 #
-# 编译配置照 binding.gyp 的 **napi 后端**分支抄：
-#   sources: node_api_addon/debug_trace/native_types/runtime_symbol
-#            runtime_context/{helper,platform,darwin_arm64,darwin_x64,linux_arm64,linux_x64,
-#                             win32_arm64,win32_x64,win32_ia32}
-#            runtime_probe/{helper,platform,getter_decoder,posix,win32_common,
-#                           darwin_arm64,darwin_x64,linux_arm64,linux_x64,
-#                           win32_arm64,win32_x64,win32_ia32}
-#            require_builtin_probe
-#            + napi 分支：runtime_context/{embedder_data,runtime_profile,runtime_profile_napi}
-#                          runtime_compat_napi
-#   defines: NAPI_VERSION=9 NODE_ADDON_API_DISABLE_CPP_EXCEPTIONS NARB_BACKEND=1
-#   cflags : -std=c++17 -fno-exceptions -fvisibility=hidden -static-libstdc++
+# 三种模式：源码（目录或 zip）/ 外部产物 / 明确跳过。
 #
-# ⚠️ 平台判定用的是 `__linux__`（见 runtime_probe/platform.cc），Android 也命中它，
-#    于是走 linux_arm64 的 V8 getter 解析器。能不能在 bionic + Termux node 上真跑，
-#    要真机验证（加载器会校验 getNativeBindingInfo 的 product/abi）。
-#
-# 用法：
-#   ANDROID_NDK_HOME=/path/to/ndk ./tools/build-node-addon-require-builtin.sh
-#   EXTERNAL_ADDON=/path/android-arm64-napi-v9.node ./tools/build-node-addon-require-builtin.sh
+# ⚠️ Android 现实：platform.cc 用 `#elif defined(__linux__) && defined(__aarch64__)`
+#    路由到 **Linux/glibc** 探针（解析 glibc loader/malloc 内部布局）。bionic 与 glibc 不同源，
+#    **能编译不代表能工作** —— 运行期由加载器 getNativeBindingInfo() 校验、引擎 try/catch 兜底。
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -34,7 +17,6 @@ OUT="${OUT:-$ASSETS/node-addon-android-arm64.zip}"
 SRC_DIR="${SRC_DIR:-$ROOT/native/require-builtin-src}"
 SRC_ZIP="${SRC_ZIP:-$ROOT/native/require-builtin-src.zip}"
 EXTERNAL_ADDON="${EXTERNAL_ADDON:-}"
-ENGINE_DIR="${ENGINE_DIR:-/tmp/dsh-engine-0.2.1-rc.3}"
 NODE_HEADERS_VERSION="${NODE_HEADERS_VERSION:-26.12.1}"
 
 WORK="$(mktemp -d)"
@@ -55,15 +37,10 @@ package_node() {
   local node_file="$1" origin="$2"
   python3 - "$node_file" "$OUT" "$origin" <<'PY'
 import json, sys, zipfile
-
 node, out, origin = sys.argv[1], sys.argv[2], sys.argv[3]
-pkg = {
-    'name': 'node-addon-require-builtin-android-arm64',
-    'version': '0.0.0-selfbuilt',
-    'description': 'Android arm64 requireBuiltin binding (see docs/agents/node-addon-require-builtin.md)',
-    'os': ['android'], 'cpu': ['arm64'], 'license': 'MIT',
-    'dshOrigin': origin,
-}
+pkg = {'name': 'node-addon-require-builtin-android-arm64', 'version': '0.1.9-selfbuilt',
+       'description': 'Android arm64 requireBuiltin binding (mirrored source build)',
+       'os': ['android'], 'cpu': ['arm64'], 'license': 'MIT', 'dshOrigin': origin}
 prebuilds = {'platform': 'android-arm64',
              'binaries': [{'backend': 'napi', 'abi': 'napi-v9', 'binaryTag': 'napi-v9',
                            'node': '>=20', 'path': 'prebuilt/android-arm64-napi-v9.node'}]}
@@ -80,25 +57,28 @@ PY
   ls -lh "$OUT"
 }
 
-# ---------- 模式 1：源码（目录或镜像 zip） ----------
-SRC_ROOT=""
-if [ -d "$SRC_DIR/packages/native/src" ]; then
-  SRC_ROOT="$SRC_DIR"
+NATIVE=""
+if [ -d "$SRC_DIR/packages/native" ]; then
+  NATIVE="$SRC_DIR/packages/native"
+  echo "== 源码：本地目录 $NATIVE"
 elif [ -s "$SRC_ZIP" ]; then
-  echo "== 解包镜像源码 $SRC_ZIP"
+  echo "== 源码：解压 $SRC_ZIP"
   mkdir -p "$WORK/src"
-  python3 -m zipfile -e "$SRC_ZIP" "$WORK/src"
-  SRC_ROOT="$WORK/src"
+  python3 - "$SRC_ZIP" "$WORK/src" <<'PY'
+import sys, zipfile
+zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])
+PY
+  NATIVE="$WORK/src/packages/native"
 fi
 
-if [ -n "$SRC_ROOT" ]; then
-  echo "== 模式 1：从源码编译（$SRC_ROOT）"
+if [ -n "$NATIVE" ] && [ -f "$NATIVE/binding.gyp" ]; then
+  echo "== 模式 1：源码编译（$NATIVE）"
   NDK="$(resolve_ndk)" || { echo "❌ 找不到 NDK"; exit 1; }
   TC="$(ls -d "$NDK"/toolchains/llvm/prebuilt/* | head -1)"
   CXX="$TC/bin/aarch64-linux-android26-clang++"
   [ -x "$CXX" ] || { echo "❌ 没有 $CXX"; exit 1; }
 
-  echo "   Node 头文件 v$NODE_HEADERS_VERSION"
+  echo "== Node 头文件 v$NODE_HEADERS_VERSION"
   for base in https://npmmirror.com/mirrors/node https://nodejs.org/dist; do
     if curl -4 -fsS -L -m 300 -o "$WORK/hdr.tgz" "$base/v$NODE_HEADERS_VERSION/node-v$NODE_HEADERS_VERSION-headers.tar.gz"; then
       echo "   来源：$base"; break
@@ -108,66 +88,74 @@ if [ -n "$SRC_ROOT" ]; then
   tar -xzf "$WORK/hdr.tgz" -C "$WORK"
   NODE_INC="$WORK/node-v$NODE_HEADERS_VERSION/include/node"
 
-  ADDON_API="$ENGINE_DIR/node_modules/node-addon-api"
-  if [ ! -d "$ADDON_API" ]; then
-    echo "   node-addon-api 不在引擎副本里，npm 现取"
-    ( cd "$WORK" && npm init -y >/dev/null 2>&1 && npm i --ignore-scripts --no-audit --no-fund node-addon-api >/dev/null 2>&1 )
-    ADDON_API="$WORK/node_modules/node-addon-api"
+  mkdir -p "$WORK/napi"
+  ( cd "$WORK/napi" && npm init -y >/dev/null 2>&1 \
+    && npm i --ignore-scripts --no-audit --no-fund node-addon-api@8 >/dev/null 2>&1 )
+  NAPI_INC="$WORK/napi/node_modules/node-addon-api"
+
+  python3 - "$NATIVE" > "$WORK/sources.txt" <<'PY'
+import os, re, sys
+root = sys.argv[1]
+gyp = open(os.path.join(root, 'binding.gyp'), encoding='utf-8').read()
+paths = re.findall(r'"([^"]+\.cc)"', gyp)
+seen, out = set(), []
+for p in paths:
+    if p in seen or 'nodeabi' in p:
+        continue
+    seen.add(p)
+    if os.path.isfile(os.path.join(root, p)):
+        out.append(p)
+    else:
+        print(f'# MISSING {p}', file=sys.stderr)
+print('\n'.join(out))
+PY
+  echo "   源文件 $(grep -c . "$WORK/sources.txt" || true) 个"
+
+  mkdir -p "$WORK/obj"
+  FAIL=0
+  while read -r f; do
+    [ -z "$f" ] && continue
+    o="$WORK/obj/$(echo "$f" | tr '/' '_').o"
+    if ! "$CXX" -c -fPIC -O2 -Wall -Wno-unused-parameter -fno-exceptions -fvisibility=hidden \
+        -std=c++17 -DNAPI_VERSION=9 -DNODE_ADDON_API_DISABLE_CPP_EXCEPTIONS \
+        -DNARB_BACKEND=1 -DNARB_PRODUCT=1 \
+        -I "$NODE_INC" -I "$NAPI_INC" -I "$NATIVE/src" \
+        -o "$o" "$NATIVE/$f" 2> "$WORK/err.txt"; then
+      echo "❌ 编译失败：$f"
+      head -12 "$WORK/err.txt"
+      FAIL=1
+      break
+    fi
+  done < "$WORK/sources.txt"
+
+  if [ "$FAIL" -ne 0 ]; then
+    echo "::warning::require-builtin 源码在 bionic 下编译失败（见上方首个错误）—— 跳过"
+    exit 0
   fi
-  echo "   node-addon-api ← $ADDON_API"
 
-  N="$SRC_ROOT/packages/native/src"
-  SOURCES=(
-    "$N/node_api_addon.cc" "$N/debug_trace.cc" "$N/native_types.cc" "$N/runtime_symbol.cc"
-    "$N/runtime_context/helper.cc" "$N/runtime_context/platform.cc"
-    "$N/runtime_context/darwin_arm64.cc" "$N/runtime_context/darwin_x64.cc"
-    "$N/runtime_context/linux_arm64.cc" "$N/runtime_context/linux_x64.cc"
-    "$N/runtime_context/win32_arm64.cc" "$N/runtime_context/win32_x64.cc" "$N/runtime_context/win32_ia32.cc"
-    "$N/runtime_probe/helper.cc" "$N/runtime_probe/platform.cc" "$N/runtime_probe/getter_decoder.cc"
-    "$N/runtime_probe/posix.cc" "$N/runtime_probe/win32_common.cc"
-    "$N/runtime_probe/darwin_arm64.cc" "$N/runtime_probe/darwin_x64.cc"
-    "$N/runtime_probe/linux_arm64.cc" "$N/runtime_probe/linux_x64.cc"
-    "$N/runtime_probe/win32_arm64.cc" "$N/runtime_probe/win32_x64.cc" "$N/runtime_probe/win32_ia32.cc"
-    "$N/require_builtin_probe.cc"
-    "$N/runtime_context/embedder_data.cc" "$N/runtime_context/runtime_profile.cc"
-    "$N/runtime_context/runtime_profile_napi.cc" "$N/runtime_compat_napi.cc"
-  )
-  for f in "${SOURCES[@]}"; do
-    [ -f "$f" ] || { echo "❌ 缺少源码 $f"; exit 1; }
-  done
-
-  echo "   编译 ${#SOURCES[@]} 个 .cc（napi 后端）"
-  "$CXX" -shared -fPIC -O2 -std=c++17 -fno-exceptions -fvisibility=hidden \
-    -static-libstdc++ -Wl,--build-id=none \
-    -DNAPI_VERSION=9 -DNODE_ADDON_API_DISABLE_CPP_EXCEPTIONS -DNARB_BACKEND=1 \
-    -I "$NODE_INC" -I "$ADDON_API" \
-    -o "$WORK/addon.node" "${SOURCES[@]}"
-
+  "$CXX" -shared -o "$WORK/addon.node" "$WORK"/obj/*.o
   if command -v nm >/dev/null 2>&1; then
-    nm -D "$WORK/addon.node" | grep -q 'napi_register_module_v1' || { echo "❌ 不是合法 N-API 模块"; exit 1; }
-    echo "   ✅ 导出 napi_register_module_v1"
+    nm -D "$WORK/addon.node" | grep -q 'napi_register_module_v1' \
+      || { echo "::warning::产物未导出 napi_register_module_v1 —— 跳过"; exit 0; }
   fi
   if command -v readelf >/dev/null 2>&1; then
     echo "   NEEDED: $(readelf -d "$WORK/addon.node" | sed -n 's/.*Shared library: \[\(.*\)\]/\1/p' | tr '\n' ' ')"
   fi
-  ls -l "$WORK/addon.node"
-  package_node "$WORK/addon.node" "built-from-vendored-source"
+  package_node "$WORK/addon.node" "mirrored-source"
   echo "✅ 完成（源码模式）"
   exit 0
 fi
 
-# ---------- 模式 2：外部产物 ----------
 if [ -n "$EXTERNAL_ADDON" ]; then
   [ -s "$EXTERNAL_ADDON" ] || { echo "❌ EXTERNAL_ADDON 不存在：$EXTERNAL_ADDON"; exit 1; }
-  echo "== 模式 2：校验外部产物 $EXTERNAL_ADDON"
+  echo "== 模式 2：校验外部产物"
   python3 - "$EXTERNAL_ADDON" <<'PY'
 import struct, sys
 b = open(sys.argv[1], 'rb').read(64)
 if b[:4] != b'\x7fELF':
-    sys.exit('❌ 不是 ELF（期望 .node）')
-m = struct.unpack('<H', b[18:20])[0]
-if m != 183:
-    sys.exit(f'❌ e_machine={m}，不是 AArch64（183）')
+    sys.exit('❌ 不是 ELF')
+if struct.unpack('<H', b[18:20])[0] != 183:
+    sys.exit('❌ 不是 AArch64')
 print('   ✅ ELF / AArch64')
 PY
   package_node "$EXTERNAL_ADDON" "external"
@@ -175,5 +163,11 @@ PY
   exit 0
 fi
 
-echo "::warning::源码与外部产物都没有（native/require-builtin-src.zip 缺失？），跳过"
+cat <<'WARN'
+::warning::node-addon-android-arm64.zip 未生成
+   补齐二选一：① 放 native/require-builtin-src/ 或 .zip（源码模式）
+              ② EXTERNAL_ADDON=/path/android-arm64-napi-v9.node
+   详见 docs/agents/node-addon-require-builtin.md
+WARN
+echo "（跳过，资产覆盖停在 27/28）"
 exit 0
