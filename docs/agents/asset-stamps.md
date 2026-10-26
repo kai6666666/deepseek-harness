@@ -31,7 +31,7 @@
 | `browser-pane.zip` | 无需改（每次启动解包覆盖写，见 ⑫.8）。⚠️ 它是**客户端插件**，必须在引擎启动前落盘 |
 | `ui-probe.js` | 无需改（原生每次启动读一次进内存，见 ⑫.5）。⚠️ 但改了语义要同步升 `ui-probe.js` 内部的 `VERSION`（页面上的旧探针靠它判断要不要换） |
 | `webview-polyfill.js` | 无需改（每次启动覆盖写） |
-| `webview-compat.zip` | **必须重跑** `tools/build-webview-compat.ps1`（见 ⑯；文件名带内容 hash，换 `engine.bin` 后必然对不上） |
+| `webview-compat.zip` | **必须重跑**（换 `engine.bin` 后必然对不上）。Windows：`tools/build-webview-compat.ps1`；Linux/CI：`python3 tools/build_webview_compat.py --engine <引擎目录>`（带 esbuild 降级 + 语法复检 + API 审计） |
 | `preset-skills.zip` | `EngineManager.PRESET_SKILLS_VERSION`（现 `1.0.0-1`）。判据是 `skills/.preset_skills_version` 里的字符串，**改了内容不改这个常量 ⇒ 老设备永远拿不到新 skill** |
 | `preset-razor.zip` | `EngineManager.PRESET_RAZOR_VERSION`（现 `1.0.3-1`）。⚠️ 它走 profile bundle（解到 `$DSH_HOME/node_modules/dsh-preset-razor/`），判据是包目录里的 `.preset_razor_version`，**改了内容不改这个常量 ⇒ 老设备永远停在旧提示词**（踩过：0.2.1 已删掉 `{{cwd}}` 变量，旧提示词留着它会让「快准狠模式」一选中就处理失败） |
 | `core-memory.zip` | `EngineManager.CORE_MEMORY_VERSION`（现 `1.0.0-2`） |
