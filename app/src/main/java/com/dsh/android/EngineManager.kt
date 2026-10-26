@@ -8081,6 +8081,7 @@ class EngineManager private constructor(private val context: Context) {
 
     fun recentLog(): String = synchronized(logLines) { logLines.joinToString("\n") }
 
+    // probe
     companion object {
         private const val TAG = "DSH"
         // 注意：不能用 .tar.gz 作后缀 —— AGP 会把它当作 gzip 资源自动解压并改名为 .tar，
