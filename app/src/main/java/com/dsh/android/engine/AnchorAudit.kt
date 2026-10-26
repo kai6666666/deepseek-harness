@@ -29,6 +29,22 @@ object AnchorAudit {
         Entry("attachment-fsync", "node_modules/@deepseek-ai/dsh-attachment-local/lib/index.js", "\tconst handle = await open(path, constants.O_RDONLY);"),
     )
 
+    /**
+     * 把审计结果推到用户眼前（P3.2 的“可见”部分）。
+     *
+     * 用通知而不是 Web 横幅：前端是复用官方的，加横幅得再写 client 插件 + host 路由；
+     * 通知零侵入、立刻可见，且与状态通知同一通道（McpWiring.notify）。
+     */
+    fun report(context: android.content.Context?, misses: List<Miss>) {
+        if (misses.isEmpty()) return
+        val summary = misses.take(3).joinToString("；") { it.tag + "(" + it.reason + ")" }
+        val text = if (misses.size <= 3) summary else summary + " 等 " + misses.size + " 项"
+        Log.e(TAG, "锚点失效 " + misses.size + " 项：" + text)
+        if (context == null) return
+        runCatching { McpWiring.notify(context, "DSH 适配补丁失效 " + misses.size + " 项", text) }
+            .onFailure { Log.w(TAG, "锚点失效通知发送失败: " + it.message) }
+    }
+
     /** @return 缺失项；空列表 = 全部锚点仍在。 */
     fun audit(engineDir: File, dshHome: File): List<Miss> {
         val misses = mutableListOf<Miss>()
