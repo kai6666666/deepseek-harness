@@ -137,6 +137,21 @@ assembleSystemDebug      ❌ 无工具链    assembleSystemDebug     ✅ 出 APK
 | `app-system-debug.apk` | **145,381,297 B（约 138.6 MiB）** |
 | 工件 `dsh-system-debug` | 137.71 MB |
 
+### 第三次绿跑（开工 NDK）：run 40316540773
+
+`tools/build-native-assets.sh` 用 NDK 27 现场编出三个 C 适配层，并从 npm 打 pnpm：
+
+| 资产 | 产物大小 | 说明 |
+|---|---|---|
+| `boosandbox.bin` | 23,488 B | `-shared -fPIC -ldl`，LD_PRELOAD 沙箱 |
+| `boo-sandbox-run.bin` | 10,024 B | 可执行启动器 |
+| `linkcompat.bin` | 10,440 B | `-shared -fPIC -ldl`，link/rename 转译 |
+| `pnpm-android-arm64.zip` | 5.6 MB / 454 条目 | 11.28.3，条目是 `bin/pnpm.mjs`（不带顶层目录） |
+
+三个 `.bin` 都用 `-Wl,--build-id=none` 编译，同源码两次编译字节一致，可用 sha256 判「是否真有改动」。
+
+APK：`151,156,054 B`（约 144.2 MiB），工件 `143.22 MB`。
+
 APK 几乎等于 assets 总和，因为 `engine.bin` 本身就是 zip（内层 node_modules 已压缩），再压也压不动。
 若要把包压回 60 MB 量级，得回到 rc.2 的依赖集（`engine.bin` 55 MB），那是**降版**不是优化。
 有资产的包预计回到 ~60 MB 量级（engine.bin 压缩后约 55–60 MB）。
