@@ -41,4 +41,5 @@
 | [node-selfheal.md](node-selfheal.md) | $PREFIX/bin/node 会坏 | 自校验 + 自愈、$PREFIX 并发写互斥 |
 | [boundaries.md](boundaries.md) | 已知边界 | 明确不做 / 做不到的事 |
 | [regen-assets.md](regen-assets.md) | 重新生成资产 | 各资产从哪来、怎么打 |
+| [ci-build.md](ci-build.md) | CI 构建 APK | x86_64 runner、资产自建、失败排查 |
 | [desktop-relation.md](desktop-relation.md) | 与 DSH 桌面端的关系 | 哪些东西两端共用、哪些各管各的 |
