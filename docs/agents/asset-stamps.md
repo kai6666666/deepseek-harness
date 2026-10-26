@@ -12,11 +12,12 @@
 | `node-runtime.bin` 内容 | `TermuxBootstrap.NODE_VERSION`（`26.12.1-1`）**且** `NODE_EXECUTABLE_VERSION`（`v26.12.1`）——两个都改，否则 `nodeIsUsable()` 判「损坏」，每次启动都白重解包 |
 | `engine.bin` 内容 | `MainActivity.assetStamp`（`0.2.1-rc.2-1`） |
 | `pnpm-android-arm64.zip` 内容 | `EngineManager.PNPM_VERSION`（`11.28.3`） |
-| `adb-wireless-arm64.zip` | 无需改（判据是 `bin/adb` 非空 + 完整性哨兵 `.extracted`，见 ⑪.1） |
+| `adb-wireless-arm64.zip` | 无需改（判据是 `bin/adb` 非空 + 完整性哨兵 `.extracted`，见 ⑪.1）。已自动化：`build-extra-native.sh`（android-tools + 9 个 Depends，109 条目） |
 | `node-addon-android-arm64.zip` | 无需改（只查文件存在且非空） |
 | `node-addon-system-android-arm64.zip` | 无需改（只查文件存在且非空） |
-| `ripgrep-android-arm64.zip` | 无需改（只查文件存在且非空） |
+| `ripgrep-android-arm64.zip` | 无需改（只查文件存在且非空）。已自动化：`build-extra-native.sh`（Termux rg） |
 | `node-pty-android-arm64.zip` | 无需改（只查文件存在且非空）。已自动化：`tools/build-node-pty.sh`（CI 现编，`-static-libstdc++`） |
+| `sharp-wasm32.zip` | 无需改（判据是 wasm 文件存在且非空）。已自动化：`build-extra-native.sh`（`@img/sharp-wasm32` + `@emnapi/*`，24 条目） |
 | `linkcompat.bin` | 无需改（每次启动覆盖写） |
 | `keyinject.bin` | 无需改（每次启动覆盖写；换密钥池必须重新跑 `tools/build-keyinject.ps1`，见 ⑮） |
 | `boosandbox.bin` / `boo-sandbox-run.bin` | 无需改（每次启动覆盖写） |
