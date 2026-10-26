@@ -69,7 +69,13 @@ classes=62
 - 本机无 Android SDK platform/build-tools 全套，`assembleSystemDebug` 未跑；
 - 因此“能编”目前只对 `engine/` 包成立，对两个被改的大文件是“改法经过类型推演 + 相同 API 已被 engine 包验证”。
 
-## 后续：接进 CI
+## CI 门禁（已接入）
 
-`.github/workflows/ci.yml` 加一个 job：下载上面 8 个 jar + android.jar → 跑本节命令 → 失败即红。
-成本低（无 Gradle、无 SDK 许可），能抓住上面那类错误。
+`.github/workflows/ci.yml` 新增 job `engine-compile`：
+
+1. `actions/setup-java@v4`（temurin 17）；
+2. 缓存 `~/.cache/dsh-kotlinc`（约 130 MB，key 跟随 kotlin 版本）；
+3. 执行 `./tools/verify-engine.sh`（下载缺失 jar → 编译 → class 数 > 60 才算过）。
+
+本地等价命令：`KTCACHE=/opt/kt ./tools/verify-engine.sh`。
+成本：无 Gradle、无 SDK 许可，一次缓存后每次约 40 秒。
