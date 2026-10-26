@@ -1,108 +1,86 @@
-# ⑰ node-addon-require-builtin：源码已镜像，可自建
-
-## 0. 现状（更新）
-
-上游源码已镜像进仓库：`native/require-builtin-src.zip`（52 文件 / 62 KB，取自
-jsDelivr 的 `deepseek-ai/dsh-node-addon-require-builtin@HEAD`，因本机 github.com:443 不通）。
-
-CI 里 `require-builtin（源码模式）` 实测：
-
-```text
-源文件 30 个（binding.gyp 的 sources，排除 nodeabi 支）
-产物   node-addon-android-arm64.zip 374 KB
-NEEDED libm.so libdl.so libc.so
-```
-
-所以「缺源码」这一条已经不成立；仍待真机确认的是**运行期**：源码的 platform.cc 按
-`#if defined(__linux__) && defined(__aarch64__)` 走 **Linux/glibc** 探针，bionic 与 glibc 不同源，
-探针可能拿不到 getter offset —— 若如此会退化为 `ERR_REQUIRE_BUILTIN_UNAVAILABLE`，不影响主链路。
-下面的「为什么当初造不出」保留作为背景。
+# ⑰ node-addon-require-builtin：源码已镜像，CI 能真编了
 
 > 本文是 [AGENTS.md](../../AGENTS.md) 的分册之一，索引见 [docs/agents/README.md](README.md)。
 
-## 1. 它是什么
+## 1. 它解决的问题
 
-引擎里有些代码要 `require()` **Node 的内部 builtin**（`process.binding('natives')` 里那批）。
-这不是 N-API 能做的事，所以上游写了一个原生插件：
+引擎里有一部分代码要 `require()` **Node 的内部 builtin**（`process.binding('natives')` 那批）。
+这不是 N-API 能做的事，所以上游写了一个原生插件，接口由 `node-addon-native-custom-loader` 校验：
 
-```ts
-// node_modules/node-addon-require-builtin/lib/index.js
-const { createEntryApi } = require('node-addon-native-custom-loader');
-const api = createEntryApi(path.resolve(__dirname, '..'));
-exports.requireBuiltin = (id) => api.requireBuiltin(id);
-exports.isAllowedInternalId = (id) => api.isAllowedInternalId(id);
-exports.getBindingInfo = () => api.getBindingInfo();
-```
-
-平台二进制由 `node-addon-require-builtin-<platform>` 提供，加载器会校验导出的三件事：
-
-| 导出 | 类型 | 校验点 |
-|---|---|---|
-| `requireBuiltin` | function | 必须存在 |
-| `isAllowedInternalId` | function | 必须存在 |
-| `getNativeBindingInfo` | function | 返回 `{ product, abi }`，`abi` 必须与期望一致 |
-
-## 2. 为什么 CI 造不出
-
-| 事实 | 后果 |
+| 导出 | 用途 |
 |---|---|
-| npm 包**只发 JS**（`lib/index.js`、`index.d.ts`），没有 `src/` | 没有可编译输入 |
-| 原生实现只以**各平台预编译 `.node`** 发布：`linux-x64/arm64-gnu`、`darwin-*` | 没有 `android-arm64` 变体 |
-| 实现要访问 Node 内部 builtin 表 | 必须链接 Node 内部符号，**不是纯 N-API**；NDK 单编一个 `.node` 拿不到这些符号 |
-| 上游源码在 GitHub（本机 443 不可达） | 无法现场取源码 |
+| `requireBuiltin(id)` | 拿到内部模块 |
+| `isAllowedInternalId(id)` | 白名单判定 |
+| `getNativeBindingInfo()` | 返回 `{ product, abi }`，加载器用它做一致性校验 |
 
-所以这一项的结论是「**缺输入**」，而不是「没做」。
+## 2. 源码从哪来
 
-## 3. 两种补齐方式（都已留好插槽）
+上游：`github.com/deepseek-ai/dsh-node-addon-require-builtin`（默认分支 **master**）。
 
-`tools/build-node-addon-require-builtin.sh` 有三档行为：
+本机 `github.com:443` 不通，走 **GitHub API + jsDelivr** 取到（`api.github.com` 可用）：
 
-### 模式 1：镜像源码（推荐）
+- tree：`GET /repos/{owner}/{repo}/git/trees/master?recursive=1`
+- 文件：`GET /repos/{owner}/{repo}/git/blobs/{sha}`（base64）
 
-```bash
-# 把上游 src/ 放进仓库
-native/require-builtin/src/*.c
-native/require-builtin/src/*.h
+挑了 52 个文件（`packages/native/**` + `packages/require-builtin/entry/**` + LICENSE/README），
+165,378 B，打成 `native/require-builtin-src.zip`（61,753 B）随仓库分发。
 
-./tools/build-node-addon-require-builtin.sh     # 自动用 NDK 27 + node 头文件编
-```
+> 本地解包副本在 `native/require-builtin-src/`（不入库，只留 zip）。
 
-产出 `node-addon-android-arm64.zip`，条目：
+## 3. 编译配方（照 `binding.gyp` 的 napi 后端）
+
+`tools/build-node-addon-require-builtin.sh` 会从 zip 解包，按 gyp 里的 `.cc` 列表编译：
 
 ```text
-prebuilt/android-arm64-napi-v9.node
-prebuilds.json      # backend=napi, abi=napi-v9, path=prebuilt/…
-package.json        # os=android, cpu=arm64
+源文件     30 个（排除 runtime_compat_nodeabi.cc，走 napi 分支）
+定义       NAPI_VERSION=9 · NAPI_DISABLE_CPP_EXCEPTIONS · NODE_ADDON_API_DISABLE_CPP_EXCEPTIONS
+           NARB_BACKEND=1 · NARB_PRODUCT=1（= require-builtin 变体，见 product_config.h）
+编译       aarch64-linux-android26-clang++ -c -fPIC -O2 -std=c++17 -fno-exceptions -fvisibility=hidden
+链接       -shared -static-libstdc++ -Wl,--build-id=none
 ```
 
-### 模式 2：提供已编好的产物
+⚠️ 两个容易踩的坑：
+
+1. **必须同时给 `NAPI_DISABLE_CPP_EXCEPTIONS`**。只给 gyp 里的 `NODE_ADDON_API_DISABLE_CPP_EXCEPTIONS` 时，
+   node-addon-api 会报 `Exception support not detected`，后面全是 `no matching function for call to 'New'` 的级联错误。
+2. **链接要 `-static-libstdc++`**，否则拉 `libc++_shared.so`，Termux 里没有。
+
+## 4. 实测（run 40354163802）
+
+```text
+源文件 30 个
+NEEDED libm.so libdl.so libc.so        ← 无 libc++_shared
+zip    node-addon-android-arm64.zip  374 KB
+条目   prebuilt/android-arm64-napi-v9.node + prebuilds.json + package.json
+APK    173,420,051 B（~165.4 MiB）
+```
+
+至此 **28/28 全部资产都能在 CI 从零产出**（无需任何预先上传的 Release）。
+
+## 5. ⚠️ 运行时仍需真机验证
+
+`runtime_probe/platform.cc` 的平台判定用的是 `__linux__`，**Android 也会命中它**，
+于是走的是 `linux_arm64` 的 V8 getter 解析器（`getter_decoder` 按机器码模式找
+`require` getter 偏移）。能不能在 bionic + Termux node 26 上真的解出偏移，**编译成功不等于跑通**。
+
+判定方式（真机）：
 
 ```bash
-EXTERNAL_ADDON=/path/to/android-arm64-napi-v9.node \
-  ./tools/build-node-addon-require-builtin.sh
+# 在 $DSH_HOME/node_modules 下
+node -e "const a=require('node-addon-require-builtin'); console.log(a.getBindingInfo())"
+# 期望：{ product: 'require-builtin', abi: 'napi-v9', ... }
+# 若报 kUnsupportedNoGetter / 偏移解析失败 → 需在 runtime_probe 里补 android 分支
 ```
 
-脚本会先校验（ELF 魔数 / `e_machine == 183` AArch64 / `readelf -d` 的 NEEDED），再打包。
+失败时的影响是局部的：加载器会校验失败并抛错，主对话链路不受影响（见 [ci-build.md](ci-build.md) §9）。
 
-### 模式 3：都没有（当前 CI 的状态）
-
-打印一条 `::warning::` 后 `exit 0` —— **不让出包流水线变红**，资产覆盖停在 27/28。
-
-## 4. 缺了它有什么影响
-
-`EngineManager.ensureNativeAddon()` 只在 `node_modules/node-addon-require-builtin-android-arm64/prebuilt/android-arm64-napi-v9.node`
-存在时才装；缺它时引擎照常启动，只是所有走 `requireBuiltin()` 的代码路径会报
-`ERR_REQUIRE_BUILTIN_UNAVAILABLE`（受影响的通常是内部工具/诊断类路径，不影响主对话链路）。
-
-## 5. 验收
+## 6. 上游更新时怎么重做
 
 ```bash
-unzip -l node-addon-android-arm64.zip        # 3 个条目
-unzip -p node-addon-android-arm64.zip prebuilds.json | python3 -m json.tool
-python3 - <<'PY'                              # ELF/AArch64 复核
-import zipfile, struct
-d = zipfile.ZipFile('node-addon-android-arm64.zip').read('prebuilt/android-arm64-napi-v9.node')
-assert d[:4] == b'\x7fELF' and struct.unpack('<H', d[18:20])[0] == 183
-print('OK')
-PY
+# 1) 重新拉源码（api.github.com 可用时）
+#    tree → blobs → 写入 native/require-builtin-src/ → 打 native/require-builtin-src.zip
+# 2) 重跑
+./tools/build-node-addon-require-builtin.sh
 ```
+
+版本一变，`entry/package.json` 的 `version` 与预编译包名也会变，记得同步 `prebuilds.json` 里的 `abi`。
