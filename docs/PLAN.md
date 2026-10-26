@@ -109,6 +109,7 @@
 ### P4 产品化（择机）
 | # | 任务 | 说明 |
 |---|---|---|
+| 4.0 | **CI 出包** | `.github/workflows/apk.yml`（ubuntu-latest / x86_64）+ `tools/ci-fetch-assets.sh`；资产走 Release，缺资产降级出包。见 `docs/agents/ci-build.md` | ✅ 已接入（首次运行待观察） |
 | 4.1 | 远程引擎模式 | `--host` 绑具体 IP + `--trusted-host` + Tailscale/隧道 |
 | 4.2 | AVF 路线 | Android 15 QPR2+/16 的 Linux Terminal，真内核沙箱 |
 | 4.3 | 插件市场兼容标注 | 按“是否发布 linux-arm64-gnu”给出可安装性 |
