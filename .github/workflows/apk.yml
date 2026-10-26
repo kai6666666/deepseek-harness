@@ -128,6 +128,10 @@ jobs:
       - name: 构建 APK
         run: bash ./gradlew :app:assembleSystemDebug --console=plain --stacktrace
 
+      # BUILD SUCCESSFUL ≠ 包完整：28 项资产 / 包名 15 字符 / targetSdk≤28 都硬断言一次。
+      - name: APK 硬断言
+        run: python3 tools/check-apk-assets.py app/build/outputs/apk/system/debug/app-system-debug.apk
+
       - name: 产物清单
         if: always()
         run: |
