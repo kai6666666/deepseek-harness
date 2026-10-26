@@ -1832,6 +1832,23 @@ class EngineManager private constructor(private val context: Context) {
      * 承载用户改动（本机上 AI 就往里插过自己的插件）。`--patch` 层完全由本 App
      * 拥有，且优先级更高。
      */
+    /** 开启会话全文检索（session_search / session_event_search）。 */
+    private fun writeSessionSearchPatch(): File? = try {
+        val f = File(dshHome, "session-search.patch.yml")
+        val indexPath = File(dshHome, "session-index.sqlite").absolutePath
+        f.writeText(
+            "- id: session-query-sqlite\n" +
+                "  config:\n" +
+                "    path: '" + indexPath + "'\n" +
+                "    openAt: first-search\n",
+        )
+        Log.i(TAG, "已启用会话全文检索: session-search.patch.yml")
+        f
+    } catch (t: Throwable) {
+        Log.w(TAG, "写全文检索 overlay 失败: " + t.message)
+        null
+    }
+
     private fun writeSandboxPatch(runner: File?): File? {
         if (runner == null) return null
         val file = File(dshHome, SANDBOX_PATCH)
@@ -7109,6 +7126,8 @@ class EngineManager private constructor(private val context: Context) {
         val sandboxPatch = writeSandboxPatch(ensureSandbox())
         // 默认工作区：Android 落不进引擎的平台分支，必须显式给 documentsDirectory
         val workspacePatch = writeWorkspacePatch()
+        // 全文检索：上游 web profile 默认 openAt: never（session_search 直接禁用）。
+        val sessionSearchPatch = writeSessionSearchPatch()
         // 插件安装源：官方 fallback 只有镜像源，与本机 ~/.npmrc 撞成同一项被去重掉
         val pluginManagerPatch = writePluginManagerPatch()
         // link 兼容层：SELinux 不给 app_data_file 的 link 权限，需在 libc 边界转译
@@ -7266,6 +7285,7 @@ class EngineManager private constructor(private val context: Context) {
             marketPatch,
             sandboxPatch,
             workspacePatch,
+            sessionSearchPatch,
             pluginManagerPatch,
             privPatch,
             rootPatch,
