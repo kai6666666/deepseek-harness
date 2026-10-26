@@ -103,7 +103,7 @@
 | 3.1 | 引擎追平上游 | rc.3 已装并核对：**锚点 5/5 命中**；打包脚本产出 96 MB `engine.bin`；待上机验收 | 🟡 待上机 |
 | 3.2 | 文本锚点 fail-loud | `AnchorAudit`：5 项锚点 → `anchor-miss.json` + 启动时通知（`McpWiring.notify`）；日志页/诊断包读同一文件 | ✅ 已完成 |
 | 3.3 | 全文检索开启 | `writeSessionSearchPatch()`（overlay：落盘索引 + `openAt: first-search`） | ✅ 已完成 |
-| 3.4 | Open In 支持 | Android Intent resolver | 2 人日 |
+| 3.4 | Open In 支持 | `android_open_with`（MCP）：/sdcard 路径走 DocumentsUI chooser；app 私有目录明确报错；官方“Open In…”按钮仍不出现（它按 macOS/Win/Linux 目录解析） | ✅ 已完成（MCP 形态） |
 | 3.5 | 自定义 android profile | 把 12 个 overlay 收成 `dsh-bundle-android` | 2 人日 |
 
 ### P4 产品化（择机）
