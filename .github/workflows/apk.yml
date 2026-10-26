@@ -22,6 +22,7 @@ on:
       - 'tools/build-node-runtime.sh'
       - 'tools/build-native-assets.sh'
       - 'tools/build-plugin-assets.sh'
+      - 'tools/build-node-pty.sh'
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -99,6 +100,11 @@ jobs:
 
       - name: 现场打包插件资产（15 个 zip）
         run: bash tools/build-plugin-assets.sh
+
+      # node-pty 没有 android 预编译二进制，用 NDK 从它自带的 src/unix/pty.cc 现编。
+      # -static-libstdc++ 是硬要求：动态链会拉 libc++_shared.so，Termux 里没有。
+      - name: 现场编 node-pty 绑定
+        run: bash tools/build-node-pty.sh
 
       - name: 工具链自检
         run: |
