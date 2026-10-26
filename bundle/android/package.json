@@ -1,0 +1,15 @@
+{
+  "name": "@dsh-android/bundle-android",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Android 宿主的声明式适配层：把能进 profile 的 overlay 收成一个 bundle（运行期相关的仍留在 Kotlin）",
+  "keywords": ["dsh", "dsh-plugin", "dsh-bundle", "dshapp-plugin"],
+  "files": ["cordis.patch.yml", "README.md"],
+  "dsh": {
+    "manifestVersion": 1,
+    "bundle": { "patch": "./cordis.patch.yml" }
+  },
+  "engines": { "node": ">=22", "dsh": ">=0.2.0-rc.2" },
+  "license": "MIT"
+}
