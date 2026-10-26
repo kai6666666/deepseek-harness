@@ -109,7 +109,7 @@
 ### P4 产品化（择机）
 | # | 任务 | 说明 |
 |---|---|---|
-| 4.0 | **CI 出包** | `.github/workflows/apk.yml`（x86_64）+ `ci-fetch-assets.sh`；无 Release 时现场自建 `engine.bin`(114 MB)/`node-runtime.bin`(32 MB)。见 `docs/agents/ci-build.md` | ✅ 已跑通（run 40315026081，APK 145 MB 带引擎） |
+| 4.0 | **CI 出包** | `.github/workflows/apk.yml`（x86_64 + NDK27）；无 Release 时自建 6 项资产：`engine.bin`(114 MB)、`node-runtime.bin`(32 MB)、`boosandbox.bin`、`boo-sandbox-run.bin`、`linkcompat.bin`、`pnpm-android-arm64.zip`。见 `docs/agents/ci-build.md` | ✅ 已跑通（run 40316540773，APK 151 MB） |
 | 4.1 | 远程引擎模式 | `--host` 绑具体 IP + `--trusted-host` + Tailscale/隧道 |
 | 4.2 | AVF 路线 | Android 15 QPR2+/16 的 Linux Terminal，真内核沙箱 |
 | 4.3 | 插件市场兼容标注 | 按“是否发布 linux-arm64-gnu”给出可安装性 |
