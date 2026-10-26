@@ -109,7 +109,7 @@
 ### P4 产品化（择机）
 | # | 任务 | 说明 |
 |---|---|---|
-| 4.0 | **CI 出包** | `.github/workflows/apk.yml`（x86_64 + NDK27）；无 Release 时自建 **27/28 项资产**：引擎/Node/三个 C 层/pnpm + 15 个插件 zip + `node-pty` + sharp wasm32 + ripgrep + adb + `node-addon-system` + `webview-compat`（Python 移植版，esbuild 降级 + 语法复检）。仅剩 1 项：`node-addon-require-builtin` —— 已留**可填充插槽**（`build-node-addon-require-builtin.sh`：有源码或 `EXTERNAL_ADDON` 就自动编，没有就 `::warning::` 跳过，不阻塞出包）。见 `docs/agents/ci-build.md` | ✅ 已跑通（run 40319322900，APK 151.6 MB） |
+| 4.0 | **CI 出包** | `.github/workflows/apk.yml`（x86_64 + NDK27）；无 Release 时自建 **28/28 项资产**（`require-builtin` 用镜像源码编）：引擎/Node/三个 C 层/pnpm + 15 个插件 zip + `node-pty` + sharp wasm32 + ripgrep + adb + `node-addon-system` + `webview-compat`（Python 移植版，esbuild 降级 + 语法复检）。仅剩 1 项：`node-addon-require-builtin` —— 已留**可填充插槽**（`build-node-addon-require-builtin.sh`：有源码或 `EXTERNAL_ADDON` 就自动编，没有就 `::warning::` 跳过，不阻塞出包）。见 `docs/agents/ci-build.md` | ✅ 已跑通（run 40319322900，APK 151.6 MB） |
 | 4.1 | 远程引擎模式 | `--host` 绑具体 IP + `--trusted-host` + Tailscale/隧道 |
 | 4.2 | AVF 路线 | Android 15 QPR2+/16 的 Linux Terminal，真内核沙箱 |
 | 4.3 | 插件市场兼容标注 | 按“是否发布 linux-arm64-gnu”给出可安装性 |
