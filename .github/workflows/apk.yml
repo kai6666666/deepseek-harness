@@ -1,11 +1,7 @@
 name: 构建 APK（x86_64 runner）
 
-# 为什么必须在这里构建：本机是 arm64，Google 的 build-tools 只发 x86_64 二进制
-# （d8 / zipalign / apksigner 没有 linux-arm64 版本），所以本机只能配置工程、
-# 编 Kotlin（见 ci.yml 的 engine-compile），出包交给 ubuntu-latest。
-#
-# 资产不入库。没有 Release 时，工作流现场自建：
-#   engine.bin（npm）· node-runtime.bin（Termux deb）· 三个 C 适配层（NDK）· pnpm
+# 为什么必须在这里构建：本机是 arm64，Google 的 build-tools 只发 x86_64 二进制。
+# 资产不入库（源码镜像 zip 除外）。没有 Release 时工作流现场自建全部资产。
 
 on:
   push:
@@ -17,22 +13,15 @@ on:
       - '*.gradle.kts'
       - 'settings.gradle.kts'
       - '.github/workflows/apk.yml'
-      - 'tools/ci-fetch-assets.sh'
-      - 'tools/build-engine-bin.sh'
-      - 'tools/build-node-runtime.sh'
-      - 'tools/build-native-assets.sh'
-      - 'tools/build-plugin-assets.sh'
-      - 'tools/build-node-pty.sh'
-      - 'tools/build-extra-native.sh'
-      - 'tools/build-node-addon-system.sh'
-      - 'tools/build-webview_compat.py'
-      - 'tools/build-node-addon-require-builtin.sh'
+      - 'tools/*.sh'
+      - 'tools/*.py'
+      - 'native/**'
   pull_request:
     branches: [main]
   workflow_dispatch:
     inputs:
       assets_release:
-        description: '存放构建资产的 Release tag（留空则读 vars.ASSETS_RELEASE，再空则现场自建）'
+        description: 'Release tag（留空则读 vars.ASSETS_RELEASE，再空则现场自建）'
         required: false
         default: ''
       strict_assets:
@@ -79,7 +68,7 @@ jobs:
           packages: 'platforms;android-35 build-tools;35.0.0 ndk;27.0.12077973'
           log-accepted-android-sdk-licenses: true
 
-      - name: 修可执行位（仓库从 Android 文件系统提交，没带 +x）
+      - name: 修可执行位
         run: chmod +x gradlew tools/*.sh || true
 
       - name: 铺构建资产
@@ -105,32 +94,27 @@ jobs:
       - name: 现场打包插件资产（15 个 zip）
         run: bash tools/build-plugin-assets.sh
 
-      # node-pty 没有 android 预编译二进制，用 NDK 从它自带的 src/unix/pty.cc 现编。
-      # -static-libstdc++ 是硬要求：动态链会拉 libc++_shared.so，Termux 里没有。
       - name: 现场编 node-pty 绑定
         run: bash tools/build-node-pty.sh
 
       - name: 现场构建 sharp / ripgrep / adb
         run: bash tools/build-extra-native.sh
 
-      # 需要 engine 副本里的 src/flock.c，所以只在「无 Release 现场装引擎」时跑。
       - name: 现场编 node-addon-system（flock 绑定）
         if: env.ASSETS_TAG == ''
         run: bash tools/build-node-addon-system.sh
 
-      # 唯一造不出的一项：npm 包无 C 源码。有源码/外部产物就编，没有就 ::warning:: 并跳过。
-      - name: node-addon-require-builtin（插槽）
+      # 源码已镜像（native/require-builtin-src.zip）。bionic 下能否编过由日志说明。
+      - name: require-builtin（源码模式）
         if: env.ASSETS_TAG == ''
         run: bash tools/build-node-addon-require-builtin.sh
 
-      # check-frontend-syntax.mjs 需要 acorn；CI 里它自装会因 npm 告警走到 rc=2（＝跳检）。
       - name: 预装 acorn
         run: npm i --no-save --no-audit --no-fund acorn@8
 
-      # PowerShell 版的 Python 移植：esbuild 降级 + 语法复检 + 运行时 API 审计
       - name: 现场生成 webview-compat
         if: env.ASSETS_TAG == ''
-        run: python3 tools/build-webview_compat.py --engine /tmp/dsh-engine-0.2.1-rc.3
+        run: python3 tools/build_webview_compat.py --engine /tmp/dsh-engine-0.2.1-rc.3
 
       - name: 工具链自检
         run: |
@@ -138,7 +122,7 @@ jobs:
           bash ./gradlew --version --console=plain | sed -n '1,12p'
           echo "ASSETS_TAG=${ASSETS_TAG:-<none>}"
 
-      - name: 编译门禁（engine 包，不需要资产）
+      - name: 编译门禁（engine 包）
         run: KTCACHE="$HOME/.kt" bash tools/verify-engine.sh
 
       - name: 构建 APK
