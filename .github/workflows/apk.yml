@@ -81,6 +81,21 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: bash tools/ci-fetch-assets.sh
 
+      # 没配 ASSETS_RELEASE 时的降级路线：两个最大的资产现场造。
+      #   engine.bin       : npm 装 rc.3 → 裁非 arm64 → zip（约 96 MB，3–6 分钟）
+      #   node-runtime.bin : Termux deb → bin/node + 9 库 + LINKS.txt（32 MB，1–2 分钟）
+      - name: 现场构建 engine.bin（无 Release 时）
+        if: env.ASSETS_TAG == ''
+        run: |
+          VER=0.2.1-rc.3 OUT=app/src/main/assets/engine.bin \
+            bash tools/build-engine-bin.sh
+
+      - name: 现场构建 node-runtime.bin（无 Release 时）
+        if: env.ASSETS_TAG == ''
+        run: |
+          OUT=app/src/main/assets/node-runtime.bin \
+            bash tools/build-node-runtime.sh
+
       - name: 工具链自检
         run: |
           java -version
