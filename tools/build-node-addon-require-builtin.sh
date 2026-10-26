@@ -117,7 +117,7 @@ PY
     [ -z "$f" ] && continue
     o="$WORK/obj/$(echo "$f" | tr '/' '_').o"
     if ! "$CXX" -c -fPIC -O2 -Wall -Wno-unused-parameter -fno-exceptions -fvisibility=hidden \
-        -std=c++17 -DNAPI_VERSION=9 -DNODE_ADDON_API_DISABLE_CPP_EXCEPTIONS \
+        -std=c++17 -DNAPI_VERSION=9 -DNAPI_DISABLE_CPP_EXCEPTIONS -DNODE_ADDON_API_DISABLE_CPP_EXCEPTIONS \
         -DNARB_BACKEND=1 -DNARB_PRODUCT=1 \
         -I "$NODE_INC" -I "$NAPI_INC" -I "$NATIVE/src" \
         -o "$o" "$NATIVE/$f" 2> "$WORK/err.txt"; then
@@ -133,7 +133,7 @@ PY
     exit 0
   fi
 
-  "$CXX" -shared -o "$WORK/addon.node" "$WORK"/obj/*.o
+  "$CXX" -shared -static-libstdc++ -Wl,--build-id=none -o "$WORK/addon.node" "$WORK"/obj/*.o
   if command -v nm >/dev/null 2>&1; then
     nm -D "$WORK/addon.node" | grep -q 'napi_register_module_v1' \
       || { echo "::warning::产物未导出 napi_register_module_v1 —— 跳过"; exit 0; }
