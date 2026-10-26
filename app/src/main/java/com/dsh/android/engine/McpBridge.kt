@@ -84,6 +84,7 @@ class McpBridge(
         "screenshot" -> ok(capabilities.screenshot())
         "shell" -> ok(capabilities.shell(args.optString("command")))
         "notify" -> ok(capabilities.notify(args.optString("title"), args.optString("text")))
+        "open_with" -> ok(capabilities.openWith(args.optString("path"), args.optString("mime").ifBlank { null }))
         else -> failure("未知 action: $action")
     }
 
@@ -143,4 +144,5 @@ interface AndroidCapabilities {
     suspend fun screenshot(): Map<String, Any?>
     suspend fun shell(command: String): Map<String, Any?>
     suspend fun notify(title: String, text: String): Map<String, Any?>
+    suspend fun openWith(path: String, mime: String?): Map<String, Any?>
 }
