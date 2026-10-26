@@ -21,6 +21,7 @@ on:
       - 'tools/build-engine-bin.sh'
       - 'tools/build-node-runtime.sh'
       - 'tools/build-native-assets.sh'
+      - 'tools/build-plugin-assets.sh'
   pull_request:
     branches: [main]
   workflow_dispatch:
