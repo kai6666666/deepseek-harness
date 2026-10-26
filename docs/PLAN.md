@@ -109,7 +109,7 @@
 ### P4 产品化（择机）
 | # | 任务 | 说明 |
 |---|---|---|
-| 4.0 | **CI 出包** | `.github/workflows/apk.yml`（x86_64 + NDK27）；无 Release 时自建 **22/28 项资产**：引擎/Node/三个 C 层/pnpm（6）+ 15 个插件 zip + `node-pty` 绑定（NDK 现编，`-static-libstdc++`）。仍缺 6 项原生私有产物。见 `docs/agents/ci-build.md` | ✅ 已跑通（run 40319322900，APK 151.6 MB） |
+| 4.0 | **CI 出包** | `.github/workflows/apk.yml`（x86_64 + NDK27）；无 Release 时自建 **25/28 项资产**：引擎/Node/三个 C 层/pnpm（6）+ 15 个插件 zip + `node-pty`（NDK 现编）+ sharp wasm32 + ripgrep + adb（Termux deb，109 条目）。仅剩 3 项：两个 node-addon 与 `webview-compat.zip`。见 `docs/agents/ci-build.md` | ✅ 已跑通（run 40319322900，APK 151.6 MB） |
 | 4.1 | 远程引擎模式 | `--host` 绑具体 IP + `--trusted-host` + Tailscale/隧道 |
 | 4.2 | AVF 路线 | Android 15 QPR2+/16 的 Linux Terminal，真内核沙箱 |
 | 4.3 | 插件市场兼容标注 | 按“是否发布 linux-arm64-gnu”给出可安装性 |
