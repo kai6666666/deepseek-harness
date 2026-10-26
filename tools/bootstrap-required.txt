@@ -1,0 +1,12 @@
+# bootstrap-aarch64.zip 必须提供的 soname
+#
+# node 的 DT_NEEDED 里有它们，但**故意不放进** node-runtime.bin（见
+# build-node-runtime.sh 的 KDoc：覆盖会把 apt/dpkg 的 ABI 换掉）。
+# 所以这三个脚本共用同一份清单：
+#   build-bootstrap.sh     产出时验（缺一个就失败）
+#   build-node-runtime.sh  选库时跳过（这些由 bootstrap 提供，不重复打包）
+#   check-apk-assets.py    出包后验（真机装的时候它们必须在 APK 里）
+libz.so.1
+libssl.so.3
+libcrypto.so.3
+libc++_shared.so
