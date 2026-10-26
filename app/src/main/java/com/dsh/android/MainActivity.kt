@@ -3802,6 +3802,12 @@ class MainActivity : AppCompatActivity() {
             context = applicationContext,
             dshHome = engine.dshHomeDir,
             scope = lifecycleScope,
+            shell = { cmd ->
+                com.dsh.android.engine.PrivilegedRunner(filesDir, engine.dshHomeDir).run(cmd)
+            },
+            screenshot = {
+                com.dsh.android.engine.PrivilegedRunner(filesDir, engine.dshHomeDir).screenshot()
+            },
         )
     }
 
