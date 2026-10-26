@@ -1,4 +1,22 @@
-# ⑰ node-addon-require-builtin：唯一造不出的一项
+# ⑰ node-addon-require-builtin：源码已镜像，可自建
+
+## 0. 现状（更新）
+
+上游源码已镜像进仓库：`native/require-builtin-src.zip`（52 文件 / 62 KB，取自
+jsDelivr 的 `deepseek-ai/dsh-node-addon-require-builtin@HEAD`，因本机 github.com:443 不通）。
+
+CI 里 `require-builtin（源码模式）` 实测：
+
+```text
+源文件 30 个（binding.gyp 的 sources，排除 nodeabi 支）
+产物   node-addon-android-arm64.zip 374 KB
+NEEDED libm.so libdl.so libc.so
+```
+
+所以「缺源码」这一条已经不成立；仍待真机确认的是**运行期**：源码的 platform.cc 按
+`#if defined(__linux__) && defined(__aarch64__)` 走 **Linux/glibc** 探针，bionic 与 glibc 不同源，
+探针可能拿不到 getter offset —— 若如此会退化为 `ERR_REQUIRE_BUILTIN_UNAVAILABLE`，不影响主链路。
+下面的「为什么当初造不出」保留作为背景。
 
 > 本文是 [AGENTS.md](../../AGENTS.md) 的分册之一，索引见 [docs/agents/README.md](README.md)。
 
