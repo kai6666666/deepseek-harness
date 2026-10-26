@@ -22,7 +22,7 @@ object AnchorAudit {
 
     /** 与 EngineManager 常量同源：FLOCK_PLATFORM_GUARD / FAIL_LOUD_* / TERMINAL_SHELL_GUARD / ATTACH_SYNC_GUARD。 */
     val ENTRIES: List<Entry> = listOf(
-        Entry("flock-platform", "node_modules/@deepseek-ai/node-addon-system/flock.js", "if (platform !== 'linux' && platform !== 'darwin') {"),
+        Entry("flock-platform", "node_modules/@deepseek-ai/node-addon-system/lib/flock.js", "if (platform !== 'linux' && platform !== 'darwin') {"),
         Entry("fail-loud-app-boot", "node_modules/@deepseek-ai/dsh-app-boot/lib/index.js", "proc.exit(1);"),
         Entry("fail-loud-release", "node_modules/@deepseek-ai/dsh/lib/profile-boot-*.js", "await app.current?.fiber.dispose();"),
         Entry("terminal-shell", "node_modules/@deepseek-ai/dsh-terminal-bash/lib/index.js", "const DEFAULT_BASH_SHELL = \"/bin/bash\";"),
