@@ -117,6 +117,10 @@ jobs:
         if: env.ASSETS_TAG == ''
         run: bash tools/build-node-addon-system.sh
 
+      # check-frontend-syntax.mjs 需要 acorn；CI 里它自装会因 npm 告警走到 rc=2（＝跳检）。
+      - name: 预装 acorn
+        run: npm i --no-save --no-audit --no-fund acorn@8
+
       # PowerShell 版的 Python 移植：esbuild 降级 + 语法复检 + 运行时 API 审计
       - name: 现场生成 webview-compat
         if: env.ASSETS_TAG == ''
