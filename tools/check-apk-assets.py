@@ -4,16 +4,22 @@
 为什么需要：Gradle 的 BUILD SUCCESSFUL 只说明任务跑完，**不说明资产真的进包了**。
 本仓库出过「zip 忘了打 / 名字写错 / 被 .gitignore 吞掉」的事故族（见 asset-stamps.md 的 b0fbb4b）。
 
-断言三组：
-  1. 28 项运行期资产都在 APK 里，且非空
-  2. AndroidManifest 存在，包名恰好 15 字符（Termux ELF 原地改写的硬约束）
-  3. targetSdk ≤ 28（Android 10+ 禁止 execve 应用私有目录）
+断言四组：
+  1. 29 项运行期资产都在 APK 里，且非空
+  2. 「容器型」资产深度断言：bootstrap 必须提供 node 的 soname，node-runtime 必须带 libcares
+  3. AndroidManifest 存在，包名恰好 15 字符（Termux ELF 原地改写的硬约束）
+  4. targetSdk ≤ 28（Android 10+ 禁止 execve 应用私有目录）
+
+第 2 组是补的上一课的：清单里少了 bootstrap-aarch64.zip，28/28 依然全绿，
+真机却是 `FileNotFoundException: bootstrap-aarch64.zip` + `libz.so.1 not found`。
+「资产在」≠「资产齐」—— 两个容器型 zip 要拆开看里面。
 
 用法：
     python3 tools/check-apk-assets.py app/build/outputs/apk/system/debug/app-system-debug.apk
 """
 from __future__ import annotations
 
+import io
 import os
 import re
 import subprocess
@@ -23,7 +29,7 @@ from pathlib import Path
 
 # 与 tools/ci-fetch-assets.sh 的 REQUIRED 保持同步（改了那边就要改这里）
 REQUIRED = [
-    "engine.bin", "node-runtime.bin",
+    "engine.bin", "node-runtime.bin", "bootstrap-aarch64.zip",
     "boo-sandbox-run.bin", "boosandbox.bin", "linkcompat.bin",
     "mobile-ui.zip", "webview-compat.zip",
     "node-addon-android-arm64.zip", "node-addon-system-android-arm64.zip",
@@ -36,6 +42,54 @@ REQUIRED = [
     "browser-tool.zip", "browser-pane.zip", "pet-bridge.zip",
     "adb-wireless-arm64.zip",
 ]
+
+
+def required_sonames() -> list[str]:
+    """node 的 DT_NEEDED 里、由 bootstrap 提供的 soname（与生成脚本共用一份清单）。"""
+    p = Path(__file__).with_name("bootstrap-required.txt")
+    if not p.is_file():
+        return ["libz.so.1", "libssl.so.3", "libcrypto.so.3", "libc++_shared.so"]
+    return [ln.strip() for ln in p.read_text(encoding="utf-8").splitlines()
+            if ln.strip() and not ln.lstrip().startswith("#")]
+
+
+def check_nested(z: zipfile.ZipFile) -> list[str]:
+    """拆开两个容器型资产看里面 —— 它们在，不等于它们齐。"""
+    errs: list[str] = []
+    want = required_sonames()
+
+    key = "assets/bootstrap-aarch64.zip"
+    if key in z.namelist():
+        with zipfile.ZipFile(io.BytesIO(z.read(key))) as b:
+            names = b.namelist()
+            provided = {n[4:] for n in names if n.startswith("lib/")}
+            if "SYMLINKS.txt" not in names:
+                errs.append("bootstrap 缺 SYMLINKS.txt（libz.so.1 这类软链不会被重建）")
+            else:
+                for line in b.read("SYMLINKS.txt").decode("utf-8", "replace").splitlines():
+                    if "←" in line:
+                        right = line.split("←", 1)[1].strip().replace("./", "").strip("/")
+                        provided.add(os.path.basename(right))
+            lack = [w for w in want if w not in provided]
+            if lack:
+                errs.append(f"bootstrap 缺必需 soname：{lack}")
+            else:
+                print(f"bootstrap：{len(names)} 条目，必需 soname 全在（{', '.join(want)}）")
+
+    key = "assets/node-runtime.bin"
+    if key in z.namelist():
+        with zipfile.ZipFile(io.BytesIO(z.read(key))) as n:
+            names = n.namelist()
+            libs = sorted(x[4:] for x in names if x.startswith("lib/"))
+            if "bin/node" not in names:
+                errs.append("node-runtime.bin 缺 bin/node")
+            if "lib/libcares.so" not in names:
+                errs.append("node-runtime.bin 缺 lib/libcares.so（node 的 DT_NEEDED 里有它）")
+            if not any(x.startswith("libicu") for x in libs):
+                errs.append("node-runtime.bin 缺 libicu*")
+            print(f"node-runtime：{len(libs)} 个库（{', '.join(libs)}）")
+
+    return errs
 
 
 def find_aapt2() -> str | None:
@@ -83,6 +137,7 @@ def main() -> int:
         missing = [a for a in REQUIRED if f"assets/{a}" not in names]
         print(f"资产 {len(REQUIRED) - len(missing)}/{len(REQUIRED)} 齐备"
               + (f"，缺：{missing}" if missing else ""))
+        errors.extend(check_nested(z))
 
     aapt2 = find_aapt2()
     if aapt2:
