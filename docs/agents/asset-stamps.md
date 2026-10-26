@@ -13,8 +13,8 @@
 | `engine.bin` 内容 | `MainActivity.assetStamp`（`0.2.1-rc.2-1`） |
 | `pnpm-android-arm64.zip` 内容 | `EngineManager.PNPM_VERSION`（`11.28.3`） |
 | `adb-wireless-arm64.zip` | 无需改（判据是 `bin/adb` 非空 + 完整性哨兵 `.extracted`，见 ⑪.1）。已自动化：`build-extra-native.sh`（android-tools + 9 个 Depends，109 条目） |
-| `node-addon-android-arm64.zip` | 无需改（只查文件存在且非空） |
-| `node-addon-system-android-arm64.zip` | 无需改（只查文件存在且非空） |
+| `node-addon-android-arm64.zip` | 无需改（只查文件存在且非空）。⚠️ CI **造不出**：npm 包只有 JS，C 源码不在包里；需上游源码镜像进仓库 |
+| `node-addon-system-android-arm64.zip` | 无需改（只查文件存在且非空）。已自动化：`build-node-addon-system.sh`（NDK 编 `flock.c + main.c`，15,848 B，NEEDED 只有 libdl/libc） |
 | `ripgrep-android-arm64.zip` | 无需改（只查文件存在且非空）。已自动化：`build-extra-native.sh`（Termux rg） |
 | `node-pty-android-arm64.zip` | 无需改（只查文件存在且非空）。已自动化：`tools/build-node-pty.sh`（CI 现编，`-static-libstdc++`） |
 | `sharp-wasm32.zip` | 无需改（判据是 wasm 文件存在且非空）。已自动化：`build-extra-native.sh`（`@img/sharp-wasm32` + `@emnapi/*`，24 条目） |
