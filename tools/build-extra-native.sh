@@ -49,10 +49,19 @@ fetch_deb() {
   local pkg="$1" rel f
   rel="$(deb_url "$pkg")"
   f="$WORK/$(basename "$rel")"
-  if [ ! -s "$f" ]; then
+  # -f：HTTP 4xx/5xx 不当成文件内容；下载后再校验 ar 魔数。
+  # 踩过：镜像偶尔返回 HTML 错误页，文件被缓存后 tar 报「File format not recognized」，
+  # 看起来像“包坏了”，实际是下载的错。
+  if [ ! -s "$f" ] || ! head -c 8 "$f" | grep -q '^!<arch>'; then
     echo "   ← $(basename "$rel")" >&2
-    curl -4 -sS -L -m 600 -o "$f" "$MIRROR/$rel"
+    for i in 1 2 3; do
+      curl -4 -fsS -L -m 600 -o "$f" "$MIRROR/$rel" || true
+      head -c 8 "$f" 2>/dev/null | grep -q '^!<arch>' && break
+      echo "   ↻ 重试 $i（下载内容不是 ar）" >&2
+      rm -f "$f"
+    done
   fi
+  head -c 8 "$f" | grep -q '^!<arch>' || { echo "❌ $pkg 下载失败（不是 deb）" >&2; exit 1; }
   echo "$f"
 }
 
