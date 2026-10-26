@@ -240,6 +240,24 @@ APK 173,112,142 B · 工件 164.16 MB
 
 **资产覆盖 27/28**：只剩 `node-addon-android-arm64.zip`（npm 包无 C 源码）。
 
+### 收尾绿跑：run 40344696924
+
+新增 `node-addon-require-builtin（插槽）` 步骤，日志里是一条可见告警而不是失败：
+
+```text
+##[warning]node-addon-android-arm64.zip 未生成（CI 缺少上游源码）
+（跳过，资产覆盖停在 27/28；exit 0，不阻塞出包）
+APK 172,976,706 B · 工件 164.03 MB
+```
+
+插槽的三种行为（见 `tools/build-node-addon-require-builtin.sh`）：
+
+| 模式 | 触发 | 结果 |
+|---|---|---|
+| 源码 | `native/require-builtin/src/*.c` 存在 | NDK 现编并打包 |
+| 外部产物 | `EXTERNAL_ADDON=…/android-arm64-napi-v9.node` | 校验 ELF/AArch64/NEEDED 后打包 |
+| 都没有 | 当前 CI | `::warning::` + `exit 0` |
+
 ---
 
 ## 9. 资产自建总表（26/28）
