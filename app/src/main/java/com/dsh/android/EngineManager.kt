@@ -8122,8 +8122,11 @@ class EngineManager private constructor(private val context: Context) {
             prefs = prefs,
             legacyLauncher = { spec ->
                 start()
-                // P3.2：锚点审计（失败写 anchor-miss.json，不再静默）
-                runCatching { com.dsh.android.engine.AnchorAudit.audit(engineDir, dshHome) }
+                // P3.2：锚点审计（失败写 anchor-miss.json + 发通知，不再静默）
+                runCatching {
+                    val misses = com.dsh.android.engine.AnchorAudit.audit(engineDir, dshHome)
+                    com.dsh.android.engine.AnchorAudit.report(context, misses)
+                }
                 legacyEndpointProvider?.invoke() ?: com.dsh.android.engine.EngineEndpoint(
                     baseUrl = "http://127.0.0.1:${spec.port}",
                     pid = com.dsh.android.engine.ProcPid.of(process),
