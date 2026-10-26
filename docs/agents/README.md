@@ -42,5 +42,5 @@
 | [boundaries.md](boundaries.md) | 已知边界 | 明确不做 / 做不到的事 |
 | [regen-assets.md](regen-assets.md) | 重新生成资产 | 各资产从哪来、怎么打 |
 | [ci-build.md](ci-build.md) | CI 构建 APK | x86_64 runner、资产自建、失败排查 |
-| [node-addon-require-builtin.md](node-addon-require-builtin.md) | 唯一造不出的资产 | 为什么缺源码、两种补齐方式、缺它的影响 |
+| [node-addon-require-builtin.md](node-addon-require-builtin.md) | require-builtin 原生插件 | 源码镜像与编译配方、两个编译坑、运行时验证方法 |
 | [desktop-relation.md](desktop-relation.md) | 与 DSH 桌面端的关系 | 哪些东西两端共用、哪些各管各的 |
