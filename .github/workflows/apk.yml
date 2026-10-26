@@ -4,8 +4,8 @@ name: 构建 APK（x86_64 runner）
 # （d8 / zipalign / apksigner 没有 linux-arm64 版本），所以本机只能配置工程、
 # 编 Kotlin（见 ci.yml 的 engine-compile），出包交给 ubuntu-latest。
 #
-# 资产不入库（约 135 MB）。把它们打成一个 Release 附件 dsh-assets.zip；
-# 没有 Release 时，工作流会现场自建 engine.bin 与 node-runtime.bin 两个最大的资产。
+# 资产不入库。没有 Release 时，工作流现场自建：
+#   engine.bin（npm）· node-runtime.bin（Termux deb）· 三个 C 适配层（NDK）· pnpm
 
 on:
   push:
@@ -20,16 +20,17 @@ on:
       - 'tools/ci-fetch-assets.sh'
       - 'tools/build-engine-bin.sh'
       - 'tools/build-node-runtime.sh'
+      - 'tools/build-native-assets.sh'
   pull_request:
     branches: [main]
   workflow_dispatch:
     inputs:
       assets_release:
-        description: '存放构建资产的 Release tag（留空则用仓库变量 ASSETS_RELEASE，再空则现场自建）'
+        description: '存放构建资产的 Release tag（留空则读 vars.ASSETS_RELEASE，再空则现场自建）'
         required: false
         default: ''
       strict_assets:
-        description: '资产缺失时直接失败（1）而不是降级出包（0）'
+        description: '1 = 缺资产就失败；0 = 降级出包'
         required: false
         default: '0'
 
@@ -66,10 +67,10 @@ jobs:
           key: gradle-${{ runner.os }}-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties', '**/*.gradle.kts') }}
           restore-keys: gradle-${{ runner.os }}-
 
-      - name: Android SDK（platform 35 + build-tools 35）
+      - name: Android SDK（platform 35 + build-tools 35 + NDK 27）
         uses: android-actions/setup-android@v3
         with:
-          packages: 'platforms;android-35 build-tools;35.0.0'
+          packages: 'platforms;android-35 build-tools;35.0.0 ndk;27.0.12077973'
           log-accepted-android-sdk-licenses: true
 
       - name: 修可执行位（仓库从 Android 文件系统提交，没带 +x）
@@ -80,8 +81,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: bash tools/ci-fetch-assets.sh
 
-      # 没配 ASSETS_RELEASE 时的降级路线：两个最大的资产现场造。
-      #   注意 OUT 必须是绝对路径：两个脚本都会 cd 到自己的 WORK 目录。
       - name: 现场构建 engine.bin（无 Release 时）
         if: env.ASSETS_TAG == ''
         run: |
@@ -93,6 +92,9 @@ jobs:
         run: |
           OUT="$GITHUB_WORKSPACE/app/src/main/assets/node-runtime.bin" \
             bash tools/build-node-runtime.sh
+
+      - name: 现场构建原生产物 + pnpm
+        run: bash tools/build-native-assets.sh
 
       - name: 工具链自检
         run: |
@@ -113,7 +115,7 @@ jobs:
           find app/build/outputs -name '*.apk' -printf '%10s  %p\n' 2>/dev/null || echo '(no apk)'
           echo '--- 资产体积 ---'
           du -sh app/src/main/assets || true
-          ls -lh app/src/main/assets/engine.bin app/src/main/assets/node-runtime.bin 2>/dev/null || true
+          ls -lh app/src/main/assets/*.bin 2>/dev/null || true
 
       - name: 上传 APK
         uses: actions/upload-artifact@v4
