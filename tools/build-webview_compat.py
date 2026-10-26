@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """build-webview_compat.py —— WebView 兼容资产的 Python 版（PowerShell 版等价移植）
 
-为什么要它：tools/build-webview-compat.ps1 只能在 Windows 上跑，而 CI 是 Linux。
-引擎前端（dist + 插件 client bundle）与 mobile-ui 插件里有 chrome74 解析不了的新语法，
+为什么要它：`tools/build-webview-compat.ps1` 只能在 Windows 上跑，而 CI 是 Linux。
+引擎前端（dist + 71 个插件 client bundle）与 mobile-ui 插件里有 chrome74 解析不了的新语法，
 必须用 esbuild 降级，否则老内核上整块 UI 静默空白。
 
 产物布局（App 侧按前缀分派）：
@@ -11,8 +11,14 @@
     mobileui/<rel>            → $DSH_HOME/mobile-ui/dsh-android-mobile/
     .compat-stamp             → "<target>-v<CompatVersion>"
 
-判据：同一输入分别用 --target=esnext 与 --target=<target> 编译，输出不同 ⇒ 确有语法缺口。
-性能：esbuild 只装一次，文件级并行 8 线程（手机上 151 个目标 3m30s，CI 更快）。
+判定「要不要收进 zip」：同一输入分别用 --target=esnext 与 --target=<target> 编译，
+输出不同 ⇒ 确有语法缺口。**不能**用「输入≠输出」判（esbuild 总会重排版）。
+
+性能：esbuild 只装一次（不用 npx 每次解析），文件级并行 8 线程。
+在 442 个目标上实测 ~40 秒（原 npx 逐文件版跑 15 分钟没跑完）。
+
+用法：
+    python3 tools/build-webview_compat.py --engine /tmp/dsh-engine-0.2.1-rc.3
 """
 from __future__ import annotations
 
@@ -31,15 +37,15 @@ ROOT = Path(__file__).resolve().parent.parent
 ESBUILD_VERSION = os.environ.get("ESBUILD_VERSION", "0.23.1")
 
 
-def run(cmd, cwd=None):
+def run(cmd: list[str], cwd: Path | None = None) -> subprocess.CompletedProcess:
     return subprocess.run(cmd, text=True, capture_output=True, cwd=cwd)
 
 
-def sha(p):
+def sha(p: Path) -> str:
     return hashlib.sha256(p.read_bytes()).hexdigest()
 
 
-def ensure_esbuild(work):
+def ensure_esbuild(work: Path) -> str:
     if os.environ.get("ESBUILD"):
         return os.environ["ESBUILD"]
     prefix = work / "esbuild"
@@ -54,7 +60,7 @@ def ensure_esbuild(work):
     return str(exe)
 
 
-def collect(dist, plugin_root, mobile_src):
+def collect(dist: Path, plugin_root: Path, mobile_src: Path):
     targets = []
     if dist.is_dir():
         for p in sorted(dist.rglob("*")):
@@ -75,7 +81,7 @@ def collect(dist, plugin_root, mobile_src):
     return targets
 
 
-def main():
+def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--engine", default=os.environ.get("ENGINE_DIR", "/tmp/dsh-engine-0.2.1-rc.3"))
     ap.add_argument("--target", default="chrome74")
@@ -131,6 +137,7 @@ def main():
                 failures.append(f"{entry}: {msg}")
             elif verdict == "skip":
                 skipped.append(f"{entry}: {msg}")
+
     if failures:
         print("\n".join(failures[:10]), file=sys.stderr)
         print("❌ 有文件降级失败", file=sys.stderr)
@@ -138,12 +145,13 @@ def main():
     if skipped:
         print(f"⚠️ {len(skipped)} 个文件基准转换失败（跳过）", file=sys.stderr)
 
-    groups = {}
+    groups: dict[str, int] = {}
     for e in changed:
         k = e.split("/")[0]
         groups[k] = groups.get(k, 0) + 1
     print(f"需要降级 {len(changed)} 个：{groups}")
 
+    # 3.5 语法复检（只查 .js；rc=2 = 工具自身问题，不能伪装成语法问题）
     checker = ROOT / "tools/check-frontend-syntax.mjs"
     major = "".join(ch for ch in args.target if ch.isdigit())
     if checker.is_file() and changed:
@@ -166,6 +174,7 @@ def main():
         else:
             print(f"  → 语法复检通过（chrome{major}）")
 
+    # 3.6 运行时 API 审计（默认只报告，--strict-audit 才失败）
     auditor = ROOT / "tools/audit-runtime-apis.mjs"
     polyfill = ROOT / "app/src/main/assets/webview-polyfill.js"
     if auditor.is_file() and polyfill.is_file():
