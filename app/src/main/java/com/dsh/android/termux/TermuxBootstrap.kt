@@ -1563,7 +1563,7 @@ DPkg::options { "--instdir=$instdir"; };
          * ⚠️ **资产内容一变就必须改这里**（`-2`、`-3`…），否则已装机的机器会因为
          * marker 命中而跳过安装，拿到的是旧运行时且没有任何报错。
          */
-        private const val NODE_VERSION = "26.4.0-2"
+        private const val NODE_VERSION = "26.12.1-1"
 
         /**
          * `node --version` 应当打印的字符串，[nodeIsUsable] 的判据。
@@ -1572,7 +1572,7 @@ DPkg::options { "--instdir=$instdir"; };
          * 里 node 自报的版本。资产一换，两个都得跟着走，否则 `nodeIsUsable()`
          * 会把刚铺好的新 node 判成「损坏」，然后每次启动都白重解包一遍。
          */
-        private const val NODE_EXECUTABLE_VERSION = "v26.4.0"
+        private const val NODE_EXECUTABLE_VERSION = "v26.12.1"
 
         /**
          * `node --version` 的超时。
