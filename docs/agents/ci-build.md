@@ -186,6 +186,23 @@ zip 条目 node-pty/prebuilds/android-arm64/pty.node
 
 APK：`151,825,101 B` · 工件 `143.86 MB`。资产覆盖升到 **22/28**；仍缺 6 项。
 
+### 第六次绿跑（sharp / ripgrep / adb）：run 40324602759
+
+`tools/build-extra-native.sh` 一次补三个：
+
+| 资产 | 来源 | 体积 / 条目 | 校验 |
+|---|---|---|---|
+| `sharp-wasm32.zip` | npm `@img/sharp-wasm32@0.35.5` + `@emnapi/*` | 3.6 MB / 24 | 必须含 `@img/sharp-wasm32/lib/sharp-wasm32-0.35.5.node.wasm` |
+| `ripgrep-android-arm64.zip` | Termux `ripgrep` deb 的 `bin/rg` + 合成 package.json | 1.8 MB | 条目 `@vscode/ripgrep-android-arm64/bin/rg` |
+| `adb-wireless-arm64.zip` | Termux `android-tools` + **9 个 Depends**（libc++ / abseil-cpp / brotli / fmt / liblz4 / libprotobuf / pcre2 / zlib / zstd） | 5.9 MB / 109 | `bin/adb` + 108 个库 |
+
+坑：`android-tools` 的 `Depends` 是 9 个包，v1 只取了 `libc++` → 只打进去 2 个条目，真机会 `cannot locate symbol`。
+
+APK：`163,344,475 B`（≈155.8 MiB）· 工件 `154.84 MB`。
+
+**资产覆盖 25/28**，只剩 3 项：`node-addon-android-arm64.zip`、
+`node-addon-system-android-arm64.zip`（需 NDK 编 C++ N-API 插件）、`webview-compat.zip`（随 engine 版本生成）。
+
 同时修了一个真 bug：`NODE_VERSION` / `NODE_EXECUTABLE_VERSION` 原本写死 `26.4.0`，
 而 CI 装的 Termux node 是 **26.12.1** —— 不改就会 `nodeIsUsable()` 判「损坏」，
 **每次启动白重解包 32 MB**。现已对齐为 `26.12.1-1` / `v26.12.1`。
