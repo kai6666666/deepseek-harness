@@ -1,8 +1,8 @@
 name: 仓库卫生检查
 
-# 本工作流**不构建 APK** —— 构建需要约 135 MB 资产（engine.bin / node-runtime.bin /
-# bootstrap 等），它们不在仓库里（见 README「构建资产需要自备」）。
-# 这里只做不需要资产的静态检查，保证 PR 不会把密钥、凭据、大文件带进来。
+# 本工作流**不构建 APK** —— 出包在 `.github/workflows/apk.yml`（ubuntu-latest，x86_64，
+# 因为 Google 的 build-tools 没有 linux-arm64 版）。这里只做不需要资产的检查：
+# 密钥/大文件拦截、文档锚点核对、engine 包的独立编译门禁。详见 docs/agents/ci-build.md。
 
 on:
   push:
