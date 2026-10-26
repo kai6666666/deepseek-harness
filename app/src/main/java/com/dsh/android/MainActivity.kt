@@ -850,6 +850,7 @@ class MainActivity : AppCompatActivity() {
         setupBackNavigation()
         installBubbleBridge()
         installUiProbeBridge()
+        installMcpBridge()
         installBrowserBridge()
         // ⚠️ 必须在这里就绪：插件可能**在 App 前台**下发悬浮球外观，而那时
         //   onAppBackground 还没跑过。不提前记 context 的话 bubbleApply 会静默返回
@@ -3790,6 +3791,20 @@ class MainActivity : AppCompatActivity() {
      * ⚠️ [UiProbeBridge.start] 是幂等的（内部只启一次轮询），所以 Activity
      *   重建时重复调用是安全的，且正好把 provider 换成新实例。
      */
+    /**
+     * MCP 桥：复用现有 `ui-cmd.json` 协议 + 系统通知。
+     *
+     * `shell` / `screenshot` 暂不注入 —— 它们的实现分别依赖 uid2000 通道与视口截图，
+     * 未接线时 MCP 工具会**明确报错**而不是假成功（桥的纪律：失败要显式）。
+     */
+    private fun installMcpBridge() {
+        com.dsh.android.engine.McpWiring.install(
+            context = applicationContext,
+            dshHome = engine.dshHomeDir,
+            scope = lifecycleScope,
+        )
+    }
+
     private fun installUiProbeBridge() {
         UiProbeBridge.start(
             dshHome = engine.dshHomeDir,
