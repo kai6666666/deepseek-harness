@@ -126,4 +126,17 @@ assembleSystemDebug      ❌ 无工具链    assembleSystemDebug     ✅ 出 APK
 关键教训：`tools/verify-engine.sh` 只编 `engine/` 包，**抓不到 `app/` 里的 Compose 误用**——这类错误只有真正跑 `assembleSystemDebug` 才会暴露。
 
 首次绿跑：run **40312131079**，`dsh-system-debug` 工件 **6.61 MB**（无资产版：APK 内没有引擎，装上可开界面）。
+
+第二次绿跑（带资产）：run **40315026081**
+
+| 项 | 实测值 |
+|---|---|
+| `assets/engine.bin`（npm 现场打） | **114 MB** |
+| `assets/node-runtime.bin`（Termux deb 现场打） | **32 MB** |
+| `assets/` 合计 | **145 MB** |
+| `app-system-debug.apk` | **145,381,297 B（约 138.6 MiB）** |
+| 工件 `dsh-system-debug` | 137.71 MB |
+
+APK 几乎等于 assets 总和，因为 `engine.bin` 本身就是 zip（内层 node_modules 已压缩），再压也压不动。
+若要把包压回 60 MB 量级，得回到 rc.2 的依赖集（`engine.bin` 55 MB），那是**降版**不是优化。
 有资产的包预计回到 ~60 MB 量级（engine.bin 压缩后约 55–60 MB）。
