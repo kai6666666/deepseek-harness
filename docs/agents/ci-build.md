@@ -248,6 +248,30 @@ APK 173,112,142 B · 工件 164.16 MB
 ##[warning]node-addon-android-arm64.zip 未生成（CI 缺少上游源码）
 （跳过，资产覆盖停在 27/28；exit 0，不阻塞出包）
 APK 172,976,706 B · 工件 164.03 MB
+
+### 28/28 收尾：run 40354163802
+
+源码镜像（`native/require-builtin-src.zip`，52 文件 / 62 KB，取自 jsDelivr 的 `@HEAD`）
+进位后，`require-builtin（源码模式）` 真正跑起来了：
+
+```text
+源码：解压 native/require-builtin-src.zip → packages/native
+源文件      30 个（按 binding.gyp 的 sources，排除 nodeabi 支）
+头文件      node v26.12.1
+产物        node-addon-android-arm64.zip 374 KB
+NEEDED      libm.so libdl.so libc.so          ← 无 libc++_shared
+zip         prebuilt/android-arm64-napi-v9.node + prebuilds.json + package.json
+```
+
+顺手修了一个真 bug：脚本名 `build_webview_compat.py`（下划线）与仓库里的
+`build-webview_compat.py`（连字符）不一致，CI 报 `can't open file` —— 已按 CI 调用统一成下划线。
+
+最终：**28/28 资产全部自建**，APK `173,420,051 B`，工件 `164.45 MB`。
+
+⚠️ 仍要在真机确认的一点：源码的 `platform.cc` 用 `#if defined(__linux__) && defined(__aarch64__)`
+路由到 **Linux/glibc** 探针（解析 glibc loader/malloc 布局），bionic 与 glibc 不同源。
+“能编过”不等于“探针能拿到 getter” —— 运行期由加载器 `getNativeBindingInfo()` 与
+引擎 try/catch 兜底，失败时会退化成 `ERR_REQUIRE_BUILTIN_UNAVAILABLE`，不会拖垮主链路。
 ```
 
 插槽的三种行为（见 `tools/build-node-addon-require-builtin.sh`）：
