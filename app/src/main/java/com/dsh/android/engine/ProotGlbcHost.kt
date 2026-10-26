@@ -80,7 +80,7 @@ class ProotGlbcHost(private val filesDir: File) : EngineHost {
         process = proc
 
         awaitListening(spec.port, proc)
-        EngineEndpoint(baseUrl = spec.baseUrl, pid = proc.pid(), logFile = spec.engineLog)
+        EngineEndpoint(baseUrl = spec.baseUrl, pid = ProcPid.of(proc), logFile = spec.engineLog)
     }
 
     override suspend fun stop() = withContext(Dispatchers.IO) {
