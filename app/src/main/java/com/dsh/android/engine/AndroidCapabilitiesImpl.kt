@@ -31,6 +31,7 @@ class AndroidCapabilitiesImpl(
     private val screenshotFn: suspend () -> Map<String, Any?>,
     private val shellFn: suspend (command: String) -> Map<String, Any?>,
     private val notifyFn: suspend (title: String, text: String) -> Map<String, Any?>,
+    private val openWithFn: suspend (path: String, mime: String?) -> Map<String, Any?>,
 ) : AndroidCapabilities {
 
     override suspend fun dump(): Map<String, Any?> = dumpFn()
@@ -39,6 +40,7 @@ class AndroidCapabilitiesImpl(
     override suspend fun screenshot(): Map<String, Any?> = screenshotFn()
     override suspend fun shell(command: String): Map<String, Any?> = shellFn(command)
     override suspend fun notify(title: String, text: String): Map<String, Any?> = notifyFn(title, text)
+    override suspend fun openWith(path: String, mime: String?): Map<String, Any?> = openWithFn(path, mime)
 }
 
 /** 未接线的能力集：每个调用都以明确错误返回，便于“桥通了但能力没接”时快速定位。 */
@@ -52,4 +54,5 @@ object UnwiredCapabilities : AndroidCapabilities {
     override suspend fun screenshot(): Map<String, Any?> = nope("screenshot")
     override suspend fun shell(command: String): Map<String, Any?> = nope("shell")
     override suspend fun notify(title: String, text: String): Map<String, Any?> = nope("notify")
+    override suspend fun openWith(path: String, mime: String?): Map<String, Any?> = nope("openWith")
 }
