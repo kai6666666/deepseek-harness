@@ -4,9 +4,8 @@ name: 构建 APK（x86_64 runner）
 # （d8 / zipalign / apksigner 没有 linux-arm64 版本），所以本机只能配置工程、
 # 编 Kotlin（见 ci.yml 的 engine-compile），出包交给 ubuntu-latest。
 #
-# 资产不入库（约 135 MB）。把它们打成一个 Release 附件 dsh-assets.zip，
-# 本工作流会下载并铺到 app/src/main/assets/；Release 不存在时**照样出包**，
-# 只是 APK 里没有引擎（装上能开界面，启动引擎会报缺资产）。
+# 资产不入库（约 135 MB）。把它们打成一个 Release 附件 dsh-assets.zip；
+# 没有 Release 时，工作流会现场自建 engine.bin 与 node-runtime.bin 两个最大的资产。
 
 on:
   push:
@@ -19,12 +18,14 @@ on:
       - 'settings.gradle.kts'
       - '.github/workflows/apk.yml'
       - 'tools/ci-fetch-assets.sh'
+      - 'tools/build-engine-bin.sh'
+      - 'tools/build-node-runtime.sh'
   pull_request:
     branches: [main]
   workflow_dispatch:
     inputs:
       assets_release:
-        description: '存放构建资产的 Release tag（留空则用仓库变量 ASSETS_RELEASE，再空则跳过资产）'
+        description: '存放构建资产的 Release tag（留空则用仓库变量 ASSETS_RELEASE，再空则现场自建）'
         required: false
         default: ''
       strict_assets:
@@ -71,9 +72,7 @@ jobs:
           packages: 'platforms;android-35 build-tools;35.0.0'
           log-accepted-android-sdk-licenses: true
 
-      # 仓库是从 Android 文件系统提交的，posix 可执行位全丢了（100644）。
-      # 不补这一步，后面的 ./gradlew 会直接 Permission denied（exit 126）。
-      - name: 修可执行位
+      - name: 修可执行位（仓库从 Android 文件系统提交，没带 +x）
         run: chmod +x gradlew tools/*.sh || true
 
       - name: 铺构建资产
@@ -82,18 +81,17 @@ jobs:
         run: bash tools/ci-fetch-assets.sh
 
       # 没配 ASSETS_RELEASE 时的降级路线：两个最大的资产现场造。
-      #   engine.bin       : npm 装 rc.3 → 裁非 arm64 → zip（约 96 MB，3–6 分钟）
-      #   node-runtime.bin : Termux deb → bin/node + 9 库 + LINKS.txt（32 MB，1–2 分钟）
+      #   注意 OUT 必须是绝对路径：两个脚本都会 cd 到自己的 WORK 目录。
       - name: 现场构建 engine.bin（无 Release 时）
         if: env.ASSETS_TAG == ''
         run: |
-          VER=0.2.1-rc.3 OUT=app/src/main/assets/engine.bin \
+          VER=0.2.1-rc.3 OUT="$GITHUB_WORKSPACE/app/src/main/assets/engine.bin" \
             bash tools/build-engine-bin.sh
 
       - name: 现场构建 node-runtime.bin（无 Release 时）
         if: env.ASSETS_TAG == ''
         run: |
-          OUT=app/src/main/assets/node-runtime.bin \
+          OUT="$GITHUB_WORKSPACE/app/src/main/assets/node-runtime.bin" \
             bash tools/build-node-runtime.sh
 
       - name: 工具链自检
@@ -115,6 +113,7 @@ jobs:
           find app/build/outputs -name '*.apk' -printf '%10s  %p\n' 2>/dev/null || echo '(no apk)'
           echo '--- 资产体积 ---'
           du -sh app/src/main/assets || true
+          ls -lh app/src/main/assets/engine.bin app/src/main/assets/node-runtime.bin 2>/dev/null || true
 
       - name: 上传 APK
         uses: actions/upload-artifact@v4
