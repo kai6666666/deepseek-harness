@@ -301,10 +301,21 @@ zip         prebuilt/android-arm64-napi-v9.node + prebuilds.json + package.json
 
 剩余 2 项：
 
-| 资产 | 为什么 CI 造不出 | 出路 |
+**这两项现在都已解决（28/28 全自建）**：
+
+| 资产 | 曾经的缺口 | 现在的做法 |
 |---|---|---|
-| `node-addon-android-arm64.zip` | npm 包只发 JS（`lib/`），**不含 C 源码**；上游仓库在 GitHub（本机不可达） | 在能访问上游的机器上编一次，或把源码镜像进仓库 `native/` |
-| `webview-compat.zip` | 依赖 engine 版本 hash，由 `tools/build-webview-compat.ps1`（PowerShell）生成 | 把该脚本翻成 Python 后进 CI |
+| `node-addon-android-arm64.zip` | npm 包只发 JS，无 C 源码 | 源码镜像为 `native/require-builtin-src.zip`（52 文件 / 61,753 B，取自上游 master），CI 用 NDK 编 30 个 `.cc`，产物 374 KB |
+| `webview-compat.zip` | 只有 PowerShell 生成器 | `tools/build_webview_compat.py`（esbuild 一次安装 + 8 线程，83 个降级 / 84 条目） |
+
+收口实测（run 40354163802）：
+
+```text
+node-addon-android-arm64.zip  374 KB   NEEDED libm/libdl/libc
+webview-compat.zip            84 条目 9,657,122 B
+APK                           173,420,051 B（~165.4 MiB）
+工件                          164.45 MB
+```
 
 同时修了一个真 bug：`NODE_VERSION` / `NODE_EXECUTABLE_VERSION` 原本写死 `26.4.0`，
 而 CI 装的 Termux node 是 **26.12.1** —— 不改就会 `nodeIsUsable()` 判「损坏」，
