@@ -40,10 +40,20 @@
 
 ### ⚠️ 改 `mobile-ui-plugin/**` 的源码**必须手工重打对应的 `.zip`**
 
-`assets/*.zip` 全部被 `.gitignore` 忽略（L33），**没有任何打包脚本** ——
+`assets/*.zip` 全部被 `.gitignore` 忽略（L33）。**历史**上没有任何打包脚本 ——
 `logs-tool.zip` / `bubble-tool.zip` / `statusbar-tool.zip` / `shell-tool.zip` /
-`uiagent-tool.zip` / `root-tool.zip` / `browser-tool.zip` 都是**手工**打的。所以改完源码很容易
+`uiagent-tool.zip` / `root-tool.zip` / `browser-tool.zip` 都是**手工**打的，所以改完源码很容易
 「commit 了、构建也过了、APK 里却是旧代码」。
+
+**现在有了**：`tools/build-plugin-assets.sh` 一次打 15 个 zip（上面 7 个 + `browser-pane` /
+`pet-bridge` / `mobile-ui` / `market-plugin` / `core-memory` / `preset-skills` / `preset-razor` /
+`agnes-multimodal`），并在打包时做三条校验：
+
+1. 条目必须相对（没有顶层目录）；
+2. 按资产类型检查入口（`lib` → `package.json` + `lib/index.js`，`pkg` → `package.json`，`data` 只有 `skills/**`）；
+3. **`lib/index.js` 与源目录 sha256 逐字节一致** —— 这就是上面那条「判据」。
+
+CI `.github/workflows/apk.yml` 每次出包都会跑它，所以「commit 了 zip 没打」这类事故不会再发生。
 
 **真踩过（`b0fbb4b`，10-14 02:44）**：那次给 6 个工具插件加了「注册失败不拖垮引擎」
 的 try/catch，commit 里**一个 zip 都没有**。事后补打时又**漏了
