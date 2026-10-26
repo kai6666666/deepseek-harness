@@ -268,6 +268,38 @@ zip         prebuilt/android-arm64-napi-v9.node + prebuilds.json + package.json
 
 最终：**28/28 资产全部自建**，APK `173,420,051 B`，工件 `164.45 MB`。
 
+### 硬断言门禁：run 40356842844
+
+`tools/check-apk-assets.py` 在出包后断言三组，任一条失败就红：
+
+```text
+APK app-system-debug.apk：173,355,943 字节，972 条目
+资产 28/28 齐备
+包名 com.dsh.android（15 字符） targetSdk=28
+✅ APK 断言全过
+```
+
+断言清单：28 项资产在不在且非空 / `AndroidManifest.xml` 与 `classes.dex` / 包名恰好 15 字符 /
+`targetSdk ≤ 28`（后两条来自 Termux ELF 改写与 execve 限制，见 PLAN 的「平台硬约束」）。
+
+---
+
+## 10. 运行记录总表
+
+| run | 内容 | 关键结果 |
+|---|---|---|
+| 40312131079 | 首个绿包（无资产） | 6.61 MB |
+| 40315026081 | 引擎 + Node 现场自建 | APK 145 MB |
+| 40316540773 | NDK 编三个 C 层 + pnpm | 三件 10–23 KB，pnpm 454 条目 |
+| 40319322900 | 15 个插件 zip | 0 跳过 |
+| 40322232489 | node-pty | 688,072 B，NEEDED 仅 libc/libm/libdl |
+| 40324602759 | sharp / ripgrep / adb | 24 / 1.8 MB / 109 条目 |
+| 40327674561 | node-addon-system | 15,848 B，导出 napi_register_module_v1 |
+| 40336517026 | webview-compat（Python 移植） | 83 降级 / 84 条目 / 9.66 MB |
+| 40344696924 | 插槽首次就位（skip） | 可见 warning，不阻塞 |
+| **40354163802** | **require-builtin 源码模式** | **30 源文件 → 374 KB，28/28** |
+| **40356842844** | **APK 硬断言** | **28/28、包名 15 字符、targetSdk 28** |
+
 ⚠️ 仍要在真机确认的一点：源码的 `platform.cc` 用 `#if defined(__linux__) && defined(__aarch64__)`
 路由到 **Linux/glibc** 探针（解析 glibc loader/malloc 布局），bionic 与 glibc 不同源。
 “能编过”不等于“探针能拿到 getter” —— 运行期由加载器 `getNativeBindingInfo()` 与
