@@ -55,6 +55,19 @@ $cxx = "C:\Users\你的用户名\AppData\Local\Android\Sdk\ndk\27.0.12077973\too
 而 Termux 环境里**没有**这个库，加载即失败。静态链后 `readelf -d` 只剩
 `libm/libdl/libc` 三个 bionic 系统库。
 
+### 现已自动化（`tools/build-node-pty.sh`）
+
+CI 每次出包都会跑：从引擎副本取 `pty.cc` 与 `node-addon-api`，按 `NODE_HEADERS_VERSION`
+（默认 `26.12.1`，**必须与 `TermuxBootstrap.NODE_EXECUTABLE_VERSION` 一致**）下头文件，
+然后编译 + 体检 + 打 zip：
+
+```text
+NEEDED: libm.so libdl.so libc.so     ← 出现 libc++_shared 就 exit 1
+zip   : node-pty/prebuilds/android-arm64/pty.node
+```
+
+实测：`pty.node` 688,072 B，zip 条目与 `ensureNodePty()` 的解包路径一致。
+
 ⚠️ **PTY 在 Android 上可用，别被「平台不支持」误导**：真机在 app 的 SELinux 域
 （`untrusted_app`）里实测 `openpty` / `forkpty` / `open("/dev/ptmx")` 全部成功。
 设备实测：绑定加载成功，`pty.spawn(bash)` 起得来，写入 `echo PTY_WORKS_$((6*7))`
