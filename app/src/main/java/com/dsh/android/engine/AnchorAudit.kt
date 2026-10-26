@@ -41,7 +41,7 @@ object AnchorAudit {
             for (f in targets) {
                 val text = runCatching { f.readText() }.getOrNull()
                 if (text == null) misses += Miss(e.tag, f.absolutePath, "unreadable")
-                else if (!text.contains(e.anchor)) misses += Miss(e.tag, f.relativePath, "anchor-missing")
+                else if (!text.contains(e.anchor)) misses += Miss(e.tag, f.path, "anchor-missing")
             }
         }
         write(dshHome, misses)
