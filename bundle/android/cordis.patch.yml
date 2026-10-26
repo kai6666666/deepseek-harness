@@ -1,0 +1,26 @@
+# @dsh-android/bundle-android —— 声明式适配层
+#
+# 原则：能写进公开 Config 的，就不写进 Kotlin 的文本锚点。
+#   公开 Config → 升级引擎不受影响；文本锚点 → 一升级就可能静默失效。
+#
+# 这里只放「与运行期无关」的配置：
+#   · session-query：开全文检索（默认 :memory:；Kotlin 侧会覆盖成 $DSH_HOME 落盘版）
+#   · plugin-manager：镜像 + 官方双源
+#
+# 不放（必须留在 Kotlin，因为它们依赖运行时事实）：
+#   · sandbox.runnerCommand（bionic 与 proot 路径不同，且要探测文件是否存在）
+#   · privileged / root 工具（取决于设备是否授权）
+#   · quarantine 隔离层（每次启动按救援结论重写）
+#   · mobile-ui / 各工具插件（要先从 assets 解包到 $DSH_HOME）
+
+- id: session-query-sqlite
+  config:
+    path: ':memory:'
+    openAt: first-search
+
+- id: plugin-manager
+  config:
+    registry: 'https://registry.npmmirror.com/'
+    fallbackRegistries:
+      - 'https://registry.npmmirror.com/'
+      - 'https://registry.npmjs.org/'
