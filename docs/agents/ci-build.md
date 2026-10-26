@@ -152,6 +152,25 @@ assembleSystemDebug      ❌ 无工具链    assembleSystemDebug     ✅ 出 APK
 
 APK：`151,156,054 B`（约 144.2 MiB），工件 `143.22 MB`。
 
+### 第四次绿跑（插件资产自动化）：run 40319322900
+
+`tools/build-plugin-assets.sh` 一次打 **15 个 zip**，并做三条校验（相对条目 / 入口文件 / `lib/index.js` 字节一致）：
+
+| 类别 | 资产 |
+|---|---|
+| 工具插件（7） | `shell` / `root` / `bubble` / `statusbar` / `uiagent` / `logs` / `browser` `-tool.zip` |
+| 客户端/移动端（3） | `browser-pane.zip`、`pet-bridge.zip`、`mobile-ui.zip`（257 KB） |
+| 数据包（5） | `market-plugin`、`core-memory`、`preset-skills`、`preset-razor`、`agnes-multimodal` |
+
+```text
+汇总：15 个已打包，0 个跳过
+assets 152 MB · APK 151,612,390 B（约 144.6 MiB）· 工件 143.65 MB
+```
+
+仍缺 7 项，都需要本机私有产物/额外工具链：
+`node-addon-android-arm64.zip`、`node-addon-system-android-arm64.zip`、`node-pty-android-arm64.zip`、
+`sharp-wasm32.zip`、`ripgrep-android-arm64.zip`、`adb-wireless-arm64.zip`、`webview-compat.zip`（随引擎版本生成）。
+
 APK 几乎等于 assets 总和，因为 `engine.bin` 本身就是 zip（内层 node_modules 已压缩），再压也压不动。
 若要把包压回 60 MB 量级，得回到 rc.2 的依赖集（`engine.bin` 55 MB），那是**降版**不是优化。
 有资产的包预计回到 ~60 MB 量级（engine.bin 压缩后约 55–60 MB）。
