@@ -65,6 +65,15 @@ const TOOLS = [
     },
   },
   {
+    name: 'android_open_with',
+    description: '用系统“打开方式”打开 /sdcard 下的文件或目录（app 私有目录不支持）。',
+    inputSchema: {
+      type: 'object',
+      properties: { path: { type: 'string' }, mime: { type: 'string' } },
+      required: ['path'],
+    },
+  },
+  {
     name: 'android_notify',
     description: '发一条系统通知（用于长任务完成提醒）。',
     inputSchema: {
@@ -135,6 +144,7 @@ async function handle(msg) {
           case 'android_screenshot': data = await callBridge('screenshot', {}); break
           case 'android_shell': data = await callBridge('shell', { command: a.command }); break
           case 'android_notify': data = await callBridge('notify', { title: a.title, text: a.text }); break
+          case 'android_open_with': data = await callBridge('open_with', { path: a.path, mime: a.mime }); break
           default: throw new Error(`未知工具: ${name}`)
         }
         return reply(id, { content: [{ type: 'text', text: JSON.stringify(data) }] })
