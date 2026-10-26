@@ -51,8 +51,26 @@ gh release create assets-v1 /tmp/dsh-assets.zip \
 ASSETS_RELEASE = assets-v1
 ```
 
-没有这个变量也能跑：工作流会打印 `::notice::未指定 ASSETS_TAG`，出一个**无引擎 APK**
-（能装、能开界面，启动引擎时提示缺资产）。
+没有这个变量也能跑：工作流打印 `::notice::未指定 ASSETS_TAG`，然后**现场自建两个最大的资产**：
+
+| 资产 | 构建方式 | 体积 / 耗时 |
+|---|---|---|
+| `engine.bin` | `tools/build-engine-bin.sh`（npm 装 rc.3 → 裁非 arm64 → zip） | ~96 MB / 3–6 min |
+| `node-runtime.bin` | `tools/build-node-runtime.sh`（Termux deb → `bin/node` + 9 库 + `LINKS.txt`） | 32 MB / 1–2 min |
+
+仍未覆盖的是 26 个原生/插件 zip（pnpm、ripgrep、sharp、node-pty、各 tool 包……）：
+它们需要本机编译或私有构建产物，所以「完整可运行包」仍建议走 `ASSETS_RELEASE`。
+
+### node-runtime.bin 的布局（手改时必须对齐）
+
+```text
+bin/node                  → $PREFIX/bin/node
+lib/libicuuc.so.78.3 …    → $PREFIX/lib/*
+LINKS.txt                 → 每行「lib/xxx.so 裸目标名」，运行期建软链（zip 不存 symlink）
+```
+
+实测产出：`nodejs 26.12.1 + libicu 78.3 + c-ares 1.34.9 + libffi 3.8.0 + libsqlite 3.54.1`
+⇒ 11 条目 / 14 条软链 / **32 MB**。
 
 ## 4. 手动触发与严格模式
 
