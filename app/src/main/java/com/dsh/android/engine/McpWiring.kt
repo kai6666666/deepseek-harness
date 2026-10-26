@@ -88,6 +88,11 @@ object McpWiring {
             screenshotFn = { screenshot?.invoke() ?: throw EngineHostException("screenshot 未接线") },
             shellFn = { cmd -> shell?.invoke(cmd) ?: throw EngineHostException("shell 未接线（需 Shizuku/adb/root）") },
             notifyFn = { title, text -> notify(context, title, text) },
+            openWithFn = { path, mime ->
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    AndroidOpenWith.open(context, path, mime)
+                }
+            },
         )
         val bridge = McpBridge(dshHome, caps)
         bridge.start(scope)
