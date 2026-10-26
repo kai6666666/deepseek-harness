@@ -8081,7 +8081,40 @@ class EngineManager private constructor(private val context: Context) {
 
     fun recentLog(): String = synchronized(logLines) { logLines.joinToString("\n") }
 
-    // probe
+    /**
+     * 宿主可切换的启动入口（C 方案接线点）。
+     *
+     * 为什么用「回调注入 baseUrl」而不是改 `start()` 签名：
+     *   `start()` 被前台服务、救援、重开 App 至少四处调用，改返回值会波及一片；
+     *   这里保持它原样，把「bionic 跑完之后的端点」通过 [legacyEndpointProvider] 交回来。
+     */
+    @Volatile
+    var legacyEndpointProvider: (() -> com.dsh.android.engine.EngineEndpoint)? = null
+
+    /** 启动引擎（宿主可切换）；proot/remote 起不来自动回落 bionic。 */
+    suspend fun bootWithHost(
+        prefs: android.content.SharedPreferences?,
+    ): com.dsh.android.engine.EngineBootGate.BootResult =
+        com.dsh.android.engine.EngineBootGate.boot(
+            filesDir = context.filesDir,
+            dshHome = dshHome,
+            workspace = workspaceDir,
+            prefs = prefs,
+            legacyLauncher = { spec ->
+                start()
+                legacyEndpointProvider?.invoke() ?: com.dsh.android.engine.EngineEndpoint(
+                    baseUrl = "http://127.0.0.1:${spec.port}",
+                    pid = process?.pid(),
+                    logFile = File(dshHome, "logs/engine.log"),
+                )
+            },
+            stopLegacy = { stop() },
+        )
+
+    /** 设置页用：只读宿主能力，不启动引擎。 */
+    fun hostCapabilities(mode: com.dsh.android.engine.HostMode) =
+        com.dsh.android.engine.EngineHosts.create(mode, context.filesDir).capabilities()
+
     companion object {
         private const val TAG = "DSH"
         // 注意：不能用 .tar.gz 作后缀 —— AGP 会把它当作 gzip 资源自动解压并改名为 .tar，
