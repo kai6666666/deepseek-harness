@@ -9274,12 +9274,262 @@ window.__ModuleLoader__.load({
 			};
 		}
 
+// ─────────────────────────────────────────────────────────────────
+// 开发环境分节（Python / SSH / Java / Rust / Go 可选装卸）
+//
+// 数据源：宿主半 `GET /api/dsh-android/devenv`（本包 lib/index.js）。
+// 安装/卸载是 POST，立即返回 202 + 任务描述；进度靠轮询同一 GET 的
+// `job.running` 与 `logTail`。**不要在 POST 里等**：装 Rust 要几分钟。
+// ─────────────────────────────────────────────────────────────────
+const MP_DEV_API = "/api/dsh-android/devenv";
+const MP_DEV_NS = "dsh-android-mobile.devenv";
+
+const MP_DEV_ZH = {
+nav: "开发环境",
+title: "开发环境",
+intro: "Node 是内置必需项，不可卸载；下面五项按需安装，卸载只回滚“这一项装进来的包”，不会动引擎依赖。",
+required: "必需",
+install: "安装",
+remove: "卸载",
+installing: "安装中…",
+removing: "卸载中…",
+untracked: "未纳管",
+notInstalled: "未安装",
+unknown: "无法获取状态（引擎插件未激活？）",
+refresh: "刷新",
+reset: "回到最小环境",
+resetConfirm: "将卸载全部可选环境（Python/SSH/Java/Rust/Go），只保留 Node 与必需项。继续？",
+busy: "已有任务在运行",
+jobPrefix: "任务输出",
+confirmRemove: (name) => `确定卸载「${name}」？会释放对应占用。`,
+space: (total, free) => `已用 ${total} MB · 可用 ${free} MB`,
+freeOnly: (total) => `已用 ${total} MB`,
+};
+
+const MP_DEV_EN = {
+nav: "Dev environments",
+title: "Dev environments",
+intro: "Node is built in and required. The other five are optional; removing one only rolls back the packages it brought in.",
+required: "required",
+install: "Install",
+remove: "Remove",
+installing: "Installing…",
+removing: "Removing…",
+untracked: "untracked",
+notInstalled: "not installed",
+unknown: "Status unavailable (engine plugin not active?)",
+refresh: "Refresh",
+reset: "Back to minimal",
+resetConfirm: "Remove all optional environments (Python/SSH/Java/Rust/Go), keeping only Node and the required parts. Continue?",
+busy: "A task is already running",
+jobPrefix: "Task output",
+confirmRemove: (name) => `Remove “${name}”? Its disk space will be freed.`,
+space: (total, free) => `${total} MB used · ${free} MB free`,
+freeOnly: (total) => `${total} MB used`,
+};
+
+const MP_DEV_S = {
+section: { display: "flex", flexDirection: "column", gap: "14px" },
+heading: { margin: 0, fontSize: "18px", fontWeight: 600 },
+intro: { margin: 0, opacity: 0.72, fontSize: "13px", lineHeight: 1.5 },
+card: {
+border: "1px solid var(--dsh-border, rgba(128,128,128,.28))",
+borderRadius: "12px", padding: "12px 14px", display: "flex",
+flexDirection: "column", gap: "10px",
+},
+row: { display: "flex", alignItems: "center", gap: "10px", minHeight: "32px" },
+name: { flex: "0 0 132px", fontSize: "14px", fontWeight: 500 },
+ver: { flex: 1, fontSize: "12.5px", opacity: 0.78, fontFamily: "ui-monospace, monospace" },
+btn: {
+border: "1px solid var(--dsh-border, rgba(128,128,128,.35))", background: "transparent",
+color: "inherit", borderRadius: "8px", padding: "5px 12px", fontSize: "12.5px",
+cursor: "pointer",
+},
+btnDanger: {
+border: "1px solid rgba(220,80,80,.5)", background: "transparent",
+color: "#d05050", borderRadius: "8px", padding: "5px 12px", fontSize: "12.5px",
+cursor: "pointer",
+},
+tag: {
+fontSize: "11px", padding: "2px 7px", borderRadius: "999px",
+background: "rgba(128,128,128,.18)", opacity: 0.85,
+},
+foot: { display: "flex", alignItems: "center", gap: "10px", fontSize: "12px", opacity: 0.72 },
+log: {
+margin: 0, padding: "10px", borderRadius: "9px", fontSize: "11.5px",
+background: "rgba(128,128,128,.12)", maxHeight: "180px", overflow: "auto",
+whiteSpace: "pre-wrap", fontFamily: "ui-monospace, monospace",
+},
+};
+
+/** 开发环境分节组件。 */
+function mpDevEnvSection() {
+const t = React.useMemo(() => {
+const en = (typeof document !== "undefined" && document.documentElement.lang || "").toLowerCase().startsWith("en");
+const dict = en ? MP_DEV_EN : MP_DEV_ZH;
+return (k, ...a) => (typeof dict[k] === "function" ? dict[k](...a) : (dict[k] ?? k));
+}, []);
+
+const [state, setState] = React.useState({ phase: "loading" });
+const [pending, setPending] = React.useState(null);
+const [error, setError] = React.useState("");
+const timerRef = React.useRef(null);
+
+const load = React.useCallback(async () => {
+try {
+const res = await fetch(MP_DEV_API, { cache: "no-store" });
+const data = await res.json();
+setState({ phase: "ready", ...data });
+if (data?.job?.running) {
+if (timerRef.current) clearTimeout(timerRef.current);
+// 安装期间 2 秒一跳；任务结束后不再自轮询。
+timerRef.current = setTimeout(() => { load(); }, 2000);
+}
+} catch (e) {
+setState({ phase: "ready", ok: false });
+}
+}, []);
+
+React.useEffect(() => {
+load();
+return () => { if (timerRef.current) clearTimeout(timerRef.current); };
+}, [load]);
+
+const act = React.useCallback(async (action, id, label) => {
+setError("");
+if (action === "remove") {
+const ok = typeof window.confirm === "function" ? window.confirm(t("confirmRemove", label)) : true;
+if (!ok) return;
+}
+if (action === "reset") {
+const ok = typeof window.confirm === "function" ? window.confirm(t("resetConfirm")) : true;
+if (!ok) return;
+}
+setPending(id);
+try {
+const res = await fetch(MP_DEV_API, {
+method: "POST",
+headers: { "content-type": "application/json" },
+body: JSON.stringify({ action, id }),
+});
+if (!res.ok) {
+const j = await res.json().catch(() => ({}));
+setError(j.error || `HTTP ${res.status}`);
+}
+} catch (e) {
+setError(String(e && e.message || e));
+} finally {
+setPending(null);
+load();
+}
+}, [load, t]);
+
+if (state.phase === "loading") {
+return React.createElement("div", { style: MP_DEV_S.section },
+React.createElement("h2", { style: MP_DEV_S.heading }, t("title")),
+React.createElement("p", { style: MP_DEV_S.intro }, "…"),
+);
+}
+
+const status = state.status;
+const items = (status && status.items) || [];
+const running = Boolean(state.job && state.job.running);
+const busy = running || pending !== null;
+
+const node = status && status.builtin && status.builtin.node;
+
+const rowOf = (it) => React.createElement("div", { style: MP_DEV_S.row, key: it.id },
+React.createElement("span", { style: MP_DEV_S.name }, it.label),
+React.createElement("span", { style: MP_DEV_S.ver },
+it.installed
+? `${it.version || ""}${it.sizeMb ? `  ·  ${it.sizeMb} MB` : `  ·  ${t("untracked")}`}`
+: `${t("notInstalled")}  ·  ~${it.estMb} MB`),
+React.createElement("button", {
+style: it.installed ? MP_DEV_S.btnDanger : MP_DEV_S.btn,
+disabled: busy,
+onClick: () => act(it.installed ? "remove" : "install", it.id, it.label),
+}, pending === it.id
+? t(it.installed ? "removing" : "installing")
+: t(it.installed ? "remove" : "install")),
+);
+
+return React.createElement("div", { style: MP_DEV_S.section },
+React.createElement("h2", { style: MP_DEV_S.heading }, t("title")),
+React.createElement("p", { style: MP_DEV_S.intro }, t("intro")),
+
+React.createElement("div", { style: MP_DEV_S.card },
+React.createElement("div", { style: MP_DEV_S.row },
+React.createElement("span", { style: MP_DEV_S.name }, "Node.js"),
+React.createElement("span", { style: MP_DEV_S.ver }, node ? `v${String(node).replace(/^v/, "")}` : "—"),
+React.createElement("span", { style: MP_DEV_S.tag }, t("required")),
+),
+items.map(rowOf),
+
+status ? null : React.createElement("p", { style: MP_DEV_S.intro }, t("unknown")),
+error ? React.createElement("p", { style: { ...MP_DEV_S.intro, color: "#d05050" } }, error) : null,
+
+React.createElement("div", { style: MP_DEV_S.foot },
+React.createElement("span", null, status && status.freeMb != null
+? t("space", status.totalMb, status.freeMb)
+: t("freeOnly", status ? status.totalMb : 0)),
+React.createElement("span", { style: { flex: 1 } }),
+React.createElement("button", {
+style: MP_DEV_S.btn, disabled: busy, onClick: () => load(),
+}, t("refresh")),
+React.createElement("button", {
+style: MP_DEV_S.btnDanger, disabled: busy,
+onClick: () => act("reset", "all", ""),
+}, t("reset")),
+),
+),
+
+running ? React.createElement("details", { style: MP_DEV_S.card, open: true },
+React.createElement("summary", { style: { fontSize: "12.5px", cursor: "pointer" } },
+`${t("jobPrefix")} · ${state.job.action} ${state.job.id}`),
+React.createElement("pre", { style: MP_DEV_S.log }, state.logTail || ""),
+) : (state.logTail ? React.createElement("details", { style: MP_DEV_S.card },
+React.createElement("summary", { style: { fontSize: "12.5px", cursor: "pointer" } }, t("jobPrefix")),
+React.createElement("pre", { style: MP_DEV_S.log }, state.logTail),
+) : null),
+);
+}
+
+/** 把「开发环境」注册进设置页一级导航（order 27，排在日志 28 之前）。 */
+function mpRegisterDevEnvSection(ctx) {
+if (mpPrivReact === null) {
+try { mpPrivReact = require("react"); } catch (e) {
+console.warn("[dsh-android-mobile] require('react') 失败，跳过开发环境分节:", e && e.message);
+mpPrivReact = null;
+}
+}
+if (!mpPrivReact) return;
+try {
+ctx.inject(["slots", "locale"], (scope) => {
+const t = scope.locale.bind(MP_DEV_NS);
+scope.effect(
+() => scope.locale.register(MP_DEV_NS, { zh: MP_DEV_ZH, en: MP_DEV_EN }),
+"dsh-android-mobile: 开发环境字典",
+);
+scope.slots.inject("settings.section", () => scope.slots.register({
+name: "settings.section",
+id: "dsh-android-devenv",
+order: 27,
+label: () => t("nav"),
+locale: MP_DEV_NS,
+}, mpDevEnvSection));
+});
+} catch (e) {
+console.warn("[dsh-android-mobile] 注册开发环境分节失败:", e && (e.stack || e.message || e));
+}
+}
+
 		function apply(ctx) {
 			mpCtx = ctx;
 			mpSessionsCache = ctx.get("sessions") ?? null;
 			mpRegisterPrivilegedSection(ctx);
 			mpRegisterBubbleSection(ctx);
 			mpRegisterLogsSection(ctx);
+			mpRegisterDevEnvSection(ctx);
 			mpInstallPendingTrust();   /* 修复 51：越早越好 */
 			mpWatchSessions(ctx);       /* 修复 51：等服务就绪 */
 			injectStyles();
