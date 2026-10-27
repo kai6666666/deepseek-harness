@@ -126,6 +126,7 @@ const GROUPS = [
       {
         id: 'java.gradle', label: 'Gradle', desc: '构建自动化工具（apt 包）', kind: 'apt',
         pkgs: ['gradle'], probe: [path.join(BIN, 'gradle'), '-v'], requires: ['java.jdk'], estMb: 260,
+        cleanupDirs: [path.join(PREFIX, 'opt/gradle')],
       },
     ],
   },
@@ -505,6 +506,11 @@ async function removeItem(item, state, say) {
   // ⚠️ 幽灵文件：apt 在“解包完但还没写库”时被中断（例如上一条命令被 SIGPIPE 打死），
   //   dpkg 里没有记录、二进制却还在。此时 apt 会说 “not installed, so not removed”，
   //   而界面上这一项仍是 ✅。这里补一刀：探测仍通过就删掉它的可执行文件。
+  // 包自带的数据目录（Termux 的 gradle 是 /opt/gradle）apt 不一定会删干净
+  for (const d of item.cleanupDirs || []) {
+    try { fs.rmSync(d, { recursive: true, force: true }); say(`清理残留目录 ${d}`); } catch {}
+  }
+
   if (probeOf(item).ok) {
     const bin = item.probe && item.probe[0];
     if (bin && bin.startsWith(BIN)) {
@@ -538,7 +544,8 @@ function statusData() {
 
   const groups = GROUPS.map((g) => {
     const items = g.items.map((it) => {
-      const pr = probeOf(it);
+      // unsupported 的项即使有残留文件也不算“已安装”（例如 rustup 失败后留下的 ~/.cargo）
+      const pr = it.unsupported ? { ok: false, version: null } : probeOf(it);
       const st = state.items[it.id];
       return {
         id: it.id,
