@@ -1074,17 +1074,25 @@ function (CMD) {
     var before = readText(el);
     if (before === '') return '已是空的';
     selectAllIn(el);
-    var replaced = false;
-    try { replaced = document.execCommand('insertText', false, 'X'); } catch (e) { replaced = false; }
-    if (!replaced) {
-      // 连替换都不行（非 Lexical 的普通 contenteditable）—— 这时 textContent 是安全的。
-      el.textContent = '';
-      el.dispatchEvent(new Event('input', { bubbles: true }));
-      return 'textContent';
+
+    // ⚠️ **不要用 `insertText('X')` + `Backspace` 这一手**。
+    //   合成的 KeyboardEvent 是 `isTrusted:false`，浏览器**不会**执行默认删除
+    //   行为 —— 真机实测：`clear:true` 之后输入框里留下一个 `X`，接着 type 把新
+    //   内容接在后面，回执 `value:"Xcaret-test"`。旧写法看起来“能用”，只是因为
+    //   测试时元素本来就是空的（走 `已是空的` 提前返回）。
+    //
+    //   正确做法：直接对**全选后的选区**执行 `delete`。它作用于选区，不依赖按键。
+    var how = null;
+    try { if (document.execCommand('delete', false, null)) how = 'selectAll+delete'; } catch (e) { /* 老内核 */ }
+    if (!how) {
+      try { if (document.execCommand('insertText', false, '')) how = 'selectAll+insertText(空串)'; } catch (e) { /* 忽略 */ }
     }
-    // 压成单字符后光标就在它后面，一次 Backspace 即可删掉（不必重建选区）。
-    pressKey(el, 'Backspace', {});
-    return 'selectAll+insertText+Backspace';
+    if (how) return how;   // 与 setValue 同口径：返回 true 就相信，落地由下一步 value 复核
+
+    // 最后的兜底：非 Lexical 的普通 contenteditable，textContent 是安全的。
+    el.textContent = '';
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    return 'textContent';
   }
 
   /**
