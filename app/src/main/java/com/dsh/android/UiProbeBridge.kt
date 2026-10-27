@@ -212,9 +212,9 @@ object UiProbeBridge {
      * 只在**没有 sel** 时翻译：调用方显式给了选择器就以它为准。
      */
     private fun translateRef(cmd: JSONObject) {
-        val args = cmd.optJSONObject("args") ?: return
-        if (args.has("sel")) return
-        val ref = args.optString("ref", "")
+        flattenArgs(cmd)
+        if (cmd.has("sel")) return
+        val ref = cmd.optString("ref", "")
         if (ref.isEmpty()) return
         val sel = refToSel[ref] ?: run {
             Log.w(TAG, "ref $ref 没有对应选择器（该 ref 不属于最近一次 dump）")
@@ -222,6 +222,24 @@ object UiProbeBridge {
         }
         args.put("sel", sel)
         Log.i(TAG, "ref $ref → sel（原生翻译，${sel.length} 字符）")
+    }
+
+    /**
+     * 把 `args` 里的字段抬到顶层。
+     *
+     * ⚠️ 探针读的是**顶层**字段（`cmd.sel` / `cmd.ref` / `cmd.value`），而调用方
+     *   习惯写成 `{"action":"type","args":{...}}`。两套口径并存时症状很阴：
+     *   `dump` 一切正常（它不读 args），而 `type/find/tap` 一律「找不到元素」，
+     *   看起来像选择器失效，实际是参数根本没被读到 —— 2026-10-27 真机上
+     *   赔进去好几轮。这里直接统一：args 抬到顶层，顶层已有的键不覆盖。
+     */
+    private fun flattenArgs(cmd: JSONObject) {
+        val args = cmd.optJSONObject("args") ?: return
+        val it = args.keys()
+        while (it.hasNext()) {
+            val key = it.next()
+            if (!cmd.has(key)) cmd.put(key, args.get(key))
+        }
     }
 
     /** 记录一次 dump 的 ref→sel 全表（每次 dump 覆盖）。 */
