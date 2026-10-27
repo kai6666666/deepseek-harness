@@ -158,3 +158,68 @@ Go 环境        未安装 · ~200 MB           安装
 2. **改了 `mobile-ui-plugin/**` 必须 bump `MOBILE_UI_VERSION`**
    版本戳相同 -> `ensureMobileUi()` 直接跳过解包 -> 老设备永远拿不到新分节
    （本次先升 104、改完客户端再升 105，就是为了避免「代码推了、界面没变」）。
+
+## 八、v2：分组 + 子项（对齐 Operit「环境配置」向导）
+
+设置页从「六行」升级为**六张卡片**，每张卡片里是子项勾选（Node.js / Python / SSH / Java / Rust / Go）。
+
+### 六组 × 子项与安装器
+
+| 组 | 子项 | kind | 实现 |
+|---|---|---|---|
+| Node.js（必需·只读） | Node.js、PNPM | builtin | 内建运行时，只探测 |
+| Python | Python | apt | `apt install python` |
+| | Python 链接 | link | `ln -s python3 python` |
+| | 虚拟环境、Pip | check | `python3 -c "import venv, ensurepip"` / `pip --version` |
+| | uv | apt | **Termux 仓里有 `uv` 0.13.5**（不用 pip：py3.14 只能源码构建，必失败） |
+| SSH | SSH 客户端、sshpass | apt | `openssh`、`sshpass` |
+| | OpenSSH 服务器 | check | `sshd -V`（同属 openssh 包） |
+| Java | OpenJDK 17 | apt | `openjdk-17` |
+| | Gradle | apt | **`gradle` 包**（不再自己下 130 MB zip + 软链） |
+| Rust | Rust & Cargo | apt | `rust` |
+| | rustup 工具链 | custom | 官方脚本，**标为实验**（Termux 无二进制包） |
+| Go | Go | apt | `golang` |
+
+### 交互
+
+- 组头：标题 + `（必需）` + 说明 + `n/m` 徽章 + 「全选」 + 折叠箭头；
+- 子项：勾选框 + 名称 + 描述 + 右侧 `版本 · 体积`（未装显示 `~预估`）；
+- 底部：`刷新` / `跳过` / `开始配置`；**取消勾选已装项 = 卸载**，点开始配置时先二次确认；
+- 执行中：按钮置灰，展开「任务输出」实时看 apt/pip 日志；
+- 后端调度：apt 串行（dpkg 锁），其余并行 —— 对应界面上的「支持并行安装」。
+
+### 批量接口
+
+```jsonc
+POST /api/dsh-android/devenv
+{"action":"install","ids":["ssh.sshpass","java.gradle"]}
+→ 202 {"ok":true,"job":{"running":true,"action":"install","ids":[...],"pid":30346}}
+
+GET 同一路径 → {"ok":true,"status":{...,"groups":[...]},"job":{...},"logTail":"…"}
+```
+
+脚本侧同样支持批量：`dsh-env.mjs install ssh.sshpass java.gradle` / `group:python` / `all`。
+
+### 真机验证（2026-10-27）
+
+```text
+status → 6 组：nodejs 2/2、python 4/5、ssh 2/3、java 1/2、rust 1/2、go 0/1
+install python.uv   → ✅ uv 0.13.5 (aarch64-linux-android)  33 MB
+remove  python.uv   → ✅ 卸载后 verify ok:false
+install ssh.sshpass → ✅ sshpass 1.10
+remove  ssh.sshpass → ✅（含“幽灵文件”清理）verify ok:false
+HTTP 批量 install [ssh.sshpass, java.gradle] → 202，job.ids 正确回显
+```
+
+### 五个新坑（这一轮踩的）
+
+1. **`assets/dsh-env.mjs` 会在每次启动覆盖 `files/dsh-env.mjs`**
+   `ensureDevEnvScript()` 比字节数，不等就重写。热替换脚本后**不要再重启 App**（或先换掉 assets）。
+2. **任务文件必须先写再 spawn**
+   否则 GET 会读到上一轮的旧 job（`running:false`），客户端以为任务已结束 —— 真机上“删 sshpass 秒回旧状态”就是这个。
+3. **幽灵文件**：apt 在“解包完、未写 dpkg 库”时被打断（例如上层命令被 SIGPIPE 杀掉），
+   dpkg 说 `not installed` 而二进制还在。现在卸载末尾会补一刀：探测仍通过就删掉该可执行文件。
+4. **pip 在 Python 3.14 上装不动 uv**
+   Termux 的 py3.14 没有 uv 轮子，pip 会去**源码构建**，再因 truststore/权限失败。→ 改用 apt 的 `uv`。
+5. **组件里 `React` 不是全局**
+   分节组件第一行必须 `const React = mpPrivReact;`，否则渲染抛 `React is not defined`，面板只剩标题。
