@@ -1595,18 +1595,67 @@ function runWireless(adbBin, target, command) {
 }
 
 // ── 回落：本地执行（app 域）─────────────────────────────────
+/**
+ * 在 app 自己的 uid 下执行（没有 uid 2000 时的兜底）。
+ *
+ * ⚠️ 2026-10-27 真机事故：这里原来只有一句
+ *   `const shell = PREFIX ? path.join(PREFIX,'bin','bash') : 'bash'`
+ *   spawn 直接报 `spawn bash EACCES`，日志里**没有路径、没有 errno**，
+ *   而同一份 `$PREFIX/bin/bash` 用 `run-as … bash -c 'id -u'` 手跑是好的
+ *   （`-rwx--x--x`，能执行）—— 于是只能靠猜。
+ *
+ * 现在做三件事：
+ *   1. 候选表：`$PREFIX/bin/bash` → `$PREFIX/bin/sh` → `/system/bin/sh`，
+ *      前一个不可执行就换下一个（Termux 的 `sh` 是指向 dash 的软链，
+ *      即使 bash 因为某个还没定位的原因不可 exec，dash 与系统 sh 仍能兜住）；
+ *   2. 换之前先 `stat` + `access(X_OK)`，把 **mode 位**打进日志；
+ *   3. 真失败就把 `e.code` / `e.path` / `PREFIX` 一起打出来 ——
+ *      下一次真机日志直接能定位，不再是一句无信息的 EACCES。
+ */
 function runLocal(command) {
-  const shell = process.env.PREFIX ? path.join(process.env.PREFIX, 'bin', 'bash') : 'bash';
+  const cands = [];
+  if (process.env.PREFIX) {
+    cands.push(path.join(process.env.PREFIX, 'bin', 'bash'));
+    cands.push(path.join(process.env.PREFIX, 'bin', 'sh'));
+  }
+  cands.push('/system/bin/sh');
+
   return new Promise((resolve) => {
-    const child = spawn(shell, ['-c', command], {
-      stdio: ['ignore', 'inherit', 'inherit'],
-      env: process.env,
-    });
-    child.on('error', (e) => {
-      process.stderr.write(`${TAG} 本地执行失败: ${e.message}\n`);
-      resolve(127);
-    });
-    child.on('exit', (code, signal) => resolve(code ?? (signal !== null ? 128 : 1)));
+    const attempt = (i, lastErr) => {
+      if (i >= cands.length) {
+        const why = lastErr
+          ? `${lastErr.code || ''} ${lastErr.path || ''} ${lastErr.message || ''}`.trim()
+          : '没有可用的 shell';
+        process.stderr.write(
+          `${TAG} 本地执行失败: ${why}（PREFIX=${process.env.PREFIX || '<unset>'}）\n`,
+        );
+        resolve(127);
+        return;
+      }
+      const shell = cands[i];
+      let probe = '';
+      try {
+        const st = fs.statSync(shell);
+        fs.accessSync(shell, fs.constants.X_OK);
+        probe = `mode=${(st.mode & 0o777).toString(8)}`;
+      } catch (e) {
+        process.stderr.write(
+          `${TAG} 跳过 ${shell}: ${e.code || e.message}（PREFIX=${process.env.PREFIX || '<unset>'}）\n`,
+        );
+        attempt(i + 1, e);
+        return;
+      }
+      const child = spawn(shell, ['-c', command], {
+        stdio: ['ignore', 'inherit', 'inherit'],
+        env: process.env,
+      });
+      child.on('error', (e) => {
+        process.stderr.write(`${TAG} ${shell} 执行失败: ${e.code || ''} ${e.message}（${probe}）\n`);
+        attempt(i + 1, e);
+      });
+      child.on('exit', (code, signal) => resolve(code ?? (signal !== null ? 128 : 1)));
+    };
+    attempt(0, null);
   });
 }
 
