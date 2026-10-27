@@ -311,7 +311,7 @@ class EngineManager private constructor(private val context: Context) {
                 Log.w(TAG, "读不到归档长度，本次解包不显示百分比")
             }
             var lastPercent = -1
-            context.assets.open(ASSET_NAME).use { raw ->
+            val stats = context.assets.open(ASSET_NAME).use { raw ->
                 val counting = CountingInputStream(raw)
                 TarGz.extract(counting, staging) {
                     if (total > 0L) {
@@ -323,6 +323,10 @@ class EngineManager private constructor(private val context: Context) {
                     }
                 }
             }
+            // ⚠️ 解包「跑完」不等于「解全了」。2026-10-27 真机：52 537 条只解到 2 463 条、
+            //   45 MB / 532 MB，日志写着「解包完成」，引擎却找不到 @deepseek-ai/dsh/lib/bin.js。
+            //   现在拿归档自带的 MANIFEST.txt 对账，不一致就抛，让救援模式接住。
+            verifyEngineManifest(staging, stats)
             File(staging, ".stamp").writeText(versionStamp)
 
             engineDir.deleteRecursively()
@@ -336,6 +340,48 @@ class EngineManager private constructor(private val context: Context) {
             _state.value = State.Failed("引擎解包失败: ${t.message}")
             throw t
         }
+    }
+
+    /**
+     * 用归档自带的 `MANIFEST.txt` 给解包结果对账。
+     *
+     * 归档里那份由 `tools/build-engine-bin.sh` 生成，只有两行：
+     *   node_modules_files=<普通文件数>
+     *   node_modules_bytes=<这些文件的字节和>
+     * 解包时 TarGz 边写边统计同样的两个值，**不一致就抛**（而不是打条 warning 继续）。
+     *
+     * 旧包没有 MANIFEST.txt：只记一条 warning、不阻断 —— 回滚到老资产时仍能启动。
+     */
+    private fun verifyEngineManifest(dest: File, stats: TarGz.Stats) {
+        val mf = File(dest, "MANIFEST.txt")
+        if (!mf.isFile) {
+            Log.w(TAG, "engine.bin 里没有 MANIFEST.txt（旧包），跳过完整性断言")
+            return
+        }
+        val kv = HashMap<String, Long>()
+        mf.readLines().forEach { line ->
+            val i = line.indexOf('=')
+            if (i > 0) {
+                val v = line.substring(i + 1).trim().toLongOrNull()
+                if (v != null) kv[line.substring(0, i).trim()] = v
+            }
+        }
+        val wantFiles = kv["node_modules_files"]
+        val wantBytes = kv["node_modules_bytes"]
+        if (wantFiles != null && wantFiles != stats.nodeModulesFiles) {
+            throw java.io.IOException(
+                "引擎解包不完整：node_modules 文件数 ${stats.nodeModulesFiles} ≠ 归档声明 $wantFiles"
+            )
+        }
+        if (wantBytes != null && wantBytes != stats.nodeModulesBytes) {
+            throw java.io.IOException(
+                "引擎解包不完整：node_modules 字节 ${stats.nodeModulesBytes} ≠ 归档声明 $wantBytes"
+            )
+        }
+        Log.i(
+            TAG,
+            "引擎完整性断言通过：条目 ${stats.entries}，文件 ${stats.nodeModulesFiles}，字节 ${stats.nodeModulesBytes}"
+        )
     }
 
     /**
