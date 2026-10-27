@@ -238,16 +238,18 @@ function probeOf(item) {
   if (!fileExists(item.probe[0])) return { ok: false, version: null };
   const r = runSync(item.probe[0], item.probe.slice(1), 20000);
   if (r.code !== 0) return { ok: false, version: null };
-  return { ok: true, version: normalizeVersion(item, r.out.split('\n')[0] || '') };
+  // 传**整段输出**：gradle 的第一行是分隔线，版本号在第 3 行。
+  return { ok: true, version: normalizeVersion(item, r.out) };
 }
 
-function normalizeVersion(item, line) {
-  const s = (line || '').trim();
+function normalizeVersion(item, out) {
+  const text = String(out || '');
+  const s = (text.split('\n').find((l) => l.trim()) || '').trim();
   if (item.id === 'java.jdk') { const m = s.match(/version "([^"]+)"/); return m ? m[1] : s; }
   if (item.id === 'ssh.client') { const m = s.match(/OpenSSH[_\s]([^\s,]+)/); return m ? m[1] : s; }
   if (item.id === 'python.core' || item.id === 'python.link') { const m = s.match(/Python\s+([\w.]+)/); return m ? m[1] : s; }
   if (item.id === 'go.apt') return s.replace(/^go version\s+/, '').split(' ')[0];
-  if (item.id === 'java.gradle') { const m = s.match(/Gradle\s+([\d.]+)/); return m ? m[1] : s.slice(0, 40); }
+  if (item.id === 'java.gradle') { const m = text.match(/Gradle\s+([\d.]+)/); return m ? m[1] : s.slice(0, 40); }
   if (item.id === 'node') return s.replace(/^v/, 'v');
   return s.slice(0, 60);
 }
