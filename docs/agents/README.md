@@ -28,6 +28,7 @@
 | [bubble-tool.md](bubble-tool.md) | ⑫.3 bubble 工具 | 文件信箱，让模型自己改悬浮窗 |
 | [pet-bridge.md](pet-bridge.md) | ⑫.4 桌面宠物 | 状态→动作映射、两条状态通道 |
 | [ui-tool.md](ui-tool.md) | ⑫.5 ui 工具 | 让模型自己看和点界面：坐标系、遮挡、屏幕外、面板、持久化状态 |
+| [dev-env.md](dev-env.md) | 开发环境六项 | Node 内建；Python / SSH / Java / Rust / Go 走 apt，`tools/dsh-env.sh` 一键体检与安装 |
 | [browser.md](browser.md) | ⑫.8 AI 浏览器 | 模型自己的 WebView：为什么不用 iframe、官方右侧边栏入口的两个接缝、文件信箱链路、控制权仲裁、页面 JS 三条硬规矩 |
 | [logging.md](logging.md) | ⑫.6 / ⑫.7 日志与诊断 | 三层存储、崩溃入口、脱敏、诊断包、归因写错的五处 |
 | [plugin-source.md](plugin-source.md) | ⑬ 添加插件少了「npm 官方源」 | 不是漏配，是被去重合并掉了 |
