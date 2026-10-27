@@ -949,6 +949,16 @@ function (CMD) {
     return got.indexOf(want) >= 0;
   }
 
+  /** 元素内部当前有没有一个**非折叠**选区（= 有人已经全选/选中了一段）。 */
+  function hasLiveSelection(el) {
+    try {
+      var sel = window.getSelection();
+      if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return false;
+      var r = sel.getRangeAt(0);
+      return !r.collapsed && el.contains(r.commonAncestorContainer);
+    } catch (e) { return false; }
+  }
+
   /** 把光标放到元素的**内容末尾**（execCommand 只作用于当前选区）。 */
   function placeCaretAtEnd(el) {
     try { el.focus(); } catch (e) { /* 不可聚焦 */ }
@@ -996,7 +1006,10 @@ function (CMD) {
       //   没先把 caret 放进元素里时，它会返回 true 却什么都不写 —— 真机实测：
       //   `{how:"execCommand(异步生效)", applied:null, value:""}`，而界面上
       //   一个字也没出现。所以先用 Range 把光标落到元素内容末尾，再插入。
-      placeCaretAtEnd(el);
+      // 若调用方刚做了全选（clear:true），必须**保住这个选区**：
+      //   `insertText` 会替换选区，而 `placeCaretAtEnd` 会把选区折叠到末尾、
+      //   变成“追加”。这一步乱了就会出现 `value:"旧文本新文本"` 的拼接形态。
+      if (!hasLiveSelection(el)) placeCaretAtEnd(el);
       var ok = false;
       try { ok = document.execCommand('insertText', false, s); } catch (e) { ok = false; }
       if (ok) {
@@ -1073,26 +1086,16 @@ function (CMD) {
   function clearEditable(el) {
     var before = readText(el);
     if (before === '') return '已是空的';
-    selectAllIn(el);
 
-    // ⚠️ **不要用 `insertText('X')` + `Backspace` 这一手**。
-    //   合成的 KeyboardEvent 是 `isTrusted:false`，浏览器**不会**执行默认删除
-    //   行为 —— 真机实测：`clear:true` 之后输入框里留下一个 `X`，接着 type 把新
-    //   内容接在后面，回执 `value:"Xcaret-test"`。旧写法看起来“能用”，只是因为
-    //   测试时元素本来就是空的（走 `已是空的` 提前返回）。
+    // ⚠️ 对 Lexical **不要**试“先删再写”：
+    //   `execCommand('delete')` 会返回 true 却不在它的模型里生效（实测
+    //   `cleared:"selectAll+delete"` 而内容一个字没少）；合成的 Backspace 更不行
+    //   （`isTrusted:false`，浏览器不执行默认行为，只在输入框里留一个 `X`）。
     //
-    //   正确做法：直接对**全选后的选区**执行 `delete`。它作用于选区，不依赖按键。
-    var how = null;
-    try { if (document.execCommand('delete', false, null)) how = 'selectAll+delete'; } catch (e) { /* 老内核 */ }
-    if (!how) {
-      try { if (document.execCommand('insertText', false, '')) how = 'selectAll+insertText(空串)'; } catch (e) { /* 忽略 */ }
-    }
-    if (how) return how;   // 与 setValue 同口径：返回 true 就相信，落地由下一步 value 复核
-
-    // 最后的兜底：非 Lexical 的普通 contenteditable，textContent 是安全的。
-    el.textContent = '';
-    el.dispatchEvent(new Event('input', { bubbles: true }));
-    return 'textContent';
+    //   唯一稳的做法：**全选**，然后让接着的 `insertText(新值)` 把整段替换掉。
+    //   `insertText` 已实测能进 Lexical，替换选区是它的原生行为。
+    selectAllIn(el);
+    return 'selectAll(交给 insertText 替换)';
   }
 
   /**
