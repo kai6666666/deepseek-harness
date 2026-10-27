@@ -156,3 +156,49 @@ printf '%s' '{"id":2,"action":"type","ref":"e48","value":"hello","clear":true}' 
 | ③ | tool/call ↔ tool/result = 2000 | ✅ 两次实证 |
 | ④ | dump→ref→type `applied:true` | ✅ 2026-10-27 真机，两种写法都验过：`ok:true / cleared:"已是空的" / value:"caret-test…"`（扁平）与 `ok:true / applied:true / value:"nested-args-test"`（`args` 嵌套，靠 `flattenArgs`） |
 | ④b | `clear:true` 是**替换**而非追加 | ✅ `cleared:"selectAll(交给 insertText 替换)"` + `value:"BBB-only"`（屏幕上同步确认） |
+
+### ⑤ 开发环境（六组）——设置页「开发环境」的验收
+
+这一条验的是**可选环境**（Python / SSH / Java / Rust / Go）能否装、能卸、能如实报错。
+全部命令都在设备上（`run-as` + App 自带 node）。
+
+```bash
+# 1) 状态：必须 6 组，且计数与界面一致
+run-as com.dsh.android sh -c 'N=/data/user/0/com.dsh.android/files/termux/usr/bin/node; \
+D=/data/user/0/com.dsh.android/files; $N $D/dsh-env.mjs status --json' | python3 -c 'import json,sys;d=json.load(sys.stdin);print([(g["id"],f"{g["installedCount"]}/{g["totalCount"]}") for g in d["groups"]])'
+```
+
+期望（2026-10-27 真机）：
+
+```text
+[('nodejs','2/2'), ('python','5/5'), ('ssh','3/3'), ('java','2/2'), ('rust','1/2'), ('go','1/1')]
+```
+
+```bash
+# 2) 单项装 / 卸（用 uv 这种 30 MB 的做样本，30 秒内出结果）
+$N $D/dsh-env.mjs install python.uv
+$N $D/dsh-env.mjs verify  python.uv    # 期望 ok:true + uv 0.13.5
+$N $D/dsh-env.mjs remove  python.uv
+$N $D/dsh-env.mjs verify  python.uv    # 期望 exit 1，ok:false
+
+# 3) 批量（对应界面上“多项勾选 + 开始配置”）
+$N $D/dsh-env.mjs install ssh.sshpass java.gradle   # 两个 id 一次提交
+
+# 4) unsupported 项：rustup 必须**始终** installed:false（哪怕 ~/.cargo 有残留）
+$N $D/dsh-env.mjs status --json | grep -o '"id":"rust.rustup"[^}]*"installed":[a-z]*'
+```
+
+判据（四条同时成立才算通过）：
+
+1. `groups.length == 6`，且每组 `installedCount ≤ totalCount`；
+2. 装完 `verify ok:true`、卸完 `verify` exit=1；
+3. 批量提交后 `devenv-job.json` 的 `ids` 是数组（长度 = 提交项数），日志里 **apt 类串行、非 apt 并行**；
+4. 卸载后：`$PREFIX/bin/<主二进制>` 不存在；`cleanupDirs` 里的目录（如 `$PREFIX/opt/gradle`）不存在。
+
+已知边界（不是缺陷，别当回归）：
+
+| 项 | 说明 |
+|---|---|
+| `rust.rustup` | Android 上 rustls 平台校验 panic → 永久 `unsupported`，界面置灰 |
+| 未纳管项 | 手动 `apt` 装的项没有 `env-state.json` 记录 → 卸载按**声明包名**兜底，体积显示“未纳管” |
+| 幽灵文件 | apt 被信号打断时 dpkg 无记录但二进制还在 → 卸载末尾会补删该二进制 |
