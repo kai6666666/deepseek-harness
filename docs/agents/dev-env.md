@@ -272,3 +272,34 @@ tap 勾选框(gradle) → tap 「开始配置」
 ```
 
 也就是说：**勾选状态 → 计划 → 确认 → 后台任务 → 日志 → 状态回读** 这条闭环完全由界面驱动，不依赖 CLI。
+
+### v2.3 UI 批量与版本解析（2026-10-27，装 1.0.0-108 后）
+
+**A. 单项（uv）**：勾选 uv → 开始配置
+
+```text
+devenv-job.json {action:install, ids:["python.uv"], pid:24997}
+logs: Unpacking uv (0.13.5) …  → exit=0（22 s）
+status: Python 组 5/5，uv 0.13.5 (aarch64-linux-android) · 33 MB
+```
+
+**B. 批量（两项一次提交）**：同时勾选 sshpass + Gradle → 开始配置
+
+```text
+devenv-job.json {action:install, ids:["ssh.sshpass","java.gradle"], id:"2 items", pid:26215}
+logs: Setting up sshpass (1.10-1) … ✅ sshpass 完成
+      → 安装 Gradle …（apt 串行执行）
+→ 27 s 后 exit=0；SSH 3/3、Java 2/2
+```
+
+**C. 版本解析修复**：Gradle 的 `gradle -v` 第一行是分隔线 `-----…`，之前只取首行 → 界面显示一串横线。
+现在 `normalizeVersion()` 收**整段输出**并用 `/Gradle\s+([\d.]+)/` 抓版本，显示 `9.8.2 · 165 MB`。
+
+最终六组真机状态（截图确认）：
+
+```text
+Node.js 2/2 · Python 5/5 · SSH 3/3 · Java 2/2 · Rust 1/2（rustup 置灰）· Go 1/1
+```
+
+> 「全选」按钮本身未单独点测（它只对非必需项生效，当前环境除 rustup/sshpass 外已全装）；
+> 组级行为等价于“批量勾选”路径，已由 B 覆盖。
