@@ -5,14 +5,14 @@
 本仓库出过「zip 忘了打 / 名字写错 / 被 .gitignore 吞掉」的事故族（见 asset-stamps.md 的 b0fbb4b）。
 
 断言四组：
-  1. 29 项运行期资产都在 APK 里，且非空
-  2. 「容器型」资产深度断言：bootstrap 必须提供 node 的 soname，node-runtime 必须带 libcares
+  1. 30 项运行期资产都在 APK 里，且非空
+  2. 「容器型」资产做深度断言：bootstrap 必须提供 node 的 soname、node-runtime 必须带 libcares
   3. AndroidManifest 存在，包名恰好 15 字符（Termux ELF 原地改写的硬约束）
   4. targetSdk ≤ 28（Android 10+ 禁止 execve 应用私有目录）
 
 第 2 组是补的上一课的：清单里少了 bootstrap-aarch64.zip，28/28 依然全绿，
 真机却是 `FileNotFoundException: bootstrap-aarch64.zip` + `libz.so.1 not found`。
-「资产在」≠「资产齐」—— 两个容器型 zip 要拆开看里面。
+「资产在」≠「资产齐」——所以两个 zip 要拆开看里面。 
 
 用法：
     python3 tools/check-apk-assets.py app/build/outputs/apk/system/debug/app-system-debug.apk
@@ -41,6 +41,8 @@ REQUIRED = [
     "statusbar-tool.zip", "uiagent-tool.zip", "logs-tool.zip",
     "browser-tool.zip", "browser-pane.zip", "pet-bridge.zip",
     "adb-wireless-arm64.zip",
+    # 开发环境脚本：由 EngineManager.ensureDevEnvScript() 落盘给插件宿主半调用
+    "dsh-env.mjs",
 ]
 
 
@@ -66,7 +68,8 @@ def check_nested(z: zipfile.ZipFile) -> list[str]:
             if "SYMLINKS.txt" not in names:
                 errs.append("bootstrap 缺 SYMLINKS.txt（libz.so.1 这类软链不会被重建）")
             else:
-                for line in b.read("SYMLINKS.txt").decode("utf-8", "replace").splitlines():
+                sym = b.read("SYMLINKS.txt").decode("utf-8", "replace")
+                for line in sym.splitlines():
                     if "←" in line:
                         right = line.split("←", 1)[1].strip().replace("./", "").strip("/")
                         provided.add(os.path.basename(right))
