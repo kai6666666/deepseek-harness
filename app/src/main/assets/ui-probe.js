@@ -943,6 +943,28 @@ function (CMD) {
     return got.indexOf(want) >= 0;
   }
 
+  /** 把光标放到元素的**内容末尾**（execCommand 只作用于当前选区）。 */
+  function placeCaretAtEnd(el) {
+    try { el.focus(); } catch (e) { /* 不可聚焦 */ }
+    try {
+      var sel = window.getSelection();
+      if (!sel) return;
+      var r = document.createRange();
+      r.selectNodeContents(el);
+      r.collapse(false);   // false = 折叠到末尾
+      sel.removeAllRanges();
+      sel.addRange(r);
+    } catch (e) { /* 忽略：某些只读元素不允许建 Range */ }
+  }
+
+  /** 同步判断“内容里已经包含这段文字了吗”。 */
+  function appliedNow(el, s) {
+    try {
+      var now = readText(el) || '';
+      return now.indexOf(String(s)) >= 0;
+    } catch (e) { return false; }
+  }
+
   function setValue(el, text) {
     var s = String(text == null ? '' : text);
     if (el.isContentEditable) {
@@ -964,9 +986,22 @@ function (CMD) {
       //   所以：**返回 true 就相信它**，不做同步覆盖；只有它返回 false 或抛异常
       //   时才用兜底。落地的复核交给调用方在下一轮 `find`/`text` 里做
       //   （见 `type` 结果里的 `applied` 字段说明）。
+      // ⚠️ **execCommand 作用在当前选区上**，不是“写入这个元素”。
+      //   没先把 caret 放进元素里时，它会返回 true 却什么都不写 —— 真机实测：
+      //   `{how:"execCommand(异步生效)", applied:null, value:""}`，而界面上
+      //   一个字也没出现。所以先用 Range 把光标落到元素内容末尾，再插入。
+      placeCaretAtEnd(el);
       var ok = false;
       try { ok = document.execCommand('insertText', false, s); } catch (e) { ok = false; }
-      if (ok) return 'execCommand(异步生效)';
+      if (ok) {
+        // 同步读为空是正常的（Lexical 异步生效）；但若连“异步后也没字”，
+        // 说明选区没落对，再补一次（每次重新 placeCaret，execCommand 会吃掉选区）。
+        if (!appliedNow(el, s)) {
+          placeCaretAtEnd(el);
+          try { document.execCommand('insertText', false, s); } catch (e2) { /* 忽略 */ }
+        }
+        return 'execCommand(异步生效)';
+      }
 
       // 兜底：`execCommand` 不可用（老内核/非聚焦）时才走这条。
       el.textContent = s;
