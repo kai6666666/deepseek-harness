@@ -806,6 +806,10 @@ type/find/tap → 一律「找不到元素」
 `#root > div > … > div:nth-of-type(1)` 隔 4 秒就 `querySelector` 不到（React 重渲染让
 序号漂移），而同一时刻 DOM 上 53 个 `data-dsh-ref` 一个不少。属性选择器短且稳。
 
+另外 `locate()` 自己也有属性回落：`ref` 在页面里存不住时直接
+`querySelector('[data-dsh-ref="eN"]')`。所以 ref 命中**不依赖**原生翻译是否生效 ——
+原生那一层只是把 `sel` 也补齐，方便日志与回执取证。
+
 `refToSel` 放**原生侧**而不是页面里的原因：探针每次命令都重新求值，`window` 上的表
 会随 WebView/Activity 重建一起消失。原生单例不参与页面重建。
 
