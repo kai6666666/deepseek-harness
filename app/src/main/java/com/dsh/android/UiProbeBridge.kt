@@ -67,6 +67,9 @@ object UiProbeBridge {
      */
     private val refToSel = java.util.concurrent.ConcurrentHashMap<String, String>()
 
+    /** 探针求值计数：和探针的 probeSeq 对一眼，就知道有没有命令被吞。 */
+    private val evalSeq = java.util.concurrent.atomic.AtomicLong(0L)
+
     private const val CMD_FILE = "ui-cmd.json"
 
     /** 回执文件名。同上，两边必须一起改。 */
@@ -329,6 +332,16 @@ object UiProbeBridge {
                 }
             }
             else -> evalOnce(host, source, cmd, TIMEOUT_MS)
+        }
+
+        // 诊断：这条回执是**哪个 WebHost 实例**、第几次求值。
+        // 和探针回的 probeUid 拼起来看：hostId 变了 = 桥换了宿主；
+        // hostId 没变而 probeUid 变了 = 页面被重建（句柄随之失效）。
+        try {
+            result.put("hostId", Integer.toHexString(System.identityHashCode(host)))
+            result.put("evalSeq", evalSeq.incrementAndGet())
+        } catch (t: Throwable) {
+            Log.w(TAG, "附加诊断字段失败: ${t.message}")
         }
 
         // 坐标换算：只在结果里**已经有**元素几何时做，且失败不影响主结果。
