@@ -687,9 +687,21 @@ class EngineManager private constructor(private val context: Context) {
 
         val target = File(nodeModules, ADDON_PACKAGE)
         val binary = File(target, "prebuilt/android-arm64-napi-v9.node")
+        // ⚠️ 加载器真正看的**不是**平台包，而是「本地构建」路径：
+        //   node-addon-native-custom-loader 的 localBindingPath() 拼的是
+        //     <packageDir>/build/napi/napi-v9-android-arm64/require_builtin.node
+        //   平台包（optional-package）那条路要求它自己能被 require 出 binding，
+        //   我们这份自编译包没有 main，走不通。真机 2026-10-27：只装平台包 →
+        //   MODULE_NOT_FOUND，引擎在打印 URL 之前就退出（crash 现场第 414 行）。
+        val localBuild = File(
+            File(nodeModules, ADDON_BASE_PACKAGE),
+            "build/napi/napi-v9-android-arm64/require_builtin.node",
+        )
 
         // 已装好就跳过。插件与 Node 大版本解耦（走 N-API），无需按 node 版本重装。
-        if (binary.isFile && binary.length() > 0) {
+        if (binary.isFile && binary.length() > 0 &&
+            localBuild.isFile && localBuild.length() > 0
+        ) {
             return
         }
 
@@ -707,6 +719,12 @@ class EngineManager private constructor(private val context: Context) {
                 }
             }
             Log.i(TAG, "已安装原生插件 $ADDON_PACKAGE (${binary.length()} 字节)")
+            // 再铺一份到加载器真正会去看的本地构建路径（见上面的说明）
+            if (!localBuild.isFile || localBuild.length() == 0L) {
+                localBuild.parentFile?.mkdirs()
+                binary.copyTo(localBuild, overwrite = true)
+                Log.i(TAG, "已铺 requireBuiltin 加载路径: ${localBuild.absolutePath} (${localBuild.length()} 字节)")
+            }
         } catch (t: Throwable) {
             // 装不上就不阻断启动：让引擎自己报出更具体的加载失败原因
             Log.w(TAG, "安装原生插件失败: ${t.message}")
@@ -8315,6 +8333,8 @@ class EngineManager private constructor(private val context: Context) {
         /** 自编译的 android-arm64 原生插件（官方无此变体）。 */
         private const val ADDON_ASSET = "node-addon-android-arm64.zip"
         private const val ADDON_PACKAGE = "node-addon-require-builtin-android-arm64"
+        /** 自编译二进制的真正落点：除平台包外，加载器还认「本地构建」路径。 */
+        private const val ADDON_BASE_PACKAGE = "node-addon-require-builtin"
 
         /** system 插件（会话写入锁 flock）：同样是自编译的 android-arm64 变体。 */
         private const val SYSTEM_ADDON_ASSET = "node-addon-system-android-arm64.zip"
