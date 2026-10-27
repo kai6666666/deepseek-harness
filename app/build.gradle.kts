@@ -326,6 +326,21 @@ android {
                 keyPassword = keystoreProps.getProperty("keyPassword")
             }
         }
+
+        // ⚠️ debug 签名也必须**钉死**。实测两次 CI 产物的 v2 证书 SHA-256 不同
+        //   （e4d5c65c… / 289720f6…）：runner 各自现生成一把新 debug key，
+        //   设备上只能卸载重装，而卸载会清掉整个 Termux 环境与 $DSH_HOME。
+        //   曾经靠 `cp ci/debug.keystore $HOME/.android/` 以为够了 —— AGP 没读它。
+        //   ci/debug.keystore 是公开的 Android debug 钥匙（storepass=android），不是秘密。
+        val ciDebugKeystore = rootProject.file("ci/debug.keystore")
+        if (ciDebugKeystore.exists()) {
+            create("debugPinned") {
+                storeFile = ciDebugKeystore
+                storePassword = "android"
+                keyAlias = "androiddebugkey"
+                keyPassword = "android"
+            }
+        }
     }
 
     buildTypes {
@@ -342,6 +357,11 @@ android {
         }
         debug {
             isMinifyEnabled = false
+            // 钉死的 debug 签名（见 signingConfigs 里的说明）：
+            // 不用 AGP 默认的 $HOME/.android/debug.keystore —— 那条路在 CI 上每次都是新钥匙。
+            if (rootProject.file("ci/debug.keystore").exists()) {
+                signingConfig = signingConfigs.getByName("debugPinned")
+            }
         }
     }
 
