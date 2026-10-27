@@ -137,8 +137,8 @@ const GROUPS = [
         pkgs: ['rust'], probe: [path.join(BIN, 'rustc'), '--version'], estMb: 1100,
       },
       {
-        id: 'rust.rustup', label: 'rustup 工具链', desc: '官方 rustup（实验，Termux 无二进制包）', kind: 'custom',
-        custom: 'rustup',
+        id: 'rust.rustup', label: 'rustup 工具链', desc: 'Termux 不支持（rustls 平台校验在 Android 上 panic）', kind: 'custom',
+        custom: 'rustup', unsupported: true,
         probe: [path.join(HOME, '.cargo/bin/rustup'), '-V'], estMb: 1000,
       },
     ],
@@ -246,6 +246,7 @@ function normalizeVersion(item, line) {
   if (item.id === 'ssh.client') { const m = s.match(/OpenSSH[_\s]([^\s,]+)/); return m ? m[1] : s; }
   if (item.id === 'python.core' || item.id === 'python.link') { const m = s.match(/Python\s+([\w.]+)/); return m ? m[1] : s; }
   if (item.id === 'go.apt') return s.replace(/^go version\s+/, '').split(' ')[0];
+  if (item.id === 'java.gradle') { const m = s.match(/Gradle\s+([\d.]+)/); return m ? m[1] : s.slice(0, 40); }
   if (item.id === 'node') return s.replace(/^v/, 'v');
   return s.slice(0, 60);
 }
@@ -274,6 +275,64 @@ function sizeOf(item, state, snap) {
 }
 
 // ── 安装器 ───────────────────────────────────────────────────────────────────
+/**
+ * 把 `$PREFIX/bin` 里脚本中的 `com.termux` 路径改成本 App 的路径。
+ *
+ * ⚠️ Termux 的 apt 包把前缀**写死**成 `/data/data/com.termux/files`（wrapper 脚本、
+ *   shebang、`gradle` 这类启动器）。我们的包名是 `com.dsh.android`，于是包“装上了”
+ *   却在 `$PREFIX/bin` 里找不到可执行文件 —— 真机上 `gradle` 就是这样报
+ *   「装完了但探测不到可执行文件」。
+ *
+ * 只处理 bin 目录下的小文本文件（上限 256 KB），二进制一律跳过。
+ */
+/**
+ * 把 gradle 的启动器指向**发行版自带的那份**。
+ *
+ * ⚠️ Termux 的 `gradle` 包在 `$PREFIX/bin/gradle` 放了一个 wrapper，它去找
+ *   `$PREFIX/lib/gradle-gradle-cli-main-<ver>.jar`，而包里根本没这个 jar
+ *   （只有 `$PREFIX/opt/gradle/` 下的完整发行版）→ 真机报
+ *   “Unable to access jarfile …/lib/gradle-gradle-cli-main-9.8.2.jar”。
+ *   正确做法：直接软链到 `$PREFIX/opt/gradle/bin/gradle`（实测 `gradle -v` 正常）。
+ */
+function fixGradleLauncher(say) {
+  const dist = path.join(PREFIX, 'opt/gradle/bin/gradle');
+  if (!fs.existsSync(dist)) return false;
+  const link = path.join(BIN, 'gradle');
+  try {
+    fs.rmSync(link, { force: true });
+    fs.symlinkSync(dist, link);
+    say('gradle 启动器已指向 opt/gradle/bin/gradle');
+    return true;
+  } catch { return false; }
+}
+
+function fixPrefixShims(say) {
+  const mappings = [
+    ['/data/data/com.termux/files', FILES],
+    ['/data/data/com.termux', path.dirname(FILES)],
+  ];
+  let n = 0;
+  let names = [];
+  try {
+    names = fs.readdirSync(BIN);
+  } catch { return; }
+  for (const name of names) {
+    const file = path.join(BIN, name);
+    let st;
+    try { st = fs.statSync(file); } catch { continue; }
+    if (!st.isFile() || st.size > 256 * 1024) continue;
+    let text;
+    try { text = fs.readFileSync(file, 'utf8'); } catch { continue; }
+    if (!text.includes('com.termux')) continue;
+    if (text.includes('')) continue; // 二进制
+    let next = text;
+    for (const [from, to] of mappings) next = next.split(from).join(to);
+    if (next === text) continue;
+    try { fs.writeFileSync(file, next); fs.chmodSync(file, st.mode); n += 1; } catch {}
+  }
+  if (n) say(`修正 ${n} 个脚本里的 com.termux 前缀`);
+}
+
 async function installApt(item, state, say) {
   const before = dpkgSnapshot();
   await ensureAptIndex(say);
@@ -282,7 +341,14 @@ async function installApt(item, state, say) {
   if (r.code !== 0) throw new Error(`apt 安装失败（exit ${r.code}）`);
   const after = dpkgSnapshot();
   const added = [...after.keys()].filter((p) => !before.has(p));
-  const pr = probeOf(item);
+  fixPrefixShims(say);
+  let pr = probeOf(item);
+  // ⚠️ Termux 的 gradle wrapper 找 `$PREFIX/lib/gradle-gradle-cli-main-<ver>.jar`，
+  //   而包里实际把它放在 `$PREFIX/opt/gradle/lib/gradle-cli-main-<ver>.jar`
+  //   → `gradle -v` 报 “Unable to access jarfile”。补一条软链即可。
+  if (!pr.ok && item.id === 'java.gradle') {
+    if (fixGradleLauncher(say)) pr = probeOf(item);
+  }
   if (!pr.ok) throw new Error('装完了但探测不到可执行文件');
   return { pkgs: added, version: pr.version };
 }
@@ -364,6 +430,7 @@ async function installRustup(item, say) {
 
 async function installItem(item, state, say) {
   if (item.required) throw new Error('该项为必需项，不可安装/卸载');
+  if (item.unsupported) throw new Error('Termux 上不支持该项');
   if (item.requires) {
     for (const dep of item.requires) {
       const d = ITEM.get(dep);
@@ -486,6 +553,7 @@ function statusData() {
         tracked: Boolean(st),
         adopted: Boolean(st && st.adopted),
         requires: it.requires || [],
+        unsupported: Boolean(it.unsupported),
       };
     });
     const installed = items.filter((i) => i.installed).length;
