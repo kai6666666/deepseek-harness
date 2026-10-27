@@ -207,7 +207,7 @@ object UiProbeBridge {
     // ────────────────────────────────────────────────────────────────────
 
     /**
-     * 把命令里的 `args.ref` 翻成 `args.sel`（dump 时记下的那份）。
+     * 把 ref 翻成选择器：优先 `ref`，也认老写法 `args.ref`（[flattenArgs] 已抬到顶层）。
      *
      * 只在**没有 sel** 时翻译：调用方显式给了选择器就以它为准。
      */
@@ -220,7 +220,7 @@ object UiProbeBridge {
             Log.w(TAG, "ref $ref 没有对应选择器（该 ref 不属于最近一次 dump）")
             return
         }
-        args.put("sel", sel)
+        cmd.put("sel", sel)
         Log.i(TAG, "ref $ref → sel（原生翻译，${sel.length} 字符）")
     }
 
