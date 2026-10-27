@@ -48,10 +48,19 @@ for name in $PRUNE_LIST; do
   [ -e "$path" ] && { rm -rf "$path"; echo "  - 删除 $name"; }
 done
 
-echo "== 3/4 统计"
+echo "== 3/4 统计 + MANIFEST"
 du -sh node_modules
 BEFORE=$(du -sm node_modules | cut -f1)
 echo "裁剪后: ${BEFORE} MB"
+
+# MANIFEST.txt —— 给真机解包后的对账用（EngineManager.verifyEngineManifest）。
+# 只声明 node_modules 下的**普通文件数**与**字节和**：这两个值 TarGz 边写边数，
+# 能对上才算解全。为什么需要：2026-10-27 真机把 52 537 条只解出 2 463 条还报「完成」，
+# 没有任何一处做过「解出来的东西 == 归档声明的东西」这个比对。
+NM_FILES=$(find node_modules -type f | wc -l | tr -d ' ')
+NM_BYTES=$(find node_modules -type f -printf '%s\n' | awk '{s+=$1} END{printf "%d", s+0}')
+printf 'node_modules_files=%s\nnode_modules_bytes=%s\n' "$NM_FILES" "$NM_BYTES" > MANIFEST.txt
+echo "MANIFEST: ${NM_FILES} 个文件 / ${NM_BYTES} 字节"
 
 echo "== 4/4 打包 $OUT"
 cd "$WORK"
@@ -59,8 +68,23 @@ rm -f "$OUT"
 # 🔴 必须是 **gzip 的 tar**，不是 zip。
 #    EngineManager.ensureExtracted 调的是 TarGz.extract()（GZIPInputStream + tar），
 #    产出 zip 会在真机抛 `ZipException: Not in GZIP format`（2026-10-27 实测踩到）。
-GZIP=-9 tar -czf "$OUT" node_modules package.json
+GZIP=-9 tar -czf "$OUT" node_modules package.json MANIFEST.txt
 ls -lh "$OUT"
+
+echo "== 体检（出包前自己先验一遍）"
+ENTRIES=$(tar -tzf "$OUT" | wc -l | tr -d ' ')
+LONG=$(tar -tzf "$OUT" | awk 'length($0) > 100' | wc -l | tr -d ' ')
+echo "   条目 ${ENTRIES}（文件 ${NM_FILES}），>100 字符的路径 ${LONG} 条"
+[ "$ENTRIES" -ge "$NM_FILES" ] || { echo "❌ 条目数少于文件数，归档被截断"; exit 1; }
+if [ "$LONG" -gt 0 ]; then
+  echo "   ⚠️ ${LONG} 条路径超过 100 字符：GNU tar 会用 ././@LongLink 承载，"
+  echo "      客户端 TarGz 必须支持 'L' 头（2026-10-27 就是因为没支持，解包停在 2463 条）"
+fi
+if tar -tzf "$OUT" | grep -qx 'node_modules/@deepseek-ai/dsh/lib/bin.js'; then
+  echo "   引擎入口 @deepseek-ai/dsh/lib/bin.js 在归档里"
+else
+  echo "❌ 归档里没有 @deepseek-ai/dsh/lib/bin.js"; exit 1
+fi
 
 echo
 echo "下一步："
