@@ -72,19 +72,24 @@ GZIP=-9 tar -czf "$OUT" node_modules package.json MANIFEST.txt
 ls -lh "$OUT"
 
 echo "== 体检（出包前自己先验一遍）"
-ENTRIES=$(tar -tzf "$OUT" | wc -l | tr -d ' ')
-LONG=$(tar -tzf "$OUT" | awk 'length($0) > 100' | wc -l | tr -d ' ')
+# ⚠️ 一次 tar -tzf 落盘再查三遍：直接 `tar -tzf | grep -q` 会让 grep 提前关闭管道，
+#   tar 收到 SIGPIPE（日志里的 `tar: stdout: write error`），pipefail 下整条流水线变成失败。
+LIST=$(mktemp)
+tar -tzf "$OUT" > "$LIST"
+ENTRIES=$(wc -l < "$LIST" | tr -d ' ')
+LONG=$(awk 'length($0) > 100' "$LIST" | wc -l | tr -d ' ')
 echo "   条目 ${ENTRIES}（文件 ${NM_FILES}），>100 字符的路径 ${LONG} 条"
-[ "$ENTRIES" -ge "$NM_FILES" ] || { echo "❌ 条目数少于文件数，归档被截断"; exit 1; }
+[ "$ENTRIES" -ge "$NM_FILES" ] || { rm -f "$LIST"; echo "❌ 条目数少于文件数，归档被截断"; exit 1; }
 if [ "$LONG" -gt 0 ]; then
   echo "   ⚠️ ${LONG} 条路径超过 100 字符：GNU tar 会用 ././@LongLink 承载，"
   echo "      客户端 TarGz 必须支持 'L' 头（2026-10-27 就是因为没支持，解包停在 2463 条）"
 fi
-if tar -tzf "$OUT" | grep -qx 'node_modules/@deepseek-ai/dsh/lib/bin.js'; then
+if grep -qxF 'node_modules/@deepseek-ai/dsh/lib/bin.js' "$LIST"; then
   echo "   引擎入口 @deepseek-ai/dsh/lib/bin.js 在归档里"
 else
-  echo "❌ 归档里没有 @deepseek-ai/dsh/lib/bin.js"; exit 1
+  rm -f "$LIST"; echo "❌ 归档里没有 @deepseek-ai/dsh/lib/bin.js"; exit 1
 fi
+rm -f "$LIST"
 
 echo
 echo "下一步："
