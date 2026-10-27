@@ -760,6 +760,12 @@ function (CMD) {
     if (spec.ref) {
       var byRef = REFS.get(String(spec.ref));
       if (byRef && byRef.isConnected) el = byRef;
+      // ⚠️ 模块级 Map 在**每次命令重新求值**时是空的，所以真正的命中靠 DOM 属性。
+      //   没有这条回落，`ref` 就只能依赖原生侧的 ref→sel 翻译；而一旦原生版本
+      //   落后（或插件直连信箱），症状又是「找不到元素」。属性是唯一跨求值可靠的锚点。
+      if (!el) {
+        el = bySel('[data-dsh-ref="' + String(spec.ref).replace(/["]/g, '') + '"]');
+      }
     }
     if (!el && spec.sel) el = bySel(spec.sel);
     if (!el && spec.testid) {
