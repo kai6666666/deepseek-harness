@@ -378,13 +378,23 @@ async function installLink(item, state, say) {
 }
 
 async function installCheck(item, state, say) {
-  // check 项本身不装东西：依赖项装好它就成立
+  // check 项本身不装东西：但它可以**把依赖装好**（例如 sshd 属于 openssh）。
+  if (probeOf(item).ok) return { version: 'ok' };
+  for (const dep of item.requires || []) {
+    const d = ITEM.get(dep);
+    if (!d) continue;
+    if (probeOf(d).ok) continue;
+    say(`先安装依赖：${d.label}`);
+    const rec = await installItem(d, state, say);
+    state.items[d.id] = {
+      ...(state.items[d.id] || {}), ...rec,
+      installedAt: new Date().toISOString(), adopted: false,
+    };
+    writeState(state);
+  }
   const pr = probeOf(item);
   if (pr.ok) return { version: 'ok' };
-  if (item.requires) {
-    say(`依赖 ${item.requires.join(', ')} 未就绪`);
-  }
-  throw new Error('能力自检未通过（依赖未安装或该内核不支持）');
+  throw new Error('能力自检未通过（依赖装上了，但该内核不支持）');
 }
 
 async function installCustom(item, state, say) {
