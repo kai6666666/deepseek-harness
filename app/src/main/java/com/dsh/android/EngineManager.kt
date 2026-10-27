@@ -1383,14 +1383,22 @@ class EngineManager private constructor(private val context: Context) {
 
         try {
             val source = entry.readText()
-            if (source.contains(IMG_TYPE_ANCHOR)) {
+            if (source.contains(IMG_TYPE_DONE_MARK)) {
                 return
             }
-            if (!source.contains(IMG_TYPE_GUARD)) {
-                Log.w(TAG, "发图格式判断结构与预期不符，跳过补丁")
+            // ⚠️ 必须用**空白无关**的正则，不能拿固定字面量比：
+            //   同一个文件会有两种形态 ——
+            //     ① 原始 npm 发布产物：`\n\t\t\treturn value === "image/png"…`（tab 缩进）
+            //     ② webview-compat 降级后：esbuild 重打包，缩进变成**空格**、文件也更大
+            //        （真机实测 778 KB → 855 KB）。
+            //   2026-10-27 两次真机都是因为①的锚点去匹配②的文件，
+            //   于是每次启动只打一行「结构与预期不符」，补丁从未生效。
+            val m = IMG_TYPE_GUARD_RE.find(source)
+            if (m == null) {
+                Log.w(TAG, "发图格式判断结构与预期不符，跳过补丁（原始比较式与已放宽标记都没找到）")
                 return
             }
-            entry.writeText(source.replace(IMG_TYPE_GUARD, IMG_TYPE_ANCHOR))
+            entry.writeText(source.replaceRange(m.range, IMG_TYPE_PATCHED))
             Log.i(TAG, "已放宽发图格式白名单: dsh-client-ui-conversation")
         } catch (t: Throwable) {
             Log.w(TAG, "放宽发图格式白名单失败: ${t.message}")
@@ -8430,6 +8438,23 @@ class EngineManager private constructor(private val context: Context) {
          * ⚠️ 缩进是**三个制表符**，与官方发布件逐字一致；引擎升级后若不再匹配，
          * 补丁会跳过并在日志里提示，不会让启动失败。见 [patchImageMediaType]。
          */
+        /**
+         * 原始比较式的**空白无关**匹配式。
+         *
+         * 原始 npm 产物用 tab 缩进，webview-compat 重打包后用空格 —— 两种都要能命中。
+         */
+        private val IMG_TYPE_GUARD_RE = Regex(
+            """return\s+value\s*===\s*"image/png"\s*\|\|\s*value\s*===\s*"image/jpeg"\s*\|\|\s*value\s*===\s*"image/webp"\s*\|\|\s*value\s*===\s*"image/gif";""",
+        )
+
+        /** 已放宽的标记：换过之后靠它判幂等（两种缩进下都存在）。 */
+        private const val IMG_TYPE_DONE_MARK = "startsWith(\"image/\")"
+
+        /** 放宽后的判断体：只放宽「能不能选」，解码仍由下游 sharp 负责。 */
+        private const val IMG_TYPE_PATCHED =
+            "if (typeof value !== \"string\") return false;\n" +
+                "return value.startsWith(\"image/\") || value === \"image/jpg\";"
+
         private const val IMG_TYPE_GUARD =
             "\t\t\treturn value === \"image/png\" || value === \"image/jpeg\" || " +
                 "value === \"image/webp\" || value === \"image/gif\";"
