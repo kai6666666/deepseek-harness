@@ -79,3 +79,79 @@ classes=62
 
 本地等价命令：`KTCACHE=/opt/kt ./tools/verify-engine.sh`。
 成本：无 Gradle、无 SDK 许可，一次缓存后每次约 40 秒。
+
+## 「通了」的四条判据（别再用一句「UI 能操作」含糊）
+
+真机上很多结论互相矛盾，根源是「通」没定义。现在拆成四条，各自有独立、可复现的判据。
+记录时间：2026-10-27。
+
+### ① 引擎包完整性
+
+```bash
+run-as com.dsh.android sh -c 'grep -h "引擎完整性断言通过" files/logs/*.log | tail -1'
+# 期望：引擎完整性断言通过：条目 54554，文件 47916，字节 397584889
+```
+
+三个数字必须**同时**与 `engine.bin` 的归档声明一致；少一个都是解包被截断（见
+`TarGz` 的 GNU `@LongLink` / 名字读空 两个旧缺陷）。
+
+### ② 四个原生模块就位
+
+```bash
+run-as com.dsh.android sh -c 'grep -hE "require-builtin|node-pty|sharp|flock" files/logs/engine.log | tail -8'
+```
+
+判据是**没有**「未找到」字样，而不是「有一行提过它」。
+
+### ③ 工具链通（会话内模型 → 工具 → 原生 → 回注）
+
+会话存档是 zstd：`files/home/.dsh/sessions/<workspace>/session-<uuid>/session.v4.jsonl.zstd`。
+设备上没有 `zstd` 命令，`cp` 到 `/sdcard` 又被 FUSE 权限挡住，用 app 自己的 node 解（见 `tools/zread.mjs`）：
+
+```bash
+run-as com.dsh.android sh -c 'N=/data/user/0/com.dsh.android/files/termux/usr/bin/node;\
+D=/data/user/0/com.dsh.android/files/home/.dsh/sessions;\
+F=$(ls -t $D/*/*/session.v4.jsonl.zstd | head -1);\
+$N /data/local/tmp/zread.mjs "$F" 6'
+```
+
+（先把 `tools/zread.mjs` 推到 `/data/local/tmp/zread.mjs` 并 `chmod 644`；它只做「解压 + 过滤 tool 事件」两件事。）
+
+判据（两条同时成立）：
+
+1. 同一 turn 内 `tool/call` 与 `tool/result` **成对**出现；
+2. `tool/result` 正文是 `2000`，且 stderr 带 `[dsh-adb] 通道: Shizuku（uid 2000）`。
+
+证据形状：
+
+```json
+{"type":"tool/call","seq":69,"name":"shell","arguments":"{\"command\":\"id -u\"}"}
+{"type":"tool/result","seq":70,"content":"2000\n[stderr]\n[dsh-adb] 通道: Shizuku（uid 2000）","isError":false}
+```
+
+### ④ UI 句柄通（模型能拿着 dump 给的句柄回写）
+
+```bash
+# 1) dump
+printf '%s' '{"id":1,"action":"dump","limit":400}' > files/home/.dsh/ui-cmd.json
+# 2) 从回执里取 role=textbox 的 ref（形如 e48）
+# 3) 写（扁平写法；未聚焦先 tap {ref}）
+printf '%s' '{"id":2,"action":"type","ref":"e48","value":"hello","clear":true}' > files/home/.dsh/ui-cmd.json
+```
+
+判据：`ok:true` **且** `applied:true` **且** `value` 含 `hello`。
+
+⚠️ `ok:true` 单独不算：`applied:null` + `value:""` 表示 `execCommand` 空转（选区没落进元素）。
+
+⚠️ 另有一条与它并列的「坐标通」：用 dump 的 `screenCenter` 直接 `input tap`，
+`am start → tap → input text → tap` 串成**一条** adb 命令执行（设备会被其它 App 抢前台，
+分多条必断），然后 `screencap` 看到消息真的发出去。这条路已验证能驱动整轮会话。
+
+### 四条的当前状态
+
+| # | 判据 | 状态 |
+|---|---|---|
+| ① | 完整性断言三数字 | ✅ 54554 / 47916 / 397584889 |
+| ② | 四模块无「未找到」 | ✅ |
+| ③ | tool/call ↔ tool/result = 2000 | ✅ 两次实证 |
+| ④ | dump→ref→type `applied:true` | ✅ 2026-10-27 真机（含 `value` 复核） |
