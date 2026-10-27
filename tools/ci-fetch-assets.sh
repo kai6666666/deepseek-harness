@@ -8,8 +8,8 @@
 #   ASSETS_TAG=assets-v1 bash tools/ci-fetch-assets.sh
 #   ASSETS_TAG=assets-v1 STRICT_ASSETS=1 bash tools/ci-fetch-assets.sh   # 缺一个就失败
 #
-# Release 里应放一个（或多个）dsh-assets*.zip，zip 内可直接是资产文件，
-# 也可以是 assets/ 前缀目录——两种布局都支持。
+# Release 里应放一个（或多个）`dsh-assets*.zip`，zip 内可直接是资产文件，
+# 也可以是 `assets/` 前缀目录——两种布局都支持。
 set -uo pipefail
 
 APP_ASSETS="${APP_ASSETS:-app/src/main/assets}"
@@ -49,6 +49,7 @@ REQUIRED=(
   browser-pane.zip
   pet-bridge.zip
   adb-wireless-arm64.zip
+  dsh-env.mjs
 )
 
 mkdir -p "$APP_ASSETS"
@@ -82,6 +83,7 @@ fi
 echo "== 2/3 解包到 $APP_ASSETS"
 for z in "$WORK"/dsh-assets*.zip; do
   echo "  - $(basename "$z") $(du -h "$z" | cut -f1)"
+  # zip 里可能是 `assets/xxx` 也可能直接是 `xxx`
   unzip -oq "$z" -d "$WORK/x"
 done
 if [ -d "$WORK/x/assets" ]; then
