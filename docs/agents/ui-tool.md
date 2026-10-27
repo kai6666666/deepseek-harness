@@ -772,3 +772,88 @@ composer 的 `text` 字段是 **placeholder**（「发消息或创建任务, / �
 写死的后果是「改探针必须记得改这里」，而漏改的表现是「脚本报失败、真机一切正常」，
 最容易被误判成资产没生效。
 
+#### ⚠️⚠️ 命令字段只有**顶层**一种口径 —— `args` 是调用方的习惯，不是协议
+
+探针是 `function (CMD) {…}`，它读的永远是**顶层**：`cmd.action` / `cmd.ref` / `cmd.sel` /
+`cmd.value` / `cmd.text` / `cmd.limit`。而 MCP 侧与插件侧的调用习惯是
+`{"action":"type","args":{…}}`。两套口径混用时症状极端阴险：
+
+```text
+dump → 一切正常（它不读任何参数）
+type/find/tap → 一律「找不到元素」
+```
+
+看起来像「选择器失效」，实际是**参数根本没被读到**。2026-10-27 真机为此白排查了
+好几轮（先把 `cssPath` 深度 12→64，又加 `ref` 注册表，再挂 `window.__DSH_REFS__`，
+再做 `placeholder` 句柄），真因是这一行：`locate(cmd)` 里 `cmd.sel` 恒为 `undefined`。
+
+现在已经两头都认：`UiProbeBridge.flattenArgs()` 在命令下发前把 `args` 的键抬到顶层
+（顶层已有的键不覆盖），所以 `args` 嵌套写法与扁平写法都能用。
+**新写的调用方请直接用扁平写法**。
+
+判据：回执里 `spec` 字段是**探针收到的原样命令**。若 `spec` 里有 `sel`/`ref`
+但报「找不到元素」，先看它是不是在 `args` 里。
+
+#### 句柄三层：`ref` → `data-dsh-ref` 属性 → 原生 `refToSel`
+
+| 层 | 存在哪 | 作用 | 失效条件 |
+|---|---|---|---|
+| `ref`（`e1`/`e48`…） | dump 回执 + 原生 `refToSel` | 模型拿到的句柄 | 重新 dump 后 ref 重编 |
+| `data-dsh-ref` 属性 | **DOM 上** | `cssPath` 优先返回 `[data-dsh-ref="e48"]` | 节点被 React 替换 |
+| `refToSel` 映射 | 原生单例 | 把 `ref` 翻成 `sel` 再下发 | 进程重启 |
+
+**再不要用 `nth-of-type` 长路径当句柄。** 实测过：dump 刚给出的
+`#root > div > … > div:nth-of-type(1)` 隔 4 秒就 `querySelector` 不到（React 重渲染让
+序号漂移），而同一时刻 DOM 上 53 个 `data-dsh-ref` 一个不少。属性选择器短且稳。
+
+`refToSel` 放**原生侧**而不是页面里的原因：探针每次命令都重新求值，`window` 上的表
+会随 WebView/Activity 重建一起消失。原生单例不参与页面重建。
+
+#### ⚠️⚠️ `execCommand('insertText')` 作用在**选区**上，不是「写入这个元素」
+
+元素没聚焦时它**返回 `true` 却什么都不写**。真机回执：
+`{"ok":true,"how":"execCommand(异步生效)","applied":null,"value":""}`，界面上一个字没有。
+
+所以 `setValue()` 里必须先 `placeCaretAtEnd(el)`（`focus()` + `Range.selectNodeContents`
++ `collapse(false)`），`execCommand` 后再用 `appliedNow()` 复核一次，没落地就**重建 Range
+再插一次**（因为 `execCommand` 会消耗选区）。
+
+另一个必踩点：composer 是 **Lexical**，插入排进它自己的 update cycle，**同步读必然为空**。
+所以 `applied` 的语义是「同步可确认」：`null` 表示「异步写入已发出」，**不是失败**；
+真正的判据在下一步的 `find` / `value` 里。
+
+#### 诊断字段：判断「句柄失效」到底是谁失效
+
+每条回执（成功与失败都有）都带：
+
+| 字段 | 含义 | 怎么读 |
+|---|---|---|
+| `probeUid` | 每次页面装载生成一个 | **变了** = 页面/window 被重建 |
+| `probeSeq` | 同一次装载内递增 | 不增 = 命令没到页面（被吞/换宿主） |
+| `docAgeMs` | 页面装载至今毫秒 | 很小 = 刚重建过 |
+| `refCount` | 当前文档还有几个 `data-dsh-ref` | `0` = 属性被清或换了文档 |
+| `hostId` | 原生侧 `identityHashCode(host)` | ⚠️ wrapper 每次可能新建，**单独变不算证据** |
+| `evalSeq` | 原生侧求值计数 | 与 `probeSeq` 对不齐 = 有命令被丢 |
+
+一组真实数据（同一秒内 dump 与 find，结论相反）：
+
+```json
+{"ok":true,"uid":"p9ijzhs","seq":1,"age":0,   "rc":53,"host":"a185b80","ev":1}
+{"ok":false,"err":"找不到元素","uid":"p9ijzhs","seq":2,"age":4050,"rc":53,"host":"ab46475","ev":2}
+```
+
+`uid` 同、`seq` 递增、`rc` 两边都 53 → 文档没换、属性没丢 → 不可能是「选择器失效」，
+只剩「参数没被读到」这一种。这套字段就是为了**把猜测变成读数**。
+
+#### 句柄验收（真机，可直接复制）
+
+```bash
+# 1) dump，取 textbox 的 ref
+printf '%s' '{"id":1,"action":"dump","limit":400}' > files/home/.dsh/ui-cmd.json
+# 2) 用 ref 写（扁平写法；元素未聚焦时先发一条 tap {ref}）
+printf '%s' '{"id":2,"action":"type","ref":"e48","value":"hello","clear":true}' > files/home/.dsh/ui-cmd.json
+# 3) 判据：ok:true 且 applied:true 且 value 含 hello
+```
+
+⚠️ 只认 `ok:true` 就会上当：`ok:true` + `applied:null` + `value:""` 是「选区没落对」的
+典型形状，界面一个字没进。
