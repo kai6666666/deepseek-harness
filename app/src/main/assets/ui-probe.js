@@ -402,12 +402,12 @@ function (CMD) {
     var b = blocker(el);
     var off = !inViewportPoint(r);
     return {
-      ref: 'e' + index,
       ref: refOf(el),
       sel: cssPath(el),
       tag: el.tagName.toLowerCase(),
       role: roleOf(el),
       text: labelOf(el),
+      placeholder: (el.getAttribute && el.getAttribute('placeholder')) || '',
       testid: testIdOf(el),
       cls: trunc(el.getAttribute && el.getAttribute('class') || '', MAX_CLASS),
       rect: rectOf(el),
@@ -637,6 +637,46 @@ function (CMD) {
    *   文本可能同时出现在按钮和它的提示里，纯子串匹配会认错。所以分两轮：
    *   先找完全相等的，找不到再退回子串包含。
    */
+  /**
+   * 按 `placeholder` 文本找可编辑元素。
+   *
+   * 为什么单独开一个入口，而不是并进 [byText]：
+   * `labelOf()` 对 INPUT/TEXTAREA/contenteditable 才回落到 placeholder，
+   * 而 DSH 的 composer 是一个带子节点的 contenteditable 包裹层 ——
+   * 它自己的 placeholder 在**内部节点**上，labelOf 取到的是 innerText（空串）。
+   * 所以要在整棵 `INTERACTIVE` 上按属性匹配，并允许“占位符属于其子孙”的情况。
+   *
+   * @param {string} want 占位符文本（子串匹配，忽略大小写与首尾空白）
+   */
+  function byPlaceholder(want) {
+    var needle = String(want || '').trim().toLowerCase();
+    if (!needle) return null;
+    var found = toArray(document.querySelectorAll(INTERACTIVE));
+    for (var i = 0; i < found.length; i++) {
+      var el = found[i];
+      if (!isVisible(el)) continue;
+      var ph = el.getAttribute && el.getAttribute('placeholder');
+      if (ph && String(ph).toLowerCase().indexOf(needle) >= 0) return el;
+      // 占位符在子孙里：取第一个带 placeholder 的后代，但返回**可编辑的最近祖先**
+      var inner = el.querySelector && el.querySelector('[placeholder]');
+      if (inner) {
+        var probe = inner;
+        while (probe && probe !== el && !isEditable(probe)) probe = probe.parentElement;
+        if (probe && isEditable(probe)) return probe;
+        if (isEditable(inner)) return inner;
+      }
+    }
+    return null;
+  }
+
+  /** 元素能否接收文本输入。 */
+  function isEditable(el) {
+    if (!el) return false;
+    if (el.isContentEditable) return true;
+    var tag = el.tagName;
+    return tag === 'INPUT' || tag === 'TEXTAREA';
+  }
+
   function byText(text, exact) {
     if (!text) return null;
     var want = String(text).trim().toLowerCase();
@@ -728,6 +768,8 @@ function (CMD) {
       el = bySel('[aria-label="' + want.replace(/"/g, '\\"') + '"]') ||
         bySel('[title="' + want.replace(/"/g, '\\"') + '"]');
     }
+    // placeholder 是**文本句柄**：跨 WebView 重建也不变（ref 会丢，见 refOf 的注释）
+    if (!el && spec.placeholder) el = byPlaceholder(spec.placeholder);
     if (!el && spec.text) el = byText(spec.text, spec.exact === true);
     // ⚠️ `prefix` 与 `text` 是**并列的两个入口**，不是包含关系 —— 差别在
     //    「子串」与「以它开头」，以及 `prefix` **不吃尾空格**（`text` 会 trim）。
