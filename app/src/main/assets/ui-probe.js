@@ -239,16 +239,26 @@ function (CMD) {
   //   ① 元素在深层 shadow/React 重渲染后序号漂移；
   //   ② 路径过长被截断（2026-10-27 真机：composer 在第 15 层，旧上限 12 被切）。
   // 模型是“照 dump 抄一个句柄回来”的用法，句柄必须比选择器稳。
-  var REF_SEQ = 0;
-  var REFS = new Map();
+  // ⚠️ 必须挂 window：UiProbeBridge 每次命令都重新求值整段探针源码
+  //   （`(<probe>)(<cmd>)`），模块级变量每次都是新的 —— 表存不住，
+  //   dump 发的 ref 到下一次 type 就查不到（2026-10-27 真机实测：ref=e47 → 找不到）。
+  var REFS = (window.__DSH_REFS__ instanceof Map)
+    ? window.__DSH_REFS__
+    : (window.__DSH_REFS__ = new Map());
+  var REF_SEQ = window.__DSH_REF_SEQ__ || 0;
 
-  function clearRefs() { REFS.clear(); REF_SEQ = 0; }
+  function clearRefs() {
+    REFS.clear();
+    REF_SEQ = 0;
+    window.__DSH_REF_SEQ__ = 0;
+  }
 
   function refOf(el) {
     if (!el) return '';
     var r = el.__dshRef;
     if (r && REFS.get(r) === el) return r;
     r = 'e' + (++REF_SEQ);
+    window.__DSH_REF_SEQ__ = REF_SEQ;
     try { el.__dshRef = r; } catch (e) { /* 冻结对象，忽略 */ }
     REFS.set(r, el);
     return r;
