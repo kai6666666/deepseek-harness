@@ -879,3 +879,21 @@ targetSdk = 28 走 legacy 模型，不需要 `MANAGE_EXTERNAL_STORAGE`。
   重装后要重新 bootstrap。Android 10 要再用 PC 导入一次 adbkey；
   Android 11+ 只需重新配对一次（也是手机上点几下，不用电脑）。
 
+#### ⚠️ `spawn bash EACCES` 的修法：候选表 + `access(X_OK)` + 带 errno 的日志
+
+插件回落本地执行时，第一版只拼一个路径：`path.join(PREFIX,'bin','bash')`，失败就抛一句
+`spawn bash EACCES` —— 看不出是「没这个文件」还是「有但不可执行」，真机上白查一轮。
+
+现在 `runLocal()` 走候选表：`$PREFIX/bin/bash` → `$PREFIX/bin/sh` → `/system/bin/sh`，
+每个候选先 `stat` + `access(X_OK)`，都不可用时把 `e.code` / `e.path` / `PREFIX`
+一起写进回执。真机验证：`id -u` → `10603`（app uid），走 Shizuku 时 → `2000`。
+
+#### ⚠️ 诊断提示必须与事实对齐：Shizuku 可用时不要叫人去配对无线调试
+
+`诊断: kind=… key=… legacy=… wireless=… shizuku=…` 这一行是机器可读口径。
+宿主侧解析规则 `FALLBACK_RE = /uid 2000 不可用（(.+?)）/`：
+
+- **`text` 里不能出现全角右括号 `）`**，否则设置页显示的原因会被截断；
+- 只有 `diag.shizuku !== 'ok'` 时才补一句「若已在 Shizuku 里授权 DSH，重启一次应用即可
+  接管，不必配对无线调试」。此前 Shizuku 明明可用、回执却只叫人去配对，属于
+  **结论与事实不符**，比没有提示更坏。
