@@ -38,7 +38,10 @@ jobs:
               fail=1
             fi
           done
-          if git ls-files | grep -E '\.(jks|keystore)$' | grep -q .; then
+          # ⚠️ 例外：ci/debug.keystore —— 这是 Android SDK 的**公开 debug 钥匙**
+          #   （storepass=android，全宇宙同一把），不是私钥。它必须入库，否则每次 CI
+          #   都是 runner 随机生成的新 debug key，签名一变设备就只能卸载重装（丢数据）。
+          if git ls-files | grep -E '\.(jks|keystore)$' | grep -v '^ci/debug\.keystore$' | grep -q .; then
             echo "::error::签名私钥（*.jks / *.keystore）被提交了"
             fail=1
           fi
