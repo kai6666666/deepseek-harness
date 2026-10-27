@@ -687,21 +687,9 @@ class EngineManager private constructor(private val context: Context) {
 
         val target = File(nodeModules, ADDON_PACKAGE)
         val binary = File(target, "prebuilt/android-arm64-napi-v9.node")
-        // ⚠️ 加载器真正看的**不是**平台包，而是「本地构建」路径：
-        //   node-addon-native-custom-loader 的 localBindingPath() 拼的是
-        //     <packageDir>/build/napi/napi-v9-android-arm64/require_builtin.node
-        //   平台包（optional-package）那条路要求它自己能被 require 出 binding，
-        //   我们这份自编译包没有 main，走不通。真机 2026-10-27：只装平台包 →
-        //   MODULE_NOT_FOUND，引擎在打印 URL 之前就退出（crash 现场第 414 行）。
-        val localBuild = File(
-            File(nodeModules, ADDON_BASE_PACKAGE),
-            "build/napi/napi-v9-android-arm64/require_builtin.node",
-        )
 
         // 已装好就跳过。插件与 Node 大版本解耦（走 N-API），无需按 node 版本重装。
-        if (binary.isFile && binary.length() > 0 &&
-            localBuild.isFile && localBuild.length() > 0
-        ) {
+        if (binary.isFile && binary.length() > 0) {
             return
         }
 
@@ -719,12 +707,6 @@ class EngineManager private constructor(private val context: Context) {
                 }
             }
             Log.i(TAG, "已安装原生插件 $ADDON_PACKAGE (${binary.length()} 字节)")
-            // 再铺一份到加载器真正会去看的本地构建路径（见上面的说明）
-            if (!localBuild.isFile || localBuild.length() == 0L) {
-                localBuild.parentFile?.mkdirs()
-                binary.copyTo(localBuild, overwrite = true)
-                Log.i(TAG, "已铺 requireBuiltin 加载路径: ${localBuild.absolutePath} (${localBuild.length()} 字节)")
-            }
         } catch (t: Throwable) {
             // 装不上就不阻断启动：让引擎自己报出更具体的加载失败原因
             Log.w(TAG, "安装原生插件失败: ${t.message}")
@@ -1383,22 +1365,14 @@ class EngineManager private constructor(private val context: Context) {
 
         try {
             val source = entry.readText()
-            if (source.contains(IMG_TYPE_DONE_MARK)) {
+            if (source.contains(IMG_TYPE_ANCHOR)) {
                 return
             }
-            // ⚠️ 必须用**空白无关**的正则，不能拿固定字面量比：
-            //   同一个文件会有两种形态 ——
-            //     ① 原始 npm 发布产物：`\n\t\t\treturn value === "image/png"…`（tab 缩进）
-            //     ② webview-compat 降级后：esbuild 重打包，缩进变成**空格**、文件也更大
-            //        （真机实测 778 KB → 855 KB）。
-            //   2026-10-27 两次真机都是因为①的锚点去匹配②的文件，
-            //   于是每次启动只打一行「结构与预期不符」，补丁从未生效。
-            val m = IMG_TYPE_GUARD_RE.find(source)
-            if (m == null) {
-                Log.w(TAG, "发图格式判断结构与预期不符，跳过补丁（原始比较式与已放宽标记都没找到）")
+            if (!source.contains(IMG_TYPE_GUARD)) {
+                Log.w(TAG, "发图格式判断结构与预期不符，跳过补丁")
                 return
             }
-            entry.writeText(source.replaceRange(m.range, IMG_TYPE_PATCHED))
+            entry.writeText(source.replace(IMG_TYPE_GUARD, IMG_TYPE_ANCHOR))
             Log.i(TAG, "已放宽发图格式白名单: dsh-client-ui-conversation")
         } catch (t: Throwable) {
             Log.w(TAG, "放宽发图格式白名单失败: ${t.message}")
@@ -1904,20 +1878,33 @@ class EngineManager private constructor(private val context: Context) {
      * 承载用户改动（本机上 AI 就往里插过自己的插件）。`--patch` 层完全由本 App
      * 拥有，且优先级更高。
      */
-    /** 开启会话全文检索（session_search / session_event_search）。 */
+    /**
+     * 开启会话全文检索（`session_search` / `session_event_search`）。
+     *
+     * 上游 web profile 把 `session-query-sqlite` 定成 `path: ':memory:'` + `openAt: never`
+     * （`bundle/web-app/cordis.patch.yml:27-30`），于是这两个工具直接返回
+     * `SESSION_QUERY_SEARCH_DISABLED`。本 overlay 只改这两个字段：
+     *   · `openAt: first-search`：把 sqlite 的 import 推迟到首次搜索（Node 22 启动更安静）；
+     *   · `path` 落到 `$DSH_HOME`，跨重启保留索引。
+     *
+     * 为什么是 overlay 而不是改代码：这是**公开 Config**，升级引擎不受影响；
+     * 而 `EngineManager` 里那些 `*_GUARD` 文本锚点一升级就可能静默失效。
+     */
     private fun writeSessionSearchPatch(): File? = try {
         val f = File(dshHome, "session-search.patch.yml")
         val indexPath = File(dshHome, "session-index.sqlite").absolutePath
         f.writeText(
-            "- id: session-query-sqlite\n" +
-                "  config:\n" +
-                "    path: '" + indexPath + "'\n" +
-                "    openAt: first-search\n",
+            """
+            - id: session-query-sqlite
+              config:
+                path: '$indexPath'
+                openAt: first-search
+            """.trimIndent() + "\n",
         )
         Log.i(TAG, "已启用会话全文检索: session-search.patch.yml")
         f
     } catch (t: Throwable) {
-        Log.w(TAG, "写全文检索 overlay 失败: " + t.message)
+        Log.w(TAG, "写全文检索 overlay 失败: ${t.message}")
         null
     }
 
@@ -2296,6 +2283,33 @@ class EngineManager private constructor(private val context: Context) {
         // 清理旧位置：早先版本解到 profile 的 node_modules 下，留在那里既没用，
         // 又会被插件清单扫到；pnpm 也可能把它当成待驱逐的"多余依赖"。
         File(dshHome, "profiles/web/node_modules/$MOBILE_UI_PACKAGE").deleteRecursively()
+    }
+
+    /**
+     * 把 `assets/dsh-env.mjs` 落到 `filesDir/dsh-env.mjs`。
+     *
+     * 为什么需要落盘：设置页的「开发环境」分节由**引擎插件宿主半**（`lib/index.js`）
+     * 调它 —— 那是引擎进程里的 node，读不到 APK 的 assets，只能读真实文件。
+     *
+     * 为什么不版本戳：这个脚本只有一个文件，直接比**字节数**就够；不一致就重写。
+     * 用版本戳反而多一个必须同步维护的常量（`MOBILE_UI_VERSION` 那样）。
+     */
+    private fun ensureDevEnvScript() {
+        val target = File(filesDir, "dsh-env.mjs")
+        try {
+            val bytes = context.assets.open("dsh-env.mjs").use { it.readBytes() }
+            if (target.isFile && target.length().toLong() == bytes.size.toLong()) return
+            val tmp = File(filesDir, "dsh-env.mjs.tmp")
+            tmp.writeBytes(bytes)
+            if (!tmp.renameTo(target)) {
+                target.writeBytes(bytes)
+                tmp.delete()
+            }
+            // 只有 node 需要执行权限；644 足够（由 node 解释，不靠 shebang）
+            Log.i(TAG, "已写出开发环境脚本 dsh-env.mjs (${bytes.size} 字节)")
+        } catch (t: Throwable) {
+            Log.w(TAG, "写出开发环境脚本失败: ${t.message}")
+        }
     }
 
     /**
@@ -7138,6 +7152,7 @@ class EngineManager private constructor(private val context: Context) {
         ensurePickerRoots()
         // 移动端 UI 适配插件：必须在 profile 解析前落盘，否则 --patch 挂不上
         ensureMobileUi()
+        ensureDevEnvScript()
         // 右侧栏「AI 浏览器」入口（客户端插件）。必须在引擎启动前解包：
         // 引擎启动时才扫描 dsh.client 声明并编译前端 bundle，晚一步就是
         // 「文件在、侧栏里没有这一项」，且没有任何报错。
@@ -7199,6 +7214,7 @@ class EngineManager private constructor(private val context: Context) {
         // 默认工作区：Android 落不进引擎的平台分支，必须显式给 documentsDirectory
         val workspacePatch = writeWorkspacePatch()
         // 全文检索：上游 web profile 默认 openAt: never（session_search 直接禁用）。
+        // 放成 overlay 而不是改代码：这是公开 Config，升级引擎不受影响。
         val sessionSearchPatch = writeSessionSearchPatch()
         // 插件安装源：官方 fallback 只有镜像源，与本机 ~/.npmrc 撞成同一项被去重掉
         val pluginManagerPatch = writePluginManagerPatch()
@@ -8179,11 +8195,21 @@ class EngineManager private constructor(private val context: Context) {
      * 为什么用「回调注入 baseUrl」而不是改 `start()` 签名：
      *   `start()` 被前台服务、救援、重开 App 至少四处调用，改返回值会波及一片；
      *   这里保持它原样，把「bionic 跑完之后的端点」通过 [legacyEndpointProvider] 交回来。
+     *
+     * 调用方（MainActivity / Application）在 `start()` 完成后设置：
+     *   `manager.legacyEndpointProvider = { EngineEndpoint(url, pid, log) }`
+     * 未设置时用 `http://127.0.0.1:<spec.port>` 兜底 —— 与旧行为一致。
      */
     @Volatile
     var legacyEndpointProvider: (() -> com.dsh.android.engine.EngineEndpoint)? = null
 
-    /** 启动引擎（宿主可切换）；proot/remote 起不来自动回落 bionic。 */
+    /**
+     * 启动引擎（宿主可切换）。
+     *
+     * 行为：
+     *   · `bionic`：走既有 [start]，行为与旧版逐字节一致；
+     *   · `proot` / `remote`：走新宿主；起不来**自动回落 bionic**（`degraded=true`）。
+     */
     suspend fun bootWithHost(
         prefs: android.content.SharedPreferences?,
     ): com.dsh.android.engine.EngineBootGate.BootResult =
@@ -8194,7 +8220,7 @@ class EngineManager private constructor(private val context: Context) {
             prefs = prefs,
             legacyLauncher = { spec ->
                 start()
-                // P3.2：锚点审计（失败写 anchor-miss.json + 发通知，不再静默）
+                // P3.2：锚点审计（失败写 anchor-miss.json + 发一条通知，不再静默）
                 runCatching {
                     val misses = com.dsh.android.engine.AnchorAudit.audit(engineDir, dshHome)
                     com.dsh.android.engine.AnchorAudit.report(context, misses)
@@ -8208,7 +8234,7 @@ class EngineManager private constructor(private val context: Context) {
             stopLegacy = { stop() },
         )
 
-    /** 设置页用：只读宿主能力，不启动引擎。 */
+    /** 设置页用：只读宿主能力，不启动引擎（避免用户点开设置就起一次进程）。 */
     fun hostCapabilities(mode: com.dsh.android.engine.HostMode) =
         com.dsh.android.engine.EngineHosts.create(mode, context.filesDir).capabilities()
 
@@ -8341,8 +8367,6 @@ class EngineManager private constructor(private val context: Context) {
         /** 自编译的 android-arm64 原生插件（官方无此变体）。 */
         private const val ADDON_ASSET = "node-addon-android-arm64.zip"
         private const val ADDON_PACKAGE = "node-addon-require-builtin-android-arm64"
-        /** 自编译二进制的真正落点：除平台包外，加载器还认「本地构建」路径。 */
-        private const val ADDON_BASE_PACKAGE = "node-addon-require-builtin"
 
         /** system 插件（会话写入锁 flock）：同样是自编译的 android-arm64 变体。 */
         private const val SYSTEM_ADDON_ASSET = "node-addon-system-android-arm64.zip"
@@ -8438,23 +8462,6 @@ class EngineManager private constructor(private val context: Context) {
          * ⚠️ 缩进是**三个制表符**，与官方发布件逐字一致；引擎升级后若不再匹配，
          * 补丁会跳过并在日志里提示，不会让启动失败。见 [patchImageMediaType]。
          */
-        /**
-         * 原始比较式的**空白无关**匹配式。
-         *
-         * 原始 npm 产物用 tab 缩进，webview-compat 重打包后用空格 —— 两种都要能命中。
-         */
-        private val IMG_TYPE_GUARD_RE = Regex(
-            """return\s+value\s*===\s*"image/png"\s*\|\|\s*value\s*===\s*"image/jpeg"\s*\|\|\s*value\s*===\s*"image/webp"\s*\|\|\s*value\s*===\s*"image/gif";""",
-        )
-
-        /** 已放宽的标记：换过之后靠它判幂等（两种缩进下都存在）。 */
-        private const val IMG_TYPE_DONE_MARK = "startsWith(\"image/\")"
-
-        /** 放宽后的判断体：只放宽「能不能选」，解码仍由下游 sharp 负责。 */
-        private const val IMG_TYPE_PATCHED =
-            "if (typeof value !== \"string\") return false;\n" +
-                "return value.startsWith(\"image/\") || value === \"image/jpg\";"
-
         private const val IMG_TYPE_GUARD =
             "\t\t\treturn value === \"image/png\" || value === \"image/jpeg\" || " +
                 "value === \"image/webp\" || value === \"image/gif\";"
@@ -9594,7 +9601,7 @@ class EngineManager private constructor(private val context: Context) {
           *      （99 → 100 / 33 → 34），否则会回退，设备上静默跑回没有这张卡的旧 UI。
           *      ⚠️ 两个戳都 bump（本常量 99 → 100，-CompatVersion 33 → 34）。
           */
-        private const val MOBILE_UI_VERSION = "1.0.0-103"
+        private const val MOBILE_UI_VERSION = "1.0.0-104"
         private const val MOBILE_UI_STAMP = ".mobile_ui_version"
 
         // ── 出厂默认设置 ─────────────────────────────────────────────
