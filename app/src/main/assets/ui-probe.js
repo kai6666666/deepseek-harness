@@ -233,6 +233,27 @@ function (CMD) {
    *
    * 优先 `#id`（最稳），退化成 `tag:nth-of-type(...)` 逐级路径。
    */
+  // ── ref 注册表 ────────────────────────────────────────────────
+  // dump 给每个元素分配一个短 ref（e1/e2…），locate() 优先按 ref 解析。
+  // 为什么需要：cssPath 生成的 nth-of-type 路径会遇到两类失效 ——
+  //   ① 元素在深层 shadow/React 重渲染后序号漂移；
+  //   ② 路径过长被截断（2026-10-27 真机：composer 在第 15 层，旧上限 12 被切）。
+  // 模型是“照 dump 抄一个句柄回来”的用法，句柄必须比选择器稳。
+  var REF_SEQ = 0;
+  var REFS = new Map();
+
+  function clearRefs() { REFS.clear(); REF_SEQ = 0; }
+
+  function refOf(el) {
+    if (!el) return '';
+    var r = el.__dshRef;
+    if (r && REFS.get(r) === el) return r;
+    r = 'e' + (++REF_SEQ);
+    try { el.__dshRef = r; } catch (e) { /* 冻结对象，忽略 */ }
+    REFS.set(r, el);
+    return r;
+  }
+
   function cssPath(el) {
     if (!el || el.nodeType !== 1) return '';
     // 有 id 且全局唯一 —— 最优解
@@ -372,6 +393,7 @@ function (CMD) {
     var off = !inViewportPoint(r);
     return {
       ref: 'e' + index,
+      ref: refOf(el),
       sel: cssPath(el),
       tag: el.tagName.toLowerCase(),
       role: roleOf(el),
@@ -676,7 +698,12 @@ function (CMD) {
   function locate(spec) {
     spec = spec || {};
     var el = null;
-    if (spec.sel) el = bySel(spec.sel);
+    // ref 最先：dump 直接给的句柄，不受选择器解析/重渲染影响
+    if (spec.ref) {
+      var byRef = REFS.get(String(spec.ref));
+      if (byRef && byRef.isConnected) el = byRef;
+    }
+    if (!el && spec.sel) el = bySel(spec.sel);
     if (!el && spec.testid) {
       el = bySel('[data-testid="' + spec.testid + '"]') || bySel('[data-test-id="' + spec.testid + '"]');
     }
@@ -1057,6 +1084,7 @@ function (CMD) {
 
     // ── dump：把界面上的按钮全列出来（带精确位置）────────────────────
     if (action === 'dump') {
+      clearRefs();
       var got = collect(cmd);
       var ov = overlay();
       var out2 = {
