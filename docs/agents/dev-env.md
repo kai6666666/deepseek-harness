@@ -223,3 +223,27 @@ HTTP 批量 install [ssh.sshpass, java.gradle] → 202，job.ids 正确回显
    Termux 的 py3.14 没有 uv 轮子，pip 会去**源码构建**，再因 truststore/权限失败。→ 改用 apt 的 `uv`。
 5. **组件里 `React` 不是全局**
    分节组件第一行必须 `const React = mpPrivReact;`，否则渲染抛 `React is not defined`，面板只剩标题。
+
+### v2.1 补丁（同日，真机连载）
+
+| 问题 | 现象 | 修法 |
+|---|---|---|
+| uv 走 pip | py3.14 无轮子 → 源码构建 → truststore 权限错 | 改 apt `uv`（0.13.5） |
+| Gradle 自下载 zip | 130 MB + 软链，慢且易断 | 改 apt `gradle`（9.8.2） |
+| Termux 前缀写死 | `$PREFIX/bin/*` 脚本里是 `/data/data/com.termux/files`，导致“装上了却找不到” | `fixPrefixShims()`：安装后把 bin 下小文本里的前缀改成 App 路径 |
+| gradle wrapper 缺 jar | `Unable to access jarfile …lib/gradle-gradle-cli-main-9.8.2.jar` | `fixGradleLauncher()`：软链 `bin/gradle → opt/gradle/bin/gradle`（实测 `gradle -v` 正常） |
+| rustup | `rustls-platform-verifier … panicked: Expect … to be initialized` | 标 `unsupported`，界面禁用勾选并写明原因 |
+| `window.confirm` | WebView 原生对话框阻塞 JS，自动化点不到「确定」 | 改页内确认条（第二次点「开始配置」才执行） |
+| picked 初始化 | v1→v2 换 id 后 picked 全 undefined → 误判“全部卸载” | 只有当前所有 id 都在 prev 里才算初始化完成 |
+
+真机闭环（UI 驱动，不是 CLI）：
+
+```text
+tap 勾选框(gradle) → tap 「开始配置」
+→ devenv-job.json: {"running":true,"action":"install","ids":["java.gradle"],"pid":23498}
+→ devenv.log: apt-get install -y gradle …
+→ 修前缀 → 软链启动器 → ✅ Gradle 完成
+```
+
+另外实测确认：**UI 点击→POST→job→日志**这条链是通的（先是误点了 rustup，日志里立刻出现
+`rustup 安装失败`，说明失败也会如实回传，不吞错）。
