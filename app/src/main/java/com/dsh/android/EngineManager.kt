@@ -2295,11 +2295,11 @@ class EngineManager private constructor(private val context: Context) {
      * 用版本戳反而多一个必须同步维护的常量（`MOBILE_UI_VERSION` 那样）。
      */
     private fun ensureDevEnvScript() {
-        val target = File(filesDir, "dsh-env.mjs")
+        val target = File(context.filesDir, "dsh-env.mjs")
         try {
             val bytes = context.assets.open("dsh-env.mjs").use { it.readBytes() }
             if (target.isFile && target.length().toLong() == bytes.size.toLong()) return
-            val tmp = File(filesDir, "dsh-env.mjs.tmp")
+            val tmp = File(context.filesDir, "dsh-env.mjs.tmp")
             tmp.writeBytes(bytes)
             if (!tmp.renameTo(target)) {
                 target.writeBytes(bytes)
