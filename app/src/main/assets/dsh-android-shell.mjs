@@ -2343,6 +2343,14 @@ async function main() {
     `${TAG} uid 2000 不可用（${why.text}）→ 回落为本地执行\n` +
       `${TAG} 诊断: kind=${why.kind} key=${diag.key} legacy=${legacyReason || 'n/a'} wireless=${diag.wireless || 'n/a'} shizuku=${diag.shizuku || 'n/a'}\n`,
   );
+  // ⚠️ 2026-10-27 真机：Shizuku 已授权时，这条回执仍写着「请在设置页配对无线调试」，
+  //   与实际不符 —— 正确动作是「重启一次应用让 Shizuku 接管」。补一句，别把人带偏。
+  if (diag.shizuku !== 'ok') {
+    process.stderr.write(
+      `${TAG} 提示: 若已在 Shizuku 里授权 DSH，重启一次应用即可让它接管，不必配对无线调试
+`,
+    );
+  }
   process.exitCode = await runLocal(command);
 }
 
