@@ -375,7 +375,16 @@ const DEV_ENV_JOB = path.join(DEV_ENV_FILES, 'devenv-job.json');
 
 /** 允许的动作与目标（白名单，防止把任意参数透给子进程）。 */
 const DEV_ENV_ACTIONS = new Set(['install', 'remove', 'reset']);
-const DEV_ENV_IDS = new Set(['python', 'ssh', 'java', 'rust', 'go', 'all']);
+const DEV_ENV_IDS = new Set([
+	'node', 'pnpm',
+	'python.core', 'python.link', 'python.venv', 'python.pip', 'python.uv',
+	'ssh.client', 'ssh.sshpass', 'ssh.sshd',
+	'java.jdk', 'java.gradle',
+	'rust.apt', 'rust.rustup',
+	'go.apt',
+	'group:nodejs', 'group:python', 'group:ssh', 'group:java', 'group:rust', 'group:go',
+	'all',
+]);
 
 /** 跑 `dsh-env.mjs status --json` 并解析。失败返回 null（UI 显示「无法获取状态」）。 */
 function devEnvStatus() {
@@ -446,10 +455,10 @@ return '';
  * 一个没有结论的报错。任务状态写 `devenv-job.json`，UI 轮询 GET 看进度。
  *
  * @param {string} action - install | remove | reset
- * @param {string} id - python|ssh|java|rust|go|all
+ * @param {string[]|string} ids - 子项 id 数组（或单个）
  * @returns {Promise<object>} 更新后的任务对象
  */
-async function devEnvStart(action, id) {
+async function devEnvStart(action, ids) {
 const prev = await devEnvJob();
 if (prev.running) {
 const e = new Error('已有任务在运行');
@@ -457,10 +466,21 @@ e.code = 'BUSY';
 throw e;
 }
 
-const args = action === 'reset' ? [DEV_ENV_SCRIPT, 'reset'] : [DEV_ENV_SCRIPT, action, id];
+const list = Array.isArray(ids) ? ids : [ids];
+const args = action === 'reset' ? [DEV_ENV_SCRIPT, 'reset'] : [DEV_ENV_SCRIPT, action, ...list];
 await mkdir(path.dirname(DEV_ENV_LOG), { recursive: true });
 const fd = openSync(DEV_ENV_LOG, 'a');
-writeSync(fd, `\n=== ${new Date().toISOString()} ${action} ${id} ===\n`);
+writeSync(fd, `\n=== ${new Date().toISOString()} ${action} ${list.join(' ')} ===\n`);
+
+const job = {
+	running: true,
+	action,
+	ids: list,
+	id: list.length === 1 ? list[0] : `${list.length} items`,
+	pid: null,
+	startedAt: new Date().toISOString(),
+};
+await writeFile(DEV_ENV_JOB, JSON.stringify(job));
 
 const child = spawn(DEV_ENV_NODE, args, {
 cwd: DEV_ENV_FILES,
@@ -475,13 +495,7 @@ detached: true,
 });
 child.unref();
 
-const job = {
-running: true,
-action,
-id,
-pid: child.pid,
-startedAt: new Date().toISOString(),
-};
+job.pid = child.pid;
 await writeFile(DEV_ENV_JOB, JSON.stringify(job));
 
 child.on('exit', async (code) => {
@@ -573,12 +587,15 @@ send(400, { error: '请求体不是合法 JSON' });
 return;
 }
 const action = String(body.action || '');
-const id = String(body.id || '');
+const ids = Array.isArray(body.ids) && body.ids.length ? body.ids.map(String) : [String(body.id || '')];
 if (!DEV_ENV_ACTIONS.has(action)) { send(400, { error: `不认识的动作: ${action}` }); return; }
-if (action !== 'reset' && !DEV_ENV_IDS.has(id)) { send(400, { error: `不认识的目标: ${id}` }); return; }
+if (action !== 'reset') {
+	if (ids.length > 24) { send(400, { error: '一次最多 24 项' }); return; }
+	for (const one of ids) if (!DEV_ENV_IDS.has(one)) { send(400, { error: `不认识的目标: ${one}` }); return; }
+}
 
 try {
-const job = await devEnvStart(action, action === 'reset' ? 'all' : id);
+const job = await devEnvStart(action, action === 'reset' ? ['all'] : ids);
 send(202, { ok: true, job });
 } catch (e) {
 if (e && e.code === 'BUSY') { send(409, { error: '已有任务在运行，等它结束' }); return; }
