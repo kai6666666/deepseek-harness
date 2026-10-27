@@ -9493,7 +9493,7 @@ function mpDevEnvSection() {
 	const itemRow = (it) => React.createElement("div", { style: MP_DEV_S.row, key: it.id },
 		React.createElement("input", {
 			type: "checkbox", style: MP_DEV_S.check,
-			checked: it.required ? true : Boolean(picked[it.id]),
+			checked: it.unsupported ? false : (it.required ? true : Boolean(picked[it.id])),
 			disabled: it.required || it.unsupported || disabled,
 			onChange: () => toggle(it.id),
 		}),
