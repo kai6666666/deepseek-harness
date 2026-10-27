@@ -1117,14 +1117,44 @@ function (CMD) {
   // action 分派
   // ────────────────────────────────────────────────────────────────────
 
+  // ──────────────────────────────────────────────────────────────────────
+  // 诊断：判定“相邻两条命令是不是跑在同一个文档、同一个页面实例上”
+  // ──────────────────────────────────────────────────────────────────────
+  //
+  // 为什么要这个：2026-10-27 真机出现 dump 刚给出的 `[data-dsh-ref="e48"]`，
+  // 4 秒后的 find 就说“找不到元素”。只有两种可能：页面被重建（属性随 DOM
+  // 一起没了），或者探针被求值到了另一个 WebView。这三个字段直接给出答案：
+  //   probeUid  —— 每次都换；变了 = 页面（或 window）被重建
+  //   probeSeq  —— 同一个 uid 内递增；说明这条通道在连续工作
+  //   refCount  —— 当前文档里还剩多少个 data-dsh-ref 属性
+  //   docAgeMs  —— 本页面装载到现在多久
+  function diag() {
+    var D = window.__DSH_DIAG__;
+    if (!D) {
+      D = window.__DSH_DIAG__ = {
+        uid: 'p' + Math.random().toString(36).slice(2, 8),
+        boot: Date.now(),
+        seq: 0
+      };
+    }
+    D.seq++;
+    var rc = -1;
+    try { rc = document.querySelectorAll('[data-dsh-ref]').length; } catch (e) { /* 忽略 */ }
+    return { probeUid: D.uid, probeSeq: D.seq, docAgeMs: Date.now() - D.boot, refCount: rc };
+  }
+
   function ok(extra) {
     var out = { ok: true, v: VERSION, url: location.href, title: document.title };
+    var d = diag();
+    for (var k in d) if (d.hasOwnProperty(k)) out[k] = d[k];
     if (extra) for (var k in extra) if (extra.hasOwnProperty(k)) out[k] = extra[k];
     return out;
   }
 
   function fail(why, extra) {
     var out = { ok: false, v: VERSION, error: why, url: location.href };
+    var d = diag();
+    for (var k in d) if (d.hasOwnProperty(k)) out[k] = d[k];
     if (extra) for (var k in extra) if (extra.hasOwnProperty(k)) out[k] = extra[k];
     return out;
   }
