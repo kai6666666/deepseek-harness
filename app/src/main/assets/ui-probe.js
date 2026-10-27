@@ -260,6 +260,11 @@ function (CMD) {
     r = 'e' + (++REF_SEQ);
     window.__DSH_REF_SEQ__ = REF_SEQ;
     try { el.__dshRef = r; } catch (e) { /* 冻结对象，忽略 */ }
+    // ⚠️ 属性版句柄：`data-dsh-ref` 写在 DOM 上，选择器就变成
+    //   `[data-dsh-ref="e48"]` —— 短、稳定，不依赖 nth-of-type 序号。
+    //   2026-10-27 真机：dump 生成的长路径，紧接着的 type 就 querySelector 不到
+    //   （React 重渲染让序号漂移），而属性只要节点还在就在。
+    try { el.setAttribute('data-dsh-ref', r); } catch (e) { /* 忽略 */ }
     REFS.set(r, el);
     return r;
   }
@@ -267,6 +272,9 @@ function (CMD) {
   function cssPath(el) {
     if (!el || el.nodeType !== 1) return '';
     // 有 id 且全局唯一 —— 最优解
+    // 有我们自己的 ref 属性就直接用它（最稳）
+    var ownRef = el.getAttribute && el.getAttribute('data-dsh-ref');
+    if (ownRef) return '[data-dsh-ref="' + ownRef + '"]';
     if (el.id) {
       try {
         if (document.querySelectorAll('#' + esc(el.id)).length === 1) return '#' + esc(el.id);
