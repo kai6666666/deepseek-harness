@@ -34,6 +34,8 @@
  */
 
 import { spawn } from 'node:child_process';
+import { openSync, writeSync, closeSync } from 'node:fs';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { readFile, stat } from 'node:fs/promises';
 import net from 'node:net';
 import os from 'node:os';
@@ -348,6 +350,164 @@ async function probe() {
  * 挂上「特权权限」状态接口。
  * @param {object} ctx - Cordis 上下文（已注入 `webServer`）。
  */
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 开发环境（可选装/卸的 Python / SSH / Java / Rust / Go）
+//
+// 为什么不放在原生侧：这件事**全部是文件与子进程**，与 Android API 无关。
+// 插件跑在引擎进程里，本身就是 app uid，能直接 spawn `$PREFIX/bin/node`
+// 去调 `files/dsh-env.mjs`。走一层 Kotlin 只会多一个必须同步的接口。
+//
+// 状态与任务：
+//   files/dsh-env.mjs     真正的安装/卸载/体检实现（差分回滚、保护名单）
+//   files/devenv-job.json 当前任务（running/action/id/exit），GET 每次都读
+//   files/logs/devenv.log 任务输出（追加写，GET 返回末尾若干行给 UI 看进度）
+// ─────────────────────────────────────────────────────────────────────────────
+
+const DEV_ENV_ROUTE = '/api/dsh-android/devenv';
+
+/** app 私有目录：与 Kotlin 侧 `filesDir` 同一个路径（包名固定 com.dsh.android）。 */
+const DEV_ENV_FILES = process.env.DSH_FILES || '/data/user/0/com.dsh.android/files';
+const DEV_ENV_SCRIPT = path.join(DEV_ENV_FILES, 'dsh-env.mjs');
+const DEV_ENV_NODE = path.join(DEV_ENV_FILES, 'termux/usr/bin/node');
+const DEV_ENV_LOG = path.join(DEV_ENV_FILES, 'logs/devenv.log');
+const DEV_ENV_JOB = path.join(DEV_ENV_FILES, 'devenv-job.json');
+
+/** 允许的动作与目标（白名单，防止把任意参数透给子进程）。 */
+const DEV_ENV_ACTIONS = new Set(['install', 'remove', 'reset']);
+const DEV_ENV_IDS = new Set(['python', 'ssh', 'java', 'rust', 'go', 'all']);
+
+/** 跑 `dsh-env.mjs status --json` 并解析。失败返回 null（UI 显示「无法获取状态」）。 */
+function devEnvStatus() {
+return new Promise((resolve) => {
+const child = spawn(DEV_ENV_NODE, [DEV_ENV_SCRIPT, 'status', '--json'], {
+cwd: DEV_ENV_FILES,
+env: {
+...process.env,
+PREFIX: path.join(DEV_ENV_FILES, 'termux/usr'),
+HOME: path.join(DEV_ENV_FILES, 'termux/home'),
+TMPDIR: path.join(DEV_ENV_FILES, 'termux/usr/tmp'),
+},
+});
+let out = '';
+let err = '';
+child.stdout.on('data', (d) => { out += d; });
+child.stderr.on('data', (d) => { err += d; });
+// 体检要 du 一次整个 files 目录，慢一点，给 20 秒。
+const timer = setTimeout(() => { try { child.kill(); } catch { /* 忽略 */ } }, 20000);
+child.on('exit', (code) => {
+clearTimeout(timer);
+if (code !== 0) {
+if (err) console.warn(`[dsh-android-mobile] devenv status 失败: ${err.slice(0, 200)}`);
+resolve(null);
+return;
+}
+try {
+resolve(JSON.parse(out));
+} catch {
+resolve(null);
+}
+});
+child.on('error', (e) => {
+clearTimeout(timer);
+console.warn(`[dsh-android-mobile] devenv spawn 失败: ${e.message}`);
+resolve(null);
+});
+});
+}
+
+/** 读任务文件；不存在视为「没有任务」。 */
+async function devEnvJob() {
+try {
+const raw = await readFile(DEV_ENV_JOB, 'utf8');
+const job = JSON.parse(raw);
+// pid 还活着才算 running（进程被系统杀掉时文件会残留）
+if (job.running && job.pid) {
+try { process.kill(job.pid, 0); } catch { job.running = false; }
+}
+return job;
+} catch {
+return { running: false };
+}
+}
+
+/** 日志末尾若干行（安装进度就靠它）。 */
+async function devEnvLogTail(lines = 12) {
+try {
+const raw = await readFile(DEV_ENV_LOG, 'utf8');
+return raw.trimEnd().split('\n').slice(-lines).join('\n');
+} catch {
+return '';
+}
+}
+
+/**
+ * 起一个后台任务。**不等待**：apt 装 Rust 要几分钟，等到 HTTP 超时只会得到
+ * 一个没有结论的报错。任务状态写 `devenv-job.json`，UI 轮询 GET 看进度。
+ *
+ * @param {string} action - install | remove | reset
+ * @param {string} id - python|ssh|java|rust|go|all
+ * @returns {Promise<object>} 更新后的任务对象
+ */
+async function devEnvStart(action, id) {
+const prev = await devEnvJob();
+if (prev.running) {
+const e = new Error('已有任务在运行');
+e.code = 'BUSY';
+throw e;
+}
+
+const args = action === 'reset' ? [DEV_ENV_SCRIPT, 'reset'] : [DEV_ENV_SCRIPT, action, id];
+await mkdir(path.dirname(DEV_ENV_LOG), { recursive: true });
+const fd = openSync(DEV_ENV_LOG, 'a');
+writeSync(fd, `\n=== ${new Date().toISOString()} ${action} ${id} ===\n`);
+
+const child = spawn(DEV_ENV_NODE, args, {
+cwd: DEV_ENV_FILES,
+env: {
+...process.env,
+PREFIX: path.join(DEV_ENV_FILES, 'termux/usr'),
+HOME: path.join(DEV_ENV_FILES, 'termux/home'),
+TMPDIR: path.join(DEV_ENV_FILES, 'termux/usr/tmp'),
+},
+stdio: ['ignore', fd, fd],
+detached: true,
+});
+child.unref();
+
+const job = {
+running: true,
+action,
+id,
+pid: child.pid,
+startedAt: new Date().toISOString(),
+};
+await writeFile(DEV_ENV_JOB, JSON.stringify(job));
+
+child.on('exit', async (code) => {
+try { closeSync(fd); } catch { /* 忽略 */ }
+await writeFile(DEV_ENV_JOB, JSON.stringify({
+...job, running: false, exit: code ?? -1, endedAt: new Date().toISOString(),
+}));
+});
+return job;
+}
+
+/** 读请求体（限制 4 KB，超过直接丢弃）。 */
+function readBody(req) {
+return new Promise((resolve, reject) => {
+let size = 0;
+let data = '';
+req.on('data', (chunk) => {
+size += chunk.length;
+if (size > 4096) { reject(new Error('请求体过大')); req.destroy(); return; }
+data += chunk;
+});
+req.on('end', () => resolve(data));
+req.on('error', reject);
+});
+}
+
 export function apply(ctx) {
 	ctx.effect(() => ctx.webServer.register({
 		kind: 'exact',
@@ -376,4 +536,54 @@ export function apply(ctx) {
 			});
 		},
 	}), 'dsh-android-mobile: privileged status route');
+
+// ── 开发环境：状态 + 安装/卸载 ────────────────────────────────────────
+ctx.effect(() => ctx.webServer.register({
+kind: 'exact',
+path: DEV_ENV_ROUTE,
+handler: async (req, res) => {
+const send = (code, body) => {
+res.writeHead(code, {
+'content-type': 'application/json; charset=utf-8',
+'cache-control': 'no-store',
+});
+res.end(JSON.stringify(body));
+};
+
+if (req.method === 'GET' || req.method === 'HEAD') {
+const [status, job, logTail] = await Promise.all([
+devEnvStatus(), await devEnvJob(), devEnvLogTail(),
+]);
+if (req.method === 'HEAD') { res.writeHead(200); res.end(); return; }
+send(200, { ok: Boolean(status), status, job, logTail });
+return;
+}
+
+if (req.method !== 'POST') {
+res.writeHead(405, { allow: 'GET, HEAD, POST' });
+res.end();
+return;
+}
+
+let body;
+try {
+body = JSON.parse((await readBody(req)) || '{}');
+} catch {
+send(400, { error: '请求体不是合法 JSON' });
+return;
+}
+const action = String(body.action || '');
+const id = String(body.id || '');
+if (!DEV_ENV_ACTIONS.has(action)) { send(400, { error: `不认识的动作: ${action}` }); return; }
+if (action !== 'reset' && !DEV_ENV_IDS.has(id)) { send(400, { error: `不认识的目标: ${id}` }); return; }
+
+try {
+const job = await devEnvStart(action, action === 'reset' ? 'all' : id);
+send(202, { ok: true, job });
+} catch (e) {
+if (e && e.code === 'BUSY') { send(409, { error: '已有任务在运行，等它结束' }); return; }
+send(500, { error: String(e?.message ?? e) });
+}
+},
+}), 'dsh-android-mobile: dev environment route');
 }
