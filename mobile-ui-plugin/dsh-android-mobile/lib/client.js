@@ -9376,6 +9376,7 @@ function mpDevEnvSection() {
 	const [folded, setFolded] = React.useState({});
 	const [error, setError] = React.useState("");
 	const [busy, setBusy] = React.useState(false);
+	const [confirming, setConfirming] = React.useState(false);
 	const timerRef = React.useRef(null);
 
 	const load = React.useCallback(async () => {
@@ -9401,7 +9402,10 @@ function mpDevEnvSection() {
 	React.useEffect(() => {
 		if (!groups.length) return;
 		setPicked((prev) => {
-			if (Object.keys(prev).length) return prev;
+			// ⚠️ 只有当前所有 item id 都已在 prev 里才算初始化完成；v1→v2 换过 id，
+			//   旧 prev 会让 picked 全 undefined → plan 误判“全部卸载”。
+			const complete = groups.every((g) => g.items.every((it) => Object.prototype.hasOwnProperty.call(prev, it.id)));
+			if (complete) return prev;
 			const next = {};
 			for (const g of groups) for (const it of g.items) next[it.id] = Boolean(it.installed);
 			return next;
@@ -9423,6 +9427,7 @@ function mpDevEnvSection() {
 		const remove = [];
 		for (const g of groups) for (const it of g.items) {
 			if (it.required) continue;
+			if (it.unsupported) continue;
 			const want = Boolean(picked[it.id]);
 			if (want && !it.installed) install.push(it);
 			if (!want && it.installed && (it.kind === "apt" || it.kind === "pip" || it.kind === "custom" || it.kind === "link")) remove.push(it);
@@ -9432,12 +9437,11 @@ function mpDevEnvSection() {
 
 	const applyPlan = async () => {
 		setError("");
-		if (plan.remove.length) {
-			const names = plan.remove.map((i) => "· " + i.label).join("\n");
-			const ok = typeof window.confirm === "function" ? window.confirm(t("confirmRemove", names)) : true;
-			if (!ok) return;
-		}
 		if (!plan.install.length && !plan.remove.length) { setError(t("nothing")); return; }
+		// ⚠️ 不用 window.confirm：WebView 里它是原生对话框，阻塞页面 JS 且自动化点不到「确定」。
+		//   有卸载项时先显示页内确认条，再点一次「开始配置」才真正执行。
+		if (plan.remove.length && !confirming) { setConfirming(true); return; }
+		setConfirming(false);
 		setBusy(true);
 		try {
 			const post = async (action, ids) => {
@@ -9466,6 +9470,7 @@ function mpDevEnvSection() {
 			setError(String(e && e.message || e));
 		} finally {
 			setBusy(false);
+			setConfirming(false);
 		}
 	};
 
@@ -9489,7 +9494,7 @@ function mpDevEnvSection() {
 		React.createElement("input", {
 			type: "checkbox", style: MP_DEV_S.check,
 			checked: it.required ? true : Boolean(picked[it.id]),
-			disabled: it.required || disabled,
+			disabled: it.required || it.unsupported || disabled,
 			onChange: () => toggle(it.id),
 		}),
 		React.createElement("span", { style: MP_DEV_S.name }, it.label),
@@ -9527,6 +9532,14 @@ function mpDevEnvSection() {
 		groups.map(groupCard),
 
 		status ? null : React.createElement("p", { style: MP_DEV_S.intro }, t("unknown")),
+confirming && plan.remove.length ? React.createElement("div", { style: Object.assign({}, MP_DEV_S.card, { borderColor: "#d05050" }) },
+React.createElement("div", { style: { fontSize: "13px", whiteSpace: "pre-wrap" } },
+t("confirmRemove", plan.remove.map((i) => "· " + i.label).join("\n"))),
+React.createElement("div", { style: { display: "flex", gap: "10px", justifyContent: "flex-end" } },
+React.createElement("button", { style: MP_DEV_S.btn, onClick: () => setConfirming(false) }, t("skip")),
+React.createElement("button", { style: MP_DEV_S.btnPrimary, onClick: applyPlan }, t("apply")),
+),
+) : null,
 		error ? React.createElement("p", { style: Object.assign({}, MP_DEV_S.intro, { color: "#d05050" }) }, error) : null,
 
 		React.createElement("div", { style: MP_DEV_S.foot },
