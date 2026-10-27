@@ -247,3 +247,28 @@ tap 勾选框(gradle) → tap 「开始配置」
 
 另外实测确认：**UI 点击→POST→job→日志**这条链是通的（先是误点了 rustup，日志里立刻出现
 `rustup 安装失败`，说明失败也会如实回传，不吞错）。
+
+### v2.2 收尾（UI-only 验收 + 两处清理）
+
+| 修复 | 说明 |
+|---|---|
+| gradle 残留目录 | apt purge 后 `$PREFIX/opt/gradle` 仍在 → 卸载末尾按 `cleanupDirs` 删掉（真机清完后 `exists=false`） |
+| unsupported 不计已装 | rustup 失败会留下 `~/.cargo/bin/rustup`，probe 通过 → 界面误报 2/2；`status` 对 unsupported 一律 `installed:false`，现为 1/2 |
+| unsupported 勾选框 | 显示为未勾选且 disabled（之前会显示勾上但点不动） |
+
+**UI-only 验收记录（2026-10-27，装 1.0.0-107 后）**：
+
+```text
+打开 设置 → 开发环境：六张卡片全部渲染
+  Node.js 环境 2/2（必需）   Python 4/5   SSH 2/3
+  Java 1/2   Rust 1/2（rustup 置灰，desc=Termux 不支持）   Go 1/1
+
+取消勾选 Gradle → 点「开始配置」
+  → 页内确认条出现（不再弹原生对话框）
+  → 再点「开始配置」
+  → devenv-job.json {action:remove, ids:[java.gradle], pid:8159}
+  → logs: Removing gradle (1:9.8.2) …
+  → 15s 后 job exit=0，bin/gradle 不存在，Java 组回到 1/2
+```
+
+也就是说：**勾选状态 → 计划 → 确认 → 后台任务 → 日志 → 状态回读** 这条闭环完全由界面驱动，不依赖 CLI。
