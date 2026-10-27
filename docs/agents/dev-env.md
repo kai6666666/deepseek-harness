@@ -100,3 +100,61 @@ run-as com.dsh.android sh -c 'files/termux/usr/bin/bash files/env-smoke.sh'
 - 安装是**分钟级**任务，必须前台服务或至少 `Thread + 进度回执`，否则用户切走会被杀；
 - `apt install` 会写 `$PREFIX`，与引擎解包并发时要加同一把锁（`TermuxBootstrap` 已有
   `.bootstrap_done` 与 flock 机制，复用即可）。
+
+## 七、已落地：设置页「开发环境」分节（2026-10-27 真机）
+
+不再只是脚本 —— 现在有界面了：位置是「设置 → 开发环境」（order 27，排在「运行日志」28 之前）。
+
+### 组件与数据通路
+
+```text
+settings.section（client.js）
+   ├─ GET  /api/dsh-android/devenv            -> { ok, status, job, logTail }
+   └─ POST /api/dsh-android/devenv {action,id} -> 202 { job }
+             ↓ （插件宿主半 lib/index.js，app uid）
+        spawn files/termux/usr/bin/node files/dsh-env.mjs <action> <id>
+             ↓
+        files/devenv-job.json   running/pid/exit（UI 每 2s 轮询）
+        files/logs/devenv.log   任务输出尾部（UI 显示进度）
+        files/env-state.json    每项装了哪些包（卸载差分的唯一依据）
+```
+
+- `dsh-env.mjs` 由 `EngineManager.ensureDevEnvScript()` 从 `assets/dsh-env.mjs` 落盘（比字节数，变了才写）；
+- 安装/卸载都是**后台任务**：POST 立刻回 202，UI 靠轮询看 `job.running`，不会因为 apt 跑几分钟而 HTTP 超时；
+- 卸载二次确认；「回到最小环境」= `reset`（卸掉全部可选项，保留 Node 与必需项）。
+
+### 真机验证（2026-10-27）
+
+```text
+GET  /api/dsh-android/devenv -> 200
+  {ok:true, status:{builtin:{node:"v26.12.1"}, totalMb:2725, freeMb:154817, items:[...]}}
+
+POST {action:"install", id:"go"} -> 202 {job:{running:true,pid:18022,...}}
+  轮询 -> AFTER-INSTALL installed=true version=go1.27.3 sizeMb=219 tracked=true
+POST {action:"remove",  id:"go"} -> 202
+  轮询 -> AFTER-REMOVE  installed=false tracked=false（体积回落到基线 ±6 MB）
+```
+
+界面上六行都渲染出来（Node.js 带「必需」标签且无卸载按钮）：
+
+```text
+Node.js        v26.12.1                 必需
+Python 环境    3.14.8 · 未纳管            卸载
+SSH 工具       10.6p1 · 未纳管            卸载
+Java 环境      17.0.21 · 未纳管           卸载
+Rust(Cargo)    rustc 1.99.1 · 未纳管       卸载
+Go 环境        未安装 · ~200 MB           安装
+已用 2726 MB · 可用 153531 MB  [刷新] [回到最小环境]
+```
+
+「未纳管」= 这一项是**手动 apt 装的**，没有 `env-state.json` 记录，因此没有精确差分体积；
+这种情况下点卸载不会误删（没有记录就没有删除集合），只会提示没有可删的包。
+
+### 两个必须记住的坑（都踩过）
+
+1. **分节组件第一行必须是 `const React = mpPrivReact;`**
+   本文件的 `React` **不是全局变量**，只写 `React.createElement` 而漏了这行，组件一渲染就抛
+   `React is not defined`；错误被 slot 吞掉，现象是「点开开发环境只有标题、内容全空」。
+2. **改了 `mobile-ui-plugin/**` 必须 bump `MOBILE_UI_VERSION`**
+   版本戳相同 -> `ensureMobileUi()` 直接跳过解包 -> 老设备永远拿不到新分节
+   （本次先升 104、改完客户端再升 105，就是为了避免「代码推了、界面没变」）。
