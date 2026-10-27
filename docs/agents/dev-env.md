@@ -303,3 +303,5 @@ Node.js 2/2 · Python 5/5 · SSH 3/3 · Java 2/2 · Rust 1/2（rustup 置灰）�
 
 > 「全选」按钮本身未单独点测（它只对非必需项生效，当前环境除 rustup/sshpass 外已全装）；
 > 组级行为等价于“批量勾选”路径，已由 B 覆盖。
+
+> 验收判据见 [verification.md 的 ⑤ 开发环境（六组）](verification.md)。
