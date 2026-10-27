@@ -154,4 +154,5 @@ printf '%s' '{"id":2,"action":"type","ref":"e48","value":"hello","clear":true}' 
 | ① | 完整性断言三数字 | ✅ 54554 / 47916 / 397584889 |
 | ② | 四模块无「未找到」 | ✅ |
 | ③ | tool/call ↔ tool/result = 2000 | ✅ 两次实证 |
-| ④ | dump→ref→type `applied:true` | ✅ 2026-10-27 真机（含 `value` 复核） |
+| ④ | dump→ref→type `applied:true` | ✅ 2026-10-27 真机，两种写法都验过：`ok:true / cleared:"已是空的" / value:"caret-test…"`（扁平）与 `ok:true / applied:true / value:"nested-args-test"`（`args` 嵌套，靠 `flattenArgs`） |
+| ④b | `clear:true` 是**替换**而非追加 | ✅ `cleared:"selectAll(交给 insertText 替换)"` + `value:"BBB-only"`（屏幕上同步确认） |
