@@ -244,7 +244,7 @@ function (CMD) {
     var parts = [];
     var cur = el;
     var depth = 0;
-    while (cur && cur.nodeType === 1 && cur !== document.documentElement && depth < 12) {
+    while (cur && cur.nodeType === 1 && cur !== document.documentElement && depth < 64) {
       var tag = cur.tagName.toLowerCase();
       var parent = cur.parentElement;
       if (parent) {
