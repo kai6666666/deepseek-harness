@@ -9364,6 +9364,9 @@ whiteSpace: "pre-wrap", fontFamily: "ui-monospace, monospace",
 
 /** 开发环境分节组件。 */
 function mpDevEnvSection() {
+		// ⚠️ 必须先接模块级 React：本文件里 React 不是全局，缺这行组件一渲染
+			//   就抛 "React is not defined"，错误被 slot 吞掉 → 面板只剩标题、内容全空。
+			const React = mpPrivReact;
 const t = React.useMemo(() => {
 const en = (typeof document !== "undefined" && document.documentElement.lang || "").toLowerCase().startsWith("en");
 const dict = en ? MP_DEV_EN : MP_DEV_ZH;
