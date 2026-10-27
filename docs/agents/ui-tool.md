@@ -726,15 +726,25 @@ node tools\ui-map-real-frontend.mjs "http://127.0.0.1:31999/?token=..."
 | 全选 + `insertText('\n')` | **no-op** |
 | 全选 + `insertText(非空)` | ✅ 整体替换 |
 | 全选 + 派发 `Backspace` `keydown` | 只删**一个**字符（DOM selection 不被 Lexical 认） |
-| ✅ 全选 + `insertText('X')` → 派发 `Backspace` | **清空成功** |
+| ⚠️ 全选 + `insertText('X')` → 派发 `Backspace` | **在 Android 16 / 新 WebView 上失效**：留下一个 `X` |
+| ⚠️ 全选 + `execCommand('delete')` | 返回 `true` 但 **Lexical 模型里不生效**（内容一字不少） |
+| ✅ **全选 → `insertText(新值)` 整体替换** | **现行做法**（唯一跨内核都成立的一条） |
 
-做法是 `clearEditable()`：`selectAllIn()`（每次都要**重建** Range，`execCommand`
-会消耗掉它）→ `insertText('X')` → 派发 `Backspace`。失败则退回
-`el.textContent = ''` + `input` 事件。回执里带 `cleared` 字段说明走的哪条路，
-渲染层要报出来 —— 否则模型分不清「clear 生效了」与「clear 被忽略了」。
+所以现在的口径是：`clear:true` **不做“清空”这个动作**，只做 `selectAllIn()`，
+然后由紧跟的 `insertText(新值)` 把选区整段替换掉。`setValue()` 里用
+`hasLiveSelection(el)` 判断“已有人选中了一段”，这时**绝不能**再
+`placeCaretAtEnd()` —— 它会把选区折叠到末尾，于是变成追加。
+
+回执里的 `cleared` 会写 `selectAll(交给 insertText 替换)`；`value` 是同步读到的结果。
 
 ⚠️ 症状很有欺骗性：旧内容留下、新内容**追加在后面**，而回执里的 `value` 是一长串
-拼接结果，模型完全看不出是自己没清掉。
+拼接结果，模型完全看不出是自己没清掉。真机实测过的三种坏形状：
+
+```text
+value:"Xcaret-test"                      ← 合成 Backspace 留下的 X
+value:"caret-testnested-args-test"       ← clear 根本没生效，纯追加
+value:"旧文本新文本"                     ← 全选被 placeCaretAtEnd 折叠掉了
+```
 
 #### ⚠️ 别用 `text` 定位 composer —— 它的 `text` 是 placeholder
 
