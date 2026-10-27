@@ -57,6 +57,16 @@ object UiProbeBridge {
     private const val TAG = DshApplication.TAG
 
     /** 请求文件名。**必须与 `mobile-ui-plugin/dsh-android-uiagent/lib/index.js` 一致。** */
+    /**
+     * dump 回传的 ref→sel 映射，**由原生侧持有**。
+     *
+     * ⚠️ 页面里存不住：探针每次命令都重新求值，`window` 上的表会随
+     *   WebView/Activity 重建一起消失（2026-10-27 真机：dump 给了 e48，
+     *   下一次 type 就「找不到输入元素」）。原生单例不参与页面重建，所以
+     *   ref 的翻译放在这里：命令进来时先把 ref 换成 sel 再下发。
+     */
+    private val refToSel = java.util.concurrent.ConcurrentHashMap<String, String>()
+
     private const val CMD_FILE = "ui-cmd.json"
 
     /** 回执文件名。同上，两边必须一起改。 */
@@ -193,6 +203,37 @@ object UiProbeBridge {
     // 轮询
     // ────────────────────────────────────────────────────────────────────
 
+    /**
+     * 把命令里的 `args.ref` 翻成 `args.sel`（dump 时记下的那份）。
+     *
+     * 只在**没有 sel** 时翻译：调用方显式给了选择器就以它为准。
+     */
+    private fun translateRef(cmd: JSONObject) {
+        val args = cmd.optJSONObject("args") ?: return
+        if (args.has("sel")) return
+        val ref = args.optString("ref", "")
+        if (ref.isEmpty()) return
+        val sel = refToSel[ref] ?: run {
+            Log.w(TAG, "ref $ref 没有对应选择器（该 ref 不属于最近一次 dump）")
+            return
+        }
+        args.put("sel", sel)
+        Log.i(TAG, "ref $ref → sel（原生翻译，${sel.length} 字符）")
+    }
+
+    /** 记录一次 dump 的 ref→sel 全表（每次 dump 覆盖）。 */
+    private fun recordRefs(list: org.json.JSONArray?) {
+        if (list == null || list.length() == 0) return
+        refToSel.clear()
+        for (i in 0 until list.length()) {
+            val e = list.optJSONObject(i) ?: continue
+            val r = e.optString("ref", "")
+            val sel = e.optString("sel", "")
+            if (r.isNotEmpty() && sel.isNotEmpty()) refToSel[r] = sel
+        }
+        Log.i(TAG, "记录 ${refToSel.size} 条 ref→sel（dump）")
+    }
+
     private fun pollOnce() {
         val dir = home ?: return
         val cmd = File(dir, CMD_FILE)
@@ -221,6 +262,7 @@ object UiProbeBridge {
         cmd.delete()
 
         try {
+            translateRef(json)
             handle(dir, id, json)
         } catch (t: Throwable) {
             Log.w(TAG, "执行 UI 命令失败: ${t.message}")
@@ -477,6 +519,7 @@ object UiProbeBridge {
         convert(result.optJSONObject("hitTopmost"))
         val list = result.optJSONArray("elements")
         if (list != null) for (i in 0 until list.length()) convert(list.optJSONObject(i))
+        recordRefs(list)
         val top = result.optJSONArray("top")
         if (top != null) for (i in 0 until top.length()) convert(top.optJSONObject(i))
     }
