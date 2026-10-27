@@ -85,7 +85,7 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--engine", default=os.environ.get("ENGINE_DIR", "/tmp/dsh-engine-0.2.1-rc.3"))
     ap.add_argument("--target", default="chrome74")
-    ap.add_argument("--compat-version", default="34")
+    ap.add_argument("--compat-version", default="35")
     ap.add_argument("--out", default=str(ROOT / "app/src/main/assets/webview-compat.zip"))
     ap.add_argument("--strict-audit", action="store_true")
     ap.add_argument("--jobs", type=int, default=8)
