@@ -201,6 +201,16 @@ window.__ModuleLoader__.load({
 }
 /* 修复 25b：关闭时遮罩比抽屉（.22s）淡得更快，让对话区先亮起来，
    抵消"抽屉滑走露出未淡完遮罩"造成的短暂下沉（实测 -16 → 目标 <8）。 */
+/* rc3：左侧栏「更多」/ 会话「更多」/ 右栏「更多」都是 portal 到 body 的浮层。
+   它们不在抽屉 DOM 内，所以：
+   ① 菜单开着时遮罩不能让第一下点击“只关遮罩”；
+   ② 菜单必须压在遮罩（39）与抽屉（40）之上，否则会被遮住/压扁。 */
+/* ⚠️ 不要给菜单期间的遮罩加 pointer-events:none：那会让点击穿透到会话区。
+   遮罩保持可点（点了就关抽屉），菜单自身 z=60 在遮罩之上，点菜单不会落到遮罩。 */
+[role="menu"],
+[role="menuitem"] {
+  z-index: 60;
+}
 .mp-drawer-mask.mp-drawer-closing {
   transition: opacity .13s var(--ds-ease-in-out, ease) !important;
 }
@@ -1599,6 +1609,11 @@ window.__ModuleLoader__.load({
 			if (!mpIsMobile()) return; // 修复 40：收抽屉仅移动端有意义
 			const t = e.target.closest('.hHd-Xa_panelRow, .hHd-Xa_panelList button');
 			if (!t) return;
+			// ⚠️ rc3 起「更多」也是 panelRow（PanelMoreMenu 复用了同类名），但它开的是
+			//   **portal 到 body 的菜单**：一旦这里收起抽屉，菜单的 anchor 就跑到屏幕外，
+			//   菜单会被 clamp 回视口中央 → 看起来“菜单跑到会话区上”。
+			//   判据用 aria-haspopup=menu：只跳过“开菜单的行”，其余面板行照旧收抽屉。
+			if (t.getAttribute('aria-haspopup') === 'menu') return;
 			closeDrawerAfterClick();
 		}
 
@@ -2866,8 +2881,17 @@ window.__ModuleLoader__.load({
 				}
 			}
 
-			function mpSidebarCol() { return document.querySelector(".pI_x6G_sidebarCol"); }
-			function mpOfficialToggle() { return document.querySelector(".hHd-Xa_toggle"); }
+			function mpSidebarCol() {
+// 快路径是旧哈希；rc 换哈希后靠语义后缀兜底（CSS Module 的后半段是稳定的）
+return document.querySelector(".pI_x6G_sidebarCol")
+|| document.querySelector('[class*="sidebarCol"]');
+}
+			function mpOfficialToggle() {
+const direct = document.querySelector(".hHd-Xa_toggle");
+if (direct) return direct;
+const col = mpSidebarCol();
+return col ? col.querySelector('[class*="toggle"]') : null;
+}
 			// 官方开合状态的唯一事实源：.hHd-Xa_root 是否带 hHd-Xa_collapsed
 			function mpOfficialDrawerOpen() {
 				const col = mpSidebarCol();
@@ -2900,7 +2924,33 @@ window.__ModuleLoader__.load({
 					mpMask().classList.toggle("mp-drawer-open", on);
 				}
 			}
-			function mpSyncDrawer() {
+			function mpMenuOpen() {
+// rc3 的三处「更多」都是 role=menu 的 portal；用可见性排除“已关闭但节点还在”
+const nodes = document.querySelectorAll('[role="menu"], [class*="moreMenu"]');
+for (const n of nodes) {
+const r = n.getBoundingClientRect();
+if (r.width > 0 && r.height > 0) return true;
+}
+return false;
+}
+			/** 菜单打开期间把抽屉钉在展开态（portal 菜单挂载比 observer 晚一帧）。 */
+			function mpHoldDrawerForMenu() {
+				const col = mpSidebarCol();
+				if (!col) return;
+				const anchor = document.querySelector('[aria-haspopup="menu"][aria-expanded="true"], [class*="moreAnchor"] [aria-expanded="true"]');
+				if (!anchor || !col.contains(anchor)) return;
+				col.classList.add("mp-drawer-open");
+				const mask = mpMask();
+				if (mask) { mask.classList.remove("mp-drawer-closing"); mask.classList.add("mp-drawer-open"); }
+			}
+function mpSetMenuOpenClass(on) {
+document.body.classList.toggle("mp-menu-open", !!on);
+}
+function mpSyncDrawer() {
+// ⚠️ 菜单（portal）打开期间不要动抽屉：菜单的 anchor 在抽屉里，
+//   抽屉一滑走 anchor 就到屏幕外，菜单会被 clamp 回视口 → 落到会话区。
+				if (mpMenuOpen()) { mpSetMenuOpenClass(true); mpHoldDrawerForMenu(); return; }
+mpSetMenuOpenClass(false);
 				// 修复 25：关闭动画进行中，绝不能被 observer/resize 把抽屉又拉回来
 				//（官方此刻仍是 expanded，mpSetDrawerOpen 会重新加上 mp-drawer-open）。
 				if (mpClosing) return;
