@@ -316,3 +316,33 @@ uid=10603(u0_a603) …
 回落链路正常；`uid 2000` 需要 App 进程里的 Shizuku binder（`shizuku=not-configured` 是手工 shell 的必然结果）。
 
 **结论**：0.2.2 侧无阻塞项；tool-call 的执行证据等凭据恢复后补一条即可。
+
+### 6.5 用 mock 模型把 tool-call 跑通 ✅
+
+凭据失效不该挡住“工具能不能用”的验证。做法：起一个最小 OpenAI 兼容服务，让引擎
+以为模型回了 `tool_calls`，工具就会被真正执行：
+
+```text
+请求1（无 tools 字段，标题/预热）→ 回纯文本 ok
+请求2（带 23 个 tools）          → 回 tool_calls: shell {"command":"id"}
+请求3（带 tool 结果）            → 把工具输出回显成最终文本
+```
+
+patch 只加三样：mock provider（baseURL `http://127.0.0.1:3099/v1`、apiKeyEnv `MOCK_KEY`）、
+`agent-default-model` 指到 mock-1、`dsh-android-shell` 的 `file://` 入口。
+
+真机回执：
+
+```text
+{"type":"tool_call","tool":"shell","input":{"command":"id"}}
+{"type":"tool_result","status":"completed",
+ "result":"uid=10603(u0_a603) … [stderr] [dsh-adb] uid 2000 不可用（ADB 密钥尚未被设备授权…）→ 回落为本地执行"}
+{"type":"final","text":"TOOL_RESULT_BEGIN
+uid=10603 …
+TOOL_RESULT_END"}
+```
+
+**这说明 `ctx.tools.register` 在 0.2.2 上完全可用**，工具定义（含 `output.render`）
+被接受并执行。`uid 2000` 仍是回落，因为 headless 进程里没有 App 的 Shizuku binder。
+
+服务源码：`tools/mock-openai-toolcall.mjs`（可复用：`MOCK_TOOL` / `MOCK_ARGS` 可换任意工具）。
