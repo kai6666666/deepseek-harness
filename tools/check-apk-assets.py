@@ -5,7 +5,7 @@
 本仓库出过「zip 忘了打 / 名字写错 / 被 .gitignore 吞掉」的事故族（见 asset-stamps.md 的 b0fbb4b）。
 
 断言四组：
-  1. 30 项运行期资产都在 APK 里，且非空
+  1. 31 项运行期资产都在 APK 里，且非空
   2. 「容器型」资产做深度断言：bootstrap 必须提供 node 的 soname、node-runtime 必须带 libcares
   3. AndroidManifest 存在，包名恰好 15 字符（Termux ELF 原地改写的硬约束）
   4. targetSdk ≤ 28（Android 10+ 禁止 execve 应用私有目录）
@@ -43,6 +43,7 @@ REQUIRED = [
     "adb-wireless-arm64.zip",
     # 开发环境脚本：由 EngineManager.ensureDevEnvScript() 落盘给插件宿主半调用
     "dsh-env.mjs",
+    "check-devenv.mjs",
 ]
 
 
