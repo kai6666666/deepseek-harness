@@ -2295,20 +2295,23 @@ class EngineManager private constructor(private val context: Context) {
      * 用版本戳反而多一个必须同步维护的常量（`MOBILE_UI_VERSION` 那样）。
      */
     private fun ensureDevEnvScript() {
-        val target = File(context.filesDir, "dsh-env.mjs")
-        try {
-            val bytes = context.assets.open("dsh-env.mjs").use { it.readBytes() }
-            if (target.isFile && target.length().toLong() == bytes.size.toLong()) return
-            val tmp = File(context.filesDir, "dsh-env.mjs.tmp")
-            tmp.writeBytes(bytes)
-            if (!tmp.renameTo(target)) {
-                target.writeBytes(bytes)
-                tmp.delete()
+        // 两个文件一起落盘：安装器本体 + 验收脚本（verification.md ⑤）
+        for (name in listOf("dsh-env.mjs", "check-devenv.mjs")) {
+            val target = File(context.filesDir, name)
+            try {
+                val bytes = context.assets.open(name).use { it.readBytes() }
+                // 已有且字节数一致就跳过（内容变了长度通常也变；同名工具改长度的概率足够高）
+                if (target.isFile && target.length().toLong() == bytes.size.toLong()) continue
+                val tmp = File(context.filesDir, "$name.tmp")
+                tmp.writeBytes(bytes)
+                if (!tmp.renameTo(target)) {
+                    target.writeBytes(bytes)
+                    tmp.delete()
+                }
+                Log.i(TAG, "已写出开发环境脚本 $name (${bytes.size} 字节)")
+            } catch (t: Throwable) {
+                Log.w(TAG, "写出 $name 失败: ${t.message}")
             }
-            // 只有 node 需要执行权限；644 足够（由 node 解释，不靠 shebang）
-            Log.i(TAG, "已写出开发环境脚本 dsh-env.mjs (${bytes.size} 字节)")
-        } catch (t: Throwable) {
-            Log.w(TAG, "写出开发环境脚本失败: ${t.message}")
         }
     }
 
