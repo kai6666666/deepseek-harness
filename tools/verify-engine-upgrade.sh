@@ -109,6 +109,11 @@ if(process.env.QUIET==="1")console.log(JSON.stringify(j,null,2));else console.lo
 ' "$RES" "$OUT"
 GRC=$?
 
+# 保留策略：verify-*.json / llm-evidence-*.txt / llm-fail-*.png 各留最近 10 份
+for pat in verify-*.json llm-evidence-*.txt llm-fail-*.png; do
+  ls -t $R/home/$pat 2>/dev/null | tail -n +11 | while read f; do rm -f "$f"; done
+done
+
 if [ $QUIET -eq 0 ]; then echo "----"; echo "$PASS PASS / $FAIL FAIL"; fi
 rm -f $RES
 if [ $FAIL -ne 0 ]; then exit 1; fi
