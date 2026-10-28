@@ -92,19 +92,83 @@ dsh web: http://127.0.0.1:3086/?token=aKmvsigabbShXwcYu93PBNdN4JrXiVRbfguVrI7OhN
 
 ---
 
-## 阶段 2：App 侧补丁（待做）
+## 阶段 2：App 侧补丁 ✅
 
-锚点已 5/5 通过，理论上只需复核两处**非文本**的硬编码：
+### 2.1 `requiredStartupEntryIds` 从 4 项扩到 10 项
 
-1. `requiredStartupEntryIds` —— App 侧副本，官方入口清单若变会误判“引擎没起来”；
-2. `MOBILE_UI_VERSION` / `assetStamp` —— 换引擎要 bump，否则资产不重解包。
+```text
+0.2.2-alpha.2 官方集合（dsh-app-boot/lib/index.js:4324）：
+  agent-loop, tool-executor-native, tool-executor-ptc, webserver,
+  web-runtime, modules, connection, headless-runner, acp, sdk-jsonrpc-server
+App 侧旧副本只有前 4 项里的 4 个（agent-loop/webserver/modules/connection）
+→ 已同步为 10 项。少列只影响体检“少报”，不会误伤，但升级后应同源。
+```
 
-## 阶段 3：插件兼容（待做）
+### 2.2 版本戳
 
-7 个插件逐个 load，重点看 `ctx.tools.register` 是否仍接受现有 `output` 声明、
-slots（`sidebar.panellist.actions` 等）是否仍注册成功。
+```text
+MainActivity.assetStamp  0.2.1-rc.2-1 → 0.2.2-alpha.2-1
+```
 
-## 阶段 4：UI 回归（待做）
+---
 
-`tools/ui-regression-rc3.mjs` 六条；预期风险点：类名哈希重算、`PanelMoreMenu` 现在被
-`Tooltip` 包了一层（`wide=false` 时启用）、右侧栏标签结构变化。
+## 阶段 3：插件兼容 ✅
+
+旁路 profile 挂 10 个插件（`--patch mount.patch.yml`，全部 `file://` 绝对路径）：
+
+```bash
+node .../bin.js --profile web --patch $DSH_HOME/mount.patch.yml --no-open --port 3086
+```
+
+回执：
+
+```text
+http=401
+dsh-android-pet: 状态桥已启动: .../.dsh022/bubble-state.json
+dsh web: http://127.0.0.1:3086/?token=…
+```
+
+`--dump-config` 里 10 个 id 全部在（45926 字节的合成配置）：
+
+```text
+dsh-android-browser dsh-android-browser-pane dsh-android-bubble dsh-android-logs
+dsh-android-mobile dsh-android-pet dsh-android-root dsh-android-shell
+dsh-android-statusbar dsh-android-uiagent
+```
+
+客户端插件也真的被打包并 served：
+
+```text
+GET /plugins/??dsh-android-mobile/client.js&rev=…  → 200, 446,030 B
+内容含 mp-nav-btn ×10      ← 说明 0.2.2 的 client 插件管线接受了我们的 client.js
+页面 bundle：assets/index--TtJvO-i.js 964 KB（200）
+```
+
+⚠️ 踩到的坑：`--patch` 必须写在 **app 参数之前**。`bin.js --profile web --no-open --port 3086 --patch x`
+会把 `--patch` 当 web app 的参数 → `error: unknown option '--patch'`。正确：
+`--profile web --patch x --no-open --port 3086`。
+
+---
+
+## 阶段 4：UI 回归（待做，需装机态）
+
+引擎单独跑没有 App 外壳（安全区、WebView 桥、mobile-ui 的 data-mobile 判定），
+必须出包后在真机跑 `urc3.mjs` 六条。预期风险：类名哈希重算、`PanelMoreMenu` 多了
+`Tooltip` 包装、右侧栏标签结构变化。
+
+---
+
+## 阶段 5：CI 出包（进行中）
+
+为让 CI 现场构建 0.2.2 资产，改了 6 处硬编码：
+
+| 文件 | 改动 |
+|---|---|
+| `.github/workflows/apk.yml` | `VER=0.2.1-rc.3` → `0.2.2-alpha.2`；webview 兼容 `--engine /tmp/dsh-engine-0.2.2-alpha.2` |
+| `tools/build-node-pty.sh` | `ENGINE_DIR` 默认值 → 0.2.2-alpha.2 |
+| `tools/build-node-addon-system.sh` | 同上 |
+| `tools/build_webview_compat.py` | `--engine` 默认值 → 0.2.2-alpha.2 |
+| `tools/provision-glibc-host.sh` | `DSH_VER` 默认值 → 0.2.2-alpha.2 |
+| `MainActivity.kt` | `assetStamp = 0.2.2-alpha.2-1` |
+
+资产不走 Release（仓库没有 `ASSETS_RELEASE` 变量）→ CI 会现场 `npm i` 并打包 engine.bin。
