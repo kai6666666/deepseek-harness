@@ -346,3 +346,27 @@ TOOL_RESULT_END"}
 被接受并执行。`uid 2000` 仍是回落，因为 headless 进程里没有 App 的 Shizuku binder。
 
 服务源码：`tools/mock-openai-toolcall.mjs`（可复用：`MOCK_TOOL` / `MOCK_ARGS` 可换任意工具）。
+
+### 6.6 五个工具插件逐个跑通（mock 驱动）✅
+
+统一用 `tools/mock-openai-toolcall.mjs` + `--profile headless --patch mock4.patch.yml`：
+
+| 工具 | 参数 | tool_result |
+|---|---|---|
+| `shell` | `{"command":"id"}` | `completed` · `uid=10603…`（uid 2000 回落，headless 无 Shizuku binder） |
+| `bubble` | `{"action":"get"}` | `completed` · 完整外观 JSON（state/shape/size/actionMap/videoActions/pools…） |
+| `ui` | `{"action":"ping"}` | `completed` · `✓ 探针就绪 · http://127.0.0.1:3080/ · 可交互元素 32 个 · 视口 394×806` |
+| `logs` | `{"action":"summary"}` | `completed` · `718 条 / 警告 29 / 错误 1 / 现场文件 8` |
+| `statusbar` | `{"action":"get"}` | `completed` · 当前系统栏配色 JSON |
+
+复跑方式（设备上）：
+
+```bash
+run-as com.dsh.android sh /data/local/tmp/mockrun.sh bubble '{"action":"get"}'
+run-as com.dsh.android sh /data/local/tmp/mockrun.sh ui '{"action":"ping"}'
+```
+
+`mockrun.sh` 做三件事：换 `MOCK_TOOL/MOCK_ARGS` 重启 mock → 跑一次 headless → 打印 tool_call/tool_result。
+
+**结论：7 个插件里有工具的 5 个（shell/bubble/ui/logs/statusbar）在 0.2.2 上注册与执行全部正常。**
+`root`（需要 su，本机没有）与 `browser`（要开真实 WebView）留给有对应环境的机器。
