@@ -1609,6 +1609,10 @@ window.__ModuleLoader__.load({
 			if (!mpIsMobile()) return; // 修复 40：收抽屉仅移动端有意义
 			const t = e.target.closest('.hHd-Xa_panelRow, .hHd-Xa_panelList button');
 			if (!t) return;
+			// 侧栏里点出来的菜单（含「更多」）都算 sidebar 来源 —— portal 菜单的锚点在
+			// DOM 上没有稳定属性可查，这里先把来源记在点击现场，菜单项点击时才有依据。
+			const col0 = mpSidebarCol();
+			if (col0 && col0.contains(t)) mpMenuSource = "sidebar";
 			// ⚠️ rc3 起「更多」也是 panelRow（PanelMoreMenu 复用了同类名），但它开的是
 			//   **portal 到 body 的菜单**：一旦这里收起抽屉，菜单的 anchor 就跑到屏幕外，
 			//   菜单会被 clamp 回视口中央 → 看起来“菜单跑到会话区上”。
@@ -2939,8 +2943,19 @@ return false;
 			/** 记录当前可见菜单来自侧栏还是会话/右栏。 */
 			function mpNoteMenuSource() {
 				const col = mpSidebarCol();
-				const anchor = document.querySelector('[aria-haspopup="menu"][aria-expanded="true"]');
-				mpMenuSource = (col && anchor && col.contains(anchor)) ? "sidebar" : "other";
+				// rc3 的「更多」按钮实测 dump 里 haspopup 为空，所以不能只靠 aria-haspopup；
+				// 再兜两层：moreAnchor 容器里的 expanded 元素、以及 panelRow + aria-expanded。
+				const anchor = document.querySelector(
+					'[aria-haspopup="menu"][aria-expanded="true"], ' +
+					'[class*="moreAnchor"] [aria-expanded="true"], ' +
+					'[class*="panelRow"][aria-expanded="true"]'
+				);
+				if (anchor) {
+					mpMenuSource = (col && col.contains(anchor)) ? "sidebar" : "other";
+					return;
+				}
+				// 找不到 anchor 时**不要覆盖**已有判断：面板行点击时已经记过 sidebar。
+				if (mpMenuSource === null) mpMenuSource = "other";
 			}
 			/** 侧栏菜单项点完收抽屉（延后 120ms 让目标页先切）。 */
 			function onMenuItemClick(e) {
