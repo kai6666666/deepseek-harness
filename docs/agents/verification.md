@@ -345,11 +345,21 @@ wrapper rc=0
 | `--llm` 失败自动重试一次 | `verify-engine-upgrade.sh` |
 | 每轮收会话，保留 UI 当前那条 | `prune-sessions.mjs` |
 
-复跑姿势：
+复跑姿势（三档，从快到稳）：
 
 ```bash
-sh /data/local/tmp/verify-all.sh --tools --clean          # mock 段，确定性
-sh /data/local/tmp/verify-all.sh --llmtools --llm --clean # 真模型段，冷启后开跑
+sh /data/local/tmp/verify-all.sh --split                     # 真模型最稳：每个工具单独冷启（5/5，split failed=0）
+sh /data/local/tmp/verify-all.sh --tools --clean             # mock 段，确定性（9 PASS / 0 FAIL / 1 SKIP）
+sh /data/local/tmp/verify-all.sh --llmtools --llm --clean    # 一条命令跑完，快但偶发抖动
 ```
 
-成功记录：2026-10-29 04:09 一次跑满 **11 PASS / 0 FAIL / 1 SKIP**（wrapper rc=0），见 ⑨。抖动时重跑同一条命令即可。
+单例定位：
+
+```bash
+run-as com.dsh.android sh -c 'files/termux/usr/bin/node /data/local/tmp/verify-llm-tools.mjs --only browser --clean --shot'
+```
+
+成功记录：
+
+- 2026-10-29 04:09 一条命令跑满 **11 PASS / 0 FAIL / 1 SKIP**（`--llmtools --llm --tools --clean`，wrapper rc=0），见 ⑨；
+- 2026-10-29 04:5x `--split` **5/5 全过**（split failed=0），真模型 × 5 工具的证据链由此闭环。
