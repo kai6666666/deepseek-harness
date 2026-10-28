@@ -15,7 +15,8 @@ run-as com.dsh.android sh /data/local/tmp/verify-engine-upgrade.sh --tools  # �
 run-as com.dsh.android sh /data/local/tmp/verify-engine-upgrade.sh --json   # 只输出 JSON（含 --tools 时最有用）
 run-as com.dsh.android sh /data/local/tmp/verify-engine-upgrade.sh --baseline /path/verify-<ts>.json  # 与指定基线比对
 run-as com.dsh.android sh /data/local/tmp/verify-engine-upgrade.sh --latest  # 自动拿最新一份当基线
-run-as com.dsh.android sh /data/local/tmp/verify-engine-upgrade.sh --llm     # 真实凭据跑一轮对话（缺 key 会 FAIL）
+run-as com.dsh.android sh /data/local/tmp/verify-engine-upgrade.sh --llm     # 账号 UI 真跑一轮对话（需前台+解锁）
+run-as com.dsh.android sh /data/local/tmp/verify-engine-upgrade.sh --llm --clean  # 同上，跑完删掉测试会话
 ```
 
 脚本源在 `tools/verify-engine-upgrade.sh`；退出码即结论。`--json` 输出结构：
@@ -54,6 +55,16 @@ tools/verify-llm-ui.mjs
 ```
 
 这一步同时闭环了两件事：账号模型可用，且 `shell` 工具**真的以 uid 2000 执行**（不是 fallback 10603）。前置条件是 DSH 在前台且已解锁。
+
+`--clean` 的行为：命中后先写证据再删会话（文件 + `workspace.json` 索引）：
+
+```text
+before=3  →  run --llm --clean  →  after=3
+保留：files/home/llm-evidence-<ts>.txt
+  TOOLRESULT: uid=2000(shell) … [dsh-adb] 通道: Shizuku（uid 2000）
+```
+
+失败时会自动 `screencap` 一张 `files/home/llm-fail-<ts>.png`，输出行附 `FAIL_PNG <path>`；`NO_BOX` / `NO_SEND` / `NO_HIT` 都走这条。
 
 `--latest` 等价于「把 `files/home/verify-*.json` 里最新的一份当基线」，省掉手敲路径；实测连跑两次，第二次拿第一次做基线：
 
