@@ -9,10 +9,12 @@
 #   --baseline：与指定 verify-<ts>.json 比对；有回归时退出码 2
 #   --latest  ：自动拿最新一份 verify-<ts>.json 当基线（等价于 --baseline 最新文件）
 #   --llm     ：用已登录账号在 App UI 跑一轮真实对话并校验 shell 输出 uid=（需 DSH 前台且已解锁）
+#   --clean   ：配合 --llm，跑完删掉本次测试会话，只留 home/llm-evidence-<ts>.txt
 R=/data/user/0/com.dsh.android/files
 N=$R/termux/usr/bin/node
 PASS=0; FAIL=0
 QUIET=0; case "$*" in *--json*) QUIET=1;; esac
+CLEANFLAG=0; case "$*" in *--clean*) CLEANFLAG=1;; esac
 BASE=""; prev=""
 for a in "$@"; do [ "$prev" = "--baseline" ] && BASE="$a"; prev="$a"; done
 case "$*" in *--latest*) [ -z "$BASE" ] && BASE=$(ls -t $R/home/verify-*.json 2>/dev/null | head -1) ;; esac
@@ -67,7 +69,7 @@ case "$*" in *--tools*)
 ;; esac
 
 case "$*" in *--llm*)
-  LO=$($N /data/local/tmp/verify-llm-ui.mjs 2>&1 | tail -1)
+  LO=$(CLEAN=$CLEANFLAG SHOT=1 $N /data/local/tmp/verify-llm-ui.mjs 2>&1 | tail -1)
   case "$LO" in
     HIT*) ok "真实模型对话 ${LO#HIT }" ;;
     *) ng "真实模型对话 ${LO}" ;;
