@@ -52,7 +52,7 @@ function (CMD) {
   'use strict';
 
   /** 探针版本。**改了本文件的语义就要 +1** —— 页面上的旧探针靠它判断要不要换。 */
-  var VERSION = 7;
+  var VERSION = 8;
 
   /** 结果里单个元素的文本/类名截断长度（防超大 JSON 撑爆 IPC）。 */
   var MAX_TEXT = 120;
@@ -1302,6 +1302,23 @@ function (CMD) {
 
     // ── tap：点一下 ────────────────────────────────────────────────
     if (action === 'tap') {
+      // 只有 x/y、没有定位条件 → **按坐标点**，命中真实 topmost 元素。
+      // 为什么需要：像抽屉遮罩这种元素，中心点被抽屉盖着，`ref` 点法会落到抽屉上；
+      // 而“手指点遮罩右侧空白”这条路径必须能被自动化复现。
+      var specTap = cmd && (cmd.sel || cmd.text || cmd.prefix || cmd.aria || cmd.role || cmd.ref || cmd.placeholder);
+      if (!specTap && typeof cmd.x === 'number' && typeof cmd.y === 'number') {
+        var hit = null;
+        try { hit = document.elementFromPoint(cmd.x, cmd.y); } catch (e0) { /* 越界 */ }
+        if (!hit) return fail('坐标上没有元素', { at: { x: cmd.x, y: cmd.y } });
+        var r0 = clickEl(hit);
+        return ok({
+          at: { x: cmd.x, y: cmd.y },
+          element: describe(hit, 0),
+          dispatched: r0.dispatched,
+          hitTopmost: r0.hit,
+          onTarget: r0.onTarget
+        });
+      }
       var t = locate(cmd);
       if (!t) return fail('找不到要点击的元素', { spec: cmd });
       if (!isVisible(t)) {
@@ -1499,7 +1516,7 @@ function (CMD) {
     }
 
     return fail('未知 action: ' + action, {
-      known: ['ping', 'dump', 'find', 'tap', 'type', 'key', 'scroll', 'text', 'html',
+      known: ['ping', 'dump', 'find', 'tap', 'tapAt', 'type', 'key', 'scroll', 'text', 'html',
         'wait', 'info', 'overlay']
     });
   }
