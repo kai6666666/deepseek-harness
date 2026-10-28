@@ -39,6 +39,7 @@
 | [mobile-ui.md](mobile-ui.md) | 移动端 UI 插件 | 为什么解到 $DSH_HOME/mobile-ui、别名桥接、+ 菜单时序、安全键盘 |
 | [mobile-ui-rc3.md](mobile-ui-rc3.md) | 移动端 UI × rc3 | 三处「更多」菜单与抽屉的冲突、右栏创建插件收右栏；一条命令跑 6 条断言 |
 | [engine-0.2.2.md](engine-0.2.2.md) | 引擎升级到 0.2.2-alpha.2 | 锚点 5/5、UI 6/6、7 个工具插件 mock 跑通、dev-env 六组、装机出包 |
+| [engine-0.2.2-compat.md](engine-0.2.2-compat.md) | **0.2.2 适配清单（照做）** | 必改点 5 条、锚点、插件兼容、工具矩阵、验证矩阵、回滚 |
 | [debug-device.md](debug-device.md) | 调试真机 | adb 基本手法 |
 | [rescue-mode.md](rescue-mode.md) | 插件改坏导致 App 打不开 | 启动前体检 + 安全模式 |
 | [node-selfheal.md](node-selfheal.md) | $PREFIX/bin/node 会坏 | 自校验 + 自愈、$PREFIX 并发写互斥 |
