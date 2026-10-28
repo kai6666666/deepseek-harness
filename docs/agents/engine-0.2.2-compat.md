@@ -6,6 +6,28 @@
 
 ---
 
+## 0. 一条命令验收
+
+```bash
+run-as com.dsh.android sh /data/local/tmp/verify-engine-upgrade.sh          # 引擎版本 + dev-env + 会话索引
+run-as com.dsh.android sh /data/local/tmp/verify-engine-upgrade.sh --ui     # 加装机 UI 断言（需前台+解锁）
+run-as com.dsh.android sh /data/local/tmp/verify-engine-upgrade.sh --tools  # 加 mock 工具矩阵（约 3 分钟）
+```
+
+脚本源在 `tools/verify-engine-upgrade.sh`；退出码即结论。实测（2026-10-28）：
+
+```text
+[PASS] 引擎版本 0.2.2-alpha.2
+[PASS] 开发环境 nodejs 2/2 python 5/5 ssh 3/3 java 2/2 rust 1/2 go 1/1
+[PASS] 会话索引干净（1 条）
+----
+3 PASS / 0 FAIL
+```
+
+`--ui` 段调用 `urc3.mjs`，额外打印 6 条断言逐行结果；`D` 段要求先建会话发一条消息，否则记 SKIP。
+
+---
+
 ## 1. 必改点（App 侧）
 
 | # | 位置 | 改什么 | 不改会怎样 |
