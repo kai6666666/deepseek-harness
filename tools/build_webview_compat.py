@@ -83,7 +83,10 @@ def collect(dist: Path, plugin_root: Path, mobile_src: Path):
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--engine", default=os.environ.get("ENGINE_DIR", "/tmp/dsh-engine-0.2.1-rc.3"))
+    _here = os.path.dirname(os.path.abspath(__file__))
+    _verf = os.path.join(_here, "engine-version.txt")
+    _ver = open(_verf).read().strip() if os.path.isfile(_verf) else "0.2.2-alpha.2"
+    ap.add_argument("--engine", default=os.environ.get("ENGINE_DIR", f"/tmp/dsh-engine-{_ver}"))
     ap.add_argument("--target", default="chrome74")
     ap.add_argument("--compat-version", default="35")
     ap.add_argument("--out", default=str(ROOT / "app/src/main/assets/webview-compat.zip"))
@@ -91,6 +94,14 @@ def main() -> int:
     ap.add_argument("--jobs", type=int, default=8)
     args = ap.parse_args()
 
+    # --engine 可能是工作流里写死的旧路径；那条路径不存在时按 engine-version.txt 重算，
+    # 这样升级引擎只需改一个文件，不必去改需要 workflow 权限的 yml。
+    if not os.path.isdir(args.engine):
+        _verf = os.path.join(os.path.dirname(os.path.abspath(__file__)), "engine-version.txt")
+        if os.path.isfile(_verf):
+            _alt = f"/tmp/dsh-engine-{open(_verf).read().strip()}"
+            print(f"[webview] --engine {args.engine} 不存在，改用 {_alt}")
+            args.engine = _alt
     engine = Path(args.engine)
     if not engine.is_dir():
         print(f"❌ 引擎目录不存在：{engine}", file=sys.stderr)
