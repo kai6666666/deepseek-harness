@@ -37,7 +37,7 @@
 | [webview-compat.md](webview-compat.md) | ⑯ 旧 WebView 内核白屏 | 前端 bundle 降级编译（不是 polyfill），v2/v19 两轮教训 |
 | [keep-alive.md](keep-alive.md) | 后台保活与通知栏实时状态 | 任务切后台不能断；键盘升起遮挡 |
 | [mobile-ui.md](mobile-ui.md) | 移动端 UI 插件 | 为什么解到 $DSH_HOME/mobile-ui、别名桥接、+ 菜单时序、安全键盘 |
-| [mobile-ui-rc3.md](mobile-ui-rc3.md) | 移动端 UI × rc3 | 三处「更多」菜单与抽屉的冲突：根因、三条修法、回归判据 |
+| [mobile-ui-rc3.md](mobile-ui-rc3.md) | 移动端 UI × rc3 | 三处「更多」菜单与抽屉的冲突、右栏创建插件收右栏；一条命令跑 6 条断言 |
 | [debug-device.md](debug-device.md) | 调试真机 | adb 基本手法 |
 | [rescue-mode.md](rescue-mode.md) | 插件改坏导致 App 打不开 | 启动前体检 + 安全模式 |
 | [node-selfheal.md](node-selfheal.md) | $PREFIX/bin/node 会坏 | 自校验 + 自愈、$PREFIX 并发写互斥 |
@@ -46,3 +46,14 @@
 | [ci-build.md](ci-build.md) | CI 构建 APK | x86_64 runner、资产自建、失败排查 |
 | [node-addon-require-builtin.md](node-addon-require-builtin.md) | require-builtin 原生插件 | 源码镜像与编译配方、两个编译坑、运行时验证方法 |
 | [desktop-relation.md](desktop-relation.md) | 与 DSH 桌面端的关系 | 哪些东西两端共用、哪些各管各的 |
+## 一条命令验收移动端 UI（rc3）
+
+```bash
+# 先解锁屏幕！熄屏时 dump 能返回坐标，但 tap 全被 keyguard 吃掉
+run-as com.dsh.android sh -c 'files/termux/usr/bin/node /data/local/tmp/urc3.mjs'
+# 6 条：PREFLIGHT / D / R / F / E / G；退出码 0 = 全过
+```
+
+脚本源码：[tools/ui-regression-rc3.mjs](../../tools/ui-regression-rc3.mjs)；判据定义：[verification.md ⑥](verification.md)。
+
+> ⑤⑥ 是**设备侧判据**：需要真机 + 已解锁屏幕；①~④ 可在纯主机环境跑。
