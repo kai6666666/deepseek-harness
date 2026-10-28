@@ -15,6 +15,7 @@ run-as com.dsh.android sh /data/local/tmp/verify-engine-upgrade.sh --tools  # �
 run-as com.dsh.android sh /data/local/tmp/verify-engine-upgrade.sh --json   # 只输出 JSON（含 --tools 时最有用）
 run-as com.dsh.android sh /data/local/tmp/verify-engine-upgrade.sh --baseline /path/verify-<ts>.json  # 与指定基线比对
 run-as com.dsh.android sh /data/local/tmp/verify-engine-upgrade.sh --latest  # 自动拿最新一份当基线
+run-as com.dsh.android sh /data/local/tmp/verify-engine-upgrade.sh --llm     # 真实凭据跑一轮对话（缺 key 会 FAIL）
 ```
 
 脚本源在 `tools/verify-engine-upgrade.sh`；退出码即结论。`--json` 输出结构：
@@ -36,6 +37,16 @@ baseline …/verify-20261028-230314.json  regressions=0 fixes=0
 
 退出码：`0` 全通过；`1` 本次有 FAIL；`2` 本次没 FAIL 但相对基线有**回归**（含 `[missing]`）。
 比对时必须使用相同开关（默认对默认、`--tools` 对 `--tools`），否则工具项会被记成 missing。
+
+`--llm` 直接跑一次真实模型对话（`--profile headless --json "回复 pong"`），把凭据问题变成一条断言。当前真机结果：
+
+```text
+"code":"MISSING_CREDENTIAL"
+[FAIL] 真实模型对话 MISSING_CREDENTIAL
+4 PASS / 1 FAIL   exit=1
+```
+
+修法只有一条：在 Web UI 的 **Models** 页填 `DEEPSEEK_API_KEY`（写入 `.credentials.yaml`），或在启动环境里导出同名变量；内置号池注入库在这份克隆里已被移除，不能靠 `AGNES_CREDENTIAL` 兜底。
 
 `--latest` 等价于「把 `files/home/verify-*.json` 里最新的一份当基线」，省掉手敲路径；实测连跑两次，第二次拿第一次做基线：
 
