@@ -38,15 +38,22 @@ baseline …/verify-20261028-230314.json  regressions=0 fixes=0
 退出码：`0` 全通过；`1` 本次有 FAIL；`2` 本次没 FAIL 但相对基线有**回归**（含 `[missing]`）。
 比对时必须使用相同开关（默认对默认、`--tools` 对 `--tools`），否则工具项会被记成 missing。
 
-`--llm` 直接跑一次真实模型对话（`--profile headless --json "回复 pong"`），把凭据问题变成一条断言。当前真机结果：
+`--llm` 不再走 headless：账号 provider（`deepseek-account`）在 headless 里会报 `ACCOUNT_SIGN_IN_REQUIRED`，因为请求目的地必须允许账号认证，而授权只存在于 App 的 Web 进程。现在改成 **App UI 真跑**：
 
 ```text
-"code":"MISSING_CREDENTIAL"
-[FAIL] 真实模型对话 MISSING_CREDENTIAL
-4 PASS / 1 FAIL   exit=1
+tools/verify-llm-ui.mjs
+  探针 UI 注入 → 新建会话 → 发「用 shell 执行 id」
+  → 轮询最新 session.v4.jsonl.zstd → 等 tool/result 出现 uid=
 ```
 
-修法只有一条：在 Web UI 的 **Models** 页填 `DEEPSEEK_API_KEY`（写入 `.credentials.yaml`），或在启动环境里导出同名变量；内置号池注入库在这份克隆里已被移除，不能靠 `AGNES_CREDENTIAL` 兜底。
+真机结果（已登录账号，未填任何 API key）：
+
+```text
+[PASS] 真实模型对话 uid=2000(shell)
+11 PASS / 0 FAIL   exit=0
+```
+
+这一步同时闭环了两件事：账号模型可用，且 `shell` 工具**真的以 uid 2000 执行**（不是 fallback 10603）。前置条件是 DSH 在前台且已解锁。
 
 `--latest` 等价于「把 `files/home/verify-*.json` 里最新的一份当基线」，省掉手敲路径；实测连跑两次，第二次拿第一次做基线：
 
