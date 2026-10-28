@@ -334,56 +334,48 @@ sidebar.right.tab.guide.actions → inject('rightbar')
   └─ 创建你的插件 → uiWorkspace.startSession(prompt) → 主区起新会话，右栏不收起 → 新会话被挤窄
 ```
 
-所以问题和左抽屉那条同源：**菜单项动作落在主区，容器（右栏）没退场**。
-
-### 判据：看“主区有没有起会话”，不看文案
+### 最终判据：草稿内容变化 → 收右栏
 
 ```text
 点 [role="menuitem"]，且 mpMenuSource === 'right'
-  → 每 120ms 轮询一次（最多 6 次，首次在 180ms）
-  → 见到可见的「发送消息 / Send message」按钮 = 主区已挂新会话
-  → 调 mpCloseRightbar()：点官方「收起右侧边栏」
-       全屏态先点「退出全屏」，260ms 后再点「收起右侧边栏」
-  → 浏览插件走路由跳转（没有发送键）→ 右栏不碰
+  → 记下点击前 [role=textbox] 的内容（mpDraftSignature）
+  → 每 130ms 轮询（最多 6 次，首次 180ms）
+  → 内容变了（startSession 把提示词写入草稿）或出现 dialog → mpCloseRightbar()
+  → 浏览插件：路由跳转，草稿不变 → 不碰右栏
 ```
 
-`mpMenuSource` 的判定加了一档（`mpNoteMenuSource`）：
+不用文案（英文界面是 “Create your plugin”），也不用“发送键是否存在”（会话视图里它一直在，会误判）。
 
-```js
-if (col && col.contains(anchor)) mpMenuSource = 'sidebar';
-else if (rightCol && rightCol.contains(anchor)) mpMenuSource = 'right';   // 新增
-else mpMenuSource = 'other';
-```
+### 四个真机才暴露的坑（都修了）
 
-`rightCol` = `.pI_x6G_rightbarCol, [class*="rightbarCol"]`。
-
-### 为什么不用文案
-
-「创建你的插件」是 `locales.ts` 里的 `create`，英文界面是 “Create your plugin”，
-写死中文会在切语言时失效。用「主区出现发送键」这个副作用判定，两条路径天然分开：
-
-| 菜单项 | 主区结果 | 有发送键 | 收右栏 |
+| # | 坑 | 后果 | 修法 |
 |---|---|---|---|
-| 创建你的插件 | 新会话草稿 | 有 | ✅ |
-| 浏览更多插件 | 插件列表页 | 无 | ❌（交给官方） |
+| 1 | guide 的「更多」按钮**没有把 `aria-haspopup/expanded` 落到 DOM** | `mpNoteMenuSource()` 找不到 anchor，来源判成 `other`，整段逻辑不执行 | 新增 `onGuideClick`：点 guide 内任何 button 就把来源记成 `right`（菜单项是 portal 到 body 的，点它时认不出来源） |
+| 2 | **全屏态右栏从 `rightbarCol` 搬出去**（portal 成整屏） | `rightbarCol.contains(anchor)` 恒 false | `anchor.closest('[data-sidebar-right-guide], …, [data-sidebar-right]')` 兜底 |
+| 3 | 全屏时 DOM 里还有一份**隐藏的 header 副本**，`getBoundingClientRect().width > 0` | `退出全屏` 点到了那份不可见按钮 → 点了没反应 | `seen()` 加「必须与视口相交 + 非 disabled」 |
+| 4 | 页面上有两个「更多工具」：右栏 guide 卡片 + 输入框旁的「+」 | 点错会打开「AI 浏览器 / 工作区文件」那组菜单 | 脚本逐个试，菜单里出现「创建…」才算选对 |
 
-### 验收（`tools/ui-regression-rc3.mjs` 新增 R 项）
-
-```text
-R 右栏「更多」→创建插件收右栏
-  判据：点「创建…」后 1.7s，右栏按钮（收起右侧边栏/退出全屏）全部不可见，且主区有「发送消息」
-  SKIP 条件：右栏没有 moreAnchor 卡片
-```
-
-**当前设备上 R 是 SKIP**：1.1.0-113 的右栏 guide 只渲染 `AI 浏览器 / 工作区文件 / 新建终端 / 更多工具` 这几张卡，
-`moreAnchor` 只存在于 `x=-330` 的左抽屉上（`find [class*="moreAnchor"]` 只有那一个）。
-也就是这台机器的右栏当前不满足 `hasEntryActions` 的渲染条件，**没有入口可点**。
-左栏（E/F/G）与会话视图（D）在加了这段代码后仍是 5 PASS，无回归：
+### 收右栏的动作
 
 ```text
-[PASS] PREFLIGHT / D / F / E / G      ← 4 PASS + 1 SKIP（D 因不在会话视图）
-[SKIP] R 右栏「更多」→创建插件收右栏 — 当前构建右栏未渲染「更多」卡片
-结果：4 PASS / 0 FAIL / 2 SKIP → 退出码 0
+有「退出全屏」→ 先点它（实测：退全屏这一步本身就把右栏收掉）
+否则有「收起右侧边栏」→ 点它
+320ms 后再补点一次「收起右侧边栏」（防全屏退出后按钮重排）
 ```
 
-等右栏出现这张卡（或你截图里那种布局），同一条命令会把 R 从 SKIP 变成 PASS/FAIL，不需要改脚本。
+### 真机 6 PASS（1.1.0-114 热替换）
+
+```text
+[PASS] PREFLIGHT
+[PASS] D 会话视图「更多」不越界 — 三项全在 394 宽内；抽屉=未动
+[PASS] R 右栏「更多」→创建插件收右栏 — 「创建你的插件」→ 右栏已收起；主区发送键=有
+[PASS] F 开菜单不收起抽屉 — drawer 恒 14,14,14；三帧 menu 项 2/2/2
+[PASS] E 点菜单项收起抽屉 — 「浏览更多插件」→ drawer=-330,-330,-330
+[PASS] G 点遮罩收起抽屉且菜单不复活 — drawer=-330,-330,-330；menuitem=0
+
+结果：6 PASS / 0 FAIL / 0 SKIP → 退出码 0
+```
+
+R 的判定细节：点「创建…」后 1.7s，`收起右侧边栏/退出全屏` 全部不可见（右栏没了），主区「发送消息」在。
+
+「浏览更多插件」这条没有被我们的代码碰：它走 `openList()` 换页，草稿签名不变，轮询自然结束，右栏去留交给官方。
