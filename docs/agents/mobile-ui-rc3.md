@@ -187,3 +187,42 @@ mpMenuSource = (col && anchor && col.contains(anchor)) ? 'sidebar' : 'other';
 2. **应用中途被 force-stop 时所有坐标会失真**：本轮出现过一次 app 退出（`pidof` 为空），
    期间 drawer 恒为 `-326`、菜单却在 `16,240`。重新 `am start` 后同一脚本立刻恢复正常。
    跑回归前先 `pidof com.dsh.android` 确认进程在。
+
+## 八、装机复核：走 `ensureMobileUi()` 解包路径再跑一遍（2026-10-27）
+
+第七节是热替换（手工 `cp` 到 `files/termux/home/.dsh/mobile-ui/`）测的。这一节把同一套用例
+跑在**APK 自带 `assets/mobile-ui.zip` 解出来的那份**上，用来确认版本戳与解包链路没有吃掉修复。
+
+### 安装与解包
+
+```text
+APK:            app-system-debug.apk 189,775,982 B（CI 40632127741 / 773dd6b6 / success）
+安装前 stamp:   1.0.0-108            ← 老包留下的，说明之前确实是“旧代码 + 热替换”
+处理:           把 dsh-android-mobile 整目录改名为 .old21744（等价于首次安装）
+启动后 stamp:   1.1.0-111            ← assets 解包成功
+client.js:      442,719 B，onMenuItemClick×3、mpMenuConsumed×5
+```
+
+⚠️ 注意体积差：仓库里 `mobile-ui-plugin/.../client.js` 是 528 KB（带注释与缩进），
+zip 里那份 443 KB 是构建产物。**判断版本要看行为与 grep，不要拿字节数对比。**
+旧目录 `.old21744` 事后用 `find -type f -delete` + `rmdir` 清掉，避免插件清单扫到两份同名包。
+
+### 四条用例复跑结果
+
+```text
+F 只开菜单：  +150/+400/+900ms  drawer 恒 14,14,14；menu 16,240 / 16,274
+E 点菜单项：  「浏览更多插件」→ tap → drawer 全 -1013（screen px）
+G 点遮罩：    input tap 350 400 → drawer -330；menuitem 0
+D 会话视图：  更多操作[314,22] → menu 197,58 / 197,88 / 197,118（全在 394 宽内）
+              抽屉行 -330,-330,-330（未被误开）
+```
+
+结论：**四条与热替换结果完全一致**，说明 1.1.0-111 的 zip 里就是带修复的构建，
+`ensureMobileUi()` 的「版本戳 → 删目录 → 重解包 → 写戳」链路也正常。
+
+### 顺带记录：怎么在手机上点到“某个会话”
+
+`dump` 只收可交互元素，会话行的标题是普通文本节点，**不在 dump 里**；只有右侧的 16×16
+「会话“xxx”的操作 / 归档会话 / 置顶会话」三个图标有 `aria-label`。
+所以“点开某个历史会话”目前只能靠：新建会话 → 发一条消息 → 头部才会出现「更多操作」。
+这也是第七节 D 项必须先把会话跑起来才能测的原因。
