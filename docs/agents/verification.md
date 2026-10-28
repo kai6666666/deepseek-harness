@@ -181,6 +181,16 @@ printf '%s' '{"id":2,"action":"type","ref":"e48","value":"hello","clear":true}' 
 > ✅ 四条判据全部通过
 > ```
 
+0.2.2-alpha.2 升完后同一命令复测（2026-10-28），结果不变：
+
+```text
+$ files/termux/usr/bin/node files/dsh-env.mjs status --json
+version 2  groups 6
+nodejs 2/2  python 5/5  ssh 3/3  java 2/2  rust 1/2 (partial)  go 1/1
+```
+
+`rust` 仍是 1/2，原因是 `rustup unsupported`，与 rc.3 一致，不是升级回归。
+
 这一条验的是**可选环境**（Python / SSH / Java / Rust / Go）能否装、能卸、能如实报错。
 全部命令都在设备上（`run-as` + App 自带 node）。
 
