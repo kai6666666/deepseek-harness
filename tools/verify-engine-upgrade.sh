@@ -85,6 +85,9 @@ const txt=fs.readFileSync(res,"utf8");
 const checks=[...txt.matchAll(/^(PASS|FAIL)\|(.*)$/gm)].map(m=>({name:m[2],pass:m[1]==="PASS",detail:m[2]}));
 const j={ts:new Date().toISOString(),pass:checks.filter(c=>c.pass).length,fail:checks.filter(c=>!c.pass).length,checks};
 const base=process.env.BASE||"";
+let cleaned=[];
+try{const c=JSON.parse(fs.readFileSync("/data/user/0/com.dsh.android/files/home/llm-last-clean.json","utf8"));cleaned=c.ids||[]}catch{}
+if(cleaned.length) j.cleaned=cleaned;
 if(base){
   try{
     const b=JSON.parse(fs.readFileSync(base,"utf8"));
@@ -105,7 +108,7 @@ if(base){
   }catch(e){ j.baseline={file:base,error:String(e && e.message || e)}; }
 }
 fs.writeFileSync(out,JSON.stringify(j,null,2));
-if(process.env.QUIET==="1")console.log(JSON.stringify(j,null,2));else console.log("json "+out);
+if(process.env.QUIET==="1")console.log(JSON.stringify(j,null,2));else{ if(cleaned.length) console.log("cleaned "+cleaned.join(",")); console.log("json "+out); }
 ' "$RES" "$OUT"
 GRC=$?
 
