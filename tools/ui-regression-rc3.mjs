@@ -133,9 +133,16 @@ async function openMoreMenu() {
       record('SKIP', 'D 会话视图「更多」不越界', '当前不在会话视图（头部没有「更多操作」）；先建会话发一条消息再跑');
     } else {
       await run('tap', { ref: head.ref });
-      await sleep(1000);
+      // 0.2.2 起会话「更多操作」菜单多了「复制会话为 Markdown」，首次展开更慢，
+      // 1s 可能只拿到空列表；给两次机会（真机上 1.2~1.6s 才出现 menu 项）。
+      await sleep(1400);
       d = await run('dump');
-      const its = items(d);
+      let its = items(d);
+      if (!its.length) {
+        await sleep(900);
+        d = await run('dump');
+        its = items(d);
+      }
       const inside = its.every((e) => {
         const b = BOX(e);
         return b.x >= 0 && b.y >= 0 && b.x + b.w <= vp.w + 1 && b.y + b.h <= vp.h + 1;
