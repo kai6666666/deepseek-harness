@@ -224,3 +224,44 @@ $N $D/dsh-env.mjs status --json | grep -o '"id":"rust.rustup"[^}]*"installed":[a
 | `rust.rustup` | Android 上 rustls 平台校验 panic → 永久 `unsupported`，界面置灰 |
 | 未纳管项 | 手动 `apt` 装的项没有 `env-state.json` 记录 → 卸载按**声明包名**兜底，体积显示“未纳管” |
 | 幽灵文件 | apt 被信号打断时 dpkg 无记录但二进制还在 → 卸载末尾会补删该二进制 |
+
+## ⑥ 移动端 UI 回归（rc3 三处「更多」+ 遮罩）
+
+一条命令跑完，退出码 0/1，不靠截图：
+
+```bash
+# 热替换场景（脚本已在仓库里，先推到设备）
+cp tools/ui-regression-rc3.mjs /sdcard/Download/urc3.mjs
+adb push /sdcard/Download/urc3.mjs /data/local/tmp/urc3.mjs   # 或 shizuku 里 cp
+
+# 跑（必须 app 身份：读写 $DSH_HOME 下的探针文件）
+run-as com.dsh.android sh -c 'files/termux/usr/bin/node /data/local/tmp/urc3.mjs'
+```
+
+四条断言（全 PASS 才算 0；SKIP 不算失败）：
+
+| 断言 | 判据 | 失败含义 |
+|---|---|---|
+| F 开菜单不收起抽屉 | 开抽屉后连测 `+150/400/900ms` 三帧：`drawerRow.x` 恒等于开抽屉时的值，且 `menuitem` 非空 | 抽屉被菜单连坐收起 → 菜单会被 clamp 到屏幕中央（rc3 前的原 bug） |
+| E 点菜单项收起抽屉 | 点第一个 `[role=menuitem]` 后 1.1s：`drawerRow.x < 0` 且菜单消失 | 点完菜单项抽屉还留着（行为与「插件 / 自动化任务」行不一致） |
+| G 点遮罩收起抽屉 | 按坐标点遮罩右侧空白（`x=viewport.w-30, y=h/2`）：抽屉收起且 `menuitem == 0` | 遮罩点不动，或菜单被 observer 复活 |
+| D 会话视图「更多」不越界 | 头部「更多操作」→ 菜单所有 `menuitem` 的 `rect` 完全在 viewport 内，且抽屉仍关闭 | portal 菜单溢出/压住发送键；或误开抽屉 |
+
+⚠️ 跑之前先确认**屏幕是亮的**：熄屏时 `dump` 照样返回坐标，但 `tap` 会被 keyguard 吃掉，
+表现成「F 抽屉没打开」这类假失败。
+
+```bash
+input keyevent 224 && wm dismiss-keyguard
+settings put system screen_off_timeout 1800000
+```
+
+已知 SKIP 条件：不在会话视图（头部没有「更多操作」）时 D 记为 SKIP ——
+新建会话必须先发一条消息，头部才会渲染这个按钮。
+
+脚本自身的两个坑（已写进注释，别再踩）：
+
+1. **抽屉“开好”不能只看 `x >= 0`**：滑入动画中间帧会停在 `x=1`，会被误判成已展开，
+   后续每帧都“对不上”。脚本改成「连续两帧 x 一致且 > 5」才算开好。
+2. **遮罩不能用 `ref` 点**：遮罩铺满全屏，中心点正好被抽屉盖住，`ref` 点法会落到抽屉上。
+   探针 VERSION 8 起 `tap` 支持 `{x,y}` 坐标点击（`document.elementFromPoint` 取真实 topmost），
+   脚本用 `viewport.w-30` 这条真实手指会点的路径。
