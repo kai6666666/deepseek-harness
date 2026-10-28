@@ -363,7 +363,7 @@ sidebar.right.tab.guide.actions → inject('rightbar')
 320ms 后再补点一次「收起右侧边栏」（防全屏退出后按钮重排）
 ```
 
-### 真机 6 PASS（1.1.0-114 热替换）
+### 真机 6 PASS（1.1.0-115 装机版）
 
 ```text
 [PASS] PREFLIGHT
@@ -374,6 +374,13 @@ sidebar.right.tab.guide.actions → inject('rightbar')
 [PASS] G 点遮罩收起抽屉且菜单不复活 — drawer=-330,-330,-330；menuitem=0
 
 结果：6 PASS / 0 FAIL / 0 SKIP → 退出码 0
+```
+
+装机确认（`pm install -r` 后由 `ensureMobileUi()` 从 assets 解包）：
+
+```text
+stamp = 1.1.0-115
+client.js: onGuideClick×3、mpDraftSignature×3   （压缩产物里仍能按符号数确认）
 ```
 
 R 的判定细节：点「创建…」后 1.7s，`收起右侧边栏/退出全屏` 全部不可见（右栏没了），主区「发送消息」在。
