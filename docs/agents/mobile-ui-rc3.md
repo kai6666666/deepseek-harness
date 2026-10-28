@@ -274,3 +274,50 @@ settings put system screen_off_timeout 1800000
 ```
 
 这条已经写进 `docs/agents/verification.md` ⑥。
+
+## 十、1.1.0-113 装机全绿（2026-10-27）
+
+第九节那次是在 112 上跑出 `4 PASS + D SKIP`，随后补了「官方 expanded 但抽屉在屏外」的修复、
+把用例顺序调成 D→F→E→G、E 改成按文案重定位。113 的出包（CI `40638216626` / `b4ba13b8`）装上后：
+
+```text
+stamp = 1.1.0-113        （assets 解包写戳正常）
+探针  = VERSION 8        （坐标点击可用）
+```
+
+一条命令、零人工干预：
+
+```text
+[PASS] PREFLIGHT — 探针 ping 通
+[PASS] D 会话视图「更多」不越界 — 下载 Session 日志[197,58] 反馈[197,88] 刷新[197,118]
+                                 视口内=YES；抽屉=未动
+[PASS] F 开菜单不收起抽屉 — drawer 恒 14,14,14；三帧 menu 项 2/2/2
+[PASS] E 点菜单项收起抽屉 — 「浏览更多插件」→ drawer=-330,-330,-330
+[PASS] G 点遮罩收起抽屉且菜单不复活 — drawer=-330,-330,-330；menuitem=0
+
+结果：5 PASS / 0 FAIL / 0 SKIP → 退出码 0
+```
+
+这是第一次 **五条全 PASS、无 SKIP**：D 能过说明重启后仍停在会话视图（`更多操作`在头部），
+也说明「有消息的会话」这个前置在装机后是保留的（会话数据在 `files/` 里，`pm install -r` 不抹）。
+
+### 装机版的额外确认
+
+| 项 | 值 |
+|---|---|
+| 解包路径 | `files/termux/home/.dsh/mobile-ui/dsh-android-mobile/` |
+| 版本戳 | `1.1.0-113` |
+| 探针 | `files/home/.dsh/ui-probe.js` 里 `VERSION = 8` |
+| 源码比对 | zip 内 `client.js` 是压缩产物（注释被剥），**不能靠 grep 注释判断**；以行为断言为准 |
+
+### 这条线到此的完整判据
+
+```text
+E 点菜单项 → 抽屉收
+F 只开菜单 → 抽屉不动
+G 点遮罩   → 抽屉收、菜单不复活
+D 会话视图「更多」→ 菜单在视口内、抽屉不动
+PREFLIGHT 探针通
+```
+
+四条行为 + 一条前置，全部由 `tools/ui-regression-rc3.mjs` 一条命令覆盖，退出码即结论。
