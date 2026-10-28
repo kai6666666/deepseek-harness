@@ -226,3 +226,51 @@ D 会话视图：  更多操作[314,22] → menu 197,58 / 197,88 / 197,118（全
 「会话“xxx”的操作 / 归档会话 / 置顶会话」三个图标有 `aria-label`。
 所以“点开某个历史会话”目前只能靠：新建会话 → 发一条消息 → 头部才会出现「更多操作」。
 这也是第七节 D 项必须先把会话跑起来才能测的原因。
+
+## 九、回归脚本化：`tools/ui-regression-rc3.mjs`（2026-10-27）
+
+四条用例不再手拼脚本，固化成一个文件，退出码 0/1：
+
+```bash
+run-as com.dsh.android sh -c 'files/termux/usr/bin/node /data/local/tmp/urc3.mjs'
+```
+
+### 脚本里踩到的三个真坑（都改在脚本/代码里了）
+
+| 现象 | 根因 | 处理 |
+|---|---|---|
+| F 判 `drawer 恒 1,1,1` 失败 | 抽屉滑入动画中间帧停在 `x=1`，`x>=0` 被当成“已展开” | `openDrawer()` 改成「连续两帧 x 一致且 >5」才算开好 |
+| G 点遮罩没反应 | 遮罩铺满全屏，`ref` 点法落到中心点 → 正好被抽屉盖住 | 探针 VERSION 8 支持 `tap {x,y}`（`elementFromPoint` 取 topmost）；脚本点 `viewport.w-30` |
+| E 偶发“点了抽屉不动” | 菜单是 React 渲染，旧 dump 的 `ref` 可能已指向卸载节点 | E 改成按文案重新定位 + 失败重试一次 |
+
+另外修了一个**真机才暴露**的抽屉 bug：插件市场这类页面官方 `expanded=true` 但抽屉在屏幕外，
+`mpOpenDrawer()` 见到 expanded 直接 `return` → 点汉堡没反应。现在改为「补 `mp-drawer-open` 类 + 同步一次」。
+
+### 实测记录（同一台机，1.1.0-112 装机版）
+
+```text
+[PASS] PREFLIGHT — 探针 ping 通
+[PASS] D 会话视图「更多」不越界 — 下载 Session 日志[197,112 141x30] 反馈[197,142] 刷新[197,172]
+                                 视口内=YES；抽屉=未动
+[PASS] F 开菜单不收起抽屉 — drawer 恒 14,14,14；三帧 menu 项 2/2/2
+[PASS] E 点菜单项收起抽屉 — 「浏览更多插件」→ drawer=-330,-330,-330
+[PASS] G 点遮罩收起抽屉且菜单不复活 — drawer=-330,-330,-330；menuitem=0
+结果：4 PASS / 0 FAIL → 退出码 0          ← D 先跑（E 会把界面导航到插件页）
+```
+
+单独跑 `D` 时（会话视图在场）同样是 PASS；`D` 在非会话视图下记 SKIP 而不是 FAIL，
+因为「更多操作」按钮本身要“有消息的会话”才渲染。
+
+### ⚠️ 跑之前必须确认屏幕是亮的
+
+本轮有一次 `4 PASS` 之后紧接着全 FAIL：`dumpsys power` 显示 `mWakefulness=Dozing`，
+`mCurrentFocus=NotificationShade`。**熄屏时 `dump` 照样能返回坐标，但 `tap` 全被 keyguard 吃掉** ——
+表现就是「F 抽屉没打开」这类假失败。跑之前先：
+
+```bash
+input keyevent 224        # 唤醒
+wm dismiss-keyguard       # 无密码锁时直接收起
+settings put system screen_off_timeout 1800000
+```
+
+这条已经写进 `docs/agents/verification.md` ⑥。
