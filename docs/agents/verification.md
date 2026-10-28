@@ -159,6 +159,28 @@ printf '%s' '{"id":2,"action":"type","ref":"e48","value":"hello","clear":true}' 
 
 ### ⑤ 开发环境（六组）——设置页「开发环境」的验收
 
+> **一键验收**（随包资产，`filesDir/check-devenv.mjs`）：
+>
+> ```bash
+> run-as com.dsh.android sh -c 'N=/data/user/0/com.dsh.android/files/termux/usr/bin/node; \\
+> D=/data/user/0/com.dsh.android/files; $N $D/check-devenv.mjs --expect=python=5/5'
+> ```
+>
+> 真机输出（2026-10-27）：
+>
+> ```text
+> ── 开发环境验收（verification ⑤）──
+> nodejs  2/2
+> python  5/5
+> ssh     3/3
+> java    2/2
+> rust    1/2
+> go      1/1
+> unsupported: rust.rustup
+> 占用: 3333 MB
+> ✅ 四条判据全部通过
+> ```
+
 这一条验的是**可选环境**（Python / SSH / Java / Rust / Go）能否装、能卸、能如实报错。
 全部命令都在设备上（`run-as` + App 自带 node）。
 
