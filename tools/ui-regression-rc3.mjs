@@ -160,18 +160,25 @@ async function openMoreMenu() {
     let d = await run('dump');
     const openR = (d.elements || []).find((e) => TXT(e) === '打开右侧边栏' && X(e) >= 0);
     if (openR) { await run('tap', { ref: openR.ref }); await sleep(1200); d = await run('dump'); }
-    // 右栏 guide 的「更多」= moreAnchor 卡片；左抽屉那个 moreAnchor 在 x<0，要排除
-    const rMore = (d.elements || []).filter((e) => /moreAnchor/.test(e.cls || '') && X(e) > 150)
-      .sort((a, b) => Y(a) - Y(b))[0];
-    if (!rMore) {
-      record('SKIP', 'R 右栏「更多」→创建插件收右栏',
-        '当前构建右栏未渲染「更多」卡片（moreAnchor 只在 x<0 的左抽屉上）');
-    } else {
-      await run('tap', { ref: rMore.ref });
+    // 右栏 guide 的「更多」按钮文案是「更多工具」（label=t('tab.guide.more')）。
+    // ⚠️ 页面上同名的还有输入框旁的「+」菜单，点错会打开「AI 浏览器/工作区文件」那一组，
+    //   所以这里逐个试：打开后 menu 里出现「创建…」才算找对了。
+    let create = null;
+    let menuDump = null;
+    const cands = (d.elements || []).filter((e) => X(e) >= 0 && /^更多工具$/.test(TXT(e)));
+    for (const cand of cands) {
+      await run('tap', { ref: cand.ref }).catch(() => {});
       await sleep(800);
-      d = await run('dump');
-      const create = (d.elements || []).filter((e) => e.role === 'menuitem').find((e) => /创建/.test(TXT(e)));
-      if (!create) throw new Error('右栏菜单里没有「创建…」项');
+      const dd = await run('dump');
+      const its = (dd.elements || []).filter((e) => e.role === 'menuitem');
+      const hit = its.find((e) => /创建/.test(TXT(e)));
+      if (hit) { create = hit; menuDump = dd; break; }
+      await run('key', { key: 'Escape' });
+      await sleep(400);
+    }
+    if (!create) {
+      record('SKIP', 'R 右栏「更多」→创建插件收右栏', '右栏「更多工具」菜单里没有「创建…」项（可能不在 guide tab）');
+    } else {
       const label = TXT(create);
       await run('tap', { ref: create.ref });
       await sleep(1700);
