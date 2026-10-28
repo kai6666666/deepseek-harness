@@ -63,6 +63,7 @@ BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
 |---|---|---|
 | A：引擎版本回退 | 把 `engine/node_modules/@deepseek-ai/dsh/package.json` 的 `version` 改成 `0.2.1-rc.3` → 跑套件 → 改回 `0.2.2-alpha.2` | `[FAIL] 引擎版本 0.2.1-rc.3` → 恢复后 `4 PASS / 0 FAIL`，**验收能拦住版本回退** ✅ |
 | B：整包降级 | `pm install -r -d /data/local/tmp/dsh-v71.apk`（旧包 `DSH0.4.1-v71.apk`，147 MB） | `INSTALL_FAILED_UPDATE_INCOMPATIBLE: signatures do not match` —— 旧包与装机包**签名不同**，降级只能卸载重装（清数据），因此整包回滚需现场确认，未在本轮执行 ⚠️ |
+| C：装机 → 验收 → 回装 | `pm install -r -d /data/local/tmp/dshW2.apk` → 跑套件 → `pm install -r dsh-current-115.apk` → 跑套件 | 两步都 `Success`，装回后 `4 PASS / 0 FAIL`；「换包 → 验收 → 回基线」流程可执行 ✅ |
 
 顺带确认的两件小事：
 
