@@ -13,6 +13,7 @@ run-as com.dsh.android sh /data/local/tmp/verify-engine-upgrade.sh          # �
 run-as com.dsh.android sh /data/local/tmp/verify-engine-upgrade.sh --ui     # 加装机 UI 断言（需前台+解锁）
 run-as com.dsh.android sh /data/local/tmp/verify-engine-upgrade.sh --tools  # 加 mock 工具矩阵（约 3 分钟）
 run-as com.dsh.android sh /data/local/tmp/verify-engine-upgrade.sh --json   # 只输出 JSON（含 --tools 时最有用）
+run-as com.dsh.android sh /data/local/tmp/verify-engine-upgrade.sh --baseline /path/verify-<ts>.json  # 与基线比对
 ```
 
 脚本源在 `tools/verify-engine-upgrade.sh`；退出码即结论。`--json` 输出结构：
@@ -23,6 +24,17 @@ run-as com.dsh.android sh /data/local/tmp/verify-engine-upgrade.sh --json   # �
 ```
 
 每次运行还会落一份 `files/home/verify-<YYYYmmdd-HHMMSS>.json`，便于对比历史。
+
+`--baseline` 与基线逐项比对，结果写进 JSON 的 `baseline` 字段：
+
+```text
+baseline …/verify-20261028-230314.json  regressions=0 fixes=0
+  REGRESSED 幽灵项 [missing]      ← 基线为 PASS、本次没有该项
+  FIXED     工具 logs             ← 基线 FAIL、本次 PASS
+```
+
+退出码：`0` 全通过；`1` 本次有 FAIL；`2` 本次没 FAIL 但相对基线有**回归**（含 `[missing]`）。
+比对时必须使用相同开关（默认对默认、`--tools` 对 `--tools`），否则工具项会被记成 missing。
 
 实测（2026-10-28）：
 
