@@ -1,7 +1,9 @@
-# 引擎 0.2.1-rc.3 → 0.2.2-alpha.2 适配记录
+# 引擎 0.2.1-rc.3 → 0.2.2-alpha.2 升级过程记录
 
 > 目标：先证伪、再打包、后上机；任何一步失败都能退回 rc.3。
 > 本文只记录**已经做过并拿到回执**的步骤，推测不写进来。
+> 只要操作清单（必改点 / 锚点 / 验证矩阵 / 回滚），看
+> [`engine-0.2.2-compat.md`](./engine-0.2.2-compat.md)。
 
 ---
 
@@ -94,7 +96,7 @@ dsh web: http://127.0.0.1:3086/?token=aKmvsigabbShXwcYu93PBNdN4JrXiVRbfguVrI7OhN
 
 ## 阶段 2：App 侧补丁 ✅
 
-### 2.1 `requiredStartupEntryIds` 从 4 项扩到 10 项
+### 2.1 曾把 `requiredStartupEntryIds` 扩到 10 项 —— 已回退 4 项
 
 ```text
 0.2.2-alpha.2 官方集合（dsh-app-boot/lib/index.js:4324）：
@@ -150,7 +152,7 @@ GET /plugins/??dsh-android-mobile/client.js&rev=…  → 200, 446,030 B
 
 ---
 
-## 阶段 4：UI 回归（待做，需装机态）
+## 阶段 4：UI 回归 ✅（装机态 6 PASS）
 
 引擎单独跑没有 App 外壳（安全区、WebView 桥、mobile-ui 的 data-mobile 判定），
 必须出包后在真机跑 `urc3.mjs` 六条。预期风险：类名哈希重算、`PanelMoreMenu` 多了
@@ -158,7 +160,7 @@ GET /plugins/??dsh-android-mobile/client.js&rev=…  → 200, 446,030 B
 
 ---
 
-## 阶段 5：CI 出包（进行中）
+## 阶段 5：CI 出包 ✅
 
 为让 CI 现场构建 0.2.2 资产，改了 6 处硬编码：
 
@@ -349,34 +351,9 @@ TOOL_RESULT_END"}
 
 ### 6.6 七个工具插件逐个跑通（mock 驱动）✅
 
-统一用 `tools/mock-openai-toolcall.mjs` + `--profile headless --patch mock4.patch.yml`：
+结论见 [`engine-0.2.2-compat.md` §4 工具插件矩阵](./engine-0.2.2-compat.md#4-工具插件矩阵mock-驱动实测)：
+7 个全部注册、6 个实跑返回数据、`root` 因本机无 su 未执行命令。
 
-| 工具 | 参数 | tool_result |
-|---|---|---|
-| `shell` | `{"command":"id"}` | `completed` · `uid=10603…`（uid 2000 回落，headless 无 Shizuku binder） |
-| `bubble` | `{"action":"get"}` | `completed` · 完整外观 JSON（state/shape/size/actionMap/videoActions/pools…） |
-| `ui` | `{"action":"ping"}` | `completed` · `✓ 探针就绪 · http://127.0.0.1:3080/ · 可交互元素 32 个 · 视口 394×806` |
-| `logs` | `{"action":"summary"}` | `completed` · `718 条 / 警告 29 / 错误 1 / 现场文件 8` |
-| `statusbar` | `{"action":"get"}` | `completed` · 当前系统栏配色 JSON |
-| `browser` | `{"action":"tabs"}` | `completed` · `标签（当前第 0 个）: [0] (无标题) — https://github.com/` |
-| `root` | `{"command":"id","description":"read root uid"}` | `completed` · `[dsh-root] 找不到 su（已试 /system/bin/su…）—— 设备当前没有可用的 root`；工具已注册、通道已打通 |
+过程要点：mock 服务按「无 tools → 纯文本 / 有 tools → tool_calls / 有 tool 结果 → 回显」三段应答；
+`mockrun.sh` 封装了换工具重启 mock + 跑 headless + 打印回执，patch 与脚本都在 `/data/local/tmp`。
 
-复跑方式（设备上）：
-
-```bash
-run-as com.dsh.android sh /data/local/tmp/mockrun.sh bubble '{"action":"get"}'
-run-as com.dsh.android sh /data/local/tmp/mockrun.sh ui '{"action":"ping"}'
-```
-
-`mockrun.sh` 做三件事：换 `MOCK_TOOL/MOCK_ARGS` 重启 mock → 跑一次 headless → 打印 tool_call/tool_result。
-
-**结论：7 个工具插件在 0.2.2 上全部注册成功，6 个实跑返回数据；`root` 通道也走通，只是本机没有 su，命令按预期没执行。**
-
-参数备注：`browser` / `root` 不在 `mock4.patch.yml` 里，用 `mock5.patch.yml` 跑：
-
-```bash
-run-as com.dsh.android sh /data/local/tmp/mockrun.sh browser '{"action":"tabs"}' mock5.patch.yml
-run-as com.dsh.android sh /data/local/tmp/mockrun.sh root '{"command":"id","description":"read root uid"}' mock5.patch.yml
-```
-
-`mockrun.sh` 第三个参数是 patch 文件名（默认 `mock4.patch.yml`），并自动注入 `DSH_ROOT_RUNNER`；否则 `root` 与 `shell` 都会静默不注册。
