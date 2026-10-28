@@ -99,6 +99,12 @@ function cleanupSession(file) {
   } catch {}
 }
 
+function cleanupNewest(start) {
+  if (!CLEAN) return
+  const f = newestSession(start - 5000)
+  if (f) cleanupSession(f)
+}
+
 function failShot() {
   if (!SHOT) return ''
   const p = F + '/home/llm-fail-' + Date.now() + '.png'
@@ -135,9 +141,11 @@ function failShot() {
     }
     if (/MISSING_CREDENTIAL|ACCOUNT_SIGN_IN_REQUIRED/.test(txt)) {
       const code = txt.match(/(MISSING_CREDENTIAL|ACCOUNT_SIGN_IN_REQUIRED)/)[1]
+      cleanupNewest(start)
       console.log('NO_HIT ' + code + failShot()); process.exit(1)
     }
   }
+  cleanupNewest(start)
   console.log('NO_HIT timeout' + failShot())
   process.exit(1)
 })().catch((e) => { console.log('NO_HIT ' + e.message + failShot()); process.exit(1) })
