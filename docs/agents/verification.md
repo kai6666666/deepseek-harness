@@ -330,3 +330,26 @@ wrapper rc=0
 ```
 
 真模型轮次的会话事件结构（排查用）：`session.v4.jsonl.zstd` 解压后是 JSONL，`tool/call` 的 `data` 有 `callId`/`name`/`arguments`，`tool/result` 的 `callId` 在 `data.toolCallId` 与 `data.message.toolCallId` 两处，配对时两者都要兜。
+
+### ⑩ UI 注入的已知抖动（含复跑方法）
+
+现象：真模型段（`--llmtools` / `--llm`）在同一个会话里连续跑 3~5 轮后，探针 `dump` 不再返回 `textbox`，脚本输出 `NO_BOX`（偶发，与设备负载、WebView 陈旧有关）。
+
+兜底已内置：
+
+| 兜底 | 位置 |
+|---|---|
+| 三段发送校验（确认已输入 → tap 发送 → 确认已清空） | `verify-llm-tools.mjs` `sendInCurrent()` |
+| 每个用例最多 2 次尝试 | `verify-llm-tools.mjs` 用例循环 |
+| 冷启 + `probe-count` 探针健康检查（3 轮回暖，弱则重启 App） | `verify-all.sh` |
+| `--llm` 失败自动重试一次 | `verify-engine-upgrade.sh` |
+| 每轮收会话，保留 UI 当前那条 | `prune-sessions.mjs` |
+
+复跑姿势：
+
+```bash
+sh /data/local/tmp/verify-all.sh --tools --clean          # mock 段，确定性
+sh /data/local/tmp/verify-all.sh --llmtools --llm --clean # 真模型段，冷启后开跑
+```
+
+成功记录：2026-10-29 04:09 一次跑满 **11 PASS / 0 FAIL / 1 SKIP**（wrapper rc=0），见 ⑨。抖动时重跑同一条命令即可。
