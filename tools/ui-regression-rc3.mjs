@@ -35,7 +35,8 @@ async function run(action, extra = {}) {
   const id = ++seq;
   try { fs.unlinkSync(RES); } catch { /* 首次跑没有旧文件 */ }
   fs.writeFileSync(CMD, JSON.stringify({ id, action, limit: 900, ...extra }));
-  for (let i = 0; i < 80; i++) {
+  // 30s：探针在极端情况下会被上一轮未完成的命令堵住，20s 会误报超时
+  for (let i = 0; i < 120; i++) {
     await sleep(250);
     try {
       const d = JSON.parse(fs.readFileSync(RES, 'utf8'));
@@ -151,6 +152,37 @@ async function openMoreMenu() {
     }
   } catch (e) {
     record('FAIL', 'D 会话视图「更多」不越界', e.message);
+  }
+
+  // ── R：右栏「更多」→「创建你的插件」后右栏要收起 ─────────────────────
+  try {
+    await resetAll();
+    let d = await run('dump');
+    const openR = (d.elements || []).find((e) => TXT(e) === '打开右侧边栏' && X(e) >= 0);
+    if (openR) { await run('tap', { ref: openR.ref }); await sleep(1200); d = await run('dump'); }
+    // 右栏 guide 的「更多」= moreAnchor 卡片；左抽屉那个 moreAnchor 在 x<0，要排除
+    const rMore = (d.elements || []).filter((e) => /moreAnchor/.test(e.cls || '') && X(e) > 150)
+      .sort((a, b) => Y(a) - Y(b))[0];
+    if (!rMore) {
+      record('SKIP', 'R 右栏「更多」→创建插件收右栏',
+        '当前构建右栏未渲染「更多」卡片（moreAnchor 只在 x<0 的左抽屉上）');
+    } else {
+      await run('tap', { ref: rMore.ref });
+      await sleep(800);
+      d = await run('dump');
+      const create = (d.elements || []).filter((e) => e.role === 'menuitem').find((e) => /创建/.test(TXT(e)));
+      if (!create) throw new Error('右栏菜单里没有「创建…」项');
+      const label = TXT(create);
+      await run('tap', { ref: create.ref });
+      await sleep(1700);
+      d = await run('dump');
+      const closed = !(d.elements || []).some((e) => X(e) >= 0 && /收起右侧边栏|退出全屏/.test(TXT(e)));
+      const composer = (d.elements || []).some((e) => X(e) >= 0 && TXT(e) === '发送消息');
+      record(closed && composer ? 'PASS' : 'FAIL', 'R 右栏「更多」→创建插件收右栏',
+        `「${label}」→ 右栏${closed ? '已收起' : '仍在'}；主区发送键=${composer ? '有' : '无'}`);
+    }
+  } catch (e) {
+    record('FAIL', 'R 右栏「更多」→创建插件收右栏', e.message);
   }
 
   // ── F：只开菜单不点 → 抽屉必须钉住 ─────────────────────────────────────
