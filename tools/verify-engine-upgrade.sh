@@ -1,15 +1,19 @@
 #!/system/bin/sh
 # 一条命令验收引擎升级（0.2.2 基线）
 # 用法（设备上）：
-#   run-as com.dsh.android sh /data/local/tmp/verify-engine-upgrade.sh [--ui] [--tools] [--json]
-#   默认  ：引擎版本 + 开发环境六组 + 会话索引 + 补丁标记
-#   --ui  ：再加装机 UI 断言（需前台 + 已解锁）
-#   --tools：再加 mock 工具矩阵（bubble/ui/logs/statusbar + browser/root）
-#   --json：只输出 JSON（同时写 files/home/verify-<ts>.json）
+#   run-as com.dsh.android sh /data/local/tmp/verify-engine-upgrade.sh [--ui] [--tools] [--json] [--baseline <json>]
+#   默认      ：引擎版本 + 开发环境六组 + 会话索引 + 补丁标记
+#   --ui      ：再加装机 UI 断言（需前台 + 已解锁）
+#   --tools   ：再加 mock 工具矩阵（bubble/ui/logs/statusbar + browser/root）
+#   --json    ：只输出 JSON（同时写 files/home/verify-<ts>.json）
+#   --baseline：与上一次 verify-<ts>.json 比对；有回归时退出码 2
 R=/data/user/0/com.dsh.android/files
 N=$R/termux/usr/bin/node
 PASS=0; FAIL=0
 QUIET=0; case "$*" in *--json*) QUIET=1;; esac
+BASE=""; prev=""
+for a in "$@"; do [ "$prev" = "--baseline" ] && BASE="$a"; prev="$a"; done
+[ -n "$BASE" ] && [ ! -f "$BASE" ] && BASE=""
 RES=$R/home/.verify-results.$$
 : > $RES
 say(){ [ $QUIET -eq 0 ] && echo "$1"; }
@@ -61,16 +65,39 @@ case "$*" in *--tools*)
 
 TS=$(date +%Y%m%d-%H%M%S)
 OUT=$R/home/verify-$TS.json
-QUIET=$QUIET $N -e '
+QUIET=$QUIET BASE="$BASE" $N -e '
 const fs=require("fs");
 const res=process.argv[1],out=process.argv[2];
 const txt=fs.readFileSync(res,"utf8");
 const checks=[...txt.matchAll(/^(PASS|FAIL)\|(.*)$/gm)].map(m=>({name:m[2],pass:m[1]==="PASS",detail:m[2]}));
 const j={ts:new Date().toISOString(),pass:checks.filter(c=>c.pass).length,fail:checks.filter(c=>!c.pass).length,checks};
+const base=process.env.BASE||"";
+if(base){
+  try{
+    const b=JSON.parse(fs.readFileSync(base,"utf8"));
+    const bm=new Map((b.checks||[]).map(c=>[c.name,c.pass]));
+    const cm=new Map(checks.map(c=>[c.name,c.pass]));
+    const regressions=[],fixes=[];
+    for(const [n,p] of bm){
+      if(p){ if(!cm.has(n)) regressions.push(n+" [missing]"); else if(cm.get(n)!==true) regressions.push(n); }
+      if(!p && cm.get(n)===true) fixes.push(n);
+    }
+    j.baseline={file:base,regressions,fixes};
+    if(process.env.QUIET!=="1"){
+      console.log("baseline "+base+"  regressions="+regressions.length+" fixes="+fixes.length);
+      for(const n of regressions) console.log("  REGRESSED "+n);
+      for(const n of fixes) console.log("  FIXED     "+n);
+    }
+    if(regressions.length) process.exitCode=2;
+  }catch(e){ j.baseline={file:base,error:String(e && e.message || e)}; }
+}
 fs.writeFileSync(out,JSON.stringify(j,null,2));
 if(process.env.QUIET==="1")console.log(JSON.stringify(j,null,2));else console.log("json "+out);
 ' "$RES" "$OUT"
+GRC=$?
 
 if [ $QUIET -eq 0 ]; then echo "----"; echo "$PASS PASS / $FAIL FAIL"; fi
 rm -f $RES
-[ $FAIL -eq 0 ]
+if [ $FAIL -ne 0 ]; then exit 1; fi
+if [ $GRC -eq 2 ]; then exit 2; fi
+exit 0
