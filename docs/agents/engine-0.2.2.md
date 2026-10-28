@@ -207,3 +207,39 @@ Cannot find module '.../node-addon-require-builtin/build/napi/napi-v9-android-ar
 ### 5.2 待复跑
 
 修好后重新出包 → 装机 → 确认 `engine.log` 出现 `引擎就绪`、`http=200`，再跑 `urc3.mjs` 六条。
+
+### 5.3 第二次出包：6 PASS（0.2.2-alpha.2 装机态）
+
+```text
+APK 40688235981 / 9f2b1215 / success
+engine.bin 0.2.2-alpha.2  解包 61,174 条目 / 54,100 文件 / 430,317,442 字节（MANIFEST 对账通过）
+```
+
+启动：`engine.ready ms=24025 port=3080`，`Web 界面加载完成`，`插件已激活（onUiReady）`。
+
+`urc3.mjs` 六条：
+
+```text
+[PASS] PREFLIGHT
+[PASS] D 会话视图「更多」不越界 — 复制会话为 Markdown[171,58 167x30] 下载 Session 日志[171,88]
+                                  反馈[171,118] 刷新[171,148]；视口内=YES；抽屉=未动
+[PASS] R 右栏「更多」→创建插件收右栏 — 右栏已收起；主区发送键=有
+[PASS] F 开菜单不收起抽屉 — drawer 恒 8,8,8；三帧 menu 项 2/2/2
+[PASS] E 点菜单项收起抽屉 — 「浏览更多插件」→ drawer=-330,-330,-330
+[PASS] G 点遮罩收起抽屉且菜单不复活 — drawer=-330,-330,-330；menuitem=0
+
+结果：6 PASS / 0 FAIL / 0 SKIP → 退出码 0
+```
+
+0.2.2 带来的 UI 差异（都只影响断言细节，不影响插件逻辑）：
+
+| 差异 | 处理 |
+|---|---|
+| 会话「更多操作」多了一项「复制会话为 Markdown」，菜单首次展开变慢（1.2~1.6s） | `urc3.mjs` D 段改为 1.4s + 一次 0.9s 重试 |
+| 抽屉展开后行 x 从 14 变 8（新布局 padding） | 断言本来就是“展开后帧间不变”，无需改 |
+| `PanelMoreMenu` 多了 `Tooltip` 包装 | 左栏 F/E/G 全部照常通过 |
+
+### 5.4 收尾
+
+- 旁路目录 `files/engine022`（927 MB）与 `.dsh022` 已删除；回滚包保留 `nW` + `dshW2.apk`。
+- 待做：dev-env 六组、bubble、uiagent 等非 UI 功能的冒烟（引擎换版后尚未逐项跑）。
