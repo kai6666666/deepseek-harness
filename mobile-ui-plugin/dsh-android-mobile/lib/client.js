@@ -2951,17 +2951,60 @@ return false;
 					'[class*="panelRow"][aria-expanded="true"]'
 				);
 				if (anchor) {
-					mpMenuSource = (col && col.contains(anchor)) ? "sidebar" : "other";
+					const rightCol = document.querySelector('.pI_x6G_rightbarCol, [class*="rightbarCol"]');
+					if (col && col.contains(anchor)) mpMenuSource = "sidebar";
+					else if (rightCol && rightCol.contains(anchor)) mpMenuSource = "right";
+					else mpMenuSource = "other";
 					return;
 				}
 				// 找不到 anchor 时**不要覆盖**已有判断：面板行点击时已经记过 sidebar。
 				if (mpMenuSource === null) mpMenuSource = "other";
+			}
+			/** 点官方「收起右侧边栏」；全屏态先退全屏再收。 */
+			function mpCloseRightbar() {
+				const seen = (el) => !!el && el.getBoundingClientRect().width > 0;
+				const label = (el) => ((el.getAttribute && el.getAttribute("aria-label")) || el.textContent || "");
+				const all = Array.prototype.slice.call(document.querySelectorAll("button"));
+				const collapse = all.find((b) => seen(b) && /收起右侧边栏/.test(label(b)));
+				if (collapse) { collapse.click(); return true; }
+				const full = all.find((b) => seen(b) && /退出全屏/.test(label(b)));
+				if (full) {
+					full.click();
+					setTimeout(() => {
+						const again = Array.prototype.slice.call(document.querySelectorAll("button"))
+							.find((b) => seen(b) && /收起右侧边栏/.test(label(b)));
+						if (again) again.click();
+					}, 260);
+					return true;
+				}
+				return false;
+			}
+			/**
+			 * 右栏菜单项点完的收尾。
+			 *
+			 * 「浏览更多插件」走 pluginNavigation.openList() —— 主区换成插件列表页，右栏去留交给官方；
+			 * 「创建你的插件」走 uiWorkspace.startSession() —— 主区起一个新会话，但右栏还赖着，
+			 * 新会话就被挤成窄条。所以判据是「主区出现会话输入框（带发送消息按钮）」→ 收右栏。
+			 * 不写死文案：中英文界面、以后改文案都不影响。
+			 */
+			function mpAfterRightMenuItem() {
+				let tries = 0;
+				const tick = () => {
+					tries++;
+					const seen = (el) => !!el && el.getBoundingClientRect().width > 0 && el.getBoundingClientRect().height > 0;
+					const send = Array.prototype.slice.call(document.querySelectorAll("button"))
+						.some((b) => seen(b) && /发送消息|Send message/.test((b.getAttribute("aria-label") || "") + (b.textContent || "")));
+					if (send) { mpCloseRightbar(); return; }
+					if (tries < 6) setTimeout(tick, 120);
+				};
+				setTimeout(tick, 180);
 			}
 			/** 侧栏菜单项点完收抽屉（延后 120ms 让目标页先切）。 */
 			function onMenuItemClick(e) {
 				if (!mpIsMobile()) return;
 				const item = e.target && e.target.closest ? e.target.closest('[role="menuitem"]') : null;
 				if (!item) return;
+				if (mpMenuSource === "right") { mpAfterRightMenuItem(); return; }
 				if (mpMenuSource !== "sidebar") return;
 				mpMenuConsumed = true;
 				window.setTimeout(() => {
