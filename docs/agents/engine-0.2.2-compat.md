@@ -96,7 +96,7 @@ baseline …/verify-20261028-231621.json  regressions=0 fixes=0
 [PASS] 工具 logs
 [PASS] 工具 statusbar
 [PASS] 工具 browser
-[PASS] 工具 root
+[PASS] 工具 root   ← 旧口径，2026-10-29 起改为 [SKIP] 冻结（设备无 su）
 ----
 10 PASS / 0 FAIL          ← --tools 全量，exit=0
 ```
@@ -161,7 +161,7 @@ mobile client.js 被 served 446 KB
 | `logs` | `{"action":"summary"}` | completed · 718 条 / 警告 29 |
 | `statusbar` | `{"action":"get"}` | completed · 配色 JSON |
 | `browser` | `{"action":"tabs"}` | completed · 标签列表 |
-| `root` | `{"command":"id"}` | completed · 无 su（通道已通） |
+| `root` | —（冻结） | `[SKIP] 工具 root（冻结·待 root 环境）`，不执行、不计入分母 |
 
 复跑：`run-as com.dsh.android sh /data/local/tmp/mockrun.sh <tool> '<json>' [mock4|mock5].patch.yml`
 
@@ -185,6 +185,6 @@ APK   /data/local/tmp/dshW2.apk（0.2.2 回滚包）
 
 ## 7. 已知边界
 
-- `root` 工具：设备无 su，命令不会执行（工具本身正常）。
+- `root` 工具：**冻结（FROZEN）**。设备无 su，模型侧工具清单里没有 `root`，套件输出 SKIP；VMOS+ 虚拟机取得 root 且无线调试可用后，加 `--root` 启用，判据是 `tool/result` 出现 `uid=0`。
 - headless 手工跑：必须自己注入 5 个环境变量，App 启动时才有。
 - `rust` 1/2：`rustup` unsupported，与 rc.3 一致，非 0.2.2 回归。
