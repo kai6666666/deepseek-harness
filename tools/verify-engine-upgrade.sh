@@ -8,6 +8,7 @@
 #   --json    ：只输出 JSON（同时写 files/home/verify-<ts>.json）
 #   --baseline：与指定 verify-<ts>.json 比对；有回归时退出码 2
 #   --latest  ：自动拿最新一份 verify-<ts>.json 当基线（等价于 --baseline 最新文件）
+#   --llm     ：用真实凭据跑一轮对话；MISSING_CREDENTIAL / AUTH 会记为 FAIL（需 HOME/DSH_HOME/PREFIX/LD_PRELOAD）
 R=/data/user/0/com.dsh.android/files
 N=$R/termux/usr/bin/node
 PASS=0; FAIL=0
@@ -63,6 +64,17 @@ case "$*" in *--tools*)
     O=$(sh /data/local/tmp/mockrun.sh $t "$A" mock5.patch.yml 2>&1)
     if echo "$O" | grep -q '"status":"completed"'; then ok "工具 $t"; else ng "工具 $t"; say "$(echo "$O" | head -c 200)"; fi
   done
+;; esac
+
+case "$*" in *--llm*)
+  LO=$(HOME=$R/home DSH_HOME=$R/home/.dsh PREFIX=$R/termux/usr PATH=$R/termux/usr/bin:$PATH LD_PRELOAD=$R/liblinkcompat.so $N $R/engine/node_modules/@deepseek-ai/dsh/lib/bin.js --profile headless --json "回复 pong" 2>&1 || true)
+  say "$(echo "$LO" | grep -o '"code":"[A-Z_]*"' | head -1)"
+  if echo "$LO" | grep -q '"kind":"completed"'; then
+    ok "真实模型对话"
+  else
+    CODE=$(echo "$LO" | grep -o '"code":"[A-Z_]*"' | head -1 | cut -d'"' -f4)
+    ng "真实模型对话 ${CODE:-UNKNOWN}"
+  fi
 ;; esac
 
 TS=$(date +%Y%m%d-%H%M%S)
