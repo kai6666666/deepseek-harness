@@ -120,6 +120,39 @@ async function openMoreMenu() {
 
   await resetAll();
 
+  // ── D：会话视图「更多操作」菜单不越界、不碰抽屉 ──────────────────────
+  try {
+    await resetAll();
+    let d = await run('dump');
+    const vp = d.viewport || { w: 394, h: 806 };
+    const head = (d.elements || []).find(
+      (e) => X(e) >= 0 && Y(e) < 130 && /更多操作|更多/.test(TXT(e)) && !/panelRow/.test(e.cls || '')
+    );
+    if (!head) {
+      record('SKIP', 'D 会话视图「更多」不越界', '当前不在会话视图（头部没有「更多操作」）；先建会话发一条消息再跑');
+    } else {
+      await run('tap', { ref: head.ref });
+      await sleep(1000);
+      d = await run('dump');
+      const its = items(d);
+      const inside = its.every((e) => {
+        const b = BOX(e);
+        return b.x >= 0 && b.y >= 0 && b.x + b.w <= vp.w + 1 && b.y + b.h <= vp.h + 1;
+      });
+      const drawerUntouched = !drawerOpen(d);
+      const ok = its.length > 0 && inside && drawerUntouched;
+      record(
+        ok ? 'PASS' : 'FAIL',
+        'D 会话视图「更多」不越界',
+        its.length
+          ? `${its.map(DESC).join(' ')}；视口内=${inside ? 'YES' : 'NO'}；抽屉=${drawerUntouched ? '未动' : '被打开'}`
+          : `点「${DESC(head)}」后没有 menuitem`
+      );
+    }
+  } catch (e) {
+    record('FAIL', 'D 会话视图「更多」不越界', e.message);
+  }
+
   // ── F：只开菜单不点 → 抽屉必须钉住 ─────────────────────────────────────
   try {
     const d0 = await openDrawer();
@@ -153,10 +186,17 @@ async function openMoreMenu() {
     const first = items(d)[0];
     if (!first) throw new Error('菜单里没有 menuitem');
     const label = TXT(first);
-    await run('tap', { ref: first.ref });
-    await sleep(1100);
-    d = await run('dump');
-    const closed = !drawerOpen(d);
+    // ⚠️ 不要拿旧 dump 的 ref 直接点：菜单是 React 渲染的，帧间可能已重建，
+    //   ref 会落到已卸载的节点上（点了没反应、抽屉不动）。按文案重新定位更稳。
+    let closed = false;
+    for (let attempt = 0; attempt < 2 && !closed; attempt++) {
+      const t = await run('tap', { text: label }).catch(() => ({ ok: false }));
+      if (t.ok === false) await run('tap', { ref: items(await run('dump'))[0].ref }).catch(() => {});
+      await sleep(1100);
+      d = await run('dump');
+      closed = !drawerOpen(d);
+      if (!closed) { await sleep(400); d = await run('dump'); closed = !drawerOpen(d); }
+    }
     record(
       closed ? 'PASS' : 'FAIL',
       'E 点菜单项收起抽屉',
@@ -187,39 +227,6 @@ async function openMoreMenu() {
     );
   } catch (e) {
     record('FAIL', 'G 点遮罩收起抽屉且菜单不复活', e.message);
-  }
-
-  // ── D：会话视图「更多操作」菜单不越界、不碰抽屉 ──────────────────────
-  try {
-    await resetAll();
-    let d = await run('dump');
-    const vp = d.viewport || { w: 394, h: 806 };
-    const head = (d.elements || []).find(
-      (e) => X(e) >= 0 && Y(e) < 130 && /更多操作|更多/.test(TXT(e)) && !/panelRow/.test(e.cls || '')
-    );
-    if (!head) {
-      record('SKIP', 'D 会话视图「更多」不越界', '当前不在会话视图（头部没有「更多操作」）；先建会话发一条消息再跑');
-    } else {
-      await run('tap', { ref: head.ref });
-      await sleep(1000);
-      d = await run('dump');
-      const its = items(d);
-      const inside = its.every((e) => {
-        const b = BOX(e);
-        return b.x >= 0 && b.y >= 0 && b.x + b.w <= vp.w + 1 && b.y + b.h <= vp.h + 1;
-      });
-      const drawerUntouched = !drawerOpen(d);
-      const ok = its.length > 0 && inside && drawerUntouched;
-      record(
-        ok ? 'PASS' : 'FAIL',
-        'D 会话视图「更多」不越界',
-        its.length
-          ? `${its.map(DESC).join(' ')}；视口内=${inside ? 'YES' : 'NO'}；抽屉=${drawerUntouched ? '未动' : '被打开'}`
-          : `点「${DESC(head)}」后没有 menuitem`
-      );
-    }
-  } catch (e) {
-    record('FAIL', 'D 会话视图「更多」不越界', e.message);
   }
 
   await resetAll();
