@@ -12,9 +12,19 @@
 run-as com.dsh.android sh /data/local/tmp/verify-engine-upgrade.sh          # 引擎版本 + dev-env + 会话索引 + 补丁标记
 run-as com.dsh.android sh /data/local/tmp/verify-engine-upgrade.sh --ui     # 加装机 UI 断言（需前台+解锁）
 run-as com.dsh.android sh /data/local/tmp/verify-engine-upgrade.sh --tools  # 加 mock 工具矩阵（约 3 分钟）
+run-as com.dsh.android sh /data/local/tmp/verify-engine-upgrade.sh --json   # 只输出 JSON（含 --tools 时最有用）
 ```
 
-脚本源在 `tools/verify-engine-upgrade.sh`；退出码即结论。实测（2026-10-28）：
+脚本源在 `tools/verify-engine-upgrade.sh`；退出码即结论。`--json` 输出结构：
+
+```json
+{"ts":"2026-10-28T15:01:07.242Z","pass":4,"fail":0,
+ "checks":[{"name":"引擎版本 0.2.2-alpha.2","pass":true,"detail":"…"}]}
+```
+
+每次运行还会落一份 `files/home/verify-<YYYYmmdd-HHMMSS>.json`，便于对比历史。
+
+实测（2026-10-28）：
 
 ```text
 [PASS] 引擎版本 0.2.2-alpha.2
