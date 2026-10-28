@@ -279,22 +279,54 @@ settings put system screen_off_timeout 1800000
 
 ### ⑦ 引擎升级一条命令（0.2.2 起）
 
-引擎换版本后，用 `tools/verify-engine-upgrade.sh` 一次跑完所有判据（脚本随设备 `/data/local/tmp`）：
+推荐姿势：**外层包装脚本**（冷启动 + 预热 75s + 跑套件 + 收会话），避开 WebView 探针陈旧导致的假失败：
 
 ```bash
-run-as com.dsh.android sh /data/local/tmp/verify-engine-upgrade.sh --tools --llm --clean --latest
+sh /data/local/tmp/verify-all.sh --llmtools --llm --tools --clean
+```
+
+App 刚启动、探针新鲜时，也可以直接跑套件：
+
+```bash
+run-as com.dsh.android sh /data/local/tmp/verify-engine-upgrade.sh --llmtools --llm --tools --clean
 ```
 
 | 段 | 覆盖 |
 |---|---|
 | 默认 | 引擎版本 / dev-env 六组 / 会话索引 / 5 个补丁标记 |
-| `--ui` | 装机 UI 断言（可加，需前台+解锁） |
-| `--tools` | 7 个工具插件矩阵 |
-| `--llm` | 已登录账号真跑一轮，校验 shell 输出 `uid=2000` |
-| `--clean` | 删掉本次测试会话，只留 `llm-evidence-<ts>.txt` |
+| `--ui` | 装机 UI 断言（需前台 + 解锁） |
+| `--llmtools` | **真模型 × 5 工具**（bubble/ui/logs/statusbar/browser），逐条校验 `tool/result`，首轮失败自动重试 |
+| `--llm` | 已登录账号真跑一轮，校验 shell 输出 `uid=2000`（失败自动重试一次） |
+| `--tools` | mock 驱动 7 工具矩阵（`root` 默认 SKIP，见 ⑧） |
+| `--root` | 配合 `--tools` / `--llmtools` 启用 root 用例（设备或 VMOS 有 su 时才用） |
+| `--clean` | 删掉本次测试会话（保留当前 UI 那条），只留 `llm-evidence-<ts>.txt` |
 | `--baseline` / `--latest` | 与历史结果比对，回归 exit 2 |
-| `--json` | 纯 JSON 输出 + `verify-<ts>.json` 存档 |
+| `--json` | 纯 JSON 输出 + `verify-<ts>.json` 存档（含 `pass` / `fail` / `skip` / `checks`） |
 
-保留策略：`verify-*.json`、`llm-evidence-*.txt`、`llm-fail-*.png` 各只留最近 10 份，每次运行自动裁剪。
+保留策略：`verify-*.json` 留 10 份、`llm-evidence-*.txt` 留 20 份、`llm*fail-*.png` 超 7 天删除。
 
-详细原理与实测输出见 [`engine-0.2.2-compat.md`](./engine-0.2.2-compat.md) §0。
+### ⑧ root 用例：冻结（FROZEN）
+
+设备无 `su`（`/system/bin/su`、`/system/xbin/su` 均不存在），模型侧的工具清单里没有 `root`，所以它既跑不通也不需要跑：
+
+- 套件默认输出 `[SKIP] 工具 root（冻结·待 root 环境）`，**不计入分母**，不影响退出码；
+- `tools/verify-llm-tools.mjs` 输出 `SKIP root FROZEN_NO_ROOT`，不驱动模型、不消耗会话；
+- 解除条件：VMOS+ 虚拟机内取得 root 且无线调试可用 → 加 `--root`，判据是 `tool/result` 出现 `uid=0`。
+
+### ⑨ 本轮实测（2026-10-29 04:09，装机 1.1.0-115）
+
+```text
+[PASS] 引擎版本 0.2.2-alpha.2
+[PASS] 开发环境 nodejs 2/2 python 5/5 ssh 3/3 java 2/2 rust 1/2 go 1/1
+[PASS] 会话索引干净（2 条）
+[PASS] 引擎补丁标记 5/5 补丁标记命中
+[PASS] 真实模型工具 5/5 · SKIP 1 (root:FROZEN_NO_ROOT)
+[PASS] 真实模型对话 uid=2000(shell) (retry)
+[PASS] 工具 bubble / ui / logs / statusbar / browser
+[SKIP] 工具 root（冻结·待 root 环境）
+----
+11 PASS / 0 FAIL / 1 SKIP
+wrapper rc=0
+```
+
+真模型轮次的会话事件结构（排查用）：`session.v4.jsonl.zstd` 解压后是 JSONL，`tool/call` 的 `data` 有 `callId`/`name`/`arguments`，`tool/result` 的 `callId` 在 `data.toolCallId` 与 `data.message.toolCallId` 两处，配对时两者都要兜。
