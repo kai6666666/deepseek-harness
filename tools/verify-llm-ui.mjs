@@ -27,6 +27,7 @@ const SESS = D + '/sessions/--data-user-0-com.dsh.android-files-workspace-deepse
 const CLEAN = process.env.CLEAN === '1'
 const SHOT = process.env.SHOT === '1'
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+const cleaned = []
 let q = 230000
 
 async function probe(action, extra = {}) {
@@ -82,6 +83,14 @@ function evidence(file) {
   return out
 }
 
+function anyHasPrompt() {
+  for (const d of fs.readdirSync(SESS)) {
+    const f = path.join(SESS, d, 'session.v4.jsonl.zstd')
+    try { if (readSession(f).includes('用 shell 工具执行 id')) return true } catch {}
+  }
+  return false
+}
+
 function cleanupSession(file) {
   const dir = path.dirname(file)
   const sid = path.basename(dir)
@@ -97,6 +106,8 @@ function cleanupSession(file) {
     if (j.tables.sessions) delete j.tables.sessions[sid]
     fs.writeFileSync(wp, JSON.stringify(j))
   } catch {}
+  cleaned.push(sid)
+  try { fs.writeFileSync(F + '/home/llm-last-clean.json', JSON.stringify({ ts: new Date().toISOString(), ids: cleaned })) } catch {}
 }
 
 function cleanupNewest(start) {
@@ -126,6 +137,10 @@ function failShot() {
   const send = (d.elements || []).find((e) => T(e) === '发送消息')
   if (!send) { console.log('NO_SEND' + failShot()); process.exit(1) }
   await probe('tap', { ref: send.ref })
+
+  let wrote = false
+  for (let i = 0; i < 6; i++) { await sleep(3000); if (anyHasPrompt()) { wrote = true; break } }
+  if (!wrote) { console.log('NO_HIT NO_SESSION_WRITE' + failShot()); process.exit(1) }
 
   for (let i = 0; i < 45; i++) {
     await sleep(3000)
