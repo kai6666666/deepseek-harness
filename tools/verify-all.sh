@@ -12,13 +12,28 @@ echo "== force-stop + cold start =="
 am force-stop com.dsh.android
 sleep 2
 am start -n com.dsh.android/.MainActivity >/dev/null 2>&1
-echo "== warming up 75s =="
-sleep 75
+echo "== warming up (probe health check) =="
+OK=0
+for k in 1 2 3; do
+  sleep 60
+  if run-as com.dsh.android sh -c 'files/termux/usr/bin/node /data/local/tmp/probe-count.mjs'; then
+    OK=1
+    break
+  fi
+  echo "-- probe weak, restart app (try $k) --"
+  am force-stop com.dsh.android
+  sleep 2
+  am start -n com.dsh.android/.MainActivity >/dev/null 2>&1
+done
+if [ $OK -ne 1 ]; then
+  echo "PROBE_UNHEALTHY: WebView 探针三轮回暖仍未恢复，先手动打开 App 再跑"
+  exit 3
+fi
 dumpsys window | grep -m1 mCurrentFocus
 echo "== run suite: $ARGS =="
 run-as com.dsh.android sh /data/local/tmp/verify-engine-upgrade.sh $ARGS
 RC=$?
 echo "== prune sessions =="
-run-as com.dsh.android sh -c 'files/termux/usr/bin/node /data/local/tmp/prune1.mjs'
+run-as com.dsh.android sh -c 'files/termux/usr/bin/node /data/local/tmp/prune-sessions.mjs'
 echo "---- wrapper rc=$RC"
 exit $RC
