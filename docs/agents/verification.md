@@ -276,3 +276,25 @@ settings put system screen_off_timeout 1800000
 2. **遮罩不能用 `ref` 点**：遮罩铺满全屏，中心点正好被抽屉盖住，`ref` 点法会落到抽屉上。
    探针 VERSION 8 起 `tap` 支持 `{x,y}` 坐标点击（`document.elementFromPoint` 取真实 topmost），
    脚本用 `viewport.w-30` 这条真实手指会点的路径。
+
+### ⑦ 引擎升级一条命令（0.2.2 起）
+
+引擎换版本后，用 `tools/verify-engine-upgrade.sh` 一次跑完所有判据（脚本随设备 `/data/local/tmp`）：
+
+```bash
+run-as com.dsh.android sh /data/local/tmp/verify-engine-upgrade.sh --tools --llm --clean --latest
+```
+
+| 段 | 覆盖 |
+|---|---|
+| 默认 | 引擎版本 / dev-env 六组 / 会话索引 / 5 个补丁标记 |
+| `--ui` | 装机 UI 断言（可加，需前台+解锁） |
+| `--tools` | 7 个工具插件矩阵 |
+| `--llm` | 已登录账号真跑一轮，校验 shell 输出 `uid=2000` |
+| `--clean` | 删掉本次测试会话，只留 `llm-evidence-<ts>.txt` |
+| `--baseline` / `--latest` | 与历史结果比对，回归 exit 2 |
+| `--json` | 纯 JSON 输出 + `verify-<ts>.json` 存档 |
+
+保留策略：`verify-*.json`、`llm-evidence-*.txt`、`llm-fail-*.png` 各只留最近 10 份，每次运行自动裁剪。
+
+详细原理与实测输出见 [`engine-0.2.2-compat.md`](./engine-0.2.2-compat.md) §0。
