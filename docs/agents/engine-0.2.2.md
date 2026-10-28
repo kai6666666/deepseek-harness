@@ -291,3 +291,28 @@ node bin.js headless --json "只回答两个字：收到"
 **未做到**：真正跑一次 `shell` / `bubble` / `uiagent` 工具调用 —— 需要模型轮次，
 而手工 headless 缺 App 注入的凭据。下一步在 App 里跑一轮真实对话（或给 headless 提供
 `DEEPSEEK_API_KEY`）即可补齐这一格。
+
+### 6.4 真机 tool-call 冒烟：被“API 密钥无效”卡住
+
+在 App 会话里发「请用 shell 工具执行 id」后，界面显示：
+
+```text
+已重试模型请求（1/3）· 1s
+重试延迟: 520 毫秒
+失败原因: API 密钥无效
+深度求索中，用时 46 秒
+```
+
+即 **模型请求本身就没成功**，轮次不会进入工具阶段 —— 与 0.2.2 无关，是当前 agnes 凭据失效。
+
+另外手工跑 shell 通道（绕过 App 的 Shizuku 环境）：
+
+```bash
+node files/dsh-android-shell.mjs "id"
+[dsh-adb] uid 2000 不可用（ADB 密钥尚未被设备授权…）→ 回落为本地执行
+uid=10603(u0_a603) …
+```
+
+回落链路正常；`uid 2000` 需要 App 进程里的 Shizuku binder（`shizuku=not-configured` 是手工 shell 的必然结果）。
+
+**结论**：0.2.2 侧无阻塞项；tool-call 的执行证据等凭据恢复后补一条即可。
