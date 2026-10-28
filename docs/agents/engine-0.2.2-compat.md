@@ -9,7 +9,7 @@
 ## 0. 一条命令验收
 
 ```bash
-run-as com.dsh.android sh /data/local/tmp/verify-engine-upgrade.sh          # 引擎版本 + dev-env + 会话索引
+run-as com.dsh.android sh /data/local/tmp/verify-engine-upgrade.sh          # 引擎版本 + dev-env + 会话索引 + 补丁标记
 run-as com.dsh.android sh /data/local/tmp/verify-engine-upgrade.sh --ui     # 加装机 UI 断言（需前台+解锁）
 run-as com.dsh.android sh /data/local/tmp/verify-engine-upgrade.sh --tools  # 加 mock 工具矩阵（约 3 分钟）
 ```
@@ -19,12 +19,22 @@ run-as com.dsh.android sh /data/local/tmp/verify-engine-upgrade.sh --tools  # �
 ```text
 [PASS] 引擎版本 0.2.2-alpha.2
 [PASS] 开发环境 nodejs 2/2 python 5/5 ssh 3/3 java 2/2 rust 1/2 go 1/1
-[PASS] 会话索引干净（1 条）
+[PASS] 会话索引干净（2 条）
+[PASS] 引擎补丁标记 5/5 补丁标记命中
 ----
-3 PASS / 0 FAIL
+4 PASS / 0 FAIL
 ```
 
 `--ui` 段调用 `urc3.mjs`，额外打印 6 条断言逐行结果；`D` 段要求先建会话发一条消息，否则记 SKIP。
+
+补丁标记 ≠ 锚点检查，两者分工：
+
+| 检查 | 时机 | 对象 | 脚本 |
+|---|---|---|---|
+| `anchors` | 升级**前** | **未打补丁**的新引擎副本 | `tools/check-engine-anchors.mjs`（在 Ubuntu 侧跑） |
+| `patch-marks` | 上机**后** | `files/engine`（已打补丁） | `tools/check-engine-patch-marks.mjs`（设备内跑，脚本已内置） |
+
+前者回答「补丁还找得到原文吗」，后者回答「补丁真的写进去了吗」。5 个标记：flock 放行 android、app-boot 无 `proc.exit(1);`、profile-boot 有 `KEEP-ALIVE-RELEASE`、bash 走 `PREFIX`、attachment 容忍祖先目录。
 
 ---
 
