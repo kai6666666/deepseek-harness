@@ -243,3 +243,51 @@ engine.bin 0.2.2-alpha.2  解包 61,174 条目 / 54,100 文件 / 430,317,442 字
 
 - 旁路目录 `files/engine022`（927 MB）与 `.dsh022` 已删除；回滚包保留 `nW` + `dshW2.apk`。
 - 待做：dev-env 六组、bubble、uiagent 等非 UI 功能的冒烟（引擎换版后尚未逐项跑）。
+
+---
+
+## 阶段 6：非 UI 冒烟（2026-10-28）
+
+### 6.1 开发环境六组 ✅
+
+```text
+$ files/termux/usr/bin/node files/dsh-env.mjs status --json
+version 2   groups 6
+nodejs 2/2 installed
+python 5/5 installed
+ssh    3/3 installed
+java   2/2 installed
+rust   1/2 partial      ← rustup 仍是 unsupported，与 rc.3 一致
+ go    1/1 installed
+```
+
+脚本路径、env-state 差分、PATH 前缀都没受引擎换版影响。
+
+### 6.2 headless 通道：能起，卡在凭据（不是兼容性问题）
+
+```bash
+node bin.js headless --json "只回答两个字：收到"
+```
+
+第一次报：`EACCES: permission denied, link '.../session.v4.jsonl.zstd.tmp' → ...`
+→ 原因是手工跑没带 App 的 `LD_PRELOAD=files/liblinkcompat.so`（SELinux 不给 link）。
+补上后：
+
+```text
+{"type":"session","sessionId":"session-a9169645-…"}
+{"type":"status","phase":"turn_start"} → step_start → step_end
+{"type":"final","reason":{"kind":"error","error":{"message":"llm-deepseek: no API key for provider route \"deepseek-official\"…"}}}
+```
+
+也就是说：**会话创建、存储、轮次调度都正常**，只差 App 启动时注入的 `AGNES_CREDENTIAL`
+（手工 shell 里没有）。这不是 0.2.2 兼容性问题。
+
+### 6.3 工具插件
+
+- 10 个插件在 `--dump-config` 里全部在（见阶段 3）；
+- 引擎启动日志无 `did not activate` / `StartupError`；
+- 各工具的 `output` 声明在源码里齐全（`tools.register` 要求 `output.render`）。
+
+**未做到**：真正跑一次 `shell` / `bubble` / `uiagent` 工具调用 —— 需要模型轮次，
+而手工 headless 缺 App 注入的凭据。下一步在 App 里跑一轮真实对话（或给 headless 提供
+`DEEPSEEK_API_KEY`）即可补齐这一格。
