@@ -12,7 +12,14 @@
 
 set -euo pipefail
 
-VER="${VER:?用法: VER=0.2.1-rc.3 $0}"
+# 版本以 tools/engine-version.txt 为单一真相源；外部 VER 只作兜底。
+# 为什么：CI 工作流里的 VER 是硬编码的，改工作流需要 workflow 权限；
+# 而真正的升级动作（资产、原生包路径）都跟着这个文件走，改这里一处就够。
+_DIR=$(cd "$(dirname "$0")/.." && pwd)
+if [ -f "$_DIR/tools/engine-version.txt" ]; then
+  VER=$(tr -d ' \n' < "$_DIR/tools/engine-version.txt")
+fi
+VER="${VER:?用法: VER=0.2.2-alpha.2 $0}"
 OUT="${OUT:-dist/engine.bin}"
 WORK="${WORK:-/tmp/dsh-engine-$VER}"
 REGISTRY="${REGISTRY:-https://registry.npmmirror.com}"
