@@ -49,7 +49,8 @@ REQUIRED=(
   browser-pane.zip
   pet-bridge.zip
   adb-wireless-arm64.zip
-  dsh-env.mjs
+  dsh-env.mjs  check-devenv.mjs
+
 )
 
 mkdir -p "$APP_ASSETS"
