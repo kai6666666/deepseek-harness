@@ -172,3 +172,38 @@ GET /plugins/??dsh-android-mobile/client.js&rev=…  → 200, 446,030 B
 | `MainActivity.kt` | `assetStamp = 0.2.2-alpha.2-1` |
 
 资产不走 Release（仓库没有 `ASSETS_RELEASE` 变量）→ CI 会现场 `npm i` 并打包 engine.bin。
+
+### 5.1 首次尝鲜包（40684120518）上机暴露的两个问题
+
+**问题 A：体检误判 bundle 损坏 → 反复重解包 + 隔离用户配置**
+
+```text
+App 日志：启动前体检：核心条目缺失 headless-runner, acp, sdk-jsonrpc-server
+         → 核心 bundle 损坏，正在重新解包 engine/
+         → 已隔离损坏的文件 cordis.patch.yml → cordis.patch.yml.bak-1793190494597
+```
+
+根因：我把 App 侧 `REQUIRED_ENTRY_IDS` 从 4 项扩到官方的 10 项，但两份清单语义不同：
+
+| 清单 | 语义 |
+|---|---|
+| 官方 `requiredStartupEntryIds` | **这些条目如果激活失败** → 抛 StartupError（条目没挂载不算失败） |
+| App 体检 | **合成配置里必须存在这个 id** |
+
+0.2.2 的 web profile 本来就不挂 `headless-runner / acp / sdk-jsonrpc-server`，于是每次启动都判损坏。
+→ 已回退为 4 项，并把这段陷阱写进常量注释。
+
+**问题 B：`require_builtin.node` 找不到（引擎根本起不来）**
+
+```text
+Cannot find module '.../node-addon-require-builtin/build/napi/napi-v9-android-arm64/require_builtin.node'
+```
+
+0.2.2 的 `node-addon-native-custom-loader` **先找包内 `build/napi/<tag>/`**，找不到才退平台包；
+而 `engine.bin` 里没有 `build/` 目录（那是 CI 用 NDK 单独产出、装到平台包里的）。
+→ `ensureNativeAddon()` 增加一步：把平台包的 `prebuilt/android-arm64-napi-v9.node`
+再复制一份到 `node-addon-require-builtin/build/napi/napi-v9-android-arm64/require_builtin.node`。
+
+### 5.2 待复跑
+
+修好后重新出包 → 装机 → 确认 `engine.log` 出现 `引擎就绪`、`http=200`，再跑 `urc3.mjs` 六条。
