@@ -3,7 +3,7 @@
 > 目标：把 `@deepseek-ai/dsh` 换版本时，**先证伪、再打包、后上机**，任何一步失败都能退回。
 > 适用范围：`engine.bin` 资产 + `MainActivity.assetStamp`。
 > 最近一次执行：2026-10-28，rc.3 → **0.2.2-alpha.2**（锚点 5/5、UI 6/6、工具 7/7 注册）——
-> 详细记录见 [`engine-0.2.2.md`](./engine-0.2.2.md)；本文件末尾的 rc.3 数据仅作历史基线。
+> 过程记录见 [`engine-0.2.2.md`](./engine-0.2.2.md)，操作清单见 [`engine-0.2.2-compat.md`](./engine-0.2.2-compat.md)；本文件末尾的 rc.3 数据仅作历史基线。
 
 ---
 
