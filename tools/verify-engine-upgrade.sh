@@ -6,13 +6,15 @@
 #   --ui      ：再加装机 UI 断言（需前台 + 已解锁）
 #   --tools   ：再加 mock 工具矩阵（bubble/ui/logs/statusbar + browser/root）
 #   --json    ：只输出 JSON（同时写 files/home/verify-<ts>.json）
-#   --baseline：与上一次 verify-<ts>.json 比对；有回归时退出码 2
+#   --baseline：与指定 verify-<ts>.json 比对；有回归时退出码 2
+#   --latest  ：自动拿最新一份 verify-<ts>.json 当基线（等价于 --baseline 最新文件）
 R=/data/user/0/com.dsh.android/files
 N=$R/termux/usr/bin/node
 PASS=0; FAIL=0
 QUIET=0; case "$*" in *--json*) QUIET=1;; esac
 BASE=""; prev=""
 for a in "$@"; do [ "$prev" = "--baseline" ] && BASE="$a"; prev="$a"; done
+case "$*" in *--latest*) [ -z "$BASE" ] && BASE=$(ls -t $R/home/verify-*.json 2>/dev/null | head -1) ;; esac
 [ -n "$BASE" ] && [ ! -f "$BASE" ] && BASE=""
 RES=$R/home/.verify-results.$$
 : > $RES
