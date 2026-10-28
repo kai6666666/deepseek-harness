@@ -17,7 +17,7 @@ FILES="${FILES:-/data/data/com.dsh.android/files}"
 ROOT="$FILES/ubuntu"
 PROOT="$FILES/bin/proot"
 SRC="$FILES/bin/jni"                 # 三个 .c 由 App 从 assets 复制到这里
-DSH_VER="${DSH_VER:-0.2.1-rc.3}"
+DSH_VER="${DSH_VER:-0.2.2-alpha.2}"
 NODE_MAJOR="${NODE_MAJOR:-24}"
 
 ok()   { echo "✅ $1"; }
