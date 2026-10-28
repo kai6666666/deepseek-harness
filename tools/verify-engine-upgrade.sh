@@ -36,16 +36,20 @@ case "$*" in *--ui*)
 
 case "$*" in *--tools*)
   for t in bubble ui logs statusbar; do
-    O=$(sh /data/local/tmp/mockrun.sh $t "$(case $t in bubble) echo '{\"action\":\"get\"}';; ui) echo '{\"action\":\"ping\"}';; logs) echo '{\"action\":\"summary\"}';; *) echo '{\"action\":\"get\"}';; esac)" mock4.patch.yml 2>&1)
-    echo "$O" | grep -q '"status":"completed"' && ok "工具 $t" || ng "工具 $t"
+    case $t in
+      ui) A='{"action":"ping"}' ;;
+      logs) A='{"action":"summary"}' ;;
+      *) A='{"action":"get"}' ;;
+    esac
+    O=$(sh /data/local/tmp/mockrun.sh $t "$A" mock4.patch.yml 2>&1)
+    if echo "$O" | grep -q '"status":"completed"'; then ok "工具 $t"; else ng "工具 $t"; echo "$O" | head -c 200; echo; fi
   done
   for t in browser root; do
-    A='{"action":"tabs"}'; [ $t = root ] && A='{"command":"id","description":"verify"}'
+    if [ $t = root ]; then A='{"command":"id","description":"verify"}'; else A='{"action":"tabs"}'; fi
     O=$(sh /data/local/tmp/mockrun.sh $t "$A" mock5.patch.yml 2>&1)
-    echo "$O" | grep -q '"status":"completed"' && ok "工具 $t" || ng "工具 $t"
+    if echo "$O" | grep -q '"status":"completed"'; then ok "工具 $t"; else ng "工具 $t"; echo "$O" | head -c 200; echo; fi
   done
 ;; esac
-
 echo "----"
 echo "$PASS PASS / $FAIL FAIL"
 [ $FAIL -eq 0 ]
