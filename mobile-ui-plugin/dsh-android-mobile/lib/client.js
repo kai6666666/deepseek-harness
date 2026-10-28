@@ -2940,6 +2940,22 @@ if (r.width > 0 && r.height > 0) return true;
 }
 return false;
 }
+			/**
+			 * 在右栏 guide 里点任何按钮时，先把来源标成 right。
+			 *
+			 * 为什么需要：guide 的「更多工具」按钮在 rc3 里没把 aria-haspopup/expanded
+			 * 落到 DOM（dump 里 haspopup=undefined），mpNoteMenuSource 找不到 anchor 时
+			 * 只能保持原值；而菜单项是 portal 到 body 的，点它们时也认不出来自右栏。
+			 * 所以在“点开菜单”这一步就记下现场。
+			 */
+			function onGuideClick(e) {
+				if (!mpIsMobile()) return;
+				const btn = e.target && e.target.closest ? e.target.closest("button") : null;
+				if (!btn) return;
+				if (btn.closest('[data-sidebar-right-guide], [class*="rightbarCol"], [class*="sidebarRight"]')) {
+					mpMenuSource = "right";
+				}
+			}
 			/** 记录当前可见菜单来自侧栏还是会话/右栏。 */
 			function mpNoteMenuSource() {
 				const col = mpSidebarCol();
@@ -2951,9 +2967,14 @@ return false;
 					'[class*="panelRow"][aria-expanded="true"]'
 				);
 				if (anchor) {
+					// ⚠️ 全屏态的右栏会从 rightbarCol 里搬出去（portal 成整屏），
+					//   所以不能只看 rightbarCol：再看 data-sidebar-right-guide 容器。
 					const rightCol = document.querySelector('.pI_x6G_rightbarCol, [class*="rightbarCol"]');
+					const rightHost = anchor.closest(
+						'[data-sidebar-right-guide], [class*="rightbarCol"], [class*="sidebarRight"], [data-sidebar-right]'
+					);
 					if (col && col.contains(anchor)) mpMenuSource = "sidebar";
-					else if (rightCol && rightCol.contains(anchor)) mpMenuSource = "right";
+					else if (rightHost || (rightCol && rightCol.contains(anchor))) mpMenuSource = "right";
 					else mpMenuSource = "other";
 					return;
 				}
@@ -2962,21 +2983,33 @@ return false;
 			}
 			/** 点官方「收起右侧边栏」；全屏态先退全屏再收。 */
 			function mpCloseRightbar() {
-				const seen = (el) => !!el && el.getBoundingClientRect().width > 0;
+				// 必须“真的在视口里”：右栏全屏时 DOM 里还有一份隐藏的 header 副本，
+				// 只判 width>0 会点到那份不可见的按钮 → 点了没有任何反应。
+				const seen = (el) => {
+					if (!el) return false;
+					const r = el.getBoundingClientRect();
+					if (!(r.width > 0 && r.height > 0)) return false;
+					if (r.right <= 0 || r.bottom <= 0) return false;
+					if (r.left >= window.innerWidth || r.top >= window.innerHeight) return false;
+					if (el.disabled) return false;
+					return true;
+				};
 				const label = (el) => ((el.getAttribute && el.getAttribute("aria-label")) || el.textContent || "");
 				const all = Array.prototype.slice.call(document.querySelectorAll("button"));
-				const collapse = all.find((b) => seen(b) && /收起右侧边栏/.test(label(b)));
-				if (collapse) { collapse.click(); return true; }
+				// ⚠️ 全屏优先：全屏下「收起右侧边栏」按钮存在但点不动，必须先退全屏再收。
 				const full = all.find((b) => seen(b) && /退出全屏/.test(label(b)));
 				if (full) {
+					// 实测：退全屏这一步本身就会把右栏收掉（收起按钮随之消失）。
 					full.click();
 					setTimeout(() => {
 						const again = Array.prototype.slice.call(document.querySelectorAll("button"))
-							.find((b) => seen(b) && /收起右侧边栏/.test(label(b)));
+							.find((b) => seen(b) && /\u6536\u8d77\u53f3\u4fa7\u8fb9\u680f/.test(label(b)));
 						if (again) again.click();
-					}, 260);
+					}, 320);
 					return true;
 				}
+				const collapse = all.find((b) => seen(b) && /收起右侧边栏/.test(label(b)));
+				if (collapse) { collapse.click(); return true; }
 				return false;
 			}
 			/**
@@ -2987,15 +3020,26 @@ return false;
 			 * 新会话就被挤成窄条。所以判据是「主区出现会话输入框（带发送消息按钮）」→ 收右栏。
 			 * 不写死文案：中英文界面、以后改文案都不影响。
 			 */
+			function mpDraftSignature() {
+				const box = document.querySelector('[role="textbox"], textarea');
+				if (!box) return null;
+				const value = (box.value !== undefined ? box.value : box.textContent) || "";
+				return value.trim().slice(0, 120);
+			}
 			function mpAfterRightMenuItem() {
+				// 点击前先记草稿内容：
+				//   创建插件 → startSession(prompt) 会把提示词写进输入框 → 内容变化
+				//   浏览插件 → openList() 换页，输入框不存在/内容不变
+				// 这样就不依赖“发送键是否存在”（会话视图里它一直在，会误判成创建）。
+				const before = mpDraftSignature();
 				let tries = 0;
 				const tick = () => {
 					tries++;
-					const seen = (el) => !!el && el.getBoundingClientRect().width > 0 && el.getBoundingClientRect().height > 0;
-					const send = Array.prototype.slice.call(document.querySelectorAll("button"))
-						.some((b) => seen(b) && /发送消息|Send message/.test((b.getAttribute("aria-label") || "") + (b.textContent || "")));
-					if (send) { mpCloseRightbar(); return; }
-					if (tries < 6) setTimeout(tick, 120);
+					const now = mpDraftSignature();
+					const dialog = document.querySelector('[role="dialog"]');
+					const changed = now !== null && now !== before;
+					if (changed || dialog) { mpCloseRightbar(); return; }
+					if (tries < 6) setTimeout(tick, 130);
 				};
 				setTimeout(tick, 180);
 			}
@@ -9761,6 +9805,7 @@ function apply(ctx) {
 			document.addEventListener("click", onNewSessionClick, true);
 			document.addEventListener("click", onSessionRowClick, true);
 			document.addEventListener("click", onPanelRowClick, true);   /* 修复 66 */
+			document.addEventListener("click", onGuideClick, true);      /* 右栏 guide 点击记账 */
 			document.addEventListener("click", onMenuItemClick, true);   /* rc3 菜单项点完收抽屉 */
 			const disposePressFeedback = setupPressFeedback();
 			const disposeStatusBridge = mpInstallStatusBridge();
@@ -9815,6 +9860,7 @@ function apply(ctx) {
 				disposeEnterAsNewline();   /* 修复 67 */
 				disposePlainKey();   /* 修复 68 */
 				document.removeEventListener("click", onPanelRowClick, true);   /* 修复 66 */
+				document.removeEventListener("click", onGuideClick, true);
 				document.removeEventListener("click", onMenuItemClick, true);
 			};
 		}
