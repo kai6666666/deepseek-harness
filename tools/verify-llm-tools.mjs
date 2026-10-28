@@ -163,7 +163,6 @@ for (const c of CASES) {
     const t0 = Date.now() - 4000
     note = ''
     try {
-      await openNewSession()
       await sendInCurrent(c.prompt)
       let hit = null
       for (let i = 0; i < 45; i++) {
