@@ -2292,6 +2292,9 @@ window.__ModuleLoader__.load({
 			// 关闭动画进行中的闸（修复 25）：期间 mpSyncDrawer 不得把抽屉又拉回来；
 			// 关闭中再点汉堡 = 取消关闭、直接重开。
 			let mpClosing = false;
+			/** rc3 portal 菜单的来源：sidebar | other；以及“菜单项已点过”。 */
+			let mpMenuSource = null;
+			let mpMenuConsumed = false;
 			let mpCloseTimer = null;
 			// 修复 27：设置弹窗打开期间的「视觉收起」标记 —— 此时只把抽屉滑出屏幕，
 			// 绝不点官方 toggle（官方 railIn 动画会给 .hHd-Xa_footArea 加 opacity:0，
@@ -2933,8 +2936,26 @@ if (r.width > 0 && r.height > 0) return true;
 }
 return false;
 }
+			/** 记录当前可见菜单来自侧栏还是会话/右栏。 */
+			function mpNoteMenuSource() {
+				const col = mpSidebarCol();
+				const anchor = document.querySelector('[aria-haspopup="menu"][aria-expanded="true"]');
+				mpMenuSource = (col && anchor && col.contains(anchor)) ? "sidebar" : "other";
+			}
+			/** 侧栏菜单项点完收抽屉（延后 120ms 让目标页先切）。 */
+			function onMenuItemClick(e) {
+				if (!mpIsMobile()) return;
+				const item = e.target && e.target.closest ? e.target.closest('[role="menuitem"]') : null;
+				if (!item) return;
+				if (mpMenuSource !== "sidebar") return;
+				mpMenuConsumed = true;
+				window.setTimeout(() => {
+					try { closeDrawerAfterClick(); } catch (err) { /* 静默 */ }
+				}, 120);
+			}
 			/** 菜单打开期间把抽屉钉在展开态（portal 菜单挂载比 observer 晚一帧）。 */
 			function mpHoldDrawerForMenu() {
+				if (mpMenuConsumed) return;
 				const col = mpSidebarCol();
 				if (!col) return;
 				const anchor = document.querySelector('[aria-haspopup="menu"][aria-expanded="true"], [class*="moreAnchor"] [aria-expanded="true"]');
@@ -2949,8 +2970,15 @@ document.body.classList.toggle("mp-menu-open", !!on);
 function mpSyncDrawer() {
 // ⚠️ 菜单（portal）打开期间不要动抽屉：菜单的 anchor 在抽屉里，
 //   抽屉一滑走 anchor 就到屏幕外，菜单会被 clamp 回视口 → 落到会话区。
-				if (mpMenuOpen()) { mpSetMenuOpenClass(true); mpHoldDrawerForMenu(); return; }
+				if (mpMenuOpen()) {
+					mpSetMenuOpenClass(true);
+					mpNoteMenuSource();
+					if (!mpMenuConsumed) mpHoldDrawerForMenu();
+					return;
+				}
 mpSetMenuOpenClass(false);
+				mpMenuSource = null;
+				mpMenuConsumed = false;
 				// 修复 25：关闭动画进行中，绝不能被 observer/resize 把抽屉又拉回来
 				//（官方此刻仍是 expanded，mpSetDrawerOpen 会重新加上 mp-drawer-open）。
 				if (mpClosing) return;
@@ -9669,6 +9697,7 @@ function apply(ctx) {
 			document.addEventListener("click", onNewSessionClick, true);
 			document.addEventListener("click", onSessionRowClick, true);
 			document.addEventListener("click", onPanelRowClick, true);   /* 修复 66 */
+			document.addEventListener("click", onMenuItemClick, true);   /* rc3 菜单项点完收抽屉 */
 			const disposePressFeedback = setupPressFeedback();
 			const disposeStatusBridge = mpInstallStatusBridge();
 			const disposeTranscriptBridge = mpInstallTranscriptBridge();
@@ -9722,6 +9751,7 @@ function apply(ctx) {
 				disposeEnterAsNewline();   /* 修复 67 */
 				disposePlainKey();   /* 修复 68 */
 				document.removeEventListener("click", onPanelRowClick, true);   /* 修复 66 */
+				document.removeEventListener("click", onMenuItemClick, true);
 			};
 		}
 
