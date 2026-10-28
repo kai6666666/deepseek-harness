@@ -21,11 +21,17 @@ run-as com.dsh.android sh /data/local/tmp/verify-engine-upgrade.sh --tools  # �
 [PASS] 开发环境 nodejs 2/2 python 5/5 ssh 3/3 java 2/2 rust 1/2 go 1/1
 [PASS] 会话索引干净（2 条）
 [PASS] 引擎补丁标记 5/5 补丁标记命中
+[PASS] 工具 bubble
+[PASS] 工具 ui
+[PASS] 工具 logs
+[PASS] 工具 statusbar
+[PASS] 工具 browser
+[PASS] 工具 root
 ----
-4 PASS / 0 FAIL
+10 PASS / 0 FAIL          ← --tools 全量，exit=0
 ```
 
-`--ui` 段调用 `urc3.mjs`，额外打印 6 条断言逐行结果；`D` 段要求先建会话发一条消息，否则记 SKIP。
+`--tools` 依赖 `tools/mockrun.sh`（每次重启 mock 并等 `listening` 再起 headless）；`--ui` 段调用 `urc3.mjs`，额外打印 6 条断言逐行结果；`D` 段要求先建会话发一条消息，否则记 SKIP。
 
 补丁标记 ≠ 锚点检查，两者分工：
 
