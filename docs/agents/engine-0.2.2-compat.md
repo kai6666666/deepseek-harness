@@ -176,6 +176,8 @@ mobile client.js 被 served 446 KB
 | 对话 | 真实凭据 | 待补（当前 `API 密钥无效`） |
 
 ## 6. 回滚
+> 回滚实测（2026-10-29）：引擎版本改回 `0.2.1-rc.3` → `[FAIL] 引擎版本`；恢复后 `4 PASS / 0 FAIL`。整包降级受签名不匹配阻断（`INSTALL_FAILED_UPDATE_INCOMPATIBLE`），需卸载清数据才能做。详见 [`release-signing.md`](./release-signing.md) ④。
+
 
 ```text
 APK   /data/local/tmp/dshW2.apk（0.2.2 回滚包）
