@@ -8314,7 +8314,13 @@ class EngineManager private constructor(private val context: Context) {
          * 引擎升级若增删了这个列表，本副本要跟着改 —— 漏改只会让体检**少报**，
          * 不会误伤（体检判据是「缺了才隔离」）。
          */
-        private val REQUIRED_ENTRY_IDS = listOf("agent-loop", "webserver", "modules", "connection")
+        private val REQUIRED_ENTRY_IDS = listOf(
+            // 0.2.2-alpha.2 起官方 requiredStartupEntryIds 从 4 项扩到 10 项；
+            // 少列几项只会让体检**少报**（判据是「缺了才隔离」），但升级后应保持同源。
+            "agent-loop", "tool-executor-native", "tool-executor-ptc",
+            "webserver", "web-runtime", "modules", "connection",
+            "headless-runner", "acp", "sdk-jsonrpc-server",
+        )
 
         /**
          * 从引擎报错行里抠出被指认的文件绝对路径。
