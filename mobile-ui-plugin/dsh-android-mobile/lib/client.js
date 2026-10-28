@@ -3145,7 +3145,13 @@ mpSetMenuOpenClass(false);
 					mpSetDrawerOpen(true);
 					return;
 				}
-				if (mpOfficialDrawerOpen()) return;
+				// ⚠️ 官方 expanded=true 不代表“看得见”：插件市场这类页面一直是 wide/expanded，
+				//   但我们的抽屉类没加时它停在屏幕外。以前这里直接 return，点汉堡没反应。
+				if (mpOfficialDrawerOpen()) {
+					mpSetDrawerOpen(true);
+					setTimeout(mpSyncDrawer, 60);
+					return;
+				}
 				const btn = mpOfficialToggle();
 				if (btn) btn.click();
 				setTimeout(mpSyncDrawer, 60);
