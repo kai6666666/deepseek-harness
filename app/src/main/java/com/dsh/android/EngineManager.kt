@@ -706,7 +706,16 @@ class EngineManager private constructor(private val context: Context) {
                     entry = zis.nextEntry
                 }
             }
-            Log.i(TAG, "已安装原生插件 $ADDON_PACKAGE (${binary.length()} 字节)")
+            // ⚠️ 0.2.2 的 node-addon-native-custom-loader 先找**包内 build/napi/<tag>/**，
+            //   找不到才退平台包。engine.bin 里没有 build/ 目录，所以要把平台包里的 .node
+            //   再复制一份到 build 路径，否则引擎起不来（真机实测 MODULE_NOT_FOUND）。
+            val buildDir = File(nodeModules, "node-addon-require-builtin/build/napi/napi-v9-android-arm64")
+            val buildNode = File(buildDir, "require_builtin.node")
+            if (!(buildNode.isFile && buildNode.length() > 0)) {
+                buildDir.mkdirs()
+                binary.copyTo(buildNode, overwrite = true)
+            }
+            Log.i(TAG, "已安装原生插件 $ADDON_PACKAGE (${binary.length()} 字节) → build/napi 兜底")
         } catch (t: Throwable) {
             // 装不上就不阻断启动：让引擎自己报出更具体的加载失败原因
             Log.w(TAG, "安装原生插件失败: ${t.message}")
@@ -8314,13 +8323,14 @@ class EngineManager private constructor(private val context: Context) {
          * 引擎升级若增删了这个列表，本副本要跟着改 —— 漏改只会让体检**少报**，
          * 不会误伤（体检判据是「缺了才隔离」）。
          */
-        private val REQUIRED_ENTRY_IDS = listOf(
-            // 0.2.2-alpha.2 起官方 requiredStartupEntryIds 从 4 项扩到 10 项；
-            // 少列几项只会让体检**少报**（判据是「缺了才隔离」），但升级后应保持同源。
-            "agent-loop", "tool-executor-native", "tool-executor-ptc",
-            "webserver", "web-runtime", "modules", "connection",
-            "headless-runner", "acp", "sdk-jsonrpc-server",
-        )
+        private val REQUIRED_ENTRY_IDS = listOf("agent-loop", "webserver", "modules", "connection")
+        /*
+         * ⚠️ 不要照抄官方的 10 项 requiredStartupEntryIds。
+         * 官方那份的语义是「**这些条目如果挂了**就抛 StartupError」，条目本身没挂载不算失败；
+         * 而本体检的语义是「**合成配置里必须有这个 id**」。0.2.2-alpha.2 的 web profile
+         * 不挂 headless-runner / acp / sdk-jsonrpc-server，照抄会导致每次启动都判 bundle 损坏
+         * → 重解包 engine/ 并把用户 cordis.patch.yml 隔离成 .bak（2026-10-28 真机实测）。
+         */
 
         /**
          * 从引擎报错行里抠出被指认的文件绝对路径。
