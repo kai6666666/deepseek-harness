@@ -38,6 +38,7 @@
 | [keep-alive.md](keep-alive.md) | 后台保活与通知栏实时状态 | 任务切后台不能断；键盘升起遮挡 |
 | [mobile-ui.md](mobile-ui.md) | 移动端 UI 插件 | 为什么解到 $DSH_HOME/mobile-ui、别名桥接、+ 菜单时序、安全键盘 |
 | [mobile-ui-rc3.md](mobile-ui-rc3.md) | 移动端 UI × rc3 | 三处「更多」菜单与抽屉的冲突、右栏创建插件收右栏；一条命令跑 6 条断言 |
+| [engine-0.2.2.md](engine-0.2.2.md) | 引擎升级到 0.2.2-alpha.2 | 锚点 5/5、Ubuntu 冷启动、设备旁路冷启动（含 android-arm64 原生包补齐） |
 | [debug-device.md](debug-device.md) | 调试真机 | adb 基本手法 |
 | [rescue-mode.md](rescue-mode.md) | 插件改坏导致 App 打不开 | 启动前体检 + 安全模式 |
 | [node-selfheal.md](node-selfheal.md) | $PREFIX/bin/node 会坏 | 自校验 + 自愈、$PREFIX 并发写互斥 |
