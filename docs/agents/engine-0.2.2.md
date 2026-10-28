@@ -347,7 +347,7 @@ TOOL_RESULT_END"}
 
 服务源码：`tools/mock-openai-toolcall.mjs`（可复用：`MOCK_TOOL` / `MOCK_ARGS` 可换任意工具）。
 
-### 6.6 五个工具插件逐个跑通（mock 驱动）✅
+### 6.6 七个工具插件逐个跑通（mock 驱动）✅
 
 统一用 `tools/mock-openai-toolcall.mjs` + `--profile headless --patch mock4.patch.yml`：
 
@@ -358,6 +358,8 @@ TOOL_RESULT_END"}
 | `ui` | `{"action":"ping"}` | `completed` · `✓ 探针就绪 · http://127.0.0.1:3080/ · 可交互元素 32 个 · 视口 394×806` |
 | `logs` | `{"action":"summary"}` | `completed` · `718 条 / 警告 29 / 错误 1 / 现场文件 8` |
 | `statusbar` | `{"action":"get"}` | `completed` · 当前系统栏配色 JSON |
+| `browser` | `{"action":"tabs"}` | `completed` · `标签（当前第 0 个）: [0] (无标题) — https://github.com/` |
+| `root` | `{"command":"id","description":"read root uid"}` | `completed` · `[dsh-root] 找不到 su（已试 /system/bin/su…）—— 设备当前没有可用的 root`；工具已注册、通道已打通 |
 
 复跑方式（设备上）：
 
@@ -368,5 +370,13 @@ run-as com.dsh.android sh /data/local/tmp/mockrun.sh ui '{"action":"ping"}'
 
 `mockrun.sh` 做三件事：换 `MOCK_TOOL/MOCK_ARGS` 重启 mock → 跑一次 headless → 打印 tool_call/tool_result。
 
-**结论：7 个插件里有工具的 5 个（shell/bubble/ui/logs/statusbar）在 0.2.2 上注册与执行全部正常。**
-`root`（需要 su，本机没有）与 `browser`（要开真实 WebView）留给有对应环境的机器。
+**结论：7 个工具插件在 0.2.2 上全部注册成功，6 个实跑返回数据；`root` 通道也走通，只是本机没有 su，命令按预期没执行。**
+
+参数备注：`browser` / `root` 不在 `mock4.patch.yml` 里，用 `mock5.patch.yml` 跑：
+
+```bash
+run-as com.dsh.android sh /data/local/tmp/mockrun.sh browser '{"action":"tabs"}' mock5.patch.yml
+run-as com.dsh.android sh /data/local/tmp/mockrun.sh root '{"command":"id","description":"read root uid"}' mock5.patch.yml
+```
+
+`mockrun.sh` 第三个参数是 patch 文件名（默认 `mock4.patch.yml`），并自动注入 `DSH_ROOT_RUNNER`；否则 `root` 与 `shell` 都会静默不注册。
