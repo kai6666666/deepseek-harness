@@ -54,7 +54,7 @@ tools/verify-llm-ui.mjs
 11 PASS / 0 FAIL   exit=0
 ```
 
-这一步同时闭环了两件事：账号模型可用，且 `shell` 工具**真的以 uid 2000 执行**（不是 fallback 10603）。前置条件是 DSH 在前台且已解锁。
+这一步同时闭环了两件事：账号模型可用，且 `shell` 工具**真的以 uid 2000 执行**（不是 fallback 10603）。前提只是 **App 进程存活、WebView 能响应探针**——实测前台在桌面（launcher）时照样通过；被系统冻结或锁屏时才需要点亮并拉回前台。
 
 `--clean` 的行为：命中后先写证据再删会话（文件 + `workspace.json` 索引）：
 
@@ -67,6 +67,15 @@ before=3  →  run --llm --clean  →  after=3
 失败时会自动 `screencap` 一张 `files/home/llm-fail-<ts>.png`，输出行附 `FAIL_PNG <path>`；`NO_BOX` / `NO_SEND` / `NO_HIT` 都走这条。
 
 `--clean` 在**失败时同样清理**本次会话（`NO_HIT` / 超时 / 鉴权错误），避免失败的验收也留下垃圾会话。
+
+清理结果会写进 `home/llm-last-clean.json`，并进 `verify-<ts>.json` 的 `cleaned` 字段：
+
+```text
+cleaned session-455f74fe-2c22-4a61-9e4d-fa9d4357c757
+5 PASS / 0 FAIL
+```
+
+发送后 18 秒内所有会话里都找不到那条 prompt，会快速判 `NO_HIT NO_SESSION_WRITE`（不再等满 135 秒）。
 
 `--latest` 等价于「把 `files/home/verify-*.json` 里最新的一份当基线」，省掉手敲路径；实测连跑两次，第二次拿第一次做基线：
 
