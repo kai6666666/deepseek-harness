@@ -27,13 +27,15 @@ const SHOT = ARGS.includes('--shot') || process.env.SHOT === '1'
 const ROOT_ON = ARGS.includes('--root') || process.env.DSH_ROOT === '1'
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 let q = 250000
-const CASES = [
+const CASES_ALL = [
   { tool: 'bubble', prompt: '用 bubble 工具执行 action=get 读取悬浮球外观，然后用一句话概括。' },
   { tool: 'ui', prompt: '用 ui 工具执行 action=ping，报告探针是否就绪和可交互元素数量。' },
   { tool: 'logs', prompt: '用 logs 工具执行 action=summary，把日志条数和错误数报给我。' },
   { tool: 'statusbar', prompt: '用 statusbar 工具执行 action=get，报告当前系统栏配色。' },
   { tool: 'browser', prompt: '用 browser 工具执行 action=tabs，列出当前标签页。' },
 ]
+const ONLY = ARGS.includes('--only') ? (ARGS[ARGS.indexOf('--only') + 1] || '') : ''
+const CASES = ONLY ? CASES_ALL.filter((c) => c.tool === ONLY) : CASES_ALL
 if (ROOT_ON) CASES.push({ tool: 'root', prompt: '用 root 工具执行 command=id，报告当前进程的 uid。', expect: /uid=0/ })
 async function probe(action, extra = {}) {
   const id = ++q
@@ -155,7 +157,7 @@ async function sendInCurrent(prompt) {
 
 const cleanedSids = new Set()
 const results = []
-if (!ROOT_ON) results.push({ tool: 'root', status: 'SKIP', note: 'FROZEN_NO_ROOT' })
+if (!ROOT_ON && !ONLY) results.push({ tool: 'root', status: 'SKIP', note: 'FROZEN_NO_ROOT' })
 for (const c of CASES) {
   let ok = false
   let note = ''
