@@ -66,6 +66,8 @@ before=3  →  run --llm --clean  →  after=3
 
 失败时会自动 `screencap` 一张 `files/home/llm-fail-<ts>.png`，输出行附 `FAIL_PNG <path>`；`NO_BOX` / `NO_SEND` / `NO_HIT` 都走这条。
 
+`--clean` 在**失败时同样清理**本次会话（`NO_HIT` / 超时 / 鉴权错误），避免失败的验收也留下垃圾会话。
+
 `--latest` 等价于「把 `files/home/verify-*.json` 里最新的一份当基线」，省掉手敲路径；实测连跑两次，第二次拿第一次做基线：
 
 ```text
@@ -89,6 +91,14 @@ baseline …/verify-20261028-231621.json  regressions=0 fixes=0
 ----
 10 PASS / 0 FAIL          ← --tools 全量，exit=0
 ```
+
+推荐姿势（全量）：
+
+```bash
+run-as com.dsh.android sh /data/local/tmp/verify-engine-upgrade.sh --tools --llm --clean --latest
+```
+
+默认保留最近 10 份 `verify-*.json` / `llm-evidence-*.txt` / `llm-fail-*.png`，超出自动删。
 
 `--tools` 依赖 `tools/mockrun.sh`（每次重启 mock 并等 `listening` 再起 headless）；`--ui` 段调用 `urc3.mjs`，额外打印 6 条断言逐行结果；`D` 段要求先建会话发一条消息，否则记 SKIP。
 
