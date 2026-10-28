@@ -14,22 +14,57 @@ sleep 2
 am start -n com.dsh.android/.MainActivity >/dev/null 2>&1
 echo "== warming up (probe health check) =="
 OK=0
-for k in 1 2 3; do
-  sleep 60
+sleep 120
+for k in 1 2 3 4; do
   if run-as com.dsh.android sh -c 'files/termux/usr/bin/node /data/local/tmp/probe-count.mjs'; then
     OK=1
     break
   fi
-  echo "-- probe weak, restart app (try $k) --"
+  echo "-- probe weak, keep waiting (try $k) --"
+  am start -n com.dsh.android/.MainActivity >/dev/null 2>&1
+  sleep 45
+done
+if [ $OK -ne 1 ]; then
+  echo "-- last try: force-stop + 90s --"
   am force-stop com.dsh.android
   sleep 2
   am start -n com.dsh.android/.MainActivity >/dev/null 2>&1
-done
+  sleep 90
+  if run-as com.dsh.android sh -c 'files/termux/usr/bin/node /data/local/tmp/probe-count.mjs'; then
+    OK=1
+  fi
+fi
 if [ $OK -ne 1 ]; then
-  echo "PROBE_UNHEALTHY: WebView 探针三轮回暖仍未恢复，先手动打开 App 再跑"
+  echo "PROBE_UNHEALTHY: 探针未恢复，手动打开 App 后再跑"
   exit 3
 fi
+# 确保 App 在最前：通知栏/其它窗口会抢焦点，导致探针 dump 不到 textbox
+for i in 1 2 3; do
+  F=$(dumpsys window | grep -m1 mCurrentFocus)
+  case "$F" in
+    *com.dsh.android*) break ;;
+    *) input keyevent 4; sleep 1; am start -n com.dsh.android/.MainActivity >/dev/null 2>&1; sleep 2 ;;
+  esac
+done
 dumpsys window | grep -m1 mCurrentFocus
+case "$ARGS" in
+  *--split*)
+    echo "== split mode: 每个工具单独冷启 =="
+    FAILED=0
+    for t in bubble ui logs statusbar browser; do
+      echo "-- case $t --"
+      am force-stop com.dsh.android
+      sleep 2
+      am start -n com.dsh.android/.MainActivity >/dev/null 2>&1
+      sleep 75
+      run-as com.dsh.android sh -c "files/termux/usr/bin/node /data/local/tmp/verify-llm-tools.mjs --only $t --clean --shot"
+      [ $? -ne 0 ] && FAILED=$((FAILED+1))
+    done
+    echo "---- split failed=$FAILED"
+    run-as com.dsh.android sh -c 'files/termux/usr/bin/node /data/local/tmp/prune-sessions.mjs'
+    [ $FAILED -eq 0 ] || exit 1
+    exit 0 ;;
+esac
 echo "== run suite: $ARGS =="
 run-as com.dsh.android sh /data/local/tmp/verify-engine-upgrade.sh $ARGS
 RC=$?
