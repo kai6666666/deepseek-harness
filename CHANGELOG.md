@@ -10,9 +10,15 @@
 > 对应 vc 21/22/23），那期间靠 `versionCode` 区分。自 **0.3.0** 起引入新产品能力
 > 时改前两位版本号。
 
+> **versionCode 机器可读**：每个版本小节标题后第一行写 `vc=<数字>`，
+> `sh tools/version.sh --check` 会校验「最新小节的 vc == build.gradle.kts 的 versionCode」
+> 且「严格大于上一小节的 vc」。历史上 `0.2.9-rescue` 对应 vc 20/21/22/23，
+> 正是靠 versionCode 区分同一 versionName 的不同构建。
+
 ---
 
 ## [0.4.1] — 2026-10-23
+vc=38
 
 ### 修复
 
