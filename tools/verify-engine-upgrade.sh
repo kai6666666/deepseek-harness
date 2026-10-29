@@ -17,6 +17,7 @@ N=$R/termux/usr/bin/node
 PASS=0; FAIL=0; SKIP=0
 QUIET=0; case "$*" in *--json*) QUIET=1;; esac
 CLEANFLAG=0; case "$*" in *--clean*) CLEANFLAG=1;; esac
+GUEST=0; for a in "$@"; do [ "$a" = "--guest" ] && GUEST=1; done
 BASE=""; prev=""
 for a in "$@"; do [ "$prev" = "--baseline" ] && BASE="$a"; prev="$a"; done
 case "$*" in *--latest*) [ -z "$BASE" ] && BASE=$(ls -t $R/home/verify-*.json 2>/dev/null | head -1) ;; esac
@@ -31,6 +32,8 @@ sk(){ SKIP=$((SKIP+1)); echo "SKIP|$1" >> $RES; say "[SKIP] $1"; true; }
 V=$(cat $R/engine/node_modules/@deepseek-ai/dsh/package.json 2>/dev/null | $N -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.parse(s).version)}catch{console.log("")}})')
 if [ "$V" = "0.2.2-alpha.2" ]; then ok "引擎版本 $V"; else ng "引擎版本 ${V:-unknown}"; fi
 
+if [ "$GUEST" = "1" ]; then sk "开发环境（guest 跳过）"
+else
 LINE=$($N $R/dsh-env.mjs status --json 2>/dev/null | $N -e '
 let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{
  try{const d=JSON.parse(s);const bad=d.groups.filter(g=>g.installedCount!==g.totalCount&&g.id!=="rust");
@@ -41,11 +44,15 @@ case "$LINE" in
   PASS*) ok "开发环境 ${LINE#PASS }" ;;
   *) ng "开发环境 ${LINE#FAIL }" ;;
 esac
+fi
 
 CNT=$(grep -o 'session-[a-z0-9-]*' $R/home/.dsh/storages/workspace.json 2>/dev/null | wc -l)
 if [ "$CNT" -le 3 ]; then ok "会话索引干净（$CNT 条）"; else ng "会话索引残留（$CNT 条）"; fi
 
+if [ "$GUEST" = "1" ]; then sk "引擎补丁标记（guest 跳过）"
+else
 PM=$($N /data/local/tmp/check-engine-patch-marks.mjs $R/engine 2>&1); PRC=$?
+fi
 if [ $PRC -eq 0 ]; then ok "引擎补丁标记 $(echo "$PM" | tail -1)"; else ng "引擎补丁标记"; say "$(echo "$PM" | grep '❌')"; fi
 
 case "$*" in *--ui*)
