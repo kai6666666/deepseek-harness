@@ -69,6 +69,28 @@ else
     bad "CHANGELOG 里找不到正式版标题" "$CHANGELOG"
 fi
 
+# ---- 2b. versionCode：最新小节 vc == versionCode，且严格大于上一小节 ----
+SEC1=$(awk '/^## \[[0-9]/{n++} n==1{print} n==2{exit}' "$CHANGELOG" 2>/dev/null)
+SEC2=$(awk '/^## \[[0-9]/{n++} n==2{print}' "$CHANGELOG" 2>/dev/null)
+CL_VC=$(echo "$SEC1" | grep -oE 'vc=[0-9]+' | head -1 | sed 's/vc=//')
+PREV_VC=$(echo "$SEC2" | grep -oE 'vc=[0-9]+' | head -1 | sed 's/vc=//')
+
+if [ -z "$CL_VC" ]; then
+    bad "CHANGELOG 最新小节缺 vc=<n>" "none"
+elif [ "$CL_VC" = "$APP_VC" ]; then
+    ok "CHANGELOG vc = versionCode" "$CL_VC"
+else
+    bad "CHANGELOG vc = versionCode" "vc=$CL_VC vs versionCode=$APP_VC"
+fi
+
+if [ -n "$PREV_VC" ] && [ -n "$CL_VC" ]; then
+    if [ "$CL_VC" -gt "$PREV_VC" ]; then
+        ok "versionCode 递增" "$CL_VC > $PREV_VC"
+    else
+        bad "versionCode 必须递增" "$CL_VC <= $PREV_VC"
+    fi
+fi
+
 for pair in "build-engine-bin:$ENG_BUILD" "provision-glibc-host:$ENG_PROV" \
             "build-node-addon-system:$ENG_DIR1" "build-node-pty:$ENG_DIR2"; do
     name=${pair%%:*}
