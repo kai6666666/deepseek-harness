@@ -1,4 +1,5 @@
 #!/system/bin/sh
+export MOCK_PORT=${MOCK_PORT:-28999}
 # 设备侧：换 mock 工具 → 起 headless → 打印 tool_call/tool_result
 # 用法：sh mockrun.sh <tool> '<json args>' [patch.yml]
 R=/data/user/0/com.dsh.android/files
@@ -9,12 +10,12 @@ LOG=$R/home/mockrun.log
 sleep 1
 : > $LOG
 BOUND=0
-for i in 1 2 3 4 5; do
+for i in 1 2; do
   MOCK_TOOL=$TOOL MOCK_ARGS=$ARGS MOCK_LOG=$LOG nohup $N /data/local/tmp/mocktool.mjs >>$LOG 2>&1 &
   P=$!; echo $P > $R/home/mock.pid
-  for j in 1 2 3 4 5 6 7 8 9 10; do
-    sleep 0.3
-    grep -q "^listening" $LOG && { BOUND=1; break; }
+  for j in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+    sleep 1
+    grep -q "listening" $LOG && { BOUND=1; break; }
     kill -0 $P 2>/dev/null || break
   done
   [ $BOUND -eq 1 ] && break
