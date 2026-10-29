@@ -1,0 +1,14 @@
+== full cold-start acceptance  TS=20261029-235556  model=25104RADAC  sdk=36 ==
+
+== mock-matrix ==
+mock-matrix    9 PASS / 0 FAIL / 1 SKIP                       PASS
+== llmtools ==
+llmtools       5 PASS / 0 FAIL / 0 SKIP                       PASS
+== llmsplit ==
+llmsplit       llmsplit pass=5 fail=0                         PASS
+== llm ==
+llm            5 PASS / 0 FAIL / 0 SKIP                       PASS
+
+----
+---- FULL 4 PASS / 0 FAIL  (sections=4)
+report: /data/local/tmp/full-20261029-235556.txt
