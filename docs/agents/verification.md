@@ -363,3 +363,20 @@ run-as com.dsh.android sh -c 'files/termux/usr/bin/node /data/local/tmp/verify-l
 
 - 2026-10-29 04:09 一条命令跑满 **11 PASS / 0 FAIL / 1 SKIP**（`--llmtools --llm --tools --clean`，wrapper rc=0），见 ⑨；
 - 2026-10-29 04:5x `--split` **5/5 全过**（split failed=0），真模型 × 5 工具的证据链由此闭环。
+### ① `--llm` 与 `--llmtools` 的匹配（2026-10-29 修）
+
+`case "$*" in *--llm*)` 会把 `--llmtools` 一起吃掉（子串匹配）：只想跑工具矩阵，结果顺带多跑一轮 shell 断言，失败时假红。已改为按参数精确匹配。
+
+真模型最稳姿势（每工具冷启）：
+
+```bash
+sh /data/local/tmp/verify-all.sh --llmsplit   # 约 15~20 分钟
+```
+
+单例：
+
+```bash
+run-as com.dsh.android sh /data/local/tmp/verify-engine-upgrade.sh --llmtools --only browser --clean
+```
+
+> 注：工具侧单次命令执行有 1800s 上限，`--llmsplit` 超时就分两次跑。
