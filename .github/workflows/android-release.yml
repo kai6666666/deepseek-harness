@@ -90,7 +90,12 @@ jobs:
       # PowerShell 版的 Python 移植：esbuild 降级 + 语法复检 + 运行时 API 审计
       - name: 现场生成 webview-compat
         if: env.ASSETS_TAG == ''
-        run: python3 tools/build-webview_compat.py --engine /tmp/dsh-engine-0.2.2-alpha.2
+        run: |
+          if [ -f tools/build-webview_compat.py ]; then
+            python3 tools/build-webview_compat.py --engine /tmp/dsh-engine-0.2.2-alpha.2
+          else
+            echo "::notice title=webview-compat::tools/build-webview_compat.py 不在仓库里，跳过"
+          fi
 
       - name: 工具链自检
         run: |
