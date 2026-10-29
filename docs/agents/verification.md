@@ -380,3 +380,5 @@ run-as com.dsh.android sh /data/local/tmp/verify-engine-upgrade.sh --llmtools --
 ```
 
 > 注：工具侧单次命令执行有 1800s 上限，`--llmsplit` 超时就分两次跑。
+
+> root 探测记录：见 [`vmos-root-probe.md`](./vmos-root-probe.md)（VMOS+ 当前 ROM `supportRoot: false`，无可用 root）。
