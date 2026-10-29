@@ -24,6 +24,8 @@
 |---|---|---|
 | 7 工具含 root | `VMOS_ADB=127.0.0.1:5666 sh tools/verify-guest.sh` | `---- GUEST PASS  8 PASS / 0 FAIL / 2 SKIP` |
 
+> guest 侧**只跑 mock 矩阵**。真模型线（`--llmtools` / `--llmsplit` / `--llm`）固定在宿主跑——guest 真模型依赖「VMOS 前台 + 已登录」，属环境边界，见 [boundaries.md](boundaries.md)。
+
 **硬前提**：手机顶部无遮挡（`ScreenOnProximitySensorGuide` 会拦触摸）→ 进 `VmScreenActivity` → 等 55s → 再 connect。
 
 ### C. CI
@@ -829,3 +831,7 @@ adb -s $S shell 'su -c "LLM_TIMEOUT=600 sh /data/local/tmp/verify-engine-upgrade
 
 若 guest 里 App 未登录模型账号，这一线会退化成「无可用模型」，属环境边界而非回归——
 此时只跑 mock 矩阵（`--tools --root --guest`）即可，它不依赖登录态。
+
+**结论（2026-10-29）：标为环境边界，不纳入闭环判据。**
+guest 侧只跑 mock 矩阵；真模型三条线固定在宿主跑。边界条目见 [boundaries.md](boundaries.md)。
+
