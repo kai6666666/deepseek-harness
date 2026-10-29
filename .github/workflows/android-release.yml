@@ -9,9 +9,17 @@ on:
 
 jobs:
   assemble:
-    name: assembleSystemDebug
+    name: assemble (${{ matrix.flavor }})
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - flavor: system
+            task: System
+          - flavor: gecko
+            task: Gecko
     env:
       ASSETS_TAG: ${{ github.event.inputs.assets_release || vars.ASSETS_RELEASE }}
       STRICT_ASSETS: ${{ github.event.inputs.strict_assets || '0' }}
@@ -132,7 +140,7 @@ jobs:
       - name: 构建 APK
         run: |
           set +e
-          bash ./gradlew :app:assembleSystemRelease -x lint -x lintVitalSystemRelease --console=plain --stacktrace 2>&1 | tee /tmp/apk-build.log
+          bash ./gradlew :app:assemble${{ matrix.task }}Release -x lint -x lintVitalSystemRelease --console=plain --stacktrace 2>&1 | tee /tmp/apk-build.log
           rc=${PIPESTATUS[0]}
           if [ $rc -ne 0 ]; then
             echo "::error title=gradle-rc::exit $rc"
@@ -153,7 +161,7 @@ jobs:
       - name: Verify signature
         run: |
           set +e
-          APK=$(ls app/build/outputs/apk/system/release/*.apk 2>/dev/null | head -1)
+          APK=$(ls app/build/outputs/apk/${{ matrix.flavor }}/release/*.apk 2>/dev/null | head -1)
           echo "APK=${APK:-<none>}"
           [ -n "$APK" ] || { echo "::error title=apk::未产出 APK"; exit 1; }
           BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
@@ -168,10 +176,10 @@ jobs:
       - name: 上传 APK
         uses: actions/upload-artifact@v4
         with:
-          name: dsh-system-release
+          name: dsh-${{ matrix.flavor }}-release
           path: |
-            app/build/outputs/apk/system/release/*.apk
-            app/build/outputs/apk/system/release/output-metadata.json
+            app/build/outputs/apk/${{ matrix.flavor }}/release/*.apk
+            app/build/outputs/apk/${{ matrix.flavor }}/release/output-metadata.json
           if-no-files-found: error
           retention-days: 14
 
