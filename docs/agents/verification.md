@@ -735,3 +735,20 @@ sh tools/version.sh --base     # 0.4.1         ← 文件名/CHANGELOG 用这个
 为什么保留 raw 值：`build.gradle.kts` 的 `defaultConfig.versionName` 就是 `0.4.1-debug`，Release APK 的
 `aapt dump badging` 读出来也是 `0.4.1-debug`，所以 `release-server.sh` 里那句
 `*"versionName='$VER'"*` 必须用 raw，用 base 会判不匹配。
+
+### ⑯.2 发版前置闸
+
+`tools/release-server.sh` 在构建**之前**先跑一次版本号校验，不同源直接中止：
+
+```bash
+# 默认：先校验再构建
+./release.sh
+# 输出：▶ 目标版本：0.4.1-debug / ✅ 版本号同源 / ▶ 构建 release…
+#
+# 救急跳过（不推荐）：
+SKIP_VER_CHECK=1 ./release.sh
+```
+
+为什么卡在构建前：源码里 versionName 已改、CHANGELOG 没跟上时，打出来的包
+包名对、版本号对，但**用户看到的更新说明是错的**，事后无从追溯。闸门放在最前面，
+成本接近零；放在最后就变成「先烧 2 分钟 CPU 再报错」。
