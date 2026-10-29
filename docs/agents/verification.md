@@ -429,3 +429,49 @@ base64 -w0 keystore.jks            # 单行，不要换行
 ```
 
 同时确认 `KEYSTORE_PASSWORD` / `KEY_ALIAS` / `KEY_PASSWORD` 与这把钥匙一致。重配后重跑一次 `android-release`，`Verify signature` 会从 warning 变成 `APK 签名可验`。
+
+## ⑫ 签名终局（run #9，2026-10-29）
+
+```text
+run 40898159904  android-release  success
+step 20 Restore keystore   => success
+step 21 构建 APK            => success
+step 22 产物清单            => success
+step 23 Verify signature    => success
+step 24 上传 APK            => success
+ARTIFACT dsh-system-release 151,109,937 bytes
+
+NOTICE | keystore  | JKS 有效，Release 将签名
+NOTICE | signature | APK 签名可验 sha256=f78171624539a9b74c5263517b46c7912bef4fb214f0ba0e49702ec9b47bae62
+```
+
+URL: https://github.com/kai6666666/deepseek-harness/actions/runs/40898159904
+
+### 怎么修的
+
+仓库里本来就有可用钥匙：`keystore.jks`（**PKCS12**，4354 B，alias `dsh-release`，`keytool -list` 一次通过），
+只是 Actions 里的 `KEYSTORE_BASE64` 内容早已失效（解码后 ASN.1 报 `Tag number over 30`）。
+
+用 libsodium SealedBox 加密后经 API 把四个 secret 全部重写：
+
+| secret | 内容 |
+|---|---|
+| `KEYSTORE_BASE64` | `base64.b64encode(keystore.jks)`，5808 字节单行 |
+| `KEYSTORE_PASSWORD` | 取自 `keystore.properties` 的 `storePassword` |
+| `KEY_ALIAS` | `dsh-release` |
+| `KEY_PASSWORD` | 同 storePassword |
+
+```python
+pk = GET /actions/secrets/public-key
+box = SealedBox(PublicKey(pk['key']))
+PUT /actions/secrets/{name} {'encrypted_value': b64(box.encrypt(val)), 'key_id': pk['key_id']}
+```
+
+重跑后链路：`keytool -list` 通过 → `build.gradle.kts` 的 `signingConfigs.release` 生效 →
+`apksigner verify --print-certs` 通过 → artifact 为已签名 Release APK。
+
+### 验收三点
+
+1. `Verify signature` 步骤输出 `APK 签名可验` 且带 sha256。
+2. artifact `dsh-system-release` ≈144 MB。
+3. 之后任何一次 `android-release` 都应保持 `success`，除非钥匙再被动过。
