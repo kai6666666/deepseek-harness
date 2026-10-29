@@ -91,3 +91,22 @@ sed -i 's/sleep 0.3/sleep 1/' /data/local/tmp/mockrun.sh
 ⚠️ 别用 `pkill -f mocktool.mjs` 清场——它会连**执行这条命令的 sh 一起杀**（实测 `Terminated`，整个 adb shell 会话断）。要用 `home/mock.pid` 里的 pid 精确 kill。
 
 宿主侧本轮已修好并复测：`mockall.patch.yml`（7 个工具 + 3098）→ `--tools` = **9 PASS / 0 FAIL / 1 SKIP**。
+## ⑦ root 工具在 guest 真跑通（2026-10-29）
+
+```json
+{"type":"tool_call","callId":"call_mock_1","tool":"root","input":{"command":"id","description":"verify"}}
+{"type":"tool_result","callId":"call_mock_1","status":"completed",
+ "result":"uid=0(root) gid=0(root) groups=0(root) context=u:r:magisk:s0
+"}
+```
+
+前置条件（缺一不可）：
+
+| 条件 | 值 |
+|---|---|
+| guest adb | `127.0.0.1:5666` |
+| su 授权 | Magisk → 超级用户里把 `[SharedUID] Shell` 打开 |
+| mock 端口 | **28999**（3098/3099 在 guest 里被占） |
+| mockrun.sh | 就绪判据 `grep "listening"`（去掉 `^`）+ `sleep 1 × 20` + 只重试 2 次 |
+
+已知剩余：整套连跑时上一例的 mocktool 残留会撞端口，每次启动前需 `kill -9 $(cat home/mock.pid)` 并 `sleep 1`；单例（`rootcase.sh`）已稳定。
