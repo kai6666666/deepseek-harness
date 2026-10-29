@@ -1,5 +1,6 @@
 #!/system/bin/sh
-export MOCK_PORT=${MOCK_PORT:-28999}
+[ -f $R/home/mock.port ] && MOCK_PORT=$(cat $R/home/mock.port)
+export MOCK_PORT=${MOCK_PORT:-3098}
 # 设备侧：换 mock 工具 → 起 headless → 打印 tool_call/tool_result
 # 用法：sh mockrun.sh <tool> '<json args>' [patch.yml]
 R=/data/user/0/com.dsh.android/files
@@ -27,3 +28,7 @@ HOME=$R/home DSH_HOME=$R/home/.dsh PREFIX=$R/termux/usr PATH=$R/termux/usr/bin:$
  LD_PRELOAD=$R/liblinkcompat.so MOCK_KEY=dummy DSH_ROOT_RUNNER=$R/dsh-android-root.mjs \
  $N node_modules/@deepseek-ai/dsh/lib/bin.js --profile headless --patch $R/home/$PATCH --json mock 2>&1 \
  | grep -E 'tool_call|tool_result' | head -3
+RC1=$?
+kill $(cat $R/home/mock.pid) 2>/dev/null
+rm -f $R/home/mock.pid
+exit $RC1
