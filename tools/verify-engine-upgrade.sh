@@ -67,7 +67,12 @@ case "$*" in *--llmtools*)
   for a in "$@"; do [ "$prev" = "--only" ] && ONLY="--only $a"; prev="$a"; done
   RA="$ONLY"
   case "$*" in *--root*) RA="--root" ;; esac
-  LO=$(CLEAN=$CLEANFLAG SHOT=1 $N /data/local/tmp/verify-llm-tools.mjs $RA 2>&1)
+  # 兜底超时：真模型 + guest 慢设备时，单轮不设上限会把外层 adb 会话整段挂死
+  # （实测 guest 上卡满 30 分钟后 adb 直接 offline）。LLM_TIMEOUT 可调。
+  TMO=${LLM_TIMEOUT:-900}
+  TO=""
+  command -v timeout >/dev/null 2>&1 && TO="timeout $TMO"
+  LO=$(CLEAN=$CLEANFLAG SHOT=1 $TO $N /data/local/tmp/verify-llm-tools.mjs $RA 2>&1)
   RC=$?
   LN=$(echo "$LO" | grep '^SUMMARY' | tail -1)
   LN=${LN#SUMMARY }
