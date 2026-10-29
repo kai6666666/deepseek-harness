@@ -659,3 +659,59 @@ JOB 敏感文件与密钥扫描         success   ← 删掉 ci/debug.keystore �
 2. `ci.yml` 入口脚本自检 —— 结构性防回归（文件在不在、语法对不对、shebang 对不对）。
 3. `android-release` —— 真实出包 + `apksigner verify` 签名可验。
 4. `docs/agents/README.md` 顶部自检表 —— 新人五分钟知道该跑什么。
+
+## ⑯ 版本号单一来源体检（`tools/version.sh`）
+
+### 现状：三处版本号，靠人记
+
+| 位置 | 内容 | 谁在改 |
+|---|---|---|
+| `app/build.gradle.kts` | `versionName = "0.4.1-debug"`、`versionCode = 38` | 每个发版 |
+| `CHANGELOG.md` | 最新正式版标题 `## [0.4.1] — 2026-10-23` | 每个发版 |
+| 引擎版本 | `0.2.2-alpha.2`，散在 5 个脚本的默认值里 | 跟引擎升级 |
+
+### 一个脚本收口
+
+```bash
+sh tools/version.sh            # 打印体检表
+sh tools/version.sh --check    # CI 用，不一致即非 0
+sh tools/version.sh --print    # 只输出 versionName，给发布脚本取值
+```
+
+校验 5 条：
+
+1. `versionName` 能解析出来（去掉 `-debug` / `-gecko` 后缀取基版本）
+2. `CHANGELOG.md` 最新正式版标题 == 基版本
+3. `tools/build-engine-bin.sh` 默认引擎版本 == 断言值
+4. `tools/provision-glibc-host.sh` 默认引擎版本 == 断言值
+5. `tools/build-node-addon-system.sh` / `build-node-pty.sh` 的 `ENGINE_DIR` 版本 == 断言值
+
+断言值取自 `tools/verify-engine-upgrade.sh` 里那一行，天然保证「验的」和「编的」是同一个引擎。
+
+### 本次回执
+
+```text
+== 版本号体检 ==
+  app versionName                    0.4.1-debug
+  app versionCode                    38
+  CHANGELOG 最新正式版          0.4.1
+  引擎断言 (verify-engine-upgrade) 0.2.2-alpha.2
+  引擎 build-engine-bin            0.2.2-alpha.2
+  引擎 provision-glibc-host        0.2.2-alpha.2
+
+CHANGELOG = versionName            0.4.1                  OK
+  引擎默认值 build-engine-bin   0.2.2-alpha.2          OK
+  引擎默认值 provision-glibc-host 0.2.2-alpha.2          OK
+  引擎默认值 build-node-addon-system 0.2.2-alpha.2          OK
+  引擎默认值 build-node-pty     0.2.2-alpha.2          OK
+---- VERSION PASS  app=0.4.1-debug vc=38 engine=0.2.2-alpha.2
+```
+
+### 进 CI
+
+```yaml
+- name: 版本号同源检查
+  run: sh tools/version.sh --check
+```
+
+`tools/version.sh` 同时加进「验收入口脚本自检」的 `for` 列表，语法错也会被拦住。
