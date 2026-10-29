@@ -475,3 +475,61 @@ PUT /actions/secrets/{name} {'encrypted_value': b64(box.encrypt(val)), 'key_id':
 1. `Verify signature` 步骤输出 `APK 签名可验` 且带 sha256。
 2. artifact `dsh-system-release` ≈144 MB。
 3. 之后任何一次 `android-release` 都应保持 `success`，除非钥匙再被动过。
+
+## ⑬ 宿主联调复核（mockrun 自探测 + 末尾 sweep 之后）
+
+改动涉及 `tools/mockrun.sh`（端口自探测 + 按 `ps` 精确 sweep），所以把宿主侧三条真模型线一起复跑，确认没连带影响。
+
+### 三张表
+
+| 命令 | 断言行 | 结果 |
+|---|---|---|
+| `verify-all.sh --llmtools` | `[PASS] 真实模型工具 5/5 · SKIP 1 (root:FROZEN_NO_ROOT)` | 5 PASS / 0 FAIL / 0 SKIP，wrapper rc=0 |
+| `verify-all.sh --llmsplit` | 每例 `[PASS] 真实模型工具 1/1`（5 例各自冷启） | `---- llmsplit pass=5 fail=0` |
+| `verify-all.sh --llm` | `[PASS] 真实模型对话 uid=2000(shell) (retry)` | 5 PASS / 0 FAIL / 0 SKIP，wrapper rc=0 |
+
+### 关键回执
+
+```text
+== run suite: --llmtools ==
+[PASS] 引擎版本 0.2.2-alpha.2
+[PASS] 开发环境 nodejs 2/2 python 5/5 ssh 3/3 java 2/2 rust 1/2 go 1/1
+[PASS] 会话索引干净（1 条）
+[PASS] 引擎补丁标记 5/5 补丁标记命中
+[PASS] 真实模型工具 5/5 · SKIP 1 (root:FROZEN_NO_ROOT)
+----
+5 PASS / 0 FAIL / 0 SKIP
+---- wrapper rc=0
+```
+
+```text
+== llmsplit: 5 tools, cold start per case ==
+---- llmsplit pass=5 fail=0
+kept session-b30733a0-c6ee-462b-b26b-6f35a3b2fa35 removed 0
+```
+
+```text
+== run suite: --llm ==
+[PASS] 真实模型对话 uid=2000(shell) (retry)
+----
+5 PASS / 0 FAIL / 0 SKIP
+---- wrapper rc=0
+```
+
+### 两条踩坑记录（新增）
+
+1. **不要用 `run-as` 套 `verify-all.sh`**：脚本内部自己会 `run-as com.dsh.android`，外层再包一层会得到
+   `run-as: can't execute: Permission denied`，并连带 `force-stop` 报 `requires android.permission.FORCE_STOP_PACKAGES`（因为 uid 已变成 App）。
+   正确姿势：`sh /data/local/tmp/verify-all.sh --llmsplit` 直接用 shell（uid 2000）跑，脚本内部自己降权。
+2. `rust 1/2` 是上游 `rustup unsupported` 的既有边界，不是回归；dev-env 整体仍判 PASS。
+
+### 现在的全量绿表
+
+| 环境 / 线 | 命令 | 结果 |
+|---|---|---|
+| 宿主 mock 矩阵 | `verify-engine-upgrade.sh --tools` | 9 PASS / 0 FAIL / 1 SKIP |
+| 宿主 真模型工具 | `verify-all.sh --llmtools` | 5 PASS / 0 FAIL / 0 SKIP |
+| 宿主 真模型分例 | `verify-all.sh --llmsplit` | pass=5 / fail=0 |
+| 宿主 真模型对话 | `verify-all.sh --llm` | 5 PASS / 0 FAIL / 0 SKIP |
+| VMOS guest 7 工具 | `--tools --root --guest` | 8 PASS / 0 FAIL / 2 SKIP |
+| CI Release | `android-release` run 40898159904 | success，APK 签名可验 |
