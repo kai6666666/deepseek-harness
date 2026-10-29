@@ -52,8 +52,8 @@ if [ "$CNT" -le 3 ]; then ok "会话索引干净（$CNT 条）"; else ng "会话
 if [ "$GUEST" = "1" ]; then sk "引擎补丁标记（guest 跳过）"
 else
 PM=$($N /data/local/tmp/check-engine-patch-marks.mjs $R/engine 2>&1); PRC=$?
-fi
 if [ $PRC -eq 0 ]; then ok "引擎补丁标记 $(echo "$PM" | tail -1)"; else ng "引擎补丁标记"; say "$(echo "$PM" | grep '❌')"; fi
+fi
 
 case "$*" in *--ui*)
   OUT=$($N /data/local/tmp/urc3.mjs 2>&1); RC=$?
