@@ -134,3 +134,41 @@ guest 侧单例 root 已通（见 ⑦），但**整套连跑仍在第一例就 M
 - 推断：VMOS 的 KERNEL 型虚拟化把 guest 网络单独成栈，`/proc/net/*` 只反映**当前 netns**；被占的那个端口在另一个命名空间里
 - 下一步（脚本级，5~10 行）：`mockrun.sh` 起服前先用 node 自己 `net.createServer().listen(port)` 试绑；失败就 `port+1` 重试；成功后 `sed -i "s/:<old>\/v1/:<new>\/v1/" $R/home/$PATCH` 回写 patch，再起 mocktool
 - 现状：单例（`rootcase.sh`）稳定可用，`uid=0` 已取证；整套连跑等这段探测脚本
+## ⑩ guest 整套回执（2026-10-29 09:52）—— 7 个工具全 PASS
+
+```text
+[PASS] 引擎版本 0.2.2-alpha.2
+[FAIL] 开发环境 nodejs 2/2 python 0/5 ssh 0/3 java 0/2 rust 0/2 go 0/1
+[PASS] 会话索引干净（0 条）
+[FAIL] 引擎补丁标记
+[PASS] 工具 bubble
+[PASS] 工具 ui
+[PASS] 工具 logs
+[PASS] 工具 statusbar
+[PASS] 工具 browser
+[PASS] 工具 root
+----
+8 PASS / 2 FAIL / 0 SKIP
+```
+
+两个 FAIL 都是 guest 环境差异：
+
+| FAIL | 原因 |
+|---|---|
+| 开发环境 | dev-env 六组要 python/ssh/java/rust/go，guest 是干净 AOSP + Magisk，一个都没装 |
+| 引擎补丁标记 | 检查的是宿主引擎目录的 5 处改动，guest 装的同一 APK 但引擎目录结构不同 |
+
+**工具矩阵在 guest 上是 7/7，root 不再是 SKIP。**
+
+### 邫两个环境都能跑的前提（实测汇总）
+
+```sh
+# 1) 防 VMOS 被回收（必做，否则套件跑到一半 offline）
+cmd deviceidle whitelist +com.vmos.plus
+cmd appops set com.vmos.plus RUN_IN_BACKGROUND allow
+cmd appops set com.vmos.plus WAKE_LOCK allow
+
+# 2) 进虚拟机：VMOS 首页卡片右侧按钮 (1123,2330)，进后等 55s
+# 3) 跑套件
+adb -s 127.0.0.1:5666 shell 'su -c "sh /data/local/tmp/verify-engine-upgrade.sh --tools --root"'
+```
