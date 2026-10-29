@@ -122,7 +122,7 @@ jobs:
           } > keystore.properties
           chmod 600 keystore.jks keystore.properties
       - name: 构建 APK
-        run: bash ./gradlew :app:assembleRelease --console=plain --stacktrace
+        run: bash ./gradlew :app:assembleSystemRelease --console=plain --stacktrace
 
       - name: 产物清单
         if: always()
@@ -136,7 +136,7 @@ jobs:
       - name: Verify signature
         run: |
           set -e
-          APK=$(ls app/build/outputs/apk/release/*.apk | head -1)
+          APK=$(ls app/build/outputs/apk/system/release/*.apk | head -1)
           echo "APK=$APK"
           BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
           "$BT/apksigner" verify --print-certs "$APK"
