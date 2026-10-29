@@ -168,10 +168,10 @@ jobs:
       - name: 上传 APK
         uses: actions/upload-artifact@v4
         with:
-          name: dsh-system-debug
+          name: dsh-system-release
           path: |
-            app/build/outputs/apk/system/debug/*.apk
-            app/build/outputs/apk/system/debug/output-metadata.json
+            app/build/outputs/apk/system/release/*.apk
+            app/build/outputs/apk/system/release/output-metadata.json
           if-no-files-found: error
           retention-days: 14
 
