@@ -1,5 +1,4 @@
 name: android-release
-
 on:
   workflow_dispatch:
     inputs:
@@ -9,15 +8,98 @@ on:
         default: ''
 
 jobs:
-  release:
+  assemble:
+    name: assembleSystemDebug
     runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      ASSETS_TAG: ${{ github.event.inputs.assets_release || vars.ASSETS_RELEASE }}
+      STRICT_ASSETS: ${{ github.event.inputs.strict_assets || '0' }}
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-java@v4
+      - name: JDK 17
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
+
+      - name: Gradle 缓存
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties', '**/*.gradle.kts') }}
+          restore-keys: gradle-${{ runner.os }}-
+
+      - name: Android SDK（platform 35 + build-tools 35 + NDK 27）
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platforms;android-35 build-tools;35.0.0 ndk;27.0.12077973'
+          log-accepted-android-sdk-licenses: true
+
+      - name: 修可执行位（仓库从 Android 文件系统提交，没带 +x）
+        run: chmod +x gradlew tools/*.sh || true
+
+      - name: 铺构建资产
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash tools/ci-fetch-assets.sh
+
+      - name: 现场构建 engine.bin（无 Release 时）
+        if: env.ASSETS_TAG == ''
+        run: |
+          VER=0.2.2-alpha.2 OUT="$GITHUB_WORKSPACE/app/src/main/assets/engine.bin" \
+            bash tools/build-engine-bin.sh
+
+      - name: 现场构建 node-runtime.bin（无 Release 时）
+        if: env.ASSETS_TAG == ''
+        run: |
+          OUT="$GITHUB_WORKSPACE/app/src/main/assets/node-runtime.bin" \
+            bash tools/build-node-runtime.sh
+
+      - name: 现场构建原生产物 + pnpm
+        run: bash tools/build-native-assets.sh
+
+      - name: 现场打包插件资产（15 个 zip）
+        run: bash tools/build-plugin-assets.sh
+
+      # node-pty 没有 android 预编译二进制，用 NDK 从它自带的 src/unix/pty.cc 现编。
+      # -static-libstdc++ 是硬要求：动态链会拉 libc++_shared.so，Termux 里没有。
+      - name: 现场编 node-pty 绑定
+        run: bash tools/build-node-pty.sh
+
+      - name: 现场构建 sharp / ripgrep / adb
+        run: bash tools/build-extra-native.sh
+
+      # 需要 engine 副本里的 src/flock.c，所以只在「无 Release 现场装引擎」时跑。
+      - name: 现场编 node-addon-system（flock 绑定）
+        if: env.ASSETS_TAG == ''
+        run: bash tools/build-node-addon-system.sh
+
+      # 唯一造不出的一项：npm 包无 C 源码。有源码/外部产物就编，没有就 ::warning:: 并跳过。
+      - name: node-addon-require-builtin（插槽）
+        if: env.ASSETS_TAG == ''
+        run: bash tools/build-node-addon-require-builtin.sh
+
+      # check-frontend-syntax.mjs 需要 acorn；CI 里它自装会因 npm 告警走到 rc=2（＝跳检）。
+      - name: 预装 acorn
+        run: npm i --no-save --no-audit --no-fund acorn@8
+
+      # PowerShell 版的 Python 移植：esbuild 降级 + 语法复检 + 运行时 API 审计
+      - name: 现场生成 webview-compat
+        if: env.ASSETS_TAG == ''
+        run: python3 tools/build-webview_compat.py --engine /tmp/dsh-engine-0.2.2-alpha.2
+
+      - name: 工具链自检
+        run: |
+          java -version
+          bash ./gradlew --version --console=plain | sed -n '1,12p'
+          echo "ASSETS_TAG=${ASSETS_TAG:-<none>}"
+
+      - name: 编译门禁（engine 包，不需要资产）
+        run: KTCACHE="$HOME/.kt" bash tools/verify-engine.sh
 
       - name: Restore keystore
         env:
@@ -34,20 +116,43 @@ jobs:
             echo "keyPassword=$KEY_PASS"
           } > keystore.properties
           chmod 600 keystore.jks keystore.properties
+      - name: 构建 APK
+        run: bash ./gradlew :app:assembleRelease --console=plain --stacktrace
 
-      - name: Assemble release
-        run: chmod +x gradlew && ./gradlew :app:assembleRelease --no-daemon
+      - name: 产物清单
+        if: always()
+        run: |
+          echo '--- apk ---'
+          find app/build/outputs -name '*.apk' -printf '%10s  %p\n' 2>/dev/null || echo '(no apk)'
+          echo '--- 资产体积 ---'
+          du -sh app/src/main/assets || true
+          ls -lh app/src/main/assets/*.bin 2>/dev/null || true
 
       - name: Verify signature
         run: |
           set -e
           APK=$(ls app/build/outputs/apk/release/*.apk | head -1)
+          echo "APK=$APK"
           BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
           "$BT/apksigner" verify --print-certs "$APK"
-          sha256sum "$APK"
-          echo "sha256=$(sha256sum "$APK" | cut -d' ' -f1)" >> "$GITHUB_ENV"
-
-      - uses: actions/upload-artifact@v4
+          echo "sha256=$(sha256sum "$APK" | cut -d' ' -f1)" | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: 上传 APK
+        uses: actions/upload-artifact@v4
         with:
-          name: dsh-release-apk
-          path: app/build/outputs/apk/release/*.apk
+          name: dsh-system-debug
+          path: |
+            app/build/outputs/apk/system/debug/*.apk
+            app/build/outputs/apk/system/debug/output-metadata.json
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: 上传构建日志（失败时）
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          path: |
+            app/build/reports/**
+            build/reports/**
+          if-no-files-found: ignore
+          retention-days: 7
