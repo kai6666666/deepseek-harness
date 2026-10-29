@@ -45,5 +45,6 @@ HOME=$R/home DSH_HOME=$R/home/.dsh PREFIX=$R/termux/usr PATH=$R/termux/usr/bin:$
  | grep -E 'tool_call|tool_result' | head -3
 RC1=$?
 kill $(cat $R/home/mock.pid) 2>/dev/null
+for p in $(ps -A -o PID,ARGS 2>/dev/null | grep -F 'node /data/local/tmp/mocktool.mjs' | awk '{print $1}'); do kill -9 "$p" 2>/dev/null; done
 rm -f $R/home/mock.pid
 exit $RC1
