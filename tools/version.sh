@@ -31,6 +31,10 @@ if [ "${1:-}" = "--print" ]; then
     echo "$APP_VER"
     exit 0
 fi
+if [ "${1:-}" = "--base" ]; then
+    echo "$BASE_VER"
+    exit 0
+fi
 
 # ---- 2. CHANGELOG 最新正式版 ----
 CL_VER=""
