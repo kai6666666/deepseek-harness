@@ -4,7 +4,20 @@
 根目录的 [AGENTS.md](../../AGENTS.md) 只留**必读硬约束 + 构建命令 + 本索引**；
 细节全在这里，按需检索，不要整份读。
 
+## 5 分钟自检（三块环境各一条命令）
+
+| 线 | 命令 | 绿灯判据 |
+|---|---|---|
+| 宿主：mock 矩阵 + 三条真模型线 | `sh /data/local/tmp/verify-full.sh` | `---- FULL 4 PASS / 0 FAIL` |
+| 宿主快检（≈3 分钟） | `sh /data/local/tmp/verify-full.sh --quick` | `---- FULL 2 PASS / 0 FAIL` |
+| VMOS guest：7 工具含 root | `VMOS_ADB=127.0.0.1:5666 sh tools/verify-guest.sh` | `---- GUEST PASS  8 PASS / 0 FAIL / 2 SKIP` |
+| CI Release APK | `python3 tools/verify-ci.py` | `---- CI PASS  run=<id>` |
+
+三条硬前提：App 在前台且已解锁、`svc power stayon true`、**不要**把 `verify-all.sh` 包进 `run-as`。
+逐段回执与踩坑见 [verification.md](verification.md) ⑩ ~ ⑭。
+
 | 文件 | 主题 | 一句话 |
+|---|---|---|
 |---|---|---|
 | [constraints.md](constraints.md) | 两条硬约束 | 包名 15 字符、targetSdk ≤ 28。改错不报错但真机必炸 |
 | [build-and-ship.md](build-and-ship.md) | 构建、发行与发布 | gradle 任务、签名、夸克网盘上传与版本整理 |
