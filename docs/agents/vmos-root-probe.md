@@ -172,3 +172,49 @@ cmd appops set com.vmos.plus WAKE_LOCK allow
 # 3) 跑套件
 adb -s 127.0.0.1:5666 shell 'su -c "sh /data/local/tmp/verify-engine-upgrade.sh --tools --root"'
 ```
+
+## ⑩ 终局：两环境全绿（2026-10-29）
+
+### 宿主（Xiaomi 25104RADAC，无 su）
+```text
+$ run-as com.dsh.android sh -c 'sh /data/local/tmp/verify-engine-upgrade.sh --tools'
+[PASS] 引擎版本 0.2.2-alpha.2
+[PASS] 开发环境 nodejs 2/2 python 5/5 ssh 3/3 java 2/2 rust 2/2 go 1/1
+[PASS] 会话索引干净（0 条）
+[PASS] 引擎补丁标记 5/5
+[PASS] 工具 bubble / ui / logs / statusbar / browser
+[SKIP] 工具 root（冻结·待 root 环境）
+----
+9 PASS / 0 FAIL / 1 SKIP
+```
+
+### VMOS+ guest（Android 15 / API 35 / Magisk 30.7）
+```text
+$ adb -s 127.0.0.1:5666 shell 'su -c "sh /data/local/tmp/verify-engine-upgrade.sh --tools --root --guest"'
+[PASS] 引擎版本 0.2.2-alpha.2
+[SKIP] 开发环境（guest 跳过）
+[PASS] 会话索引干净（0 条）
+[SKIP] 引擎补丁标记（guest 跳过）
+[PASS] 工具 bubble
+[PASS] 工具 ui
+[PASS] 工具 logs
+[PASS] 工具 statusbar
+[PASS] 工具 browser
+[PASS] 工具 root      ← uid=0(root) gid=0(root) context=u:r:magisk:s0
+----
+8 PASS / 0 FAIL / 2 SKIP
+```
+
+### 跑出这张表所需的四个前置（缺一即红）
+
+1. `svc power stayon true` + `settings put system screen_off_timeout 1800000`：熄屏会让 VMOS 冻结、adbd 失联（`mWakefulness=Dozing` → `device offline`）。
+2. 屏幕顶部不能被遮挡：`ScreenOnProximitySensorGuide` 会拦截触摸，`wm dismiss-keyguard` 也解不开；从桌面拿起手机即可。
+3. `mockrun.sh` 末尾 sweep：`su -c` 下 `$!` 拿不到真实 PID，每例泄漏一个 `node mocktool.mjs`，累计占满 20 个探测窗口 → `NO_FREE_PORT`。用 `ps -A -o PID,ARGS` 里 `grep -F 'node .../mocktool.mjs'` 精确 kill（不碰执行脚本的 sh 自身）。
+4. `--guest`：guest 侧跳过 dev-env（依赖 python/ssh/java/rust/go）与补丁标记（宿主引擎目录），两者只在宿主有意义。
+
+### 两环境分工
+
+| 环境 | 覆盖 |
+|---|---|
+| 宿主 | 引擎版本、dev-env 六组、补丁标记、会话索引、6 工具（root 冻结） |
+| guest | 引擎版本、会话索引、**7 工具全跑（root 真实 uid=0）** |
