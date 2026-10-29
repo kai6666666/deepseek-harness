@@ -55,7 +55,10 @@ case "$*" in *--ui*)
 ;; esac
 
 case "$*" in *--llmtools*)
-  RA=""
+  ONLY=""
+  prev=""
+  for a in "$@"; do [ "$prev" = "--only" ] && ONLY="--only $a"; prev="$a"; done
+  RA="$ONLY"
   case "$*" in *--root*) RA="--root" ;; esac
   LO=$(CLEAN=$CLEANFLAG SHOT=1 $N /data/local/tmp/verify-llm-tools.mjs $RA 2>&1)
   RC=$?
@@ -63,7 +66,10 @@ case "$*" in *--llmtools*)
   LN=${LN#SUMMARY }
   if [ $RC -eq 0 ]; then ok "真实模型工具 $LN"; else ng "真实模型工具 ${LN:-no-summary}"; say "$(echo "$LO" | tail -7)"; fi
 ;; esac
-case "$*" in *--llm*)
+LLMON=0
+for a in "$@"; do [ "$a" = "--llm" ] && LLMON=1; done
+case $LLMON in
+  1)
   LO=$(CLEAN=$CLEANFLAG SHOT=1 $N /data/local/tmp/verify-llm-ui.mjs 2>&1 | tail -1)
   case "$LO" in
     HIT*) ok "真实模型对话 ${LO#HIT }" ;;
