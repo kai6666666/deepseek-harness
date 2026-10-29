@@ -1,0 +1,33 @@
+# mockall.patch.yml —— mock provider + 全部 7 个工具插件（宿主与 VMOS guest 通用）
+# 端口 18999（3099 在 guest 里被占，EADDRINUSE）
+- insert:
+    - id: llm-pi-ai
+      name: '@deepseek-ai/dsh-llm-pi-ai'
+      config:
+        providers:
+          mock:
+            displayName: Mock
+            api: openai-completions
+            baseURL: 'http://127.0.0.1:18999/v1'
+            apiKeyEnv: MOCK_KEY
+            models:
+              - id: mock-1
+                input:
+                  - text
+    - id: agent-default-model
+      name: '@deepseek-ai/dsh-agent-default-model'
+      config:
+        provider: mock
+        model: mock-1
+    - id: dsh-android-bubble
+      name: 'file:///data/user/0/com.dsh.android/files/home/.dsh/bubble-tool/dsh-android-bubble/lib/index.js'
+    - id: dsh-android-logs
+      name: 'file:///data/user/0/com.dsh.android/files/home/.dsh/logs-tool/dsh-android-logs/lib/index.js'
+    - id: dsh-android-statusbar
+      name: 'file:///data/user/0/com.dsh.android/files/home/.dsh/statusbar-tool/dsh-android-statusbar/lib/index.js'
+    - id: dsh-android-uiagent
+      name: 'file:///data/user/0/com.dsh.android/files/home/.dsh/uiagent-tool/dsh-android-uiagent/lib/index.js'
+    - id: dsh-android-browser
+      name: 'file:///data/user/0/com.dsh.android/files/home/.dsh/browser-tool/dsh-android-browser/lib/index.js'
+    - id: dsh-android-root
+      name: 'file:///data/user/0/com.dsh.android/files/home/.dsh/root-tool/dsh-android-root/lib/index.js'
