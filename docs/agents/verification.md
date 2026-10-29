@@ -1,5 +1,57 @@
 # 引擎包独立编译验证
 
+
+## 📋 验收手册（一页版）
+
+> 只想确认「现在这套还能不能跑」——照下表从上到下走一遍，每行都有**绿灯判据**，全绿即闭环。
+> 细节与踩坑在下文 ⑩ ~ ⑯，本节只做索引与判据。
+
+### A. 设备侧（宿主真机，shell uid 2000）
+
+| 项 | 命令 | 绿灯判据 |
+|---|---|---|
+| 全链路（≈10 分钟） | `sh /data/local/tmp/verify-full.sh` | `---- FULL 4 PASS / 0 FAIL` |
+| 快检（≈3 分钟） | `sh /data/local/tmp/verify-full.sh --quick` | `---- FULL 2 PASS / 0 FAIL` |
+| 只看 mock 矩阵 | `run-as com.dsh.android sh -c 'sh /data/local/tmp/verify-engine-upgrade.sh --tools'` | `9 PASS / 0 FAIL / 1 SKIP` |
+| 只看真模型工具 | `sh /data/local/tmp/verify-all.sh --llmtools` | `5 PASS / 0 FAIL / 0 SKIP` |
+| 版本号同源 | `sh tools/version.sh --check` | `---- VERSION PASS  app=… vc=… engine=…` |
+
+**硬前提**：App 在前台且已解锁；`svc power stayon true`；**不要**把 `verify-all.sh` 包进 `run-as`（脚本内部自己降权，外层包会 `Permission denied`）。
+
+### B. VMOS+ guest
+
+| 项 | 命令 | 绿灯判据 |
+|---|---|---|
+| 7 工具含 root | `VMOS_ADB=127.0.0.1:5666 sh tools/verify-guest.sh` | `---- GUEST PASS  8 PASS / 0 FAIL / 2 SKIP` |
+
+**硬前提**：手机顶部无遮挡（`ScreenOnProximitySensorGuide` 会拦触摸）→ 进 `VmScreenActivity` → 等 55s → 再 connect。
+
+### C. CI
+
+| 项 | 命令 | 绿灯判据 |
+|---|---|---|
+| 仓库卫生（3 job） | `python3 tools/verify-ci.py`（或看 Actions 页） | 三 job 全 `success` |
+| Release 出包 | `android-release`（matrix: system / gecko） | 两个 flavor 均 `success`，artifact `dsh-<flavor>-release` |
+| 签名可验 | job 内 `Verify signature` | 输出 `APK 签名可验 sha256=…` |
+
+### D. CI 里的四道闸
+
+| 闸 | 拦什么 |
+|---|---|
+| `验收入口脚本自检` | 入口脚本被删 / `sh -n` 语法坏 / shebang 不对 |
+| `版本号同源检查` | `versionName` / `versionCode` / CHANGELOG `vc=` / 5 处引擎默认值不一致 |
+| `敏感文件与密钥扫描` | `*.jks` / `*.keystore` / `keystore.properties` / 真实 API key 入库 |
+| `相对链接必须指向存在的文件` | 文档链接指向已删文件 |
+
+### E. 发版前必做
+
+```bash
+sh tools/version.sh --check     # 不同源直接中止
+./tools/release-server.sh        # 内部已内置同一道闸（SKIP_VER_CHECK=1 才跳过）
+```
+
+---
+
 > 目的：在没有 Android SDK / Gradle 全量工具链的环境里，也能对 `app/src/main/java/com/dsh/android/engine/` 做**真实的类型检查**（不是肉眼审阅）。
 > 记录时间：2026-10-26
 
