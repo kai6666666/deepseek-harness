@@ -804,3 +804,28 @@ SKIP_VER_CHECK=1 ./release.sh
 为什么卡在构建前：源码里 versionName 已改、CHANGELOG 没跟上时，打出来的包
 包名对、版本号对，但**用户看到的更新说明是错的**，事后无从追溯。闸门放在最前面，
 成本接近零；放在最后就变成「先烧 2 分钟 CPU 再报错」。
+
+### ⑯.3 guest 真模型线的前置与兜底
+
+在 VMOS guest 里跑真模型工具线（`--llmtools`）比宿主苛刻，实测踩到两条：
+
+1. **单轮没有上限会把整段 adb 会话挂死**：guest 上真模型调一轮可能远超 5 分钟，
+   外层 `adb shell` 会一直等；一旦 VMOS 被切后台/挂起，连接直接 `offline`，命令卡满 30 分钟才返回。
+   现在 `verify-engine-upgrade.sh` 给 node 调用套了 `timeout ${LLM_TIMEOUT:-900}`（无 `timeout` 命令则自动跳过）。
+2. **guest 侧必须是前台 + 已登录**：真模型要驱动 App UI，VMOS 一旦退到后台就被挂起，adbd 随之失联。
+
+跑法与判据：
+
+```bash
+# 宿主（无超时问题，约 5 分钟）
+sh /data/local/tmp/verify-all.sh --llmtools
+
+# guest（先把 VMOS 停在虚拟机界面 ≥50s，再连）
+S=127.0.0.1:5666
+adb connect $S
+adb -s $S shell 'su -c "LLM_TIMEOUT=600 sh /data/local/tmp/verify-engine-upgrade.sh --llmtools --guest"'
+# 判据：[PASS] 真实模型工具 5/5 · SKIP 1 (root:FROZEN_NO_ROOT)  → 5 PASS / 0 FAIL / 2 SKIP
+```
+
+若 guest 里 App 未登录模型账号，这一线会退化成「无可用模型」，属环境边界而非回归——
+此时只跑 mock 矩阵（`--tools --root --guest`）即可，它不依赖登录态。
