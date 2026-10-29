@@ -299,6 +299,7 @@ run-as com.dsh.android sh /data/local/tmp/verify-engine-upgrade.sh --llmtools --
 | `--llm` | 已登录账号真跑一轮，校验 shell 输出 `uid=2000`（失败自动重试一次） |
 | `--tools` | mock 驱动 7 工具矩阵（`root` 默认 SKIP，见 ⑧） |
 | `--root` | 配合 `--tools` / `--llmtools` 启用 root 用例（设备或 VMOS 有 su 时才用） |
+| `--guest` | guest 环境：跳过 dev-env 与补丁标记（它们只在宿主有意义） |
 | `--clean` | 删掉本次测试会话（保留当前 UI 那条），只留 `llm-evidence-<ts>.txt` |
 | `--baseline` / `--latest` | 与历史结果比对，回归 exit 2 |
 | `--json` | 纯 JSON 输出 + `verify-<ts>.json` 存档（含 `pass` / `fail` / `skip` / `checks`） |
