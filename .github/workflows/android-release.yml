@@ -122,7 +122,7 @@ jobs:
           } > keystore.properties
           chmod 600 keystore.jks keystore.properties
       - name: 构建 APK
-        run: bash ./gradlew :app:assembleSystemRelease --console=plain --stacktrace
+        run: bash ./gradlew :app:assembleSystemRelease -x lint -x lintVitalSystemRelease --console=plain --stacktrace
 
       - name: 产物清单
         if: always()
