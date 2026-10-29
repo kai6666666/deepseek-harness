@@ -115,7 +115,8 @@ jobs:
         run: |
           fail=0
           for f in tools/verify-full.sh tools/verify-guest.sh tools/verify-all.sh \
-                   tools/verify-engine-upgrade.sh tools/mockrun.sh; do
+                   tools/verify-engine-upgrade.sh tools/mockrun.sh \
+                   tools/version.sh; do
             if [ ! -f "$f" ]; then
               echo "::error::缺少入口脚本 $f"
               fail=1
