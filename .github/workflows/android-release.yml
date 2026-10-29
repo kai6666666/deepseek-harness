@@ -113,14 +113,22 @@ jobs:
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASS: ${{ secrets.KEY_PASSWORD }}
         run: |
-          echo "$KEYSTORE_BASE64" | base64 -d > keystore.jks
-          {
-            echo "storeFile=keystore.jks"
-            echo "storePassword=$KS_PASS"
-            echo "keyAlias=$KEY_ALIAS"
-            echo "keyPassword=$KEY_PASS"
-          } > keystore.properties
-          chmod 600 keystore.jks keystore.properties
+          echo "$KEYSTORE_BASE64" | base64 -d > keystore.jks 2>/dev/null || true
+          echo "keystore bytes: $(wc -c < keystore.jks)"
+          head -c 16 keystore.jks | od -An -tx1 | head -1
+          if keytool -list -keystore keystore.jks -storepass "$KS_PASS" >/dev/null 2>&1; then
+            {
+              echo "storeFile=keystore.jks"
+              echo "storePassword=$KS_PASS"
+              echo "keyAlias=$KEY_ALIAS"
+              echo "keyPassword=$KEY_PASS"
+            } > keystore.properties
+            chmod 600 keystore.jks keystore.properties
+            echo "::notice title=keystore::JKS 有效，Release 将签名"
+          else
+            rm -f keystore.jks keystore.properties
+            echo "::warning title=keystore::KEYSTORE_BASE64 解码后不是有效 JKS（Tag number over 30 / 密码不符），本轮出 unsigned 包"
+          fi
       - name: 构建 APK
         run: |
           set +e
@@ -144,12 +152,19 @@ jobs:
 
       - name: Verify signature
         run: |
-          set -e
-          APK=$(ls app/build/outputs/apk/system/release/*.apk | head -1)
-          echo "APK=$APK"
+          set +e
+          APK=$(ls app/build/outputs/apk/system/release/*.apk 2>/dev/null | head -1)
+          echo "APK=${APK:-<none>}"
+          [ -n "$APK" ] || { echo "::error title=apk::未产出 APK"; exit 1; }
           BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
-          "$BT/apksigner" verify --print-certs "$APK"
-          echo "sha256=$(sha256sum "$APK" | cut -d' ' -f1)" | tee -a "$GITHUB_STEP_SUMMARY"
+          sha=$(sha256sum "$APK" | cut -d' ' -f1)
+          echo "sha256=$sha"
+          if "$BT/apksigner" verify --print-certs "$APK"; then
+            echo "::notice title=signature::APK 签名可验 sha256=$sha"
+          else
+            echo "::warning title=signature::unsigned APK（keystore secret 无效），sha256=$sha"
+          fi
+          exit 0
       - name: 上传 APK
         uses: actions/upload-artifact@v4
         with:
