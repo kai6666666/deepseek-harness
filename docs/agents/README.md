@@ -12,6 +12,7 @@
 | 宿主快检（≈3 分钟） | `sh /data/local/tmp/verify-full.sh --quick` | `---- FULL 2 PASS / 0 FAIL` |
 | VMOS guest：7 工具含 root | `VMOS_ADB=127.0.0.1:5666 sh tools/verify-guest.sh` | `---- GUEST PASS  8 PASS / 0 FAIL / 2 SKIP` |
 | CI Release APK | `python3 tools/verify-ci.py` | `---- CI PASS  run=<id>` |
+| 版本号同源 | `sh tools/version.sh --check` | `---- VERSION PASS` |
 
 三条硬前提：App 在前台且已解锁、`svc power stayon true`、**不要**把 `verify-all.sh` 包进 `run-as`。
 逐段回执与踩坑见 [verification.md](verification.md) ⑩ ~ ⑭。
