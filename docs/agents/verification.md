@@ -715,3 +715,23 @@ CHANGELOG = versionName            0.4.1                  OK
 ```
 
 `tools/version.sh` 同时加进「验收入口脚本自检」的 `for` 列表，语法错也会被拦住。
+
+### ⑯.1 发布脚本也走同一来源
+
+`tools/release-server.sh` 原来自己 grep：
+
+```diff
+-  VER=$(grep -oP 'versionName\s*=\s*"\K[^"]+' app/build.gradle.kts | head -1)
++  VER=$(sh tools/version.sh --print)
+```
+
+顺带给 `version.sh` 加了 `--base`（剥掉 `-debug` / `-gecko` 后缀），需要干净版本号时用它：
+
+```bash
+sh tools/version.sh --print    # 0.4.1-debug   ← APK badging 里的真实值，打包校验用这个
+sh tools/version.sh --base     # 0.4.1         ← 文件名/CHANGELOG 用这个
+```
+
+为什么保留 raw 值：`build.gradle.kts` 的 `defaultConfig.versionName` 就是 `0.4.1-debug`，Release APK 的
+`aapt dump badging` 读出来也是 `0.4.1-debug`，所以 `release-server.sh` 里那句
+`*"versionName='$VER'"*` 必须用 raw，用 base 会判不匹配。
