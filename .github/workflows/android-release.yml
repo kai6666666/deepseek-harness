@@ -122,7 +122,16 @@ jobs:
           } > keystore.properties
           chmod 600 keystore.jks keystore.properties
       - name: 构建 APK
-        run: bash ./gradlew :app:assembleSystemRelease -x lint -x lintVitalSystemRelease --console=plain --stacktrace
+        run: |
+          set +e
+          bash ./gradlew :app:assembleSystemRelease -x lint -x lintVitalSystemRelease --console=plain --stacktrace 2>&1 | tee /tmp/apk-build.log
+          rc=${PIPESTATUS[0]}
+          if [ $rc -ne 0 ]; then
+            echo "::error title=gradle-rc::exit $rc"
+            grep -n -A8 'What went wrong' /tmp/apk-build.log | head -24 | while IFS= read -r l; do echo "::error title=detail::$l"; done
+            grep -E '^(FAILURE:|Caused by:|e: |> Task .* FAILED)' /tmp/apk-build.log | head -10 | while IFS= read -r l; do echo "::error title=gradle::$l"; done
+          fi
+          exit $rc
 
       - name: 产物清单
         if: always()
