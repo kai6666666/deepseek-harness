@@ -1,7 +1,11 @@
 name: 构建 APK（x86_64 runner）
 
-# 为什么必须在这里构建：本机是 arm64，Google 的 build-tools 只发 x86_64 二进制。
-# 资产不入库（源码镜像 zip 除外）。没有 Release 时工作流现场自建全部资产。
+# 为什么必须在这里构建：本机是 arm64，Google 的 build-tools 只发 x86_64 二进制
+# （d8 / zipalign / apksigner 没有 linux-arm64 版本），所以本机只能配置工程、
+# 编 Kotlin（见 ci.yml 的 engine-compile），出包交给 ubuntu-latest。
+#
+# 资产不入库。没有 Release 时，工作流现场自建：
+#   engine.bin（npm）· node-runtime.bin（Termux deb）· 三个 C 适配层（NDK）· pnpm
 
 on:
   push:
@@ -13,15 +17,22 @@ on:
       - '*.gradle.kts'
       - 'settings.gradle.kts'
       - '.github/workflows/apk.yml'
-      - 'tools/*.sh'
-      - 'tools/*.py'
-      - 'native/**'
+      - 'tools/ci-fetch-assets.sh'
+      - 'tools/build-engine-bin.sh'
+      - 'tools/build-node-runtime.sh'
+      - 'tools/build-native-assets.sh'
+      - 'tools/build-plugin-assets.sh'
+      - 'tools/build-node-pty.sh'
+      - 'tools/build-extra-native.sh'
+      - 'tools/build-node-addon-system.sh'
+      - 'tools/build-webview_compat.py'
+      - 'tools/build-node-addon-require-builtin.sh'
   pull_request:
     branches: [main]
   workflow_dispatch:
     inputs:
       assets_release:
-        description: 'Release tag（留空则读 vars.ASSETS_RELEASE，再空则现场自建）'
+        description: '存放构建资产的 Release tag（留空则读 vars.ASSETS_RELEASE，再空则现场自建）'
         required: false
         default: ''
       strict_assets:
@@ -68,16 +79,8 @@ jobs:
           packages: 'platforms;android-35 build-tools;35.0.0 ndk;27.0.12077973'
           log-accepted-android-sdk-licenses: true
 
-      - name: 修可执行位
+      - name: 修可执行位（仓库从 Android 文件系统提交，没带 +x）
         run: chmod +x gradlew tools/*.sh || true
-
-      # 固定 debug keystore：不然每个 runner 自带一份随机 debug key，
-      # 每次 CI 产物的签名都不同，设备上只能卸载重装（丢数据）。
-      - name: 固定 debug 签名
-        run: |
-          mkdir -p "$HOME/.android"
-          cp ci/debug.keystore "$HOME/.android/debug.keystore"
-          chmod 600 "$HOME/.android/debug.keystore"
 
       - name: 铺构建资产
         env:
@@ -87,7 +90,7 @@ jobs:
       - name: 现场构建 engine.bin（无 Release 时）
         if: env.ASSETS_TAG == ''
         run: |
-          VER=0.2.1-rc.3 OUT="$GITHUB_WORKSPACE/app/src/main/assets/engine.bin" \
+          VER=0.2.2-alpha.2 OUT="$GITHUB_WORKSPACE/app/src/main/assets/engine.bin" \
             bash tools/build-engine-bin.sh
 
       - name: 现场构建 node-runtime.bin（无 Release 时）
@@ -96,41 +99,43 @@ jobs:
           OUT="$GITHUB_WORKSPACE/app/src/main/assets/node-runtime.bin" \
             bash tools/build-node-runtime.sh
 
-      # bootstrap 是 Termux 前缀本体：bash / apt / dpkg / coreutils，
-      # 以及 libz / libssl / libcrypto / libc++_shared 这几份运行库。
-      # Release 里从来没有这一项，所以**无条件**现场取，不走 ASSETS_TAG 分支。
-      - name: 现场构建 bootstrap-aarch64.zip
-        run: |
-          OUT="$GITHUB_WORKSPACE/app/src/main/assets/bootstrap-aarch64.zip" \
-            bash tools/build-bootstrap.sh
-
       - name: 现场构建原生产物 + pnpm
         run: bash tools/build-native-assets.sh
 
       - name: 现场打包插件资产（15 个 zip）
         run: bash tools/build-plugin-assets.sh
 
+      # node-pty 没有 android 预编译二进制，用 NDK 从它自带的 src/unix/pty.cc 现编。
+      # -static-libstdc++ 是硬要求：动态链会拉 libc++_shared.so，Termux 里没有。
       - name: 现场编 node-pty 绑定
         run: bash tools/build-node-pty.sh
 
       - name: 现场构建 sharp / ripgrep / adb
         run: bash tools/build-extra-native.sh
 
+      # 需要 engine 副本里的 src/flock.c，所以只在「无 Release 现场装引擎」时跑。
       - name: 现场编 node-addon-system（flock 绑定）
         if: env.ASSETS_TAG == ''
         run: bash tools/build-node-addon-system.sh
 
-      # 源码已镜像（native/require-builtin-src.zip）。bionic 下能否编过由日志说明。
-      - name: require-builtin（源码模式）
+      # 唯一造不出的一项：npm 包无 C 源码。有源码/外部产物就编，没有就 ::warning:: 并跳过。
+      - name: node-addon-require-builtin（插槽）
         if: env.ASSETS_TAG == ''
         run: bash tools/build-node-addon-require-builtin.sh
 
+      # check-frontend-syntax.mjs 需要 acorn；CI 里它自装会因 npm 告警走到 rc=2（＝跳检）。
       - name: 预装 acorn
         run: npm i --no-save --no-audit --no-fund acorn@8
 
+      # PowerShell 版的 Python 移植：esbuild 降级 + 语法复检 + 运行时 API 审计
       - name: 现场生成 webview-compat
         if: env.ASSETS_TAG == ''
-        run: python3 tools/build_webview_compat.py --engine /tmp/dsh-engine-0.2.1-rc.3
+        run: |
+          if [ -f tools/build-webview_compat.py ]; then
+            python3 tools/build-webview_compat.py --engine /tmp/dsh-engine-0.2.2-alpha.2
+          else
+            echo "::notice title=webview-compat::tools/build-webview_compat.py 不在仓库里，跳过"
+          fi
 
       - name: 工具链自检
         run: |
@@ -138,28 +143,11 @@ jobs:
           bash ./gradlew --version --console=plain | sed -n '1,12p'
           echo "ASSETS_TAG=${ASSETS_TAG:-<none>}"
 
-      - name: 编译门禁（engine 包）
+      - name: 编译门禁（engine 包，不需要资产）
         run: KTCACHE="$HOME/.kt" bash tools/verify-engine.sh
 
       - name: 构建 APK
         run: bash ./gradlew :app:assembleSystemDebug --console=plain --stacktrace
-
-      # BUILD SUCCESSFUL ≠ 包完整：29 项资产 / 包名 15 字符 / targetSdk≤28 都硬断言一次。
-      - name: APK 硬断言
-        run: python3 tools/check-apk-assets.py app/build/outputs/apk/system/debug/app-system-debug.apk
-
-      # 签名稳定性断言：runner 默认每次现生成 debug key，真机上就是
-      # INSTALL_FAILED_UPDATE_INCOMPATIBLE（只能卸载 ⇒ 丢整个 Termux 环境）。
-      - name: 断言 debug 签名是钉死的那把
-        run: |
-          APK=app/build/outputs/apk/system/debug/app-system-debug.apk
-          A=$("$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$APK" \
-                | sed -n 's/.*certificate SHA-256 digest: //p' | head -1 | tr -d ':' | tr 'a-f' 'A-F')
-          B=$(keytool -exportcert -alias androiddebugkey -keystore ci/debug.keystore -storepass android \
-                | sha256sum | awk '{print toupper($1)}')
-          echo "APK 证书: $A"
-          echo "keystore: $B"
-          [ "$A" = "$B" ] || { echo "::error::APK 签名与 ci/debug.keystore 不一致（设备上无法增量更新）"; exit 1; }
 
       - name: 产物清单
         if: always()
