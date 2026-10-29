@@ -139,6 +139,8 @@ jobs:
             || { echo "::error file=tools/verify-guest.sh::首行必须是 #!/bin/sh"; fail=1; }
           [ "$fail" -eq 0 ] && echo "✅ 验收入口脚本齐全且语法通过"
           exit $fail
+      - name: 版本号同源检查
+        run: sh tools/version.sh --check
       - name: 相对链接必须指向存在的文件
         run: |
           # 只校验仓库内的相对 .md 链接；跳过 http(s)、绝对路径、纯锚点。
