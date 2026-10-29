@@ -31,7 +31,7 @@ echo "▶ 项目根：$PROJ"
 if [ -n "${1:-}" ]; then
   VER="$1"
 else
-  VER=$(grep -oP 'versionName\s*=\s*"\K[^"]+' app/build.gradle.kts | head -1)
+  VER=$(sh tools/version.sh --print)
 fi
 [ -z "$VER" ] && { echo "❌ 读不到 versionName"; exit 1; }
 echo "▶ 目标版本：$VER"
