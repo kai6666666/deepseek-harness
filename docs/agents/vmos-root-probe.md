@@ -128,3 +128,9 @@ export MOCK_PORT=${MOCK_PORT:-3098}
 宿主侧已复测：`--tools` = **9 PASS / 0 FAIL / 1 SKIP**。
 
 guest 侧单例 root 已通（见 ⑦），但**整套连跑仍在第一例就 MOCK_BIND_FAILED**：说明 28999 在 guest 里被持续占用（需用 root 读 `cat /proc/net/tcp` 定位占用者）。已给 `mockrun.sh` 加上用完即收（`kill $(cat home/mock.pid)`），下一步换到 guest 确实空闲的端口。
+## ⑨ guest 整套：端口占用看不见（2026-10-29）
+
+- 现象：`home/mock.port=47111`，`/proc/net/tcp{,6}` 里 **查不到 b807**，`ps` 也没有它，但 mocktool 首次启动就报 `EADDRINUSE: 127.0.0.1:47111`
+- 推断：VMOS 的 KERNEL 型虚拟化把 guest 网络单独成栈，`/proc/net/*` 只反映**当前 netns**；被占的那个端口在另一个命名空间里
+- 下一步（脚本级，5~10 行）：`mockrun.sh` 起服前先用 node 自己 `net.createServer().listen(port)` 试绑；失败就 `port+1` 重试；成功后 `sed -i "s/:<old>\/v1/:<new>\/v1/" $R/home/$PATCH` 回写 patch，再起 mocktool
+- 现状：单例（`rootcase.sh`）稳定可用，`uid=0` 已取证；整套连跑等这段探测脚本
