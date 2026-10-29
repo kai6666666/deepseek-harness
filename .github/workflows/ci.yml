@@ -1,8 +1,8 @@
 name: 仓库卫生检查
-
 # 本工作流**不构建 APK** —— 出包在 `.github/workflows/apk.yml`（ubuntu-latest，x86_64，
 # 因为 Google 的 build-tools 没有 linux-arm64 版）。这里只做不需要资产的检查：
-# 密钥/大文件拦截、文档锚点核对、engine 包的独立编译门禁。详见 docs/agents/ci-build.md。
+# 密钥/大文件拦截、文档锚点核对、engine 包的独立编译门禁。
+# 详见 docs/agents/ci-build.md。
 
 on:
   push:
@@ -38,10 +38,7 @@ jobs:
               fail=1
             fi
           done
-          # ⚠️ 例外：ci/debug.keystore —— 这是 Android SDK 的**公开 debug 钥匙**
-          #   （storepass=android，全宇宙同一把），不是私钥。它必须入库，否则每次 CI
-          #   都是 runner 随机生成的新 debug key，签名一变设备就只能卸载重装（丢数据）。
-          if git ls-files | grep -E '\.(jks|keystore)$' | grep -v '^ci/debug\.keystore$' | grep -q .; then
+          if git ls-files | grep -E '\.(jks|keystore)$' | grep -q .; then
             echo "::error::签名私钥（*.jks / *.keystore）被提交了"
             fail=1
           fi
@@ -114,6 +111,34 @@ jobs:
           [ "$fail" -eq 0 ] && echo "✅ 必备文档齐全"
           exit $fail
 
+      - name: 验收入口脚本自检
+        run: |
+          fail=0
+          for f in tools/verify-full.sh tools/verify-guest.sh tools/verify-all.sh \
+                   tools/verify-engine-upgrade.sh tools/mockrun.sh; do
+            if [ ! -f "$f" ]; then
+              echo "::error::缺少入口脚本 $f"
+              fail=1
+              continue
+            fi
+            if ! sh -n "$f"; then
+              echo "::error file=$f::POSIX sh 语法错误"
+              fail=1
+            fi
+          done
+          if [ -f tools/verify-ci.py ]; then
+            python3 -c "compile(open('tools/verify-ci.py').read(),'tools/verify-ci.py','exec')" \
+              || { echo "::error file=tools/verify-ci.py::Python 语法错误"; fail=1; }
+          else
+            echo "::error::缺少 tools/verify-ci.py"
+            fail=1
+          fi
+          head -1 tools/verify-full.sh | grep -q '^#!/system/bin/sh' \
+            || { echo "::error file=tools/verify-full.sh::首行必须是 #!/system/bin/sh"; fail=1; }
+          head -1 tools/verify-guest.sh | grep -q '^#!/bin/sh' \
+            || { echo "::error file=tools/verify-guest.sh::首行必须是 #!/bin/sh"; fail=1; }
+          [ "$fail" -eq 0 ] && echo "✅ 验收入口脚本齐全且语法通过"
+          exit $fail
       - name: 相对链接必须指向存在的文件
         run: |
           # 只校验仓库内的相对 .md 链接；跳过 http(s)、绝对路径、纯锚点。
