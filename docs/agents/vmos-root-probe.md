@@ -1,64 +1,55 @@
-# VMOS+ 的 root 与 adb 探测（2026-10-29 实测）
+# VMOS+ 的 root 与 adb（2026-10-29 实测，已拿到 uid=0）
 
-> 目标：自行拿到 VMOS+ 的 `ip:port` 与 `su` 路径，为 `--root` 用例铺路。
-> 结论先说：**这套 Android 15 内核镜像自带 `supportRoot: false`，因此没有可用的 root；guest 的 adb 也不在宿主 loopback 上。**
+> 上一版结论（`supportRoot:false` ⇒ 没有 root）已被实测推翻：ROM 元数据说 false，但镜像**预装了 Magisk 30.7**，`su` 可用，只是默认不给 `adb shell` 授权。
 
-## ① 实测结论
+## ① 最终值
 
-| 项 | 实测值 | 判据 |
-|---|---|---|
-| VMOS 版本 | `com.vmos.plus`，进程 `:server` / `:vms01` / `vmos:init_1` | `pm list packages`、`ps -A` |
-| guest 系统 | Android 15 / API 35 / romVersion `20008` | `guestOSInfo`（ROM 包内） |
-| **root 支持** | **`"supportRoot": false`** | 同上 |
-| 虚拟化类型 | `romType: KERNEL`、`libvmoskernel.so` | ROM 包内文件 |
-| **guest adb** | **未暴露到宿主**：全量 LISTEN 端口里只有宿主自己的 adbd 应答 `CNXN` | 见 ② |
-| 宿主 adb | `127.0.0.1:5666` → `device`，`uid=2000(shell)`，型号 `25104RADAC`，SDK 35 | `adb connect` 实测 |
-| `su` 路径 | 该 ROM **不提供**（`supportRoot:false`，包内无 `su` 二进制） | ROM 包 560 条目全量列表 |
+| 项 | 值 |
+|---|---|
+| **ADB 地址** | **`192.168.110.244:5666`**（VMOS 设置页「调试 → ADB 调试」；`127.0.0.1:5666` 同样直通） |
+| 连接结果 | `adb connect 127.0.0.1:5666` → `device`，`ro.build.version.sdk=35`（guest；宿主是 36） |
+| **su 路径** | **`/system/bin/su`** → `./magisk`；另有 `/debug_ramdisk/su`、`/system/xbin/su`（三条都通） |
+| root 管理器 | Magisk **30.7:MAGISK:R (30700)**，Ramdisk=是，Zygisk=否，`SELinux=Disabled` |
+| **root 回执** | 授权后 `su -c id` → **`uid=0(root) gid=0(root) groups=0(root)`**，`RC=0` |
+| guest 系统 | Android 15 / API 35 / romVersion 20008 / `romType: KERNEL` |
 
-`guestOSInfo` 原文（节选）：
+## ② 授权那一步（关键）
 
-```json
-{
-  "guestSystemVersion": "ANDROID_15",
-  "requiredEngineType": "KERNEL",
-  "supportAbis": "arm64",
-  "romVersion": "20008",
-  "supportRoot": false,
-  "supportFilesExchange": true,
-  "isMultiInstance": true,
-  "androidVersion": "15",
-  "apiLevel": 35,
-  "kernelRuntimeProfile": "a15-arm64-generation-v2"
-}
-```
-
-## ② 探测方法（可复跑）
+`su -c id` 直接跑是 `Permission denied`——Magisk 默认拒绝 `uid=2000` 的 shell，不经 UI 不给权。解法：
 
 ```bash
-# 1) 宿主全量 LISTEN 端口（十六进制端口要转十进制）
-cat /proc/net/tcp /proc/net/tcp6 | awk 'NR>1 && $4=="0A"{split($2,a,":");print a[2]}' \
-  | sort -u | while read p; do printf '%d\n' 0x$p; done | sort -un
-# 实测输出：3080 3081 3086 3090 3099 5037 5666 8093 13003 17163 33683 40693
-
-# 2) 对每个端口做 adb 握手（CNXN）；只有 5666 回 CNXN，其余 silent/timeout
-#    工具：tools/probe-vmos.mjs（内置 crc32 + CNXN 组包）
-
-# 3) 连上宿主 adbd 确认身份
-adb connect 127.0.0.1:5666 && adb -s 127.0.0.1:5666 shell 'id; getprop ro.product.model'
-# → uid=2000(shell) / 25104RADAC
-
-# 4) 读 VMOS ROM 元数据（guestOSInfo 在 7z 包里，包在 Android/data 下）
-7z e -so /path/to/android15_user_20008.7z guestOSInfo
+S=127.0.0.1:5666
+# 1) Magisk App 在前台，su 请求才会落进「超级用户」列表
+adb -s $S shell 'monkey -p com.topjohnwu.magisk -c android.intent.category.LAUNCHER 1'
+# 2) 触发一次请求（状态=未授权）
+adb -s $S shell 'su -c id'            # → Permission denied
+# 3) 点开 shell 那行的开关
+adb -s $S shell 'input tap 1098 416'  # [SharedUID] Shell 右侧 Switch: [1020,338][1176,494]
+# 4) 再跑
+adb -s $S shell 'su -c id'            # → uid=0(root) ...
 ```
 
-要点：`adb shell` 连的是**宿主自己的 adbd**（SDK 35、型号一致），不是 VMOS guest；VMOS 的 `8093/13003/17163` 连接后静默（不是 adb 协议）。
+## ③ 两个必须知道的坑
 
-## ③ 下一步的三个选项
-
-| 选项 | 做法 | 代价 |
+| 坑 | 现象 | 处理 |
 |---|---|---|
-| A. 换 ROM | VMOS+ 里下载 `supportRoot: true` 的镜像再启动 | 重新初始化 guest，需重新登录，最彻底 |
-| B. 开 VMOS 的 ADB | 若该版本设置里有「ADB 调试 / 端口映射」，打开后重跑 ②，新端口会以 `ADBD_CNXN` 出现 | 取决于 VMOS 版本是否提供 |
-| C. 保持冻结 | `--root` 继续 SKIP，root 项留在「环境不具备」 | 零成本，验收已按此口径 |
+| `run-as` 在 guest 失效 | `run-as: setegid(AID_PACKAGE_INFO) failed: Operation not permitted` | 套件改用 `su -c` 执行，路径不变 |
+| 连接时好时坏 | 虚拟机被系统回收 → `device offline` | 先看 VMOS 首页「虚拟机可能被系统异常关闭」→ 点「去处理」→ 点卡片进入，等 40~60s 再 connect |
 
-`app/src/main/assets/dsh-android-root.mjs` 的 su 候选表已按 Magisk 常见布局准备：`/system/bin/su`、`/system/xbin/su`、`/sbin/su`、`/debug_ramdisk/su`、`/su/bin/su`；换到 A 选项的 ROM 后直接 `--root` 就能命中。
+## ④ guest 内 DSH 的进度（下一步）
+
+```text
+pm install -r -d dsh-current-115.apk     → Success
+files/termux/usr/bin/node                → 50.9 MB，已解压
+files/engine.staging                     → 引擎仍在 staging（首次启动未完成）
+verify-engine-upgrade.sh                 → 已 push 到 /data/local/tmp
+mockrun.sh / mocktool.mjs / mock5.patch.yml → 已备在 /sdcard/Download/dshci
+```
+
+引擎就位后，在 guest 里用 su 跑 root 用例：
+
+```bash
+adb -s 127.0.0.1:5666 shell 'su -c "sh /data/local/tmp/verify-engine-upgrade.sh --tools --root"'
+```
+
+预期 `[PASS] 工具 root`（`dsh-android-root.mjs` 命中 `/system/bin/su` 并回 `uid=0`）。
