@@ -65,6 +65,23 @@ case "$ARGS" in
     [ $FAILED -eq 0 ] || exit 1
     exit 0 ;;
 esac
+case "$ARGS" in
+  *--llmsplit*)
+    echo "== llmsplit: 5 tools, cold start per case =="
+    FP=0; FI=0
+    for t in bubble ui logs statusbar browser; do
+      am force-stop com.dsh.android
+      sleep 2
+      am start -n com.dsh.android/.MainActivity >/dev/null 2>&1
+      sleep 75
+      run-as com.dsh.android sh /data/local/tmp/verify-engine-upgrade.sh --llmtools --only $t --clean
+      if [ $? -eq 0 ]; then FP=$((FP+1)); else FI=$((FI+1)); fi
+    done
+    echo "---- llmsplit pass=$FP fail=$FI"
+    run-as com.dsh.android sh -c 'files/termux/usr/bin/node /data/local/tmp/prune-sessions.mjs'
+    [ $FI -eq 0 ] || exit 1
+    exit 0 ;;
+esac
 echo "== run suite: $ARGS =="
 run-as com.dsh.android sh /data/local/tmp/verify-engine-upgrade.sh $ARGS
 RC=$?
