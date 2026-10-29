@@ -110,3 +110,21 @@ sed -i 's/sleep 0.3/sleep 1/' /data/local/tmp/mockrun.sh
 | mockrun.sh | 就绪判据 `grep "listening"`（去掉 `^`）+ `sleep 1 × 20` + 只重试 2 次 |
 
 已知剩余：整套连跑时上一例的 mocktool 残留会撞端口，每次启动前需 `kill -9 $(cat home/mock.pid)` 并 `sleep 1`；单例（`rootcase.sh`）已稳定。
+## ⑧ 端口策略：home/mock.port（2026-10-29）
+
+宿主与 guest 的空闲端口不同，所以把端口从脚本里抽出来：
+
+```sh
+# mockrun.sh 开头
+[ -f $R/home/mock.port ] && MOCK_PORT=$(cat $R/home/mock.port)
+export MOCK_PORT=${MOCK_PORT:-3098}
+```
+
+| 环境 | `home/mock.port` | patch |
+|---|---|---|
+| 宿主（真机） | `3098` | `mockall-3098.patch.yml` |
+| VMOS guest | `28999` | `mockall.patch.yml` |
+
+宿主侧已复测：`--tools` = **9 PASS / 0 FAIL / 1 SKIP**。
+
+guest 侧单例 root 已通（见 ⑦），但**整套连跑仍在第一例就 MOCK_BIND_FAILED**：说明 28999 在 guest 里被持续占用（需用 root 读 `cat /proc/net/tcp` 定位占用者）。已给 `mockrun.sh` 加上用完即收（`kill $(cat home/mock.pid)`），下一步换到 guest 确实空闲的端口。
