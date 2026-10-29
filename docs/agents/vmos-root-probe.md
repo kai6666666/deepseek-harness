@@ -53,3 +53,23 @@ adb -s 127.0.0.1:5666 shell 'su -c "sh /data/local/tmp/verify-engine-upgrade.sh 
 ```
 
 预期 `[PASS] 工具 root`（`dsh-android-root.mjs` 命中 `/system/bin/su` 并回 `uid=0`）。
+## ⑤ guest 内跑套件时踩到的两个坑（2026-10-29）
+
+| 坑 | 现象 | 解释 / 修法 |
+|---|---|---|
+| mock 矩阵全红 | `MOCK_BIND_FAILED`，日志 `EADDRINUSE port 3099` | guest 里 3099 已被别的东西占着；给 `mocktool.mjs` 换端口（或让 `mock5.patch.yml` 的 `baseUrl` 跟端口一致） |
+| node 报 `inaccessible or not found` | `/termux/usr/bin/node` 路径被吃掉 | `$R` 在**宿主 Ubuntu shell** 里就被展开了；用包装脚本写死绝对路径，别把变量跨层传 |
+
+包装脚本（直接用 root 跑 root runner）：
+
+```bash
+cat > /tmp/rootprobe.sh <<'SH'
+#!/system/bin/sh
+R=/data/user/0/com.dsh.android/files
+export PREFIX=$R/termux LD_LIBRARY_PATH=$R/termux/usr/lib
+export PATH=$R/termux/usr/bin:/system/bin:$PATH
+exec $R/termux/usr/bin/node $R/dsh-android-root.mjs "$@"
+SH
+adb -s 127.0.0.1:5666 push /tmp/rootprobe.sh /data/local/tmp/
+adb -s 127.0.0.1:5666 shell 'su -c "sh /data/local/tmp/rootprobe.sh"'
+```
