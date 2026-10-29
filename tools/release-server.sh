@@ -6,6 +6,9 @@
 #   ./release.sh              # 用 app/build.gradle.kts 里的 versionName
 #   ./release.sh 0.3.4        # 显式指定版本名（仅用于文件名，不改源码）
 #
+# 版本号闸：默认先跑 `sh tools/version.sh --check`，不同源直接中止（构建前拦截）。
+#   SKIP_VER_CHECK=1 ./release.sh   # 跳过该闸，仅救急用
+#
 # 前置：
 #   · /etc/profile.d/dsh-build.sh 里的环境变量（JDK / SDK / GRADLE_USER_HOME / DSH_HOME）
 #   · app/src/main/assets/ 下的 135 MB 构建资产（不在仓库里，需自备）
@@ -35,6 +38,17 @@ else
 fi
 [ -z "$VER" ] && { echo "❌ 读不到 versionName"; exit 1; }
 echo "▶ 目标版本：$VER"
+
+# ── 0.5 版本号同源闸（SKIP_VER_CHECK=1 可跳过）──────────────────────────────
+# 闸门放在构建之前：拿着「versionName 已改、CHANGELOG 没同步」的源码去打包，
+# 出来的包名对、版本对、但用户看到的更新说明是错的，事后无法追溯。
+if [ "${SKIP_VER_CHECK:-0}" != "1" ]; then
+  if ! sh tools/version.sh --check; then
+    echo "❌ 版本号不同源，已中止（先对齐 build.gradle.kts / CHANGELOG，或 SKIP_VER_CHECK=1 强行继续）"
+    exit 1
+  fi
+  echo "✅ 版本号同源"
+fi
 
 # ── 1. 构建两个 release ─────────────────────────────────────────────────────
 echo "▶ 构建 release（约 1-2 分钟）…"
