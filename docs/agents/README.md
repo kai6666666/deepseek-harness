@@ -17,6 +17,8 @@
 三条硬前提：App 在前台且已解锁、`svc power stayon true`、**不要**把 `verify-all.sh` 包进 `run-as`。
 逐段回执与踩坑见 [verification.md](verification.md) ⑩ ~ ⑭。
 
+> guest 真模型线属**环境边界**（VMOS 前台 + 已登录），不在上表判据内；详见 [boundaries.md](boundaries.md)。
+
 | 文件 | 主题 | 一句话 |
 |---|---|---|
 |---|---|---|
