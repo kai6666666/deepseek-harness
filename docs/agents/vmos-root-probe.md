@@ -73,3 +73,21 @@ SH
 adb -s 127.0.0.1:5666 push /tmp/rootprobe.sh /data/local/tmp/
 adb -s 127.0.0.1:5666 shell 'su -c "sh /data/local/tmp/rootprobe.sh"'
 ```
+## ⑥ guest 内 mock 矩阵：MOCK_BIND_FAILED 的真因（2026-10-29）
+
+| 现象 | 结论 |
+|---|---|
+| 3099 → 3098 → 18999 都报 EADDRINUSE | 不是「端口被占」那么简单：`mockrun.sh` 只等 `0.3s × 10 = 3s`，guest 里 50 MB 的 node 冷启动超 3 秒 → 脚本 kill 掉自己刚起的 mocktool 再重试，第二次就撞到自己上一次的监听 |
+| 日志里 listening 行对不上 | `mockrun.sh` 用 `grep -q "^listening"` 判就绪，而 `mocktool.mjs` 的日志函数带前缀，`^listening` 永远不匹配 → BOUND 恒为 0 |
+
+修法（两条都要）：
+
+```sh
+# 1) 等待放宽到 20 秒
+sed -i 's/sleep 0.3/sleep 1/' /data/local/tmp/mockrun.sh
+# 2) 就绪判据改成「端口能连上」，别 grep 前缀
+```
+
+⚠️ 别用 `pkill -f mocktool.mjs` 清场——它会连**执行这条命令的 sh 一起杀**（实测 `Terminated`，整个 adb shell 会话断）。要用 `home/mock.pid` 里的 pid 精确 kill。
+
+宿主侧本轮已修好并复测：`mockall.patch.yml`（7 个工具 + 3098）→ `--tools` = **9 PASS / 0 FAIL / 1 SKIP**。
