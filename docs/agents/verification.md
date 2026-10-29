@@ -606,3 +606,56 @@ python3 tools/verify-ci.py
 - App 在前台且已解锁（`--llm` 要点 UI）；`svc power stayon true` 防熄屏。
 - 不要用 `run-as` 包 `verify-all.sh`（内部自己降权，外层包会 `Permission denied`）。
 - VMOS 要先进到 `VmScreenActivity` 再跑 guest（点卡片右侧按钮，等 55s）。
+
+## ⑮ 守卫落地：入口脚本进 CI + 索引页自检表（2026-10-29）
+
+### 做了什么
+
+| 位置 | 内容 |
+|---|---|
+| `docs/agents/README.md` | 顶部新增「5 分钟自检」——三块环境各一条命令 + 绿灯判据 + 三条硬前提，链接到 ⑩~⑭ |
+| `.github/workflows/ci.yml` | 「文档结构与链接」job 新增 step `验收入口脚本自检` |
+
+守卫检查四项：
+
+```yaml
+- name: 验收入口脚本自检
+  run: |
+    for f in tools/verify-full.sh tools/verify-guest.sh tools/verify-all.sh \
+             tools/verify-engine-upgrade.sh tools/mockrun.sh; do
+      [ -f "$f" ] || echo "::error::缺少入口脚本 $f"
+      sh -n "$f"  || echo "::error file=$f::POSIX sh 语法错误"
+    done
+    python3 -c "compile(open('tools/verify-ci.py').read(),'tools/verify-ci.py','exec')"
+    head -1 tools/verify-full.sh | grep -q '^#!/system/bin/sh'
+    head -1 tools/verify-guest.sh | grep -q '^#!/bin/sh'
+```
+
+意义：以后谁改坏入口（删文件、写成 bash 专有语法、把 shebang 改成错误解释器），CI 立刻红，不用等人肉发现「clone 下来跑不动」。
+
+### 顺带修好一个历史红灯
+
+`敏感文件与密钥扫描` 一直红：
+
+```text
+[error] 签名私钥（*.jks / *.keystore）被提交了
+```
+
+根因：`ci/debug.keystore`（2153 B）被跟踪，而 `.gitignore` 第 12 行本来就写着 `*.keystore`——自己定的规矩自己破了。
+全仓库没有任何 workflow 或 gradle 引用它（debug 构建用的是 runner 上自动生成的 `~/.android/debug.keystore`），属历史遗留，直接移除。
+
+### 修完的 CI 结论
+
+```text
+RUN 40912480544  head=31f59bfb
+JOB 文档结构与链接            success   ← 含新的「验收入口脚本自检」step
+JOB engine 包独立编译          success
+JOB 敏感文件与密钥扫描         success   ← 删掉 ci/debug.keystore 后转绿
+```
+
+### 现在的四道闸
+
+1. `verify-full.sh` / `verify-guest.sh` / `verify-ci.py` —— 三块环境的运行时验收。
+2. `ci.yml` 入口脚本自检 —— 结构性防回归（文件在不在、语法对不对、shebang 对不对）。
+3. `android-release` —— 真实出包 + `apksigner verify` 签名可验。
+4. `docs/agents/README.md` 顶部自检表 —— 新人五分钟知道该跑什么。
