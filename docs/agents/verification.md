@@ -533,3 +533,76 @@ kept session-b30733a0-c6ee-462b-b26b-6f35a3b2fa35 removed 0
 | 宿主 真模型对话 | `verify-all.sh --llm` | 5 PASS / 0 FAIL / 0 SKIP |
 | VMOS guest 7 工具 | `--tools --root --guest` | 8 PASS / 0 FAIL / 2 SKIP |
 | CI Release | `android-release` run 40898159904 | success，APK 签名可验 |
+
+## ⑭ 全链路冷启动验收（run-1）
+
+三个入口，覆盖三块环境，任何一块红就非 0 退出。
+
+| 线 | 入口脚本 | 结果 |
+|---|---|---|
+| 宿主 4 段 | `sh /data/local/tmp/verify-full.sh` | **FULL 4 PASS / 0 FAIL** |
+| VMOS guest | `sh tools/verify-guest.sh` | **8 PASS / 0 FAIL / 2 SKIP** |
+| CI Release | `python3 tools/verify-ci.py` | **CI PASS run=40898159904**（artifact 144MB） |
+
+### 宿主明细（完整报告：`docs/agents/full-report-20261029.txt`）
+
+```text
+== full cold-start acceptance  TS=20261029-235556  model=25104RADAC  sdk=36 ==
+
+== mock-matrix ==
+mock-matrix    9 PASS / 0 FAIL / 1 SKIP                       PASS
+== llmtools ==
+llmtools       5 PASS / 0 FAIL / 0 SKIP                       PASS
+== llmsplit ==
+llmsplit       llmsplit pass=5 fail=0                         PASS
+== llm ==
+llm            5 PASS / 0 FAIL / 0 SKIP                       PASS
+----
+---- FULL 4 PASS / 0 FAIL  (sections=4)
+```
+
+### guest 明细
+
+```text
+[PASS] 引擎版本 0.2.2-alpha.2
+[SKIP] 开发环境（guest 跳过）
+[PASS] 会话索引干净（0 条）
+[SKIP] 引擎补丁标记（guest 跳过）
+[PASS] 工具 bubble / ui / logs / statusbar / browser / root
+----
+8 PASS / 0 FAIL / 2 SKIP
+---- GUEST PASS  8 PASS / 0 FAIL / 2 SKIP
+```
+
+### CI 明细
+
+```text
+run=40898159904 sha=f7a0aa6a status=success artifacts=dsh-system-release=144MB failed_steps=none
+---- CI PASS  run=40898159904
+```
+
+### 用法
+
+```bash
+# 宿主（设备侧 shell uid2000，不要包 run-as）
+sh /data/local/tmp/verify-full.sh            # 全跑（≈10 分钟）
+sh /data/local/tmp/verify-full.sh --quick    # 快检：mock 矩阵 + llmtools
+
+# VMOS guest（Linux 侧）
+VMOS_ADB=127.0.0.1:5666 sh tools/verify-guest.sh
+
+# CI
+python3 tools/verify-ci.py
+```
+
+### 三条脚本的约定
+
+1. `verify-full.sh` 报告落到 `/data/local/tmp/full-<ts>.txt`（shell 写不了 App 私有目录，这是踩过的坑），任一段 FAIL 即非 0 退出。
+2. `verify-guest.sh` 自动 `adb connect` + 推 `verify-engine-upgrade.sh` / `mockrun.sh` / `mockall.patch.yml` 三件套，只在 `0 FAIL` 时退出 0。
+3. `verify-ci.py` 只依赖 `/tmp/gh_token`（缺 token 也能读公开结论），顺带打印 failed_steps 与 artifact 体积。
+
+### 一次跑完的三条硬前提（已固化）
+
+- App 在前台且已解锁（`--llm` 要点 UI）；`svc power stayon true` 防熄屏。
+- 不要用 `run-as` 包 `verify-all.sh`（内部自己降权，外层包会 `Permission denied`）。
+- VMOS 要先进到 `VmScreenActivity` 再跑 guest（点卡片右侧按钮，等 55s）。
