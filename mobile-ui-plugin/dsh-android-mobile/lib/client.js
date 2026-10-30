@@ -3622,7 +3622,7 @@ mpSetMenuOpenClass(false);
 
 			function mpEnsureViewsMore() {
 				if (!mpIsMobile()) return;
-				const tabsRow = document.querySelector("[data-mobile] .wSkVaW_tabs");
+				const tabsRow = document.querySelector(".wSkVaW_header .wSkVaW_tabs") || document.querySelector(".wSkVaW_tabs");
 				if (!tabsRow) { return; }
 				// 官方 ⋯ 在（profile 有 entry actions）→ 我们的让位
 				const official = tabsRow.querySelector(".wSkVaW_viewsMore:not(.mp-views-more)");
@@ -10094,7 +10094,10 @@ function apply(ctx) {
 			mpRegisterBubbleSection(ctx);
 			mpRegisterLogsSection(ctx);
 			mpRegisterDevEnvSection(ctx);
-			mpRegisterViewsMore(ctx);   /* 修复 30c：让官方 ⋯（更多会话视图）重新出现 */
+			/* 修复 30c：**不注册** views.actions —— 一旦 hasEntryActions=true，
+			   官方就会按 visibleViewLimit=floor((rowWidth-48)/120) 裁 tab，
+			   手机上只能留 1 个（轨迹被吞）。这里保持空槽位让 tab 全显示，
+			   ⋯ 由 DOM 注入的 mp-views-more 提供。 */
 			mpInstallPendingTrust();   /* 修复 51：越早越好 */
 			mpWatchSessions(ctx);       /* 修复 51：等服务就绪 */
 			injectStyles();
