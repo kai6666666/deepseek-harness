@@ -1297,3 +1297,33 @@
     b.__dshLastClick = now;
   }, true);
 })();
+
+// ── 菜单层级：抬到设置面板之上 ─────────────────────────────────────────
+//
+// 现象：设置 → 通用设置 / 内置插件 里的下拉，真手指点下去**毫无反应**；
+//      而同样的组件在顶栏、模型选择、插件页都正常。
+//
+// 取证（临时 debuggable 包 + 设备内 CDP，见 tools/webview-cdp.cjs）：
+//   1) 真实 tap 精确命中 `button[aria-haspopup]`，只发一次 click；
+//   2) `aria-expanded` 变 true，`[role=menu]` 真的被挂到了 body 上；
+//   3) 该菜单 computed z-index = 60；
+//   4) 而设置弹窗自带 `.VOzbGW_overlay { z-index: 1000; background:#fff }` 且铺满整屏；
+//   5) 在菜单中心点打 elementsFromPoint，最上层是设置面板内容，菜单根本不在栈里。
+//   ⇒ **菜单开了，但整块被设置面板盖住**，用户看到的自然是“点了没反应”。
+//
+// 修法：把所有 portal 出来的 menu/listbox 抬到 1100（高于 1000 的模态层）。
+// 只动层级，不动位置、不动事件，其它页面的菜单本来就在最上层，抬了也无副作用。
+(function () {
+  if (window.__dshMenuZFix) return;
+  window.__dshMenuZFix = true;
+  var CSS = '[role="menu"],[role="listbox"]{z-index:1100!important}';
+  function apply() {
+    if (document.getElementById('dsh-menu-zfix')) return;
+    var tag = document.createElement('style');
+    tag.id = 'dsh-menu-zfix';
+    tag.textContent = CSS;
+    (document.head || document.documentElement).appendChild(tag);
+  }
+  if (document.head) apply();
+  else document.addEventListener('DOMContentLoaded', apply);
+})();
