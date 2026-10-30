@@ -407,6 +407,11 @@ window.__ModuleLoader__.load({
 [data-mobile] .mp-views-more[aria-expanded="true"] {
   background: var(--dsw-alias-interactive-bg-hover, rgba(127, 127, 127, .15)) !important;
 }
+.mp-views-menu-list {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 2px !important;
+}
 .mp-views-menu {
   position: fixed !important;
   z-index: 1200 !important;
@@ -10012,6 +10017,83 @@ function mpRegisterDevEnvSection(ctx) {
 	}
 }
 
+/* ══ 修复 30c（方案 A 配套）：把官方「更多会话视图」⋯ 请回来 ═══════════
+   官方 ConversationSessionHeader 的 ⋯ 渲染条件是
+     hasEntryActions = slots.entriesOfSlot("conversation.session.header.views.actions").length > 0
+   本机 profile 里那个槽位是空的（插件启动器 roster 为空），所以 ⋯ 根本不渲染，
+   只剩「对话 / 轨迹」两个 tab。桌面端有 ⋯，正是因为那边的 profile 注册了条目。
+
+   这里由本插件往同一槽位注册一个菜单内容组件：
+     · hasEntryActions 变为 true → 官方按钮自己出现（位置/尺寸/主题全部官方原装）
+     · 菜单内容就是下面这个组件：列出当前所有视图 tab +（若有）会话层级
+   这比「往 React 子树里 append 一个自建按钮」稳得多：
+   官方按钮由 React 自己渲染，不存在被重渲染摘掉的问题。 */
+
+function mpViewsMoreActions(props) {
+	const React = mpPrivReact;
+	if (!React) return null;
+	const h = React.createElement;
+	const entries = (props && props.entries) || [];
+	const onOpen = props && props.onOpen;
+	const onDismiss = props && props.onDismiss;
+	// 官方 entries 为空时（hasEntryActions 刚变 true、visibleViewLimit 已吃掉全部 tab），
+	// 直接读 DOM 里的 tab 兜底，保证菜单永远有内容。
+	let list = entries.map((it) => ({ id: it.id, label: it.label, active: !!it.active, el: null }));
+	if (!list.length) {
+		const els = Array.prototype.slice.call(document.querySelectorAll("[data-mobile] .wSkVaW_tab"));
+		list = els.map((el, i) => ({
+			id: "dom-" + i,
+			label: (el.textContent || "").trim(),
+			active: el.getAttribute("aria-selected") === "true",
+			el,
+		}));
+	}
+	const rows = list.map((it) => h("button", {
+		key: it.id,
+		type: "button",
+		role: "menuitem",
+		className: "mp-views-item" + (it.active ? " mp-views-item-active" : ""),
+		onClick: () => {
+			try {
+				if (it.el) it.el.click();
+				else if (onOpen) onOpen(it.id);
+			} catch (e) { /* 忽略 */ }
+			try { if (onDismiss) onDismiss(); } catch (e) { /* 忽略 */ }
+		},
+	}, it.label));
+	const hier = document.querySelector('[aria-label="会话层级"],[title="会话层级"]');
+	if (hier) {
+		rows.push(h("button", {
+			key: "hierarchy",
+			type: "button",
+			role: "menuitem",
+			className: "mp-views-item",
+			onClick: () => {
+				try { hier.click(); } catch (e) { /* 忽略 */ }
+				try { if (onDismiss) onDismiss(); } catch (e) { /* 忽略 */ }
+			},
+		}, "会话层级"));
+	}
+	return h("div", { className: "mp-views-menu-list" }, rows);
+}
+
+function mpRegisterViewsMore(ctx) {
+	if (mpPrivReact === null) {
+		try { mpPrivReact = require("react"); } catch (e) { mpPrivReact = null; }
+	}
+	if (!mpPrivReact) return;
+	try {
+		ctx.inject(["slots"], (scope) => {
+			scope.slots.inject("conversation.session.header.views.actions", () => scope.slots.register({
+				name: "conversation.session.header.views.actions",
+				id: "dsh-android-views-more",
+			}, mpViewsMoreActions));
+		});
+	} catch (e) {
+		console.warn("[dsh-android-mobile] 注册「更多会话视图」菜单失败:", e && (e.stack || e.message || e));
+	}
+}
+
 function apply(ctx) {
 			mpCtx = ctx;
 			mpSessionsCache = ctx.get("sessions") ?? null;
@@ -10019,6 +10101,7 @@ function apply(ctx) {
 			mpRegisterBubbleSection(ctx);
 			mpRegisterLogsSection(ctx);
 			mpRegisterDevEnvSection(ctx);
+			mpRegisterViewsMore(ctx);   /* 修复 30c：让官方 ⋯（更多会话视图）重新出现 */
 			mpInstallPendingTrust();   /* 修复 51：越早越好 */
 			mpWatchSessions(ctx);       /* 修复 51：等服务就绪 */
 			injectStyles();
