@@ -61,6 +61,31 @@ jobs:
           VER=0.2.2-alpha.2 OUT="$GITHUB_WORKSPACE/app/src/main/assets/engine.bin" \
             bash tools/build-engine-bin.sh
 
+      # ⚠️ 这一项以前**没有任何步骤负责**，于是 CI 出的包在真机上是残的：
+      #   #9  Termux 引导失败 java.io.FileNotFoundException: bootstrap-aarch64.zip
+      #   #27 node --version 校验失败 … library "libz.so.1" not found
+      # 两条日志看着无关，其实是同一个洞 —— 前缀没铺，libz/libssl 全缺。
+      # build-bootstrap.sh 会把 Termux 官方 bootstrap 落到 assets 并做三道体检
+      # （条目数 / SYMLINKS.txt / bootstrap-required.txt 里的 soname）。
+      - name: 现场取 Termux bootstrap（bootstrap-aarch64.zip）
+        run: |
+          OUT="$GITHUB_WORKSPACE/app/src/main/assets/bootstrap-aarch64.zip" \
+            bash tools/build-bootstrap.sh
+
+      - name: 资产闸门（缺 bootstrap 直接失败）
+        run: |
+          a=app/src/main/assets
+          miss=0
+          for f in engine.bin node-runtime.bin bootstrap-aarch64.zip; do
+            if [ -s "$a/$f" ]; then
+              echo "✅ $f $(du -h "$a/$f" | cut -f1)"
+            else
+              echo "::error::缺少关键资产 $f —— 这个包装到真机上引擎起不来"
+              miss=1
+            fi
+          done
+          exit $miss
+
       - name: 现场构建 node-runtime.bin（无 Release 时）
         if: env.ASSETS_TAG == ''
         run: |
