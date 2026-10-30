@@ -3536,12 +3536,20 @@ mpSetMenuOpenClass(false);
 				if (tabs.style.getPropertyValue("left")) tabs.style.removeProperty("left");
 				if (tabs.style.getPropertyValue("top")) tabs.style.removeProperty("top");
 				if (tabs.style.getPropertyValue("max-width")) tabs.style.removeProperty("max-width");
-				if (tabs.parentElement === actions) { mpTabsDocked = true; return; }
-				// 搬到徽章后面：同一 flex 行 → 天然同一水平线
+				if (tabs.parentElement !== actions) {
+					// 搬到徽章后面：同一 flex 行 → 天然同一水平线
+					try { actions.appendChild(tabs); mpTabsDocked = true; } catch (e) { /* 静默 */ }
+				}
+				/* 官方用「tabs 容器的 clientWidth」算可见 tab 数：
+				     visibleViewLimit = floor((clientWidth - 48) / 120)
+				   容器窄 → 只剩 1 个 tab，轨迹被收进 ⋯（而 ⋯ 本身也被挤掉）。
+				   搬进 flex 行后容器宽度由内容决定，必须显式给它「到右边界为止」的宽度。 */
 				try {
-					actions.appendChild(tabs);
-					mpTabsDocked = true;
-				} catch (e) { /* 静默：纯外观 */ }
+					const hr = header.getBoundingClientRect();
+					const tr = tabs.getBoundingClientRect();
+					const avail = Math.max(140, Math.round(hr.width - (tr.left - hr.left) - 56));
+					if (Math.abs(Math.round(tr.width) - avail) > 4) tabs.style.setProperty("width", avail + "px");
+				} catch (e) { /* 静默 */ }
 			}
 
 			/* ══ 修复 30c：自建「更多会话视图」⋯ ══════════════════════════════
