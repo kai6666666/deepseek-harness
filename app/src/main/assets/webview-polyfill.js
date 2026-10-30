@@ -1260,3 +1260,40 @@
     })();
   }
 })();
+
+// ── 下拉按钮「双击」去重 ───────────────────────────────────────────────
+//
+// 现象：设置页（通用设置 / 内置插件）里的下拉，用**真手指**点不开；
+//      而在 DevTools 里对该按钮调用一次 `el.click()` 却能正常展开。
+//
+// 取证（设备内 CDP 直连 WebView，工具见 tools/webview-cdp.cjs）：
+//   一次真实 tap 在同一个 `button[aria-haspopup]` 上派发了**两次 click**：
+//
+//     pointerdown → touchstart → pointerup → click ①
+//       → touchend → mousedown → mouseup → click ②
+//
+//   也就是说「指针事件合成的 click」与 WebView 的鼠标兼容事件各来了一次。
+//   Radix 的 DropdownMenu 是「click 切换」语义：① 打开、② 立刻关闭，
+//   净效果就是**用户看到完全没反应**；而 `.click()` 只发一次，所以能开。
+//
+// 修法：对 `button[aria-haspopup]` 做 450ms 内的第二次 click 去重 ——
+//   只拦「同一次 tap 拆出来的那一下」，不碰其它元素、不影响慢速双击，
+//   也不会把「点开→点别处关闭」这类正常操作吃掉。
+(function () {
+  if (window.__dshClickDedupe) return;
+  window.__dshClickDedupe = true;
+  var WINDOW_MS = 450;
+  window.addEventListener('click', function (e) {
+    var t = e.target;
+    var b = t && t.closest ? t.closest('button[aria-haspopup]') : null;
+    if (!b) return;
+    var now = Date.now();
+    var last = b.__dshLastClick || 0;
+    if (now - last < WINDOW_MS) {
+      e.stopImmediatePropagation();
+      e.preventDefault();
+      return;
+    }
+    b.__dshLastClick = now;
+  }, true);
+})();
