@@ -865,3 +865,37 @@ run-as com.dsh.android files/termux/usr/bin/node files/webview-cdp.cjs --pid $P 
 | 用 JS `.click()` 点「回答结束后」 | `aria-expanded` 变 `true`，生成 `[role=menu]` |
 | 该菜单样式 | `position:fixed`、`z-index:60`、`visibility:visible`、`opacity:1`，portal 挂在 `body` |
 | 结论 | **DOM 与前端逻辑正常，问题在「触摸→click」这一段**（熄屏/锁屏会直接污染 `input tap` 的真机实验，必须先解锁再测） |
+
+### ⑯.5 设置页下拉「点不开」的根因：一次 tap 两次 click
+
+**现象**：设置 → 通用设置 / 内置插件 里的下拉（`回答结束后`、`全部回复`、`标准模式（默认）` …）
+用真手指点**完全没反应**；同一个按钮在 DevTools 里 `el.click()` 却能正常展开。
+其它页面的下拉正常。
+
+**取证**（`tools/webview-cdp.cjs` 直连 WebView，注入 capture 监听）：
+
+```text
+一次真实 tap 在 button[aria-haspopup] 上派发了两次 click：
+  pointerdown → touchstart → pointerup → click ①
+    → touchend → mousedown → mouseup → click ②
+```
+
+Radix 的 DropdownMenu 是「click 切换」语义：① 打开、② 立刻关闭，净效果 = 用户看不到任何变化。
+`.click()` 只发一次，所以能开 —— 这也是为什么「DevTools 里能开、手指点不开」。
+
+**修法**：`app/src/main/assets/webview-polyfill.js` 末尾对 `button[aria-haspopup]`
+做 450ms 内的第二次 click 去重（`stopImmediatePropagation` + `preventDefault`）。
+只拦「同一次 tap 拆出来的那一下」：不碰其它元素、不影响慢速双击、不影响点别处关闭。
+
+**验证**（真机，解锁态）：
+
+| 动作 | 结果 |
+|---|---|
+| `input tap` 通用设置「回答结束后」 | `aria-expanded=true`，`[role=menu]` 出现，内容 `回答结束后 / 下次有新消息时` |
+| `input tap` 内置插件「标准模式（默认）」 | 菜单出现：`标准模式（默认）/ PTC 模式 / 极简模式 / 创造模式` |
+| `input tap` 菜单项 | 菜单关闭，选中值保持 |
+
+> ⚠️ **坐标换算**：这台机器 `dpr=3.25`、状态栏 153.5px，WebView 从状态栏下方开始
+> （非全面屏模式），所以页面 CSS 坐标 → 屏幕坐标要按
+> `deviceY = 153.5 + cssY * 3.25`、`deviceX = cssX * 3.25`。
+> 直接用 `cssY * dpr` 会稳定偏上约 47 CSS px，测试时极易误判成「点击没到」。
