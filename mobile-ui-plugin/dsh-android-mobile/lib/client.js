@@ -399,7 +399,9 @@ window.__ModuleLoader__.load({
   border: none !important;
   background: transparent !important;
   border-radius: 6px !important;
-  color: var(--dsw-alias-label-secondary, #8a8a8a) !important;
+  color: var(--dsw-alias-label-tertiary, #8a8a8a) !important;
+  opacity: 1 !important;
+  visibility: visible !important;
   cursor: pointer !important;
 }
 [data-mobile] .mp-views-more[aria-expanded="true"] {
@@ -3648,6 +3650,18 @@ mpSetMenuOpenClass(false);
 				tabsRow.appendChild(btn);
 				mpViewsMoreBtn = btn;
 			}
+
+			/* React 一旦重渲染 tabs 行，append 进去的按钮会被一起摘掉
+			   （header 每次消息流更新都会重渲染）。只靠 MutationObserver 的
+			   下一帧补挂会有可见的闪烁/空窗，所以再挂一个低频兜底心跳：
+			   每 500ms 廉价查一次（只做 isConnected 判断，几乎零成本），
+			   保证按钮在任何时刻都在。 */
+			setInterval(() => {
+				try { mpEnsureViewsMore(); } catch (e) { /* 静默 */ }
+				try {
+					if (mpViewsMenuEl && !document.body.contains(mpViewsMenuEl)) { mpViewsMenuEl = null; }
+				} catch (e) { /* 静默 */ }
+			}, 500);
 
 			document.addEventListener("click", (ev) => {
 				if (!mpViewsMenuEl) return;
