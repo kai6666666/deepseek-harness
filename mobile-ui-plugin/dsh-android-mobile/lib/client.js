@@ -370,11 +370,14 @@ window.__ModuleLoader__.load({
 }
    内联镜像条
 .mp-inline-views {
+  position: fixed !important;
   display: inline-flex !important;
   align-items: center !important;
   gap: 12px !important;
-  margin-left: 6px !important;
+  margin: 0 !important;
   min-height: 26px !important;
+  z-index: 26 !important;
+  pointer-events: auto !important;
 }
 .mp-inline-tab {
   position: relative !important;
@@ -3556,9 +3559,9 @@ mpSetMenuOpenClass(false);
 				if (!root.hasAttribute("data-mobile")) return;
 				const header = document.querySelector(".wSkVaW_header");
 				if (!header) return;
-				const actions = header.querySelector(".wSkVaW_headerActions");
-				if (!actions) return;
-				let bar = actions.querySelector(".mp-inline-views");
+				/* ★ 挂 body + position:fixed：React 重渲染 header 时不会把它摘掉，
+				   也就没有「搬进去被裁、被重置」这一整类问题。位置由下面实时算。 */
+				let bar = document.querySelector(".mp-inline-views");
 				if (!bar) {
 					bar = document.createElement("div");
 					bar.className = "mp-inline-views";
@@ -3599,9 +3602,28 @@ mpSetMenuOpenClass(false);
 					}, { passive: false });
 					bar.appendChild(more);
 
-					actions.appendChild(bar);
+					document.body.appendChild(bar);
 					mpInlineBar = bar;
 				}
+				/* 摆位：贴在「标准模式」徽章右侧、同一条水平线 */
+				try {
+					const hr = header.getBoundingClientRect();
+					const badge = header.querySelector(".wSkVaW_headerActions > *");
+					let br = badge ? badge.getBoundingClientRect() : null;
+					if (br && (br.width < 1 || br.height < 1)) br = null;
+					const bw = bar.getBoundingClientRect().width || 120;
+					const bh = bar.getBoundingClientRect().height || 26;
+					let left = br ? br.right + 8 : hr.left + 52;
+					let top = br ? br.top + (br.height - bh) / 2 : hr.top + hr.height - bh - 6;
+					left = Math.max(8, Math.min(window.innerWidth - bw - 8, left));
+					top = Math.max(0, Math.min(window.innerHeight - bh - 4, top));
+					const sig = Math.round(left) + ":" + Math.round(top) + ":" + Math.round(bw);
+					if (sig !== mpInlineSig) {
+						mpInlineSig = sig;
+						bar.style.setProperty("left", Math.round(left) + "px");
+						bar.style.setProperty("top", Math.round(top) + "px");
+					}
+				} catch (e) { /* 静默 */ }
 				mpSyncInlineActive();
 			}
 			function mpSyncInlineActive() {
