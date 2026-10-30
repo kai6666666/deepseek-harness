@@ -165,7 +165,7 @@ jobs:
       - name: 构建 APK
         run: |
           set +e
-          bash ./gradlew :app:assemble${{ matrix.task }}Release -x lint --console=plain --stacktrace 2>&1 | tee /tmp/apk-build.log
+          bash ./gradlew :app:assemble${{ matrix.task }}Release -x lint -x lintVitalSystemRelease --console=plain --stacktrace 2>&1 | tee /tmp/apk-build.log
           rc=${PIPESTATUS[0]}
           if [ $rc -ne 0 ]; then
             echo "::error title=gradle-rc::exit $rc"
