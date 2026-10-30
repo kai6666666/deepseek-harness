@@ -328,33 +328,45 @@ window.__ModuleLoader__.load({
 [data-mobile] .wSkVaW_headerActions span[title] {
   display: inline-flex !important;
 }
-/* ══ 修复 30c（2026-10-30）：恢复「对话 / 轨迹 / 更多会话视图」三件套 ══════
-   现象（用户反馈）：会话页顶部少了「对话 / 轨迹 / 更多会话视图」三样。
-   根因：修复 30 为把 header 从 85px 压到 55px，写了一条
-        [data-mobile] .wSkVaW_header {
+/* ══ 修复 30c（内联版·DOM 归位）════════════════════════════════════════
+   历史：修复 30 曾用 display:none 整条隐藏 tabs（对话 / 轨迹 / 更多会话视图），
+   导致手机上三件套一起消失。现在按用户要求恢复，并放到
+   「标准模式」徽章右侧的同一水平线上。
+
+   做法（不猜坐标、不写死像素）：
+     把整条 .wSkVaW_tabs **搬进** .wSkVaW_headerActions（徽章所在的 flex
+     容器），由普通 flex 流排在徽章右边；徽章宽度变了它自然跟着走。
+     React 重渲染把它搬回原处时，由 500ms 心跳再搬回来（见 JS）。
+     tabs 不占额外行 ⇒ header 高度回到单行量级。 */
+[data-mobile] .wSkVaW_header {
   overflow: visible !important;
 }
+[data-mobile] .wSkVaW_headerActions {
+  display: flex !important;
+  flex-direction: row !important;
+  flex-wrap: nowrap !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 8px !important;
+  min-width: 0 !important;
+}
 [data-mobile] .wSkVaW_tabs {
-  /* 绝对定位：不再占一行，而是由 mpLayoutTabsInline() 按
-     「标准模式徽章」的实时位置摆到它右边同一水平线。 */
-  position: absolute !important;
+  position: static !important;
   display: flex !important;
   align-items: center !important;
   flex-wrap: nowrap !important;
   gap: 0 !important;
-  margin: 0 !important;
+  margin: 0 0 0 2px !important;
   padding: 0 !important;
   min-width: 0 !important;
-  max-width: calc(100% - 72px) !important;
   overflow: visible !important;
-  z-index: 2 !important;
+  z-index: auto !important;
   pointer-events: auto !important;
 }
-/* tab 组：贴着徽章往右排，命中区 26px（视觉紧凑，仍点得到） */
 [data-mobile] .wSkVaW_viewTabs {
   flex-wrap: nowrap !important;
   flex: 0 0 auto !important;
-  gap: 14px !important;
+  gap: 12px !important;
   min-height: 26px !important;
   align-items: center !important;
 }
@@ -362,17 +374,16 @@ window.__ModuleLoader__.load({
   flex: 0 0 auto !important;
   min-height: 26px !important;
   margin: 0 !important;
-  padding: 3px 4px 4px !important;
+  padding: 3px 3px 4px !important;
   font-size: 13px !important;
   line-height: 18px !important;
   white-space: nowrap !important;
 }
-/* ⋯ 紧跟轨迹后面 */
 [data-mobile] .wSkVaW_viewsMore {
   flex: 0 0 auto !important;
   width: 20px !important;
   height: 20px !important;
-  margin: 0 0 0 6px !important;
+  margin: 0 0 0 4px !important;
 }
 
 /* ══ 修复 34：轨迹页详情面板底部被输入框挡住（2026-09-16 啾灵反馈）══════════
@@ -3501,46 +3512,26 @@ mpSetMenuOpenClass(false);
 			     · 右上角 ⋯ / 侧栏按钮占 44px，右边界扣掉，避免压住
 			   ⚠️ 用指纹（header 尺寸 + 徽章位置 + tabs 尺寸）做幂等，
 			     不变就不写 DOM，不发无谓的重排。 */
-			var mpTabsKey = "";
+			var mpTabsDocked = false;
 			function mpLayoutTabsInline() {
 				const root = document.documentElement;
-				if (!root.hasAttribute("data-mobile")) return;
+				if (!root.hasAttribute("data-mobile")) { mpTabsDocked = false; return; }
 				const header = document.querySelector(".wSkVaW_header");
 				if (!header) return;
 				const tabs = header.querySelector(".wSkVaW_tabs");
 				if (!tabs) return;
-				const hr = header.getBoundingClientRect();
-				const tr = tabs.getBoundingClientRect();
-				if (hr.width < 1 || tr.height < 1) return;
 				const actions = header.querySelector(".wSkVaW_headerActions");
-				let ar = actions ? actions.getBoundingClientRect() : null;
-				if (ar && (ar.width < 1 || ar.height < 1)) ar = null;
-				const key = [
-					Math.round(hr.width), Math.round(hr.height),
-					ar ? Math.round(ar.right - hr.left) : -1,
-					ar ? Math.round(ar.top - hr.top) : -1,
-					ar ? Math.round(ar.height) : -1,
-					Math.round(tr.width), Math.round(tr.height),
-				].join(":");
-				if (key === mpTabsKey) return;
-				const GAP = 10;
-				const RIGHT_RESERVE = 44; // 右上角 ⋯ / 侧栏按钮
-				let left, top;
-				if (ar) {
-					left = Math.round(ar.right - hr.left + GAP);
-					top = Math.round(ar.top - hr.top + (ar.height - tr.height) / 2);
-				} else {
-					left = Math.round(hr.width - RIGHT_RESERVE - 12 - tr.width);
-					top = Math.round((hr.height - tr.height) / 2);
-				}
-				const maxLeft = Math.max(8, Math.round(hr.width - RIGHT_RESERVE - 12 - tr.width));
-				if (left > maxLeft) left = maxLeft;
-				if (left < 8) left = 8;
-				if (top < 0) top = 0;
-				mpTabsKey = key;
-				tabs.style.setProperty("left", left + "px");
-				tabs.style.setProperty("top", top + "px");
-				tabs.style.setProperty("max-width", Math.max(60, Math.round(hr.width - left - 12)) + "px");
+				if (!actions) return;
+				// 清掉上一版留下的绝对定位内联样式（升级后老样式仍在 DOM 上）
+				if (tabs.style.getPropertyValue("left")) tabs.style.removeProperty("left");
+				if (tabs.style.getPropertyValue("top")) tabs.style.removeProperty("top");
+				if (tabs.style.getPropertyValue("max-width")) tabs.style.removeProperty("max-width");
+				if (tabs.parentElement === actions) { mpTabsDocked = true; return; }
+				// 搬到徽章后面：同一 flex 行 → 天然同一水平线
+				try {
+					actions.appendChild(tabs);
+					mpTabsDocked = true;
+				} catch (e) { /* 静默：纯外观 */ }
 			}
 
 			/* ══ 修复 30c：自建「更多会话视图」⋯ ══════════════════════════════
