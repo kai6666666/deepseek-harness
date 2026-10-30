@@ -328,51 +328,64 @@ window.__ModuleLoader__.load({
 [data-mobile] .wSkVaW_headerActions span[title] {
   display: inline-flex !important;
 }
-/* ══ 修复 30c（2026-10-30）：tabs 不再整条隐藏，改成**内联到标题行右侧** ══
+/* ══ 修复 30c（2026-10-30）：恢复「对话 / 轨迹 / 更多会话视图」三件套 ══════
    现象（用户反馈）：会话页顶部少了「对话 / 轨迹 / 更多会话视图」三样。
-   根因：修复 30 为了把 header 从 85px 压到 55px，把
-         [data-mobile] .wSkVaW_tabs { display:none !important }
-         整条干掉；「轨迹」当时有 ⋯ 菜单兜底（mpInjectTraceItem），
-         但「会话层级 / 更多会话视图」没有，于是三样一起消失。
+   根因：修复 30 为把 header 从 85px 压到 55px，写了一条
+        [data-mobile] .wSkVaW_tabs { display: none !important }
+        把整条 tabs 干掉；「轨迹」当时有 ⋯ 菜单兜底（mpInjectTraceItem），
+        但「更多会话视图 / 会话层级」没有兜底，于是三样一起消失。
 
-   方案 B（用户选定）：不另起一行，也不塞进菜单，而是把这组 tabs
-   作为 header 网格的第三列放在第一行右端：
-     · header 原本 grid-template-columns: auto minmax(0,1fr)（汉堡 | 标题行）
-     · 这里加一列 auto，tabs 用 grid-row:1 / grid-column:3 落到同一行
-     · 右侧留 44px 给 ⋯ / 侧栏按钮，避免绝对定位按钮压住「更多会话视图」
-     · tab 命中区从 35px 压到 26px、字号 13px，视觉上就是标题行的一段小导航
-   header 高度基本不变（仍是 55px 量级），三件套恢复可见可点。 */
-[data-mobile] .wSkVaW_header {
-  grid-template-columns: auto minmax(0, 1fr) auto !important;
-}
+   方案 A（用户最终选定）：**回到官方两行结构** —— 标题行 + tabs 行。
+   放弃了「内联进标题行右侧」的做法：手机上标题本来就长，
+   再挤进 2 个 tab + 1 个图标必然与 ⋯ / 侧栏按钮打架、点击区过小。
+   代价是 header 回到 ~85px（官方本来就是这个高度），换来的是
+   三个入口都在原位、命中区 35px（官方尺寸）、不会互相覆盖。
+
+   ⚠️ 高度仍受修复 61 的 ×1.25 自校准控制，但 JS 那边已经改成
+      「只放大标题行，tabs 行按自然高度原样保留」，即
+      --mp-hdr-h =（自然高 − tabs 高）×1.25 + tabs 高，
+      所以不会出现「两行还要再 ×1.25」的暴涨。 */
 [data-mobile] .wSkVaW_tabs {
   display: flex !important;
   flex-wrap: nowrap !important;
-  grid-row: 1 !important;
-  grid-column: 3 !important;
-  align-self: center !important;
-  gap: 12px !important;
-  margin: 0 44px 0 8px !important;
+  /* 官方就是跨整行；显式写出来，避免被其它 grid 规则挤到标题列里 */
+  grid-column: 1 / -1 !important;
+  grid-row: auto !important;
+  align-self: stretch !important;
+  gap: 0 !important;
+  margin: 6px 0 0 0 !important;
   padding: 0 !important;
   min-width: 0 !important;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  scrollbar-width: none !important;
 }
+[data-mobile] .wSkVaW_tabs::-webkit-scrollbar {
+  display: none !important;
+}
+/* tab 组：官方 35px 命中区，这里只锁「不换行 + 不收缩」 */
 [data-mobile] .wSkVaW_viewTabs {
   flex-wrap: nowrap !important;
+  flex: 0 0 auto !important;
   gap: 16px !important;
-  min-height: 26px !important;
-  align-items: center !important;
+  min-height: 35px !important;
+  align-items: flex-end !important;
 }
 [data-mobile] .wSkVaW_tab {
-  min-height: 26px !important;
+  flex: 0 0 auto !important;
+  min-height: 35px !important;
   margin: 0 !important;
-  padding: 3px 6px !important;
+  padding: 6px 2px 10px !important;
   font-size: 13px !important;
-  line-height: 16px !important;
+  line-height: 18px !important;
+  white-space: nowrap !important;
 }
+/* 「更多会话视图」图标：官方 22×22，去掉单行化时压小的那些覆盖 */
 [data-mobile] .wSkVaW_viewsMore {
-  width: 20px !important;
-  height: 20px !important;
-  margin-top: 0 !important;
+  flex: 0 0 auto !important;
+  width: 22px !important;
+  height: 22px !important;
+  margin: 0 8px 4px 4px !important;
 }
 
 /* ══ 修复 34：轨迹页详情面板底部被输入框挡住（2026-09-16 啾灵反馈）══════════
@@ -3394,7 +3407,14 @@ mpSetMenuOpenClass(false);
 				else header.style.removeProperty("min-height");
 				if (!(natural > 0)) return; // 量不到就保持原样，下一帧再试
 				mpHdrKey = key;
-				root.style.setProperty("--mp-hdr-h", Math.round(natural * MP_HDR_SCALE * 100) / 100 + "px");
+				/* 修复 30c（方案 A）：tabs 行回到第二行后，natural 里已经含它。
+				   ×1.25 只该作用在「标题行」上，否则两行再放大会暴涨 ~20px。
+				   所以：目标高 = (natural − tabsH) × MP_HDR_SCALE + tabsH */
+				const tabsEl = header.querySelector(".wSkVaW_tabs");
+				const tabsH = tabsEl ? tabsEl.getBoundingClientRect().height : 0;
+				const titleOnly = Math.max(0, natural - tabsH);
+				const target = titleOnly * MP_HDR_SCALE + tabsH;
+				root.style.setProperty("--mp-hdr-h", Math.round(target * 100) / 100 + "px");
 			}
 
 			// 修复 59：把 mpSyncHeaderCenter 合并到下一帧执行。
