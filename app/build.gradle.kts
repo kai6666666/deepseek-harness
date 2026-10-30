@@ -331,9 +331,6 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
-            // ⚠️ 临时：设置页下拉取证需要 run-as + WebView DevTools。
-            //    取证完成必须删除这一行（release 不能长期 debuggable）。
-            isDebuggable = true
             if (keystorePropsFile.exists()) {
                 signingConfig = signingConfigs.getByName("release")
             }
