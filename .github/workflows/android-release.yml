@@ -183,6 +183,25 @@ jobs:
           du -sh app/src/main/assets || true
           ls -lh app/src/main/assets/*.bin 2>/dev/null || true
 
+      # 产物自证：不看构建日志的自述，直接拆开 APK 检查「真机上会用到的东西」在不在。
+      # 这一条是因为踩过两个洞：
+      #   ① bootstrap-aarch64.zip 没人造 → 真机 node 缺 libz.so.1，引擎永远起不来；
+      #   ② 设置页下拉菜单 z-index 低于设置面板 → 菜单开了但被盖住，看着像"点了没反应"。
+      - name: 产物自证（关键资产 + 两段运行时补丁）
+        run: |
+          set -e
+          apk=$(find app/build/outputs/apk -name '*release*.apk' | head -1)
+          echo "APK: $apk"
+          [ -n "$apk" ] || { echo "::error::找不到 release APK"; exit 1; }
+          unzip -l "$apk" | grep -q 'assets/bootstrap-aarch64.zip' \
+            || { echo "::error::APK 缺 assets/bootstrap-aarch64.zip（真机 Termux 前缀铺不起来）"; exit 1; }
+          unzip -p "$apk" assets/webview-polyfill.js > /tmp/pf.js
+          for k in dsh-menu-zfix __dshClickDedupe; do
+            grep -q "$k" /tmp/pf.js \
+              || { echo "::error::webview-polyfill.js 缺 $k（设置页下拉/顶栏下拉会复发）"; exit 1; }
+          done
+          echo "✅ bootstrap 在包里；polyfill 含 dsh-menu-zfix + __dshClickDedupe"
+
       - name: Verify signature
         run: |
           set +e
