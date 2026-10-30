@@ -331,117 +331,48 @@ window.__ModuleLoader__.load({
 /* ══ 修复 30c（2026-10-30）：恢复「对话 / 轨迹 / 更多会话视图」三件套 ══════
    现象（用户反馈）：会话页顶部少了「对话 / 轨迹 / 更多会话视图」三样。
    根因：修复 30 为把 header 从 85px 压到 55px，写了一条
-        [data-mobile] .wSkVaW_tabs { display: none !important }
-        把整条 tabs 干掉；「轨迹」当时有 ⋯ 菜单兜底（mpInjectTraceItem），
-        但「更多会话视图 / 会话层级」没有兜底，于是三样一起消失。
-
-   方案 A（用户最终选定）：**回到官方两行结构** —— 标题行 + tabs 行。
-   放弃了「内联进标题行右侧」的做法：手机上标题本来就长，
-   再挤进 2 个 tab + 1 个图标必然与 ⋯ / 侧栏按钮打架、点击区过小。
-   代价是 header 回到 ~85px（官方本来就是这个高度），换来的是
-   三个入口都在原位、命中区 35px（官方尺寸）、不会互相覆盖。
-
-   ⚠️ 高度仍受修复 61 的 ×1.25 自校准控制，但 JS 那边已经改成
-      「只放大标题行，tabs 行按自然高度原样保留」，即
-      --mp-hdr-h =（自然高 − tabs 高）×1.25 + tabs 高，
-      所以不会出现「两行还要再 ×1.25」的暴涨。 */
+        [data-mobile] .wSkVaW_header {
+  overflow: visible !important;
+}
 [data-mobile] .wSkVaW_tabs {
+  /* 绝对定位：不再占一行，而是由 mpLayoutTabsInline() 按
+     「标准模式徽章」的实时位置摆到它右边同一水平线。 */
+  position: absolute !important;
   display: flex !important;
+  align-items: center !important;
   flex-wrap: nowrap !important;
-  /* 官方就是跨整行；显式写出来，避免被其它 grid 规则挤到标题列里 */
-  grid-column: 1 / -1 !important;
-  grid-row: auto !important;
-  align-self: stretch !important;
   gap: 0 !important;
-  margin: 6px 0 0 0 !important;
+  margin: 0 !important;
   padding: 0 !important;
   min-width: 0 !important;
-  overflow-x: auto !important;
-  overflow-y: hidden !important;
-  scrollbar-width: none !important;
+  max-width: calc(100% - 72px) !important;
+  overflow: visible !important;
+  z-index: 2 !important;
+  pointer-events: auto !important;
 }
-[data-mobile] .wSkVaW_tabs::-webkit-scrollbar {
-  display: none !important;
-}
-/* tab 组：官方 35px 命中区，这里只锁「不换行 + 不收缩」 */
+/* tab 组：贴着徽章往右排，命中区 26px（视觉紧凑，仍点得到） */
 [data-mobile] .wSkVaW_viewTabs {
   flex-wrap: nowrap !important;
   flex: 0 0 auto !important;
-  gap: 16px !important;
-  min-height: 35px !important;
-  align-items: flex-end !important;
+  gap: 14px !important;
+  min-height: 26px !important;
+  align-items: center !important;
 }
 [data-mobile] .wSkVaW_tab {
   flex: 0 0 auto !important;
-  min-height: 35px !important;
+  min-height: 26px !important;
   margin: 0 !important;
-  padding: 6px 2px 10px !important;
+  padding: 3px 4px 4px !important;
   font-size: 13px !important;
   line-height: 18px !important;
   white-space: nowrap !important;
 }
-/* 「更多会话视图」图标：官方 22×22，去掉单行化时压小的那些覆盖 */
+/* ⋯ 紧跟轨迹后面 */
 [data-mobile] .wSkVaW_viewsMore {
   flex: 0 0 auto !important;
-  width: 22px !important;
-  height: 22px !important;
-  margin: 0 8px 4px 4px !important;
-}
-/* 自建「更多会话视图」按钮（官方只在「有 view entry actions 注册」时才渲染
-   那个 ⋯；本机 profile 没有任何 entry action，所以官方按钮整个不出现。
-   这里补一个同款按钮 + 同款菜单，保证三件套里的第三样永远在。
-   ⚠️ 只在官方按钮不存在时注入，官方一旦出现就让位，不会出现两个 ⋯。 */
-[data-mobile] .mp-views-more {
-  display: inline-flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  padding: 0 !important;
-  border: none !important;
-  background: transparent !important;
-  border-radius: 6px !important;
-  color: var(--dsw-alias-label-tertiary, #8a8a8a) !important;
-  opacity: 1 !important;
-  visibility: visible !important;
-  cursor: pointer !important;
-}
-[data-mobile] .mp-views-more[aria-expanded="true"] {
-  background: var(--dsw-alias-interactive-bg-hover, rgba(127, 127, 127, .15)) !important;
-}
-.mp-views-menu-list {
-  display: flex !important;
-  flex-direction: column !important;
-  gap: 2px !important;
-}
-.mp-views-menu {
-  position: fixed !important;
-  z-index: 1200 !important;
-  min-width: 168px !important;
-  max-width: calc(100vw - 24px) !important;
-  padding: 6px !important;
-  border-radius: 12px !important;
-  background: var(--dsw-alias-bg-elevated, #fff) !important;
-  border: 1px solid rgba(127, 127, 127, .18) !important;
-  box-shadow: 0 8px 28px rgba(0, 0, 0, .18) !important;
-}
-.mp-views-item {
-  display: block !important;
-  width: 100% !important;
-  text-align: left !important;
-  border: none !important;
-  background: transparent !important;
-  color: var(--dsw-alias-label-primary, #222) !important;
-  font-size: 14px !important;
-  line-height: 20px !important;
-  padding: 9px 12px !important;
-  border-radius: 8px !important;
-  cursor: pointer !important;
-}
-.mp-views-item:hover {
-  background: rgba(127, 127, 127, .12) !important;
-}
-.mp-views-item-active {
-  color: var(--dsw-alias-state-business-primary, #4d6bfe) !important;
-  font-weight: 600 !important;
+  width: 20px !important;
+  height: 20px !important;
+  margin: 0 0 0 6px !important;
 }
 
 /* ══ 修复 34：轨迹页详情面板底部被输入框挡住（2026-09-16 啾灵反馈）══════════
@@ -3466,11 +3397,9 @@ mpSetMenuOpenClass(false);
 				/* 修复 30c（方案 A）：tabs 行回到第二行后，natural 里已经含它。
 				   ×1.25 只该作用在「标题行」上，否则两行再放大会暴涨 ~20px。
 				   所以：目标高 = (natural − tabsH) × MP_HDR_SCALE + tabsH */
-				const tabsEl = header.querySelector(".wSkVaW_tabs");
-				const tabsH = tabsEl ? tabsEl.getBoundingClientRect().height : 0;
-				const titleOnly = Math.max(0, natural - tabsH);
-				const target = titleOnly * MP_HDR_SCALE + tabsH;
-				root.style.setProperty("--mp-hdr-h", Math.round(target * 100) / 100 + "px");
+				/* tabs 现在 absolute 定位，不再撑高 header：natural 就是「标题行 + 徽章行」
+				   的自然高度，直接 ×1.25 即可（恢复修复 61 的原始语义）。 */
+				root.style.setProperty("--mp-hdr-h", Math.round(natural * MP_HDR_SCALE * 100) / 100 + "px");
 			}
 
 			// 修复 59：把 mpSyncHeaderCenter 合并到下一帧执行。
@@ -3494,6 +3423,8 @@ mpSetMenuOpenClass(false);
 					try { mpSyncFloatNavGap(); } catch (e) { /* 静默：纯外观，绝不影响功能 */ }
 					// 修复 30c：补「更多会话视图」⋯（官方只在有 entry action 注册时才渲染）
 					try { mpEnsureViewsMore(); } catch (e) { /* 静默：纯外观，绝不影响功能 */ }
+					// 修复 30c：tabs 内联到「标准模式」徽章右侧
+					try { mpLayoutTabsInline(); } catch (e) { /* 静默：纯外观，绝不影响功能 */ }
 				});
 			}
 
@@ -3558,6 +3489,58 @@ mpSetMenuOpenClass(false);
 				if (next === mpFloatNavH) return; // 无变化 ⇒ 不写 DOM ⇒ 不触发 observer
 				mpFloatNavH = next;
 				root.style.setProperty("--mp-float-nav-h", next);
+			}
+
+			/* ══ 修复 30c（内联版）：把 tabs 摆到「标准模式」徽章右侧 ═══════════
+			   目标布局（用户 2026-10-30 圈定）：
+			     第 1 行：             标题                    ⋯ ▢
+			     第 2 行： ☰   [徽章 标准模式]  对话  轨迹  ⋯
+			   tabs 已由 CSS 改成 absolute，这里只负责给 left/top：
+			     · 左边界 = 徽章右边缘 + 10px（徽章若没有，退化为右对齐）
+			     · 垂直 = 与徽章同一水平线（居中）
+			     · 右上角 ⋯ / 侧栏按钮占 44px，右边界扣掉，避免压住
+			   ⚠️ 用指纹（header 尺寸 + 徽章位置 + tabs 尺寸）做幂等，
+			     不变就不写 DOM，不发无谓的重排。 */
+			var mpTabsKey = "";
+			function mpLayoutTabsInline() {
+				const root = document.documentElement;
+				if (!root.hasAttribute("data-mobile")) return;
+				const header = document.querySelector(".wSkVaW_header");
+				if (!header) return;
+				const tabs = header.querySelector(".wSkVaW_tabs");
+				if (!tabs) return;
+				const hr = header.getBoundingClientRect();
+				const tr = tabs.getBoundingClientRect();
+				if (hr.width < 1 || tr.height < 1) return;
+				const actions = header.querySelector(".wSkVaW_headerActions");
+				let ar = actions ? actions.getBoundingClientRect() : null;
+				if (ar && (ar.width < 1 || ar.height < 1)) ar = null;
+				const key = [
+					Math.round(hr.width), Math.round(hr.height),
+					ar ? Math.round(ar.right - hr.left) : -1,
+					ar ? Math.round(ar.top - hr.top) : -1,
+					ar ? Math.round(ar.height) : -1,
+					Math.round(tr.width), Math.round(tr.height),
+				].join(":");
+				if (key === mpTabsKey) return;
+				const GAP = 10;
+				const RIGHT_RESERVE = 44; // 右上角 ⋯ / 侧栏按钮
+				let left, top;
+				if (ar) {
+					left = Math.round(ar.right - hr.left + GAP);
+					top = Math.round(ar.top - hr.top + (ar.height - tr.height) / 2);
+				} else {
+					left = Math.round(hr.width - RIGHT_RESERVE - 12 - tr.width);
+					top = Math.round((hr.height - tr.height) / 2);
+				}
+				const maxLeft = Math.max(8, Math.round(hr.width - RIGHT_RESERVE - 12 - tr.width));
+				if (left > maxLeft) left = maxLeft;
+				if (left < 8) left = 8;
+				if (top < 0) top = 0;
+				mpTabsKey = key;
+				tabs.style.setProperty("left", left + "px");
+				tabs.style.setProperty("top", top + "px");
+				tabs.style.setProperty("max-width", Math.max(60, Math.round(hr.width - left - 12)) + "px");
 			}
 
 			/* ══ 修复 30c：自建「更多会话视图」⋯ ══════════════════════════════
@@ -3663,6 +3646,7 @@ mpSetMenuOpenClass(false);
 			   保证按钮在任何时刻都在。 */
 			setInterval(() => {
 				try { mpEnsureViewsMore(); } catch (e) { /* 静默 */ }
+				try { mpLayoutTabsInline(); } catch (e) { /* 静默 */ }
 				try {
 					if (mpViewsMenuEl && !document.body.contains(mpViewsMenuEl)) { mpViewsMenuEl = null; }
 				} catch (e) { /* 静默 */ }
