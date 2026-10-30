@@ -387,6 +387,55 @@ window.__ModuleLoader__.load({
   height: 22px !important;
   margin: 0 8px 4px 4px !important;
 }
+/* 自建「更多会话视图」按钮（官方只在「有 view entry actions 注册」时才渲染
+   那个 ⋯；本机 profile 没有任何 entry action，所以官方按钮整个不出现。
+   这里补一个同款按钮 + 同款菜单，保证三件套里的第三样永远在。
+   ⚠️ 只在官方按钮不存在时注入，官方一旦出现就让位，不会出现两个 ⋯。 */
+[data-mobile] .mp-views-more {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 0 !important;
+  border: none !important;
+  background: transparent !important;
+  border-radius: 6px !important;
+  color: var(--dsw-alias-label-secondary, #8a8a8a) !important;
+  cursor: pointer !important;
+}
+[data-mobile] .mp-views-more[aria-expanded="true"] {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(127, 127, 127, .15)) !important;
+}
+.mp-views-menu {
+  position: fixed !important;
+  z-index: 1200 !important;
+  min-width: 168px !important;
+  max-width: calc(100vw - 24px) !important;
+  padding: 6px !important;
+  border-radius: 12px !important;
+  background: var(--dsw-alias-bg-elevated, #fff) !important;
+  border: 1px solid rgba(127, 127, 127, .18) !important;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, .18) !important;
+}
+.mp-views-item {
+  display: block !important;
+  width: 100% !important;
+  text-align: left !important;
+  border: none !important;
+  background: transparent !important;
+  color: var(--dsw-alias-label-primary, #222) !important;
+  font-size: 14px !important;
+  line-height: 20px !important;
+  padding: 9px 12px !important;
+  border-radius: 8px !important;
+  cursor: pointer !important;
+}
+.mp-views-item:hover {
+  background: rgba(127, 127, 127, .12) !important;
+}
+.mp-views-item-active {
+  color: var(--dsw-alias-state-business-primary, #4d6bfe) !important;
+  font-weight: 600 !important;
+}
 
 /* ══ 修复 34：轨迹页详情面板底部被输入框挡住（2026-09-16 啾灵反馈）══════════
    现象：轨迹页点开某条数据后，右侧详情面板一直延伸到屏幕最底部，
@@ -3436,6 +3485,8 @@ mpSetMenuOpenClass(false);
 					try { mpSyncHeaderCenter(); } catch (e) { /* 静默：纯外观，绝不影响功能 */ }
 					// 修复 66：与上面两件事共用同一帧（零额外重排）
 					try { mpSyncFloatNavGap(); } catch (e) { /* 静默：纯外观，绝不影响功能 */ }
+					// 修复 30c：补「更多会话视图」⋯（官方只在有 entry action 注册时才渲染）
+					try { mpEnsureViewsMore(); } catch (e) { /* 静默：纯外观，绝不影响功能 */ }
 				});
 			}
 
@@ -3501,6 +3552,111 @@ mpSetMenuOpenClass(false);
 				mpFloatNavH = next;
 				root.style.setProperty("--mp-float-nav-h", next);
 			}
+
+			/* ══ 修复 30c：自建「更多会话视图」⋯ ══════════════════════════════
+			   官方 ConversationSessionHeader 的渲染条件是
+			     hasEntryActions = slots.entriesOfSlot("conversation.session.header.views.actions").length > 0
+			   本机 profile 里没有任何插件往那个槽位注册（插件启动器 roster 为空），
+			   于是 hasEntryActions=false ⇒ ⋯ 整个不渲染，只剩「对话 / 轨迹」两个 tab。
+			   桌面端能看到 ⋯，正是因为那边的 profile 有 entry actions。
+
+			   这里补一个同款按钮 + 同款菜单：
+			     · 只在官方 ⋯ 不存在时注入，官方出现就自动让位（不会两个⋯）
+			     · 菜单项直接读当前所有 .wSkVaW_tab，点哪项就点对应 tab
+			     · 额外提供「会话层级」（若页面上存在对应控件）
+			   纯 DOM 层，不碰 React 子树；官方重渲染把按钮摘掉后，
+			   下一帧 mpScheduleHeaderCenter 会重新挂回去（同修复 47 的自持引用思路）。 */
+			var mpViewsMoreBtn = null;
+			var mpViewsMenuEl = null;
+
+			function mpCloseViewsMenu() {
+				if (mpViewsMenuEl) { mpViewsMenuEl.remove(); mpViewsMenuEl = null; }
+				if (mpViewsMoreBtn) mpViewsMoreBtn.setAttribute("aria-expanded", "false");
+			}
+
+			function mpToggleViewsMenu() {
+				if (mpViewsMenuEl) { mpCloseViewsMenu(); return; }
+				const tabs = Array.prototype.slice.call(document.querySelectorAll("[data-mobile] .wSkVaW_tab"));
+				if (!tabs.length) return;
+				const menu = document.createElement("div");
+				menu.className = "mp-views-menu";
+				menu.setAttribute("role", "menu");
+				tabs.forEach((tb) => {
+					const item = document.createElement("button");
+					item.type = "button";
+					item.className = "mp-views-item";
+					item.setAttribute("role", "menuitem");
+					item.textContent = (tb.textContent || "").trim();
+					if (tb.getAttribute("aria-selected") === "true") item.classList.add("mp-views-item-active");
+					item.addEventListener("click", (ev) => {
+						ev.preventDefault(); ev.stopPropagation();
+						try { tb.click(); } catch (e) { /* 忽略 */ }
+						mpCloseViewsMenu();
+					}, { passive: false });
+					menu.appendChild(item);
+				});
+				// 「会话层级」：页面存在对应控件时才加（官方入口未必注册）
+				const hier = document.querySelector('[aria-label="会话层级"],[title="会话层级"]');
+				if (hier) {
+					const item = document.createElement("button");
+					item.type = "button";
+					item.className = "mp-views-item";
+					item.setAttribute("role", "menuitem");
+					item.textContent = "会话层级";
+					item.addEventListener("click", (ev) => {
+						ev.preventDefault(); ev.stopPropagation();
+						try { hier.click(); } catch (e) { /* 忽略 */ }
+						mpCloseViewsMenu();
+					}, { passive: false });
+					menu.appendChild(item);
+				}
+				document.body.appendChild(menu);
+				mpViewsMenuEl = menu;
+				if (mpViewsMoreBtn) mpViewsMoreBtn.setAttribute("aria-expanded", "true");
+				const r = (mpViewsMoreBtn || tabs[0]).getBoundingClientRect();
+				const mw = menu.getBoundingClientRect().width || 168;
+				const left = Math.max(8, Math.min(window.innerWidth - mw - 8, r.right - mw));
+				const top = Math.min(window.innerHeight - 12 - menu.getBoundingClientRect().height, r.bottom + 6);
+				menu.style.left = Math.round(left) + "px";
+				menu.style.top = Math.max(8, Math.round(top)) + "px";
+			}
+
+			function mpEnsureViewsMore() {
+				if (!mpIsMobile()) return;
+				const tabsRow = document.querySelector("[data-mobile] .wSkVaW_tabs");
+				if (!tabsRow) { return; }
+				// 官方 ⋯ 在（profile 有 entry actions）→ 我们的让位
+				const official = tabsRow.querySelector(".wSkVaW_viewsMore:not(.mp-views-more)");
+				if (official) {
+					if (mpViewsMoreBtn && mpViewsMoreBtn.isConnected) mpViewsMoreBtn.remove();
+					mpViewsMoreBtn = null;
+					return;
+				}
+				if (mpViewsMoreBtn && mpViewsMoreBtn.isConnected && mpViewsMoreBtn.parentElement === tabsRow) return;
+				const btn = document.createElement("button");
+				btn.type = "button";
+				btn.className = "wSkVaW_viewsMore mp-views-more";
+				btn.title = "更多会话视图";
+				btn.setAttribute("aria-label", "更多会话视图");
+				btn.setAttribute("aria-haspopup", "menu");
+				btn.setAttribute("aria-expanded", "false");
+				btn.innerHTML = '<svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">'
+					+ '<circle cx="3" cy="8" r="1.6"/><circle cx="8" cy="8" r="1.6"/><circle cx="13" cy="8" r="1.6"/></svg>';
+				btn.addEventListener("click", (ev) => {
+					ev.preventDefault(); ev.stopPropagation(); mpToggleViewsMenu();
+				}, { passive: false });
+				tabsRow.appendChild(btn);
+				mpViewsMoreBtn = btn;
+			}
+
+			document.addEventListener("click", (ev) => {
+				if (!mpViewsMenuEl) return;
+				if (mpViewsMenuEl.contains(ev.target)) return;
+				if (mpViewsMoreBtn && mpViewsMoreBtn.contains(ev.target)) return;
+				mpCloseViewsMenu();
+			}, true);
+			window.addEventListener("scroll", mpCloseViewsMenu, { passive: true, capture: true });
+			window.addEventListener("resize", mpCloseViewsMenu, { passive: true });
 
 			function mpAnchorBurger() {
 				if (!mpIsMobile()) return; // 修复 40：非移动端绝不挂载汉堡
