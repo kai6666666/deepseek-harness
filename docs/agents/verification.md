@@ -899,3 +899,17 @@ Radix 的 DropdownMenu 是「click 切换」语义：① 打开、② 立刻关�
 > （非全面屏模式），所以页面 CSS 坐标 → 屏幕坐标要按
 > `deviceY = 153.5 + cssY * 3.25`、`deviceX = cssX * 3.25`。
 > 直接用 `cssY * dpr` 会稳定偏上约 47 CSS px，测试时极易误判成「点击没到」。
+
+**部署（两条路）**
+
+1. **已装的 APK 不重装**：`sh tools/apply-clickfix.sh` 把 `dsh-clickfix.js` 写进
+   `files/engine/node_modules/@deepseek-ai/dsh-web-frontend/dist/`，并在同目录
+   `index.html` 的 `webview-polyfill.js` 之前插一个 script 标签，重启 App 即生效。
+   （不能直接改 `dist/webview-polyfill.js`：`EngineManager.ensureWebCompat()` 每次启动
+   都用 APK 资产覆盖它。）
+2. **出包**：`assets/webview-polyfill.js` 已带同一段逻辑，CI `android-release` 出的
+   新 APK 天然带修（run 41004651075：system 144MB / gecko 223MB 双 flavor success）。
+
+> ⚠️ 已装的是 `0.4.1-debug`（debug 签名），CI 出的是 release 签名，
+> `pm install -r` 会报 `INSTALL_FAILED_UPDATE_INCOMPATIBLE`。
+> 要换正式包必须先卸载（会清数据），所以本机现在走的是路径 1。
