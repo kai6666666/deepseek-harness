@@ -328,21 +328,11 @@ window.__ModuleLoader__.load({
 [data-mobile] .wSkVaW_headerActions span[title] {
   display: inline-flex !important;
 }
-/* ══ 修复 30c（内联版·DOM 归位）════════════════════════════════════════
-   历史：修复 30 曾用 display:none 整条隐藏 tabs（对话 / 轨迹 / 更多会话视图），
-   导致手机上三件套一起消失。现在按用户要求恢复，并放到
-   「标准模式」徽章右侧的同一水平线上。
+/* 30c mirror: tabs offscreen + inline mirror bar */
 
-   做法（不猜坐标、不写死像素）：
-     把整条 .wSkVaW_tabs **搬进** .wSkVaW_headerActions（徽章所在的 flex
-     容器），由普通 flex 流排在徽章右边；徽章宽度变了它自然跟着走。
-     React 重渲染把它搬回原处时，由 500ms 心跳再搬回来（见 JS）。
-     tabs 不占额外行 ⇒ header 高度回到单行量级。 */
 [data-mobile] .wSkVaW_header {
   overflow: visible !important;
 }
-/* 官方 titleCluster 是 overflow:clip + mask 渐隐（用来裁长标题），
-   tabs 搬进它内部后会被裁掉 → 这里放开裁剪，否则「搬进去但看不见」。 */
 [data-mobile] .wSkVaW_titleCluster {
   overflow: visible !important;
   -webkit-mask-image: none !important;
@@ -351,53 +341,83 @@ window.__ModuleLoader__.load({
 [data-mobile] .wSkVaW_titleRow {
   overflow: visible !important;
 }
-/* 徽章（标准模式）不许被 tabs 压缩成「标准」 */
-[data-mobile] .wSkVaW_headerActions > * {
-  flex: 0 0 auto !important;
-}
 [data-mobile] .wSkVaW_headerActions {
   display: flex !important;
   flex-direction: row !important;
   flex-wrap: nowrap !important;
   align-items: center !important;
   justify-content: center !important;
-  gap: 8px !important;
+  gap: 6px !important;
   min-width: 0 !important;
 }
+[data-mobile] .wSkVaW_headerActions > * {
+  flex: 0 0 auto !important;
+}
+   官方 tabs：留节点、移出可视区
 [data-mobile] .wSkVaW_tabs {
-  position: static !important;
+  position: fixed !important;
+  left: -4000px !important;
+  top: -4000px !important;
+  width: 360px !important;
   display: flex !important;
-  align-items: center !important;
-  flex-wrap: nowrap !important;
-  gap: 0 !important;
-  margin: 0 0 0 2px !important;
-  padding: 0 !important;
-  min-width: 0 !important;
-  overflow: visible !important;
-  z-index: auto !important;
-  pointer-events: auto !important;
-}
-[data-mobile] .wSkVaW_viewTabs {
-  flex-wrap: nowrap !important;
-  flex: 0 0 auto !important;
-  gap: 12px !important;
-  min-height: 26px !important;
-  align-items: center !important;
-}
-[data-mobile] .wSkVaW_tab {
-  flex: 0 0 auto !important;
-  min-height: 26px !important;
   margin: 0 !important;
-  padding: 3px 3px 4px !important;
+  padding: 0 !important;
+}
+   官方 ⋯ 与自建 ⋯（旧方案遗留）都藏起来，这里用镜像条里的那一个
+[data-mobile] .wSkVaW_viewsMore,
+[data-mobile] .mp-views-more {
+  display: none !important;
+}
+   内联镜像条
+.mp-inline-views {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 12px !important;
+  margin-left: 6px !important;
+  min-height: 26px !important;
+}
+.mp-inline-tab {
+  position: relative !important;
+  border: none !important;
+  background: transparent !important;
+  padding: 2px 1px 4px !important;
+  margin: 0 !important;
   font-size: 13px !important;
   line-height: 18px !important;
+  min-height: 26px !important;
+  color: var(--dsw-alias-label-tertiary, #8a8a8a) !important;
+  cursor: pointer !important;
   white-space: nowrap !important;
 }
-[data-mobile] .wSkVaW_viewsMore {
-  flex: 0 0 auto !important;
+.mp-inline-tab.mp-active {
+  color: var(--dsw-alias-state-business-primary, #4d6bfe) !important;
+}
+.mp-inline-tab.mp-active:after {
+  content: "" !important;
+  position: absolute !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: -1px !important;
+  height: 2px !important;
+  border-radius: 2px !important;
+  background: var(--dsw-alias-state-business-primary, #4d6bfe) !important;
+}
+.mp-inline-more {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
   width: 20px !important;
   height: 20px !important;
-  margin: 0 0 0 4px !important;
+  border: none !important;
+  background: transparent !important;
+  border-radius: 6px !important;
+  color: var(--dsw-alias-label-tertiary, #8a8a8a) !important;
+  cursor: pointer !important;
+  padding: 0 !important;
+  margin-left: 2px !important;
+}
+.mp-inline-more[aria-expanded="true"] {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(127, 127, 127, .15)) !important;
 }
 
 /* ══ 修复 34：轨迹页详情面板底部被输入框挡住（2026-09-16 啾灵反馈）══════════
@@ -3526,39 +3546,112 @@ mpSetMenuOpenClass(false);
 			     · 右上角 ⋯ / 侧栏按钮占 44px，右边界扣掉，避免压住
 			   ⚠️ 用指纹（header 尺寸 + 徽章位置 + tabs 尺寸）做幂等，
 			     不变就不写 DOM，不发无谓的重排。 */
-			var mpTabsDocked = false;
-			function mpLayoutTabsInline() {
+			var mpInlineBar = null;
+			var mpInlineSig = "";
+			function mpOfficialTabs() {
+				return Array.prototype.slice.call(document.querySelectorAll(".wSkVaW_tabs .wSkVaW_tab"));
+			}
+			function mpBuildInlineBar() {
 				const root = document.documentElement;
-				if (!root.hasAttribute("data-mobile")) { mpTabsDocked = false; return; }
+				if (!root.hasAttribute("data-mobile")) return;
 				const header = document.querySelector(".wSkVaW_header");
 				if (!header) return;
-				const tabs = header.querySelector(".wSkVaW_tabs");
-				if (!tabs) return;
 				const actions = header.querySelector(".wSkVaW_headerActions");
 				if (!actions) return;
-				// 清掉上一版留下的绝对定位内联样式（升级后老样式仍在 DOM 上）
-				if (tabs.style.getPropertyValue("left")) tabs.style.removeProperty("left");
-				if (tabs.style.getPropertyValue("top")) tabs.style.removeProperty("top");
-				if (tabs.style.getPropertyValue("max-width")) tabs.style.removeProperty("max-width");
-				if (tabs.parentElement !== actions) {
-					// 搬到徽章后面：同一 flex 行 → 天然同一水平线
-					try { actions.appendChild(tabs); mpTabsDocked = true; } catch (e) { /* 静默 */ }
+				let bar = actions.querySelector(".mp-inline-views");
+				if (!bar) {
+					bar = document.createElement("div");
+					bar.className = "mp-inline-views";
+
+					const makeTab = (label, idx) => {
+						const b = document.createElement("button");
+						b.type = "button";
+						b.className = "mp-inline-tab";
+						b.setAttribute("data-mp-view-index", String(idx));
+						b.textContent = label;
+						b.addEventListener("click", (ev) => {
+							ev.preventDefault(); ev.stopPropagation();
+							const tabs = mpOfficialTabs();
+							if (tabs[idx]) {
+								try { tabs[idx].click(); } catch (e) { /* 忽略 */ }
+							}
+							setTimeout(mpSyncInlineActive, 60);
+						}, { passive: false });
+						return b;
+					};
+
+					bar.appendChild(makeTab("对话", 0));
+					bar.appendChild(makeTab("轨迹", 1));
+
+					const more = document.createElement("button");
+					more.type = "button";
+					more.className = "mp-inline-more";
+					more.title = "更多会话视图";
+					more.setAttribute("aria-label", "更多会话视图");
+					more.setAttribute("aria-haspopup", "menu");
+					more.setAttribute("aria-expanded", "false");
+					more.innerHTML = '<svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">'
+						+ '<circle cx="3" cy="8" r="1.6"/><circle cx="8" cy="8" r="1.6"/><circle cx="13" cy="8" r="1.6"/></svg>';
+					more.addEventListener("click", (ev) => {
+						ev.preventDefault(); ev.stopPropagation();
+						if (mpViewsMenuEl) { mpCloseViewsMenu(); return; }
+						mpOpenInlineMenu(more);
+					}, { passive: false });
+					bar.appendChild(more);
+
+					actions.appendChild(bar);
+					mpInlineBar = bar;
 				}
-				/* 官方用「tabs 容器的 clientWidth」算可见 tab 数：
-				     visibleViewLimit = floor((clientWidth - 48) / 120)
-				   容器窄 → 只剩 1 个 tab，轨迹被收进 ⋯（而 ⋯ 本身也被挤掉）。
-				   搬进 flex 行后容器宽度由内容决定，必须显式给它「到右边界为止」的宽度。 */
-				try {
-					const hr = header.getBoundingClientRect();
-					const tr = tabs.getBoundingClientRect();
-					/* 官方 visibleViewLimit = floor((客户端宽 - 48) / 120)：
-					   想让「对话 + 轨迹」同时显示，容器宽必须 ≥ 288。
-					   这里直接给整行宽度（≥360），limit 就是 2~3 —— 两个 tab 全在，
-					   而 flex-start 排布让它们仍从左边徽章后开始、⋯ 紧跟轨迹，
-					   不会真的把元素推到屏幕外（超出的只是不可见的盒子）。 */
-					const avail = Math.max(Math.round(hr.width), 360);
-					if (Math.abs(Math.round(tr.width) - avail) > 4) tabs.style.setProperty("width", avail + "px");
-				} catch (e) { /* 静默 */ }
+				mpSyncInlineActive();
+			}
+			function mpSyncInlineActive() {
+				const bar = mpInlineBar || document.querySelector(".mp-inline-views");
+				if (!bar) return;
+				mpInlineBar = bar;
+				const tabs = mpOfficialTabs();
+				const active = tabs.findIndex((t) => t.getAttribute("aria-selected") === "true");
+				Array.prototype.slice.call(bar.querySelectorAll(".mp-inline-tab")).forEach((b, i) => {
+					b.classList.toggle("mp-active", i === active);
+				});
+			}
+			/* ⋯ 菜单：列出所有视图 tab（点哪项就点对应官方 tab） */
+			function mpOpenInlineMenu(anchor) {
+				const tabs = mpOfficialTabs();
+				const menu = document.createElement("div");
+				menu.className = "mp-views-menu";
+				menu.setAttribute("role", "menu");
+				const list = document.createElement("div");
+				list.className = "mp-views-menu-list";
+				tabs.forEach((tb, i) => {
+					const item = document.createElement("button");
+					item.type = "button";
+					item.className = "mp-views-item" + (tb.getAttribute("aria-selected") === "true" ? " mp-views-item-active" : "");
+					item.setAttribute("role", "menuitem");
+					item.textContent = (tb.textContent || "").trim() || (i === 0 ? "对话" : "轨迹");
+					item.addEventListener("click", (ev) => {
+						ev.preventDefault(); ev.stopPropagation();
+						try { tb.click(); } catch (e) { /* 忽略 */ }
+						mpCloseViewsMenu();
+						setTimeout(mpSyncInlineActive, 60);
+					}, { passive: false });
+					list.appendChild(item);
+				});
+				menu.appendChild(list);
+				document.body.appendChild(menu);
+				mpViewsMenuEl = menu;
+				if (anchor) anchor.setAttribute("aria-expanded", "true");
+				const r = anchor.getBoundingClientRect();
+				const mw = menu.getBoundingClientRect().width || 168;
+				const left = Math.max(8, Math.min(window.innerWidth - mw - 8, r.right - mw));
+				let top = r.bottom + 6;
+				const mh = menu.getBoundingClientRect().height || 0;
+				if (mh && top + mh > window.innerHeight - 8) top = Math.max(8, window.innerHeight - 8 - mh);
+				menu.style.left = Math.round(left) + "px";
+				menu.style.top = Math.round(top) + "px";
+			}
+			/* 保留旧函数名（rAF / 心跳里已经在调它） */
+			function mpLayoutTabsInline() {
+				try { mpBuildInlineBar(); } catch (e) { /* 静默：纯外观 */ }
 			}
 
 			/* ══ 修复 30c：自建「更多会话视图」⋯ ══════════════════════════════
