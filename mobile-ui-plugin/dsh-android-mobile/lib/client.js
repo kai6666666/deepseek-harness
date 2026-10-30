@@ -10301,7 +10301,9 @@ function apply(ctx) {
 							bar.appendChild(more);
 							header.appendChild(bar);
 						}
-						bar.style.display = "inline-flex";
+						// 如果镜像条是旧代码 create 在 body 上的，搬进 header（坐标以 header 为基准）
+					if (bar.parentElement !== header) header.appendChild(bar);
+					bar.style.display = "inline-flex";
 						// 同步选中态
 						const tabs = [...document.querySelectorAll(".wSkVaW_tabs .wSkVaW_tab")];
 						const act = tabs.findIndex((t) => t.getAttribute("aria-selected") === "true");
