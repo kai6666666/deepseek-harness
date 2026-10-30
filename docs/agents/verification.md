@@ -952,3 +952,48 @@ Failure [INSTALL_FAILED_USER_RESTRICTED: Install canceled by user]
 
 > ⚠️ `UserDataImporter` 只认 `UserDataExporter.ITEMS` 里那七项路径，
 > 所以自建备份包必须严格用这些前缀，否则 `matchId()` 归不了类、条目会被静默跳过。
+
+### ⑯.7 CI 出的包在真机起不来：`bootstrap-aarch64.zip` 没人造
+
+`pm install` 成功、App 能开，但启动层一直显示 **引擎启动失败**，日志里是两条看着无关的错：
+
+```text
+[E] Termux 引导失败
+java.io.FileNotFoundException: bootstrap-aarch64.zip
+[W] node --version 校验失败: rc=1
+      CANNOT LINK EXECUTABLE ".../termux/usr/bin/node": library "libz.so.1" not found
+```
+
+**同一个洞**：Termux 前缀（bash/apt/coreutils + libz/libssl/libc++_shared + SYMLINKS.txt）
+没铺，`node-runtime.bin` 按设计**不重复打包**这几份系统库，于是 node 连 libz 都找不到。
+
+根因在 CI：
+
+| 事实 | 值 |
+|---|---|
+| `tools/build-bootstrap.sh` | 存在，注释里连这个 bug 都写好了 |
+| `android-release.yml` | **从来没调用它** |
+| `ci-fetch-assets.sh` 的 REQUIRED | 含 `bootstrap-aarch64.zip`，但只在「指定了 ASSETS_TAG」时才下载 |
+| 无 ASSETS_TAG 时 | engine.bin / node-runtime.bin 由 `build-*.sh` 现场造，bootstrap **无人负责** |
+| APK 内 `ASSETS_MISSING.txt` | 写着「未指定 ASSETS_TAG」——就是这个信号 |
+
+修法（提交见下）：workflow 里补一步
+
+```yaml
+- name: 现场取 Termux bootstrap（bootstrap-aarch64.zip）
+  run: |
+    OUT="$GITHUB_WORKSPACE/app/src/main/assets/bootstrap-aarch64.zip" \
+      bash tools/build-bootstrap.sh
+- name: 资产闸门（缺 bootstrap 直接失败）
+  run: |
+    for f in engine.bin node-runtime.bin bootstrap-aarch64.zip; do
+      [ -s "app/src/main/assets/$f" ] || { echo "::error::缺少 $f"; exit 1; }
+    done
+```
+
+`build-bootstrap.sh` 自带三道体检，缺任何一项都不出包：条目数 > 1000、必须有
+`SYMLINKS.txt`（zip 不存软链，`libz.so.1` 靠它重建）、`bootstrap-required.txt`
+里的每个 soname 都能被提供。
+
+> 教训：**「资产齐备 28/28」不等于真机能跑** —— 清单本身漏项时，体检会一起骗你。
+> 判据要落在「设备上 `node --version` 返回 0」这种外部事实上，而不是构建日志的自述。
