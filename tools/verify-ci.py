@@ -44,6 +44,11 @@ def main():
         jobs = get(API + '/actions/runs/%d/jobs' % rid).get('jobs', [])
         bad = [s['name'] for j in jobs for s in j.get('steps', []) if s.get('conclusion') == 'failure']
         steps = 'failed_steps=' + (','.join(bad) if bad else 'none')
+        # 产物自证：出包后拆 APK 检查 bootstrap + 两段 polyfill 补丁是否在包里。
+        # 这条闸门失败时 CI 本来就会红，这里只是把结论单列出来，方便一眼看到。
+        proof = [st['conclusion'] for j in jobs for st in j.get('steps', [])
+                 if '产物自证' in st.get('name', '')]
+        steps += ' product_proof=' + (','.join(sorted(set(proof))) if proof else 'missing')
     except Exception:
         pass
 
