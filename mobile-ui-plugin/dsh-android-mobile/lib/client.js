@@ -370,7 +370,7 @@ window.__ModuleLoader__.load({
 }
    内联镜像条
 .mp-inline-views {
-  position: fixed !important;
+  position: absolute !important;
   display: inline-flex !important;
   align-items: center !important;
   gap: 12px !important;
@@ -3613,10 +3613,12 @@ mpSetMenuOpenClass(false);
 					if (br && (br.width < 1 || br.height < 1)) br = null;
 					const bw = bar.getBoundingClientRect().width || 120;
 					const bh = bar.getBoundingClientRect().height || 26;
-					let left = br ? br.right + 8 : hr.left + 52;
-					let top = br ? br.top + (br.height - bh) / 2 : hr.top + hr.height - bh - 6;
-					left = Math.max(8, Math.min(window.innerWidth - bw - 8, left));
-					top = Math.max(0, Math.min(window.innerHeight - bh - 4, top));
+					/* header 是 position:relative，用它当坐标系（fixed 在 WebView 里
+					   会被某个祖先的 containing block 影响，实测 offset 到 (0,806)）。 */
+					let left = br ? br.right - hr.left + 8 : 52;
+					let top = br ? br.top - hr.top + (br.height - bh) / 2 : hr.height - bh - 6;
+					left = Math.max(4, Math.min(hr.width - bw - 4, left));
+					top = Math.max(0, Math.min(hr.height - bh, top));
 					const sig = Math.round(left) + ":" + Math.round(top) + ":" + Math.round(bw);
 					if (sig !== mpInlineSig) {
 						mpInlineSig = sig;
@@ -10297,7 +10299,7 @@ function apply(ctx) {
 								menu.style.top = Math.max(8, Math.min(window.innerHeight - mh - 8, r.bottom + 6)) + "px";
 							}, { passive: false });
 							bar.appendChild(more);
-							document.body.appendChild(bar);
+							header.appendChild(bar);
 						}
 						bar.style.display = "inline-flex";
 						// 同步选中态
