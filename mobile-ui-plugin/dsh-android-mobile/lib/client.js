@@ -10315,12 +10315,17 @@ function apply(ctx) {
 							const r = el.getBoundingClientRect();
 							return r.width > 4 && r.height > 4 ? r : null;
 						};
-						br = probe(document.querySelector(".wSkVaW_headerActions"));
-						if (!br) {
-							for (const el of document.querySelectorAll(".wSkVaW_header span, .wSkVaW_header div")) {
-								if (el.children.length === 0 && /标准|模式/.test(el.textContent || "")) { br = probe(el); if (br) break; }
-							}
+						/* 找包含「标准…模式」的最小盒子（徽章文字常被拆成多个节点，
+						   所以按 textContent 包含判断，再取宽度最小的那个）。 */
+						let best = null, bestW = 1e9;
+						for (const el of document.querySelectorAll(".wSkVaW_header *")) {
+							const tx = (el.textContent || "").trim();
+							if (!/^标准/.test(tx) && !/标准模式/.test(tx)) continue;
+							const r = el.getBoundingClientRect();
+							if (r.width < 10 || r.height < 8 || r.width > 320) continue;
+							if (r.width < bestW) { bestW = r.width; best = r; }
 						}
+						br = best;
 						const bw = bar.getBoundingClientRect().width || 110;
 						const bh = bar.getBoundingClientRect().height || 26;
 						let left = br ? br.right + 8 : hr.left + 52;
