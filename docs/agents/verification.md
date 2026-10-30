@@ -913,3 +913,42 @@ Radix 的 DropdownMenu 是「click 切换」语义：① 打开、② 立刻关�
 > ⚠️ 已装的是 `0.4.1-debug`（debug 签名），CI 出的是 release 签名，
 > `pm install -r` 会报 `INSTALL_FAILED_UPDATE_INCOMPATIBLE`。
 > 要换正式包必须先卸载（会清数据），所以本机现在走的是路径 1。
+
+### ⑯.6 装正式包踩到的一堵墙：MIUI 的「USB 安装」门禁
+
+想从 debug 签名切到 release 包，`pm install -r` 一律返回：
+
+```text
+Failure [INSTALL_FAILED_USER_RESTRICTED: Install canceled by user]
+```
+
+真机取证：
+
+| 事实 | 值 |
+|---|---|
+| 弹窗 Activity | `com.miui.securitycenter/com.miui.permcenter.install.AdbInstallActivity` |
+| 弹窗内按钮 | 左「继续安装」x≈367 / 右蓝色「拒绝(10)」x≈912，y≈2578 |
+| 倒计时 | 10 秒，超时按「拒绝」处理 → 报 `Install canceled by user` |
+| `settings put global adb_install_need_confirm 0` | 无效（MIUI 不看这个键） |
+| `pm install -i <各类 installer>` | 三个包名全无效 |
+| `system_tools:install_app` | 同样走 `pm install`，同样被拦 |
+| 锁屏状态下 | 点击落到锁屏（`EmergencyDialer`），安装必然失败 |
+
+结论：**这一层只能靠「开发者选项 → USB 安装」开关，或用系统安装器（文件管理器点 APK）走正常安装流**。
+脚本化点击不可靠（10 秒窗口 + 锁屏干扰）。
+
+换包的正确顺序（会清数据，必须先备份）：
+
+```text
+1) run-as com.dsh.android tar -czf - -C files home/.dsh   > /data/local/tmp/dshbk/dsh.tgz
+2) run-as com.dsh.android tar -czf - -C files workspace   > /data/local/tmp/dshbk/workspace.tgz
+3) 打包成系统「导入数据」认的格式：zip 内路径相对 filesDir
+   home/.dsh/{sessions,profiles,storages,skills,deskpet,.credentials.yaml} + workspace/
+   文件名必须 dsh-backup-YYYYMMDD-HHMMSS.zip，放 /sdcard/Download
+4) pm uninstall com.dsh.android
+5) 装 release 包（文件管理器点 APK，别用 pm install）
+6) 首启 → 启动层「导入数据」→ 选 dsh-backup-*.zip → 全勾 → 开始恢复
+```
+
+> ⚠️ `UserDataImporter` 只认 `UserDataExporter.ITEMS` 里那七项路径，
+> 所以自建备份包必须严格用这些前缀，否则 `matchId()` 归不了类、条目会被静默跳过。
