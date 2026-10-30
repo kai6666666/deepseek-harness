@@ -351,6 +351,10 @@ window.__ModuleLoader__.load({
 [data-mobile] .wSkVaW_titleRow {
   overflow: visible !important;
 }
+/* 徽章（标准模式）不许被 tabs 压缩成「标准」 */
+[data-mobile] .wSkVaW_headerActions > * {
+  flex: 0 0 auto !important;
+}
 [data-mobile] .wSkVaW_headerActions {
   display: flex !important;
   flex-direction: row !important;
@@ -3547,7 +3551,12 @@ mpSetMenuOpenClass(false);
 				try {
 					const hr = header.getBoundingClientRect();
 					const tr = tabs.getBoundingClientRect();
-					const avail = Math.max(140, Math.round(hr.width - (tr.left - hr.left) - 56));
+					/* 官方 visibleViewLimit = floor((客户端宽 - 48) / 120)：
+					   想让「对话 + 轨迹」同时显示，容器宽必须 ≥ 288。
+					   这里直接给整行宽度（≥360），limit 就是 2~3 —— 两个 tab 全在，
+					   而 flex-start 排布让它们仍从左边徽章后开始、⋯ 紧跟轨迹，
+					   不会真的把元素推到屏幕外（超出的只是不可见的盒子）。 */
+					const avail = Math.max(Math.round(hr.width), 360);
 					if (Math.abs(Math.round(tr.width) - avail) > 4) tabs.style.setProperty("width", avail + "px");
 				} catch (e) { /* 静默 */ }
 			}
