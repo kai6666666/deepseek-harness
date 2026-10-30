@@ -997,3 +997,40 @@ java.io.FileNotFoundException: bootstrap-aarch64.zip
 
 > 教训：**「资产齐备 28/28」不等于真机能跑** —— 清单本身漏项时，体检会一起骗你。
 > 判据要落在「设备上 `node --version` 返回 0」这种外部事实上，而不是构建日志的自述。
+
+### ⑯.8 设置页下拉「点不开」的真正原因：菜单被 z-index:1000 的面板盖住
+
+范围和用户描述一致：**只有设置 → 通用设置 / 内置插件** 的下拉失效，其余（顶栏工作区、模式、模型选择、插件页）都正常。
+
+取证（临时把 release 设成 debuggable，`run-as` + 设备内 CDP，`tools/webview-cdp.cjs`）：
+
+| 检查 | 结果 |
+|---|---|
+| 真实 tap 落点 | `pointerdown/touchstart/pointerup/touchend/mousedown/mouseup/click` 全部命中 `button[aria-haspopup]`，坐标精确 |
+| click 次数 | **1 次**（不是之前那条「一次 tap 两次 click」） |
+| `aria-expanded` | 变 `true` |
+| `[role=menu]` | 真的挂到 `body` 上，rect `[234,626,144,76]`，`position:fixed`、`visible`、`opacity:1` |
+| 菜单 `z-index` | **60** |
+| 设置面板 | `.VOzbGW_overlay { z-index: 1000; background:#fff; 铺满 394×806 }` |
+| 菜单中心 `elementsFromPoint` | 前 6 层全是设置面板内容，**菜单根本不在栈里** |
+
+⇒ 菜单确实开了，但整块被设置面板盖住；用户看到的就是「完全没反应」。
+（顶栏那些下拉没有 z-index:1000 的容器压着，所以一直正常。）
+
+修法（`assets/webview-polyfill.js`）：
+
+```css
+[role="menu"],[role="listbox"]{ z-index:1100!important }
+```
+
+现场验证（同一台机、同一个包，切到 debuggable 版注入该规则后）：
+
+```text
+点「语言」 → 屏幕立刻出现菜单：中文 / English / 日本語 / Español / Français / Deutsch / Русский / Português
+```
+
+> 两次「同一现象不同根因」的教训：
+> 1. 顶栏下拉：一次 tap 派发两次 click → 靠 `__dshClickDedupe` 修；
+> 2. 设置页下拉：菜单被高层级面板遮住 → 靠 `z-index:1100` 修。
+> 同一个 bug report 里可能叠着两个独立缺陷，**必须看 `aria-expanded` 与 `elementsFromPoint`，
+> 不能只看「屏幕上没反应」**。
