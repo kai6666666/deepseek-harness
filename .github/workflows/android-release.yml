@@ -72,20 +72,6 @@ jobs:
           OUT="$GITHUB_WORKSPACE/app/src/main/assets/bootstrap-aarch64.zip" \
             bash tools/build-bootstrap.sh
 
-      - name: 资产闸门（缺 bootstrap 直接失败）
-        run: |
-          a=app/src/main/assets
-          miss=0
-          for f in engine.bin node-runtime.bin bootstrap-aarch64.zip; do
-            if [ -s "$a/$f" ]; then
-              echo "✅ $f $(du -h "$a/$f" | cut -f1)"
-            else
-              echo "::error::缺少关键资产 $f —— 这个包装到真机上引擎起不来"
-              miss=1
-            fi
-          done
-          exit $miss
-
       - name: 现场构建 node-runtime.bin（无 Release 时）
         if: env.ASSETS_TAG == ''
         run: |
@@ -129,6 +115,20 @@ jobs:
           else
             echo "::notice title=webview-compat::tools/build-webview_compat.py 不在仓库里，跳过"
           fi
+
+      - name: 资产闸门（缺 bootstrap 直接失败）
+        run: |
+          a=app/src/main/assets
+          miss=0
+          for f in engine.bin node-runtime.bin bootstrap-aarch64.zip; do
+            if [ -s "$a/$f" ]; then
+              echo "✅ $f $(du -h "$a/$f" | cut -f1)"
+            else
+              echo "::error::缺少关键资产 $f —— 这个包装到真机上引擎起不来"
+              miss=1
+            fi
+          done
+          exit $miss
 
       - name: 工具链自检
         run: |
