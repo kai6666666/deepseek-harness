@@ -331,6 +331,8 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
+            // 临时取证：量 header/tabs 几何，量完删掉
+            isDebuggable = true
             if (keystorePropsFile.exists()) {
                 signingConfig = signingConfigs.getByName("release")
             }
