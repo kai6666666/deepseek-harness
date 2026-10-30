@@ -331,6 +331,7 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
+            isDebuggable = true
             if (keystorePropsFile.exists()) {
                 signingConfig = signingConfigs.getByName("release")
             }
