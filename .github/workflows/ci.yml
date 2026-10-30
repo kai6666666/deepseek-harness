@@ -116,7 +116,7 @@ jobs:
           fail=0
           for f in tools/verify-full.sh tools/verify-guest.sh tools/verify-all.sh \
                    tools/verify-engine-upgrade.sh tools/mockrun.sh \
-                   tools/version.sh; do
+                   tools/version.sh tools/dsh-sessions.sh tools/apply-clickfix.sh; do
             if [ ! -f "$f" ]; then
               echo "::error::缺少入口脚本 $f"
               fail=1
@@ -127,6 +127,19 @@ jobs:
               fail=1
             fi
           done
+          # 会话清理必须「正文 + 侧栏缓存索引」一起清，否则 UI 继续显示已删的会话。
+          # 这两条字符串就是判据：缺了任何一个，说明又退化成半清理了。
+          for needle in purge session_projcache; do
+            if ! grep -q "$needle" tools/dsh-sessions.sh; then
+              echo "::error file=tools/dsh-sessions.sh::缺少 $needle（会话清理会变成半清理）"
+              fail=1
+            fi
+          done
+          # 下拉热补丁必须保持幂等守卫，否则重复注入会叠加事件监听。
+          if ! grep -q '__dshClickDedupe' tools/dsh-clickfix.js; then
+            echo "::error file=tools/dsh-clickfix.js::缺少幂等守卫 __dshClickDedupe"
+            fail=1
+          fi
           if [ -f tools/verify-ci.py ]; then
             python3 -c "compile(open('tools/verify-ci.py').read(),'tools/verify-ci.py','exec')" \
               || { echo "::error file=tools/verify-ci.py::Python 语法错误"; fail=1; }
