@@ -10249,6 +10249,88 @@ function apply(ctx) {
 			mpInstallPendingTrust();   /* 修复 51：越早越好 */
 			mpWatchSessions(ctx);       /* 修复 51：等服务就绪 */
 			injectStyles();
+		/* ★ 修复 30c · 自包含心跳：不依赖任何安装链/其它分支是否执行。
+		   每 400ms 做三件事：确保镜像条存在、同步选中态、按徽章位置摆好。 */
+		(function mpStartInlineViews() {
+			if (window.__mpInlineViewsTimer) return;
+			window.__mpInlineViewsTimer = setInterval(() => {
+				try {
+					const root = document.documentElement;
+					let bar = document.querySelector(".mp-inline-views");
+					if (!root.hasAttribute("data-mobile")) {
+						if (bar) bar.style.display = "none";
+						return;
+					}
+					const header = document.querySelector(".wSkVaW_header");
+					if (!header) { if (bar) bar.style.display = "none"; return; }
+					if (!bar) {
+						bar = document.createElement("div");
+						bar.className = "mp-inline-views";
+						const mk = (label, idx, cls) => {
+							const b = document.createElement("button");
+							b.type = "button";
+							b.className = cls;
+							b.textContent = label;
+							b.addEventListener("click", (ev) => {
+								ev.preventDefault(); ev.stopPropagation();
+								const tabs = [...document.querySelectorAll(".wSkVaW_tabs .wSkVaW_tab")];
+								if (tabs[idx]) { try { tabs[idx].click(); } catch (e) {} }
+							}, { passive: false });
+							return b;
+						};
+						bar.appendChild(mk("对话", 0, "mp-inline-tab"));
+						bar.appendChild(mk("轨迹", 1, "mp-inline-tab"));
+						const more = document.createElement("button");
+						more.type = "button";
+						more.className = "mp-inline-more";
+						more.setAttribute("aria-label", "更多会话视图");
+						more.innerHTML = '<svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><circle cx="3" cy="8" r="1.6"/><circle cx="8" cy="8" r="1.6"/><circle cx="13" cy="8" r="1.6"/></svg>';
+						more.addEventListener("click", (ev) => {
+							ev.preventDefault(); ev.stopPropagation();
+							const tabs = [...document.querySelectorAll(".wSkVaW_tabs .wSkVaW_tab")];
+							const menu = document.createElement("div");
+							menu.className = "mp-views-menu";
+							const list = document.createElement("div");
+							list.className = "mp-views-menu-list";
+							tabs.forEach((tb, i) => {
+								const it = document.createElement("button");
+								it.type = "button";
+								it.className = "mp-views-item" + (tb.getAttribute("aria-selected") === "true" ? " mp-views-item-active" : "");
+								it.textContent = (tb.textContent || "").trim() || (i === 0 ? "对话" : "轨迹");
+								it.addEventListener("click", (e2) => { e2.preventDefault(); e2.stopPropagation(); try { tb.click(); } catch (e) {} menu.remove(); }, { passive: false });
+								list.appendChild(it);
+							});
+							menu.appendChild(list);
+							document.body.appendChild(menu);
+							const r = more.getBoundingClientRect();
+							const mw = menu.getBoundingClientRect().width || 160;
+							const mh = menu.getBoundingClientRect().height || 90;
+							menu.style.left = Math.max(8, Math.min(window.innerWidth - mw - 8, r.right - mw)) + "px";
+							menu.style.top = Math.max(8, Math.min(window.innerHeight - mh - 8, r.bottom + 6)) + "px";
+						}, { passive: false });
+						bar.appendChild(more);
+						document.body.appendChild(bar);
+					}
+					bar.style.display = "inline-flex";
+					// 同步选中态
+					const tabs = [...document.querySelectorAll(".wSkVaW_tabs .wSkVaW_tab")];
+					const act = tabs.findIndex((t) => t.getAttribute("aria-selected") === "true");
+					[...bar.querySelectorAll(".mp-inline-tab")].forEach((b, i) => b.classList.toggle("mp-active", i === act));
+					// 摆位：贴在徽章右侧、同一水平线
+					const hr = header.getBoundingClientRect();
+					const badge = header.querySelector(".wSkVaW_headerActions > *");
+					const br = badge ? badge.getBoundingClientRect() : null;
+					const bw = bar.getBoundingClientRect().width || 110;
+					const bh = bar.getBoundingClientRect().height || 26;
+					let left = br && br.width > 0 ? br.right + 8 : hr.left + 52;
+					let top = br && br.height > 0 ? br.top + (br.height - bh) / 2 : hr.top + hr.height - bh - 6;
+					left = Math.max(8, Math.min(window.innerWidth - bw - 8, left));
+					top = Math.max(0, Math.min(window.innerHeight - bh - 4, top));
+					bar.style.left = Math.round(left) + "px";
+					bar.style.top = Math.round(top) + "px";
+				} catch (e) { /* 静默：纯外观 */ }
+			}, 400);
+		})();
 			const disposeKeyboardGuard = setupComposerKeyboardGuard();
 			const disposeTriggerMenuDismiss = setupTriggerMenuAutoDismiss();
 			const disposeKeepFocusGuard = setupKeepFocusGuard();
