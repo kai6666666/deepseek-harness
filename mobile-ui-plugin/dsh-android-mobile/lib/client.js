@@ -341,6 +341,16 @@ window.__ModuleLoader__.load({
 [data-mobile] .wSkVaW_header {
   overflow: visible !important;
 }
+/* 官方 titleCluster 是 overflow:clip + mask 渐隐（用来裁长标题），
+   tabs 搬进它内部后会被裁掉 → 这里放开裁剪，否则「搬进去但看不见」。 */
+[data-mobile] .wSkVaW_titleCluster {
+  overflow: visible !important;
+  -webkit-mask-image: none !important;
+  mask-image: none !important;
+}
+[data-mobile] .wSkVaW_titleRow {
+  overflow: visible !important;
+}
 [data-mobile] .wSkVaW_headerActions {
   display: flex !important;
   flex-direction: row !important;
