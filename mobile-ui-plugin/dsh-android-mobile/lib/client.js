@@ -3671,6 +3671,29 @@ mpSetMenuOpenClass(false);
 				menu.style.left = Math.round(left) + "px";
 				menu.style.top = Math.round(top) + "px";
 			}
+			/* 临时调试浮层（读数字用，下一版删） */
+			function mpDebugPanel() {
+				let d = document.getElementById("mp-dbg");
+				if (!d) {
+					d = document.createElement("div");
+					d.id = "mp-dbg";
+					d.style.cssText = "position:fixed;left:4px;top:120px;z-index:99999;background:#c00;color:#fff;font:10px/1.25 monospace;padding:3px 5px;border-radius:4px;max-width:96vw;white-space:pre-wrap;";
+					document.body.appendChild(d);
+				}
+				const tabs = [...document.querySelectorAll(".wSkVaW_tab")];
+				const bar = document.querySelector(".mp-inline-views");
+				const badge = document.querySelector(".wSkVaW_headerActions > *");
+				const br = badge ? badge.getBoundingClientRect() : null;
+				const rr = bar ? bar.getBoundingClientRect() : null;
+				const hr = document.querySelector(".wSkVaW_header");
+				const hrr = hr ? hr.getBoundingClientRect() : null;
+				d.textContent = "tabsN=" + tabs.length + " txt=" + tabs.map(t => t.textContent.trim()).join(",")
+					+ "\nbar=" + (bar ? "y" : "n") + (rr ? " " + Math.round(rr.left) + "," + Math.round(rr.top) + " " + Math.round(rr.width) + "x" + Math.round(rr.height) : "")
+					+ "\nbadge=" + (br ? Math.round(br.left) + "," + Math.round(br.top) + " " + Math.round(br.width) + "x" + Math.round(br.height) : "none")
+					+ "\nhdr=" + (hrr ? Math.round(hrr.left) + "," + Math.round(hrr.top) + " " + Math.round(hrr.width) + "x" + Math.round(hrr.height) : "none")
+					+ "\ninlineN=" + document.querySelectorAll(".mp-inline-tab").length;
+			}
+
 			/* 保留旧函数名（rAF / 心跳里已经在调它） */
 			function mpLayoutTabsInline() {
 				try { mpBuildInlineBar(); } catch (e) { /* 静默：纯外观 */ }
@@ -3780,6 +3803,7 @@ mpSetMenuOpenClass(false);
 			setInterval(() => {
 				try { mpEnsureViewsMore(); } catch (e) { /* 静默 */ }
 				try { mpLayoutTabsInline(); } catch (e) { /* 静默 */ }
+				try { mpDebugPanel(); } catch (e) { /* 静默 */ }
 				try {
 					if (mpViewsMenuEl && !document.body.contains(mpViewsMenuEl)) { mpViewsMenuEl = null; }
 				} catch (e) { /* 静默 */ }
