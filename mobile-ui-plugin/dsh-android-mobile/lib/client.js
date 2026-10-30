@@ -10304,14 +10304,23 @@ function apply(ctx) {
 						const tabs = [...document.querySelectorAll(".wSkVaW_tabs .wSkVaW_tab")];
 						const act = tabs.findIndex((t) => t.getAttribute("aria-selected") === "true");
 						[...bar.querySelectorAll(".mp-inline-tab")].forEach((b, i) => b.classList.toggle("mp-active", i === act));
-						// 摆位：贴在徽章右侧、同一水平线
-						const hr = header.getBoundingClientRect();
-						const badge = header.querySelector(".wSkVaW_headerActions > *");
-						const br = badge ? badge.getBoundingClientRect() : null;
+						/* 找「标准模式」徽章的真实盒子 */
+						let br = null;
+						const probe = (el) => {
+							if (!el) return null;
+							const r = el.getBoundingClientRect();
+							return r.width > 4 && r.height > 4 ? r : null;
+						};
+						br = probe(document.querySelector(".wSkVaW_headerActions"));
+						if (!br) {
+							for (const el of document.querySelectorAll(".wSkVaW_header span, .wSkVaW_header div")) {
+								if (el.children.length === 0 && /标准|模式/.test(el.textContent || "")) { br = probe(el); if (br) break; }
+							}
+						}
 						const bw = bar.getBoundingClientRect().width || 110;
 						const bh = bar.getBoundingClientRect().height || 26;
-						let left = br && br.width > 0 ? br.right + 8 : hr.left + 52;
-						let top = br && br.height > 0 ? br.top + (br.height - bh) / 2 : hr.top + hr.height - bh - 6;
+						let left = br ? br.right + 8 : hr.left + 52;
+						let top = br ? br.top + (br.height - bh) / 2 : hr.top + hr.height - bh - 6;
 						left = Math.max(8, Math.min(window.innerWidth - bw - 8, left));
 						top = Math.max(0, Math.min(window.innerHeight - bh - 4, top));
 						bar.style.left = Math.round(left) + "px";
