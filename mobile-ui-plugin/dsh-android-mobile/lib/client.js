@@ -328,8 +328,51 @@ window.__ModuleLoader__.load({
 [data-mobile] .wSkVaW_headerActions span[title] {
   display: inline-flex !important;
 }
+/* ══ 修复 30c（2026-10-30）：tabs 不再整条隐藏，改成**内联到标题行右侧** ══
+   现象（用户反馈）：会话页顶部少了「对话 / 轨迹 / 更多会话视图」三样。
+   根因：修复 30 为了把 header 从 85px 压到 55px，把
+         [data-mobile] .wSkVaW_tabs { display:none !important }
+         整条干掉；「轨迹」当时有 ⋯ 菜单兜底（mpInjectTraceItem），
+         但「会话层级 / 更多会话视图」没有，于是三样一起消失。
+
+   方案 B（用户选定）：不另起一行，也不塞进菜单，而是把这组 tabs
+   作为 header 网格的第三列放在第一行右端：
+     · header 原本 grid-template-columns: auto minmax(0,1fr)（汉堡 | 标题行）
+     · 这里加一列 auto，tabs 用 grid-row:1 / grid-column:3 落到同一行
+     · 右侧留 44px 给 ⋯ / 侧栏按钮，避免绝对定位按钮压住「更多会话视图」
+     · tab 命中区从 35px 压到 26px、字号 13px，视觉上就是标题行的一段小导航
+   header 高度基本不变（仍是 55px 量级），三件套恢复可见可点。 */
+[data-mobile] .wSkVaW_header {
+  grid-template-columns: auto minmax(0, 1fr) auto !important;
+}
 [data-mobile] .wSkVaW_tabs {
-  display: none !important;
+  display: flex !important;
+  flex-wrap: nowrap !important;
+  grid-row: 1 !important;
+  grid-column: 3 !important;
+  align-self: center !important;
+  gap: 12px !important;
+  margin: 0 44px 0 8px !important;
+  padding: 0 !important;
+  min-width: 0 !important;
+}
+[data-mobile] .wSkVaW_viewTabs {
+  flex-wrap: nowrap !important;
+  gap: 16px !important;
+  min-height: 26px !important;
+  align-items: center !important;
+}
+[data-mobile] .wSkVaW_tab {
+  min-height: 26px !important;
+  margin: 0 !important;
+  padding: 3px 6px !important;
+  font-size: 13px !important;
+  line-height: 16px !important;
+}
+[data-mobile] .wSkVaW_viewsMore {
+  width: 20px !important;
+  height: 20px !important;
+  margin-top: 0 !important;
 }
 
 /* ══ 修复 34：轨迹页详情面板底部被输入框挡住（2026-09-16 啾灵反馈）══════════
