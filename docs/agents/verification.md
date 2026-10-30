@@ -835,3 +835,33 @@ adb -s $S shell 'su -c "LLM_TIMEOUT=600 sh /data/local/tmp/verify-engine-upgrade
 **结论（2026-10-29）：标为环境边界，不纳入闭环判据。**
 guest 侧只跑 mock 矩阵；真模型三条线固定在宿主跑。边界条目见 [boundaries.md](boundaries.md)。
 
+### ⑯.4 设备内 WebView 取证工具（webview-cdp.cjs）
+
+设置页是 WebView 里的引擎前端，`uiautomator` 看不到 DOM，`adb forward` 又要求宿主有 adb 连接。
+于是直接走**抽象 socket**（app uid 就能连自己的 WebView）：
+
+```bash
+P=$(pidof com.dsh.android)
+run-as com.dsh.android files/termux/usr/bin/node files/webview-cdp.cjs --pid $P            # 列页面
+run-as com.dsh.android files/termux/usr/bin/node files/webview-cdp.cjs --pid $P \
+    --eval "document.querySelectorAll('button[aria-haspopup]').length"
+```
+
+三个必须踩过的坑：
+
+1. **`.mjs` 不行**：node 26 把 `.mjs` 当 ESM，`require` 直接报 `require is not defined` —— 文件必须叫 `.cjs`。
+2. **`/data/local/tmp` 里的脚本 app uid 读不了**（目录 `root:shell 0711`，文件属 shell）：
+   `run-as ... node /data/local/tmp/x.cjs` → `EACCES`。改成
+   `cat 脚本 | run-as com.dsh.android sh -c 'cat > files/x.cjs'`，落到 app 私有目录再跑。
+3. **HTTP 不能等 `end`**：DevTools 的 `/json/list` 不回 `Connection: close`，必须按
+   `Content-Length` 判读完，否则一直等到超时。
+
+拿到的实测结论（2026-10-30）：
+
+| 检查 | 结果 |
+|---|---|
+| 页面 | `http://127.0.0.1:3080/`（单页 SPA，`DeepSeek Harness`） |
+| 通用设置里的下拉 | `button[aria-haspopup=menu][aria-expanded=false]`，`pointer-events:auto` |
+| 用 JS `.click()` 点「回答结束后」 | `aria-expanded` 变 `true`，生成 `[role=menu]` |
+| 该菜单样式 | `position:fixed`、`z-index:60`、`visibility:visible`、`opacity:1`，portal 挂在 `body` |
+| 结论 | **DOM 与前端逻辑正常，问题在「触摸→click」这一段**（熄屏/锁屏会直接污染 `input tap` 的真机实验，必须先解锁再测） |
