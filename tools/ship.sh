@@ -15,7 +15,7 @@ else
   shift || true
 fi
 
-WAIT=0; SKIP=0; ONLY_VERIFY=0; PAUSE=0; NODRIFT=0; FIXDRIFT=0; STRICT=0; TIMEOUT=900
+WAIT=0; SKIP=0; ONLY_VERIFY=0; PAUSE=0; NODRIFT=0; FIXDRIFT=0; STRICT=0; REVERIFY=0; TIMEOUT=900
 MP_WAIT_CHG=0; export MP_WAIT_CHG
 for a in "$@"; do
   case "$a" in
@@ -26,6 +26,7 @@ for a in "$@"; do
     --no-drift) NODRIFT=1 ;;
     --fix-drift) FIXDRIFT=1 ;;
     --strict) STRICT=1 ;;
+    --reverify) REVERIFY=1 ;;
     --timeout=*) TIMEOUT="${a#*=}" ;;
     *) echo "[ship] 忽略未知参数 $a" ;;
   esac
@@ -189,5 +190,31 @@ if [ -s "$DL/verify-$VER.drift.json" ]; then
   python3 tools/record.py "$VER" || echo "[ship] 刷新登记失败"
   python3 tools/trend.py --push >/dev/null 2>&1 || echo "[ship] 趋势报表刷新失败"
 fi
+
+# ⑥ 同版本二次取证（可选）
+if [ "$REVERIFY" -eq 1 ]; then
+  echo "[ship] 6/6 同版本二次取证（重启后再取一次，比对稳定字段）"
+  python3 tools/reverify.py --make "$VER" || { echo "[ship] 生成二次取证脚本失败"; exit 1; }
+  R2="$DL/verify-$VER.run2.json"
+  rm -f "$R2"
+  echo "[ship] 请在这台设备上执行："
+  echo "         sh $DL/verify-$VER.sh"
+  echo "[ship]     等 verify-$VER.run2.json 出现（最多 ${TIMEOUT}s）…"
+  deadline2=$(( $(date +%s) + TIMEOUT ))
+  ok2=0
+  while [ "$(date +%s)" -lt "$deadline2" ]; do
+    if [ -s "$R2" ]; then ok2=1; break; fi
+    sleep 3
+  done
+  [ "$ok2" -eq 1 ] || { echo "[ship] 超时：没等到 $R2"; exit 2; }
+  python3 tools/reverify.py "$VER"
+  if [ $? -ne 0 ]; then
+    echo "[ship] 6/6 ⚠ 两次取证不一致，标记可疑（exit 6）：$VER"
+    python3 tools/record.py "$VER" || echo "[ship] 重登记失败"
+    exit 6
+  fi
+  echo "[ship] 6/6 两次取证一致，稳定性通过"
+fi
+
 echo "[ship] 5/5 九项一致，发布完成：$VER"
 exit 0
