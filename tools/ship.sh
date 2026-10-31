@@ -214,6 +214,9 @@ if [ "$REVERIFY" -eq 1 ]; then
     exit 6
   fi
   echo "[ship] 6/6 两次取证一致，稳定性通过"
+  echo "[ship] 刷新登记行（写入稳定列）"
+  python3 tools/record.py "$VER" || echo "[ship] 刷新稳定列失败"
+  python3 tools/trend.py --push >/dev/null 2>&1 || echo "[ship] 趋势报表刷新失败"
 fi
 
 echo "[ship] 5/5 九项一致，发布完成：$VER"
