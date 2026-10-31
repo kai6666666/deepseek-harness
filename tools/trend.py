@@ -90,31 +90,46 @@ def build(rs):
         dapk = None if (prev is None or r["apk"] is None or prev["apk"] is None) else round(r["apk"] - prev["apk"], 1)
         dms = None if (prev is None or r["ms"] is None or prev["ms"] is None) else round(r["ms"] - prev["ms"], 1)
         r["dapk"], r["dms"] = dapk, dms
+        r["same_code"] = bool(prev and prev["client"] == r["client"])
         prev = r
+
+    groups = {}
+    for r in rs:
+        groups.setdefault(r["client"], []).append(r["ver"])
 
     n = len(rs)
     apks = [r["apk"] for r in rs if r["apk"]]
     mss = [r["ms"] for r in rs if r["ms"]]
     latest = rs[-1] if rs else None
     green = sum(1 for r in rs if r["state"] == "✅")
+    same_n = sum(1 for r in rs if r.get("same_code"))
 
     lines.append("# 移动端 UI 插件 · 发布趋势\n")
     lines.append("由 `tools/trend.py` 从 [`mobile-ui-verification.md`](mobile-ui-verification.md) 自动生成，勿手改。\n")
     if latest:
-        lines.append(f"最新版本 **{latest['ver']}**｜共 {n} 次记录｜✅ {green} 次｜"
+        lines.append(f"最新版本 **{latest['ver']}**｜共 {n} 次记录｜✅ {green} 次｜同码发布 {same_n} 次｜"
                      f"APK 均值 {sum(apks) / len(apks):.1f} MB｜取证均值 {sum(mss) / len(mss):.1f} s\n" if apks and mss
                      else f"最新版本 **{latest['ver']}**｜共 {n} 次记录\n")
-    lines.append("| 版本 | APK (MB) | ΔAPK | 取证 (s) | Δ取证 | 轮次 | 重试 | 漂移 | 状态 |")
-    lines.append("|---|---|---|---|---|---|---|---|---|")
+    lines.append("| 版本 | 代码 | APK (MB) | ΔAPK | 取证 (s) | Δ取证 | 轮次 | 重试 | 漂移 | 状态 |")
+    lines.append("|---|---|---|---|---|---|---|---|---|---|")
     for r in sorted(rs, key=lambda x: vkey(x["ver"]), reverse=True):
         apk = "—" if r["apk"] is None else f"{r['apk']:.1f}"
         ms = "—" if r["ms"] is None else f"{r['ms']:.1f}"
-        lines.append(f"| {r['ver']} | {apk} | {fmt_delta(r['dapk'])} | {ms} | "
+        code = "同码" if r.get("same_code") else "新码"
+        lines.append(f"| {r['ver']} | {code} | {apk} | {fmt_delta(r['dapk'])} | {ms} | "
                      f"{fmt_delta(r['dms'], 's')} | {r['round']} | {r['retry']} | {r['drift']} | {r['state']} |")
+    lines.append("")
+    lines.append("## 代码分组（client 字节数）\n")
+    lines.append("| client | 版本 | 推断 |")
+    lines.append("|---|---|---|")
+    for c, vs in groups.items():
+        hint = "仅抬版本号（同码多版）" if len(vs) > 1 else "独立代码版本"
+        lines.append(f"| {c} | {' / '.join(vs)} | {hint} |")
     lines.append("")
     lines.append("## 判读\n")
     lines.append("- **ΔAPK**：相对上一个版本的体积变化，突增通常意味着资源或依赖被带进来。")
     lines.append("- **Δ取证**：相对上一个版本的取证耗时变化，连续变慢先怀疑设备负载或 CDP 超时。")
+    lines.append("- **代码**：`同码` = client 字节数与上一版完全相同，仅版本号/文档变化；`新码` = client 真实改动。")
     lines.append("- **轮次 / 重试**：`1 / r0` 表示首轮一次通过；出现 `2` 或 `×2` 说明重试救过一次。")
     lines.append("- **漂移 / 状态**：`0/9 · ✅` 干净；`·fixK` 自愈、`·chgN` 发布期变更、`·waitN` 等待期扰动，`⚠` 表示过程被操作过。")
     lines.append("")
