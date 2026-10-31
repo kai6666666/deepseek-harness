@@ -39,6 +39,7 @@ CLIENT = f"{WORKSPACE}/mobile-ui-plugin/dsh-android-mobile/lib/client.js"
 DOC = f"{WORKSPACE}/docs/agents/mobile-ui-verification.md"
 DOWNLOAD = "/storage/emulated/0/Download"
 TOKEN_FILE = "/tmp/gh_token"
+WATCH_MODE = False   # --watch 期间允许「app 正在重启」导致暂时读不到版本戳
 MB = 1024 * 1024
 
 
@@ -144,7 +145,10 @@ def collect():
         add("meta.client = 本地 client", lsize, m.get("client"), m.get("client") == lsize, fixable=True)
         add("meta.dex 命中 = 2", 2, m.get("dex_hit"), m.get("dex_hit") == 2)
         ds = device_stamp(lv)
-        add("设备取证戳 = 最新版本", lv, ds, ds == lv)
+        if ds is None and WATCH_MODE:
+            add("设备取证戳 = 最新版本", lv, "取证中（app 未起）", True)
+        else:
+            add("设备取证戳 = 最新版本", lv, ds, ds == lv)
         asz = apk_size(lv)
         add("APK 体积 = meta 记录", asz, m.get("apk_size"),
             asz is not None and m.get("apk_size") == asz, fixable=True)
@@ -297,7 +301,9 @@ def watch(interval):
 
 
 def main():
+    global WATCH_MODE
     if "--watch" in sys.argv:
+        WATCH_MODE = True
         i = sys.argv.index("--watch")
         n = 30
         if i + 1 < len(sys.argv) and sys.argv[i + 1].isdigit():
