@@ -99,10 +99,12 @@ async function retry(label, fn, times, gap) {
 
 // MP_RETRY=n 追加 n 次重试（默认 0），便于偶发超时时一键加压
 const EXTRA = Math.max(0, parseInt(process.env.MP_RETRY || '0', 10) || 0);
+// MP_ATTEMPT=0 表示设备脚本第 1 轮，1 表示重试轮
+const ATTEMPT = Math.max(0, parseInt(process.env.MP_ATTEMPT || '0', 10) || 0);
 
 (async () => {
   const t0 = Date.now();
-  const res = { ok: false, version, stages: {}, retries: {}, retry_cfg: EXTRA, items: [], clicked: false, mode: null, text: '', match: false, msgs: -1 };
+  const res = { ok: false, version, stages: {}, retries: {}, retry_cfg: EXTRA, attempt: ATTEMPT, items: [], clicked: false, mode: null, text: '', match: false, msgs: -1 };
   try {
     let target = '';
     const listRaw = (await retry('json/list', () => httpGet('/json/list'), 6 + EXTRA, 800)).v;
@@ -157,7 +159,7 @@ const EXTRA = Math.max(0, parseInt(process.env.MP_RETRY || '0', 10) || 0);
   }
   res.ms = Date.now() - t0;
   res.stage_sum = Object.entries(res.stages).map(([k, v]) => `${k}:${String(v).split(' ')[0]}(r${res.retries[k] || 0})`).join(',');
-  res.sum = `stages=${res.stage_sum} retries=${Object.values(res.retries).reduce((a, b) => a + b, 0)} retry_cfg=${EXTRA} ms=${res.ms}`;
+  res.sum = `stages=${res.stage_sum} retries=${Object.values(res.retries).reduce((a, b) => a + b, 0)} retry_cfg=${EXTRA} attempt=${ATTEMPT} ms=${res.ms}`;
   try { fs.writeFileSync(outPath, JSON.stringify(res, null, 2)); } catch (e) { res.writeError = e.message; }
   try { fs.writeFileSync(outPath + '.sum', res.sum); } catch (e) {}
   console.log(JSON.stringify(res));
