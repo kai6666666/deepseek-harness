@@ -91,18 +91,21 @@ async function evalExpr(path, expr, timeout) {
 
 async function retry(label, fn, times, gap) {
   let err;
-  for (let i = 0; i < times; i++) {
-    try { return await fn(); } catch (e) { err = e; await sleep(gap || 1500); }
+  for (let i = 1; i <= times; i++) {
+    try { return { v: await fn(), tries: i }; } catch (e) { err = e; await sleep(gap || 1500); }
   }
   throw new Error(label + ': ' + (err && err.message));
 }
 
+// MP_RETRY=n 追加 n 次重试（默认 0），便于偶发超时时一键加压
+const EXTRA = Math.max(0, parseInt(process.env.MP_RETRY || '0', 10) || 0);
+
 (async () => {
   const t0 = Date.now();
-  const res = { ok: false, version, stages: {}, items: [], clicked: false, mode: null, text: '', match: false, msgs: -1 };
+  const res = { ok: false, version, stages: {}, retries: {}, retry_cfg: EXTRA, items: [], clicked: false, mode: null, text: '', match: false, msgs: -1 };
   try {
     let target = '';
-    const listRaw = await retry('json/list', () => httpGet('/json/list'), 6, 800);
+    const listRaw = (await retry('json/list', () => httpGet('/json/list'), 6 + EXTRA, 800)).v;
     const body = listRaw.slice(listRaw.indexOf('\r\n\r\n') + 4);
     const list = JSON.parse(body);
     const pick = list.filter((x) => (x.url || '').includes('3080')).pop() || list[0];
@@ -111,43 +114,52 @@ async function retry(label, fn, times, gap) {
     res.target = target;
 
     // ev1：只负责把点击排进队列，不等结果（点了会重建页面）
-    res.stages.ev1 = await retry('ev1', async () => { await evalExpr(target, EV1, 12000); return 'ok'; }, 3, 2000).catch((e) => 'fail: ' + e.message);
+    const e1 = await retry('ev1', async () => { await evalExpr(target, EV1, 12000); return 'ok'; }, 3 + EXTRA, 2000)
+      .catch((e) => ({ v: 'fail: ' + e.message, tries: 3 + EXTRA }));
+    res.stages.ev1 = e1.v;
+    res.retries.ev1 = e1.tries - 1;
     await sleep(3500);
 
     // ev2a：开 ⋯ 读七行；菜单最多等 1.5s，读到 ≤2 行就重开一次
-    const ev2s = await retry('ev2a', async () => {
+    const e2 = await retry('ev2a', async () => {
       const o = JSON.parse(await evalExpr(target, EV2A, 12000));
       if (!o.items || o.items.length < 5) throw new Error('items=' + (o.items || []).length);
       return o;
-    }, 4, 1800).catch((e) => ({ items: [], error: e.message }));
-    res.items = ev2s.items || [];
-    res.stages.ev2a = ev2s.error ? 'fail: ' + ev2s.error : 'ok';
+    }, 4 + EXTRA, 1800).catch((e) => ({ v: { items: [], error: e.message }, tries: 4 + EXTRA }));
+    res.items = e2.v.items || [];
+    res.stages.ev2a = e2.v.error ? 'fail: ' + e2.v.error : 'ok';
+    res.retries.ev2a = e2.tries - 1;
 
     // ev2b：在菜单仍开着时点「创建你的插件」；点击动作丢进 setTimeout，回话先行
-    const clicked = await retry('ev2b', async () => {
+    const e3 = await retry('ev2b', async () => {
       const probe = await evalExpr(target, "(()=>{const e=[...document.querySelectorAll('[data-mp-plugin-item] [role=menuitem], [data-mp-plugin-item] button')].find(x=>(x.textContent||'').trim()==='创建你的插件');return e?'yes':'no';})()", 8000);
       if (probe !== 'yes') throw new Error('item not found');
       await evalExpr(target, EV2B, 8000);
       return true;
-    }, 4, 1800).catch(() => false);
-    res.clicked = clicked;
-    res.stages.ev2b = clicked ? 'ok' : 'fail';
+    }, 4 + EXTRA, 1800).catch(() => ({ v: false, tries: 4 + EXTRA }));
+    res.clicked = e3.v;
+    res.stages.ev2b = e3.v ? 'ok' : 'fail';
+    res.retries.ev2b = e3.tries - 1;
 
     await sleep(10000);
 
-    const ev3s = await retry('ev3', async () => JSON.parse(await evalExpr(target, EV3, 10000)), 3, 2000);
-    res.mode = ev3s.mode;
-    res.text = ev3s.text;
-    res.match = !!ev3s.match;
-    res.msgs = ev3s.msgs;
+    const e4 = await retry('ev3', async () => JSON.parse(await evalExpr(target, EV3, 10000)), 3 + EXTRA, 2000);
+    res.mode = e4.v.mode;
+    res.text = e4.v.text;
+    res.match = !!e4.v.match;
+    res.msgs = e4.v.msgs;
     res.stages.ev3 = 'ok';
+    res.retries.ev3 = e4.tries - 1;
     res.ok = res.clicked && res.match && res.msgs === 0;
   } catch (e) {
     res.error = e.message;
     res.stages.conn = 'fail: ' + e.message;
   }
   res.ms = Date.now() - t0;
+  res.stage_sum = Object.entries(res.stages).map(([k, v]) => `${k}:${String(v).split(' ')[0]}(r${res.retries[k] || 0})`).join(',');
+  res.sum = `stages=${res.stage_sum} retries=${Object.values(res.retries).reduce((a, b) => a + b, 0)} retry_cfg=${EXTRA} ms=${res.ms}`;
   try { fs.writeFileSync(outPath, JSON.stringify(res, null, 2)); } catch (e) { res.writeError = e.message; }
+  try { fs.writeFileSync(outPath + '.sum', res.sum); } catch (e) {}
   console.log(JSON.stringify(res));
   process.exit(res.ok ? 0 : 2);
 })();
