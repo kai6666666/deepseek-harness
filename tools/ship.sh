@@ -16,6 +16,7 @@ else
 fi
 
 WAIT=0; SKIP=0; ONLY_VERIFY=0; PAUSE=0; NODRIFT=0; FIXDRIFT=0; TIMEOUT=900
+MP_WAIT_CHG=0; export MP_WAIT_CHG
 for a in "$@"; do
   case "$a" in
     --wait) WAIT=1 ;;
@@ -85,6 +86,12 @@ elif [ "$WAIT" -eq 1 ]; then
     grep -A4 '状态变化' "$WLOG" | while IFS= read -r l; do echo "        $l"; done
   else
     echo "[ship] 等待期环境稳定（无状态变化）"
+  fi
+  MP_WAIT_CHG=$NCHG; export MP_WAIT_CHG
+  if [ "${NCHG:-0}" -gt 0 ] && [ -s "$WLOG" ]; then
+    echo "[ship] 归档等待期巡检日志到 docs/agents/failures/"
+    python3 tools/archive_fail.py --log "$VER" --file "$WLOG" --count "$NCHG" \
+      || echo "[ship] 巡检日志归档失败（检查 token/网络）"
   fi
   [ "$ok" -eq 1 ] || { echo "[ship] 超时：没等到新的 $JSON"; exit 2; }
 else
