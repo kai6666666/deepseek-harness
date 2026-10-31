@@ -1,5 +1,0 @@
-[watch] 每 15s 体检一次，Ctrl+C 退出
-[watch] 17:48:00 基线：9 项，全部一致
-[watch] 17:48:20 状态变化：漂移 0 → 1
-        ✅→❌ APK 体积 = meta 记录：185759955 → 185759963
-[watch] 落盘 /storage/emulated/0/Download/verify-1.1.0-146.watch.json（1 项漂移）
