@@ -295,7 +295,8 @@ def main():
     if save:
         rec = {"version": save, "drift": len(drift), "total": len(checks), "ok": not drift,
                "failed": [c["name"] for c in drift], "head": (drift[0]["name"] if drift else ""),
-               "fixed": fixed, "remote": data["rv"], "doc": data["lv"],
+               "fixed": fixed, "wait": int(os.environ.get("MP_WAIT_CHG") or 0),
+               "remote": data["rv"], "doc": data["lv"],
                "client": {"local": data["lsize"], "remote": data["rsize"], "sha16": data["lsha"]},
                "checks": checks, "at": time.strftime("%Y-%m-%d %H:%M:%S")}
         path = f"{DOWNLOAD}/verify-{save}.drift.json"
