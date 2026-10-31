@@ -63,11 +63,29 @@ elif [ "$WAIT" -eq 1 ]; then
   echo "[ship] 2/5 本机没有 adb 设备。请在这台设备上执行："
   echo "         sh $SCRIPT"
   echo "[ship]     等 verify-$VER.json 出现（最多 ${TIMEOUT}s）…"
+  WLOG="/tmp/ship-watch-$VER.log"
+  WATCH_PID=""
+  python3 tools/drift_check.py --watch 15 > "$WLOG" 2>&1 &
+  WATCH_PID=$!
+  echo "[ship]     等待期巡检已起（15s 一次，pid=$WATCH_PID，日志 $WLOG）"
   deadline=$((START + TIMEOUT)); ok=0
   while [ "$(date +%s)" -lt "$deadline" ]; do
     if [ -s "$JSON" ] && [ "$(stat -c %Y "$JSON")" -ge "$START" ]; then ok=1; break; fi
     sleep 3
   done
+  if [ -n "$WATCH_PID" ]; then
+    kill "$WATCH_PID" 2>/dev/null
+    wait "$WATCH_PID" 2>/dev/null
+  fi
+  NCHG=0
+  [ -s "$WLOG" ] && NCHG=$(grep -c '状态变化' "$WLOG" 2>/dev/null || true)
+  [ -z "${NCHG:-}" ] && NCHG=0
+  if [ "${NCHG:-0}" -gt 0 ]; then
+    echo "[ship] 等待期检测到 ${NCHG} 次环境状态变化："
+    grep -A4 '状态变化' "$WLOG" | while IFS= read -r l; do echo "        $l"; done
+  else
+    echo "[ship] 等待期环境稳定（无状态变化）"
+  fi
   [ "$ok" -eq 1 ] || { echo "[ship] 超时：没等到新的 $JSON"; exit 2; }
 else
   echo "[ship] 2/5 本机没有 adb 设备。在设备上执行："
