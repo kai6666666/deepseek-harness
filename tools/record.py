@@ -147,6 +147,17 @@ def parse(version):
         if _ms is None and m:
             _ms = int(m.group(1))
 
+    # 第几轮取证才通过：0=首轮，1=重试轮
+    _attempt = 0
+    if isinstance(obj, dict) and obj.get("attempt") is not None:
+        try:
+            _attempt = int(obj["attempt"])
+        except Exception:
+            _attempt = 0
+    else:
+        rounds = re.findall(r"verify\[(\d+)\]", "\n".join(lines))
+        _attempt = int(rounds[-1]) if rounds else 0
+
     return {
         "src": src,
         "items": items,
@@ -160,7 +171,7 @@ def parse(version):
         "apk": (f"{meta['apk_mb']} MB" if meta.get("apk_mb") else "—"),
         "client": (f"{meta['client']:,} B" if meta.get("client") else "—"),
         "dex": (f"{meta['dex_hit']}/2" if meta.get("dex_hit") is not None else "—"),
-        "retries": ("—" if _retries is None else f"r{_retries}"),
+        "retries": ("—" if _retries is None else f"r{_retries}" + (f" ×{_attempt + 1}" if _attempt > 0 else "")),
         "ms": ("—" if not _ms else f"{_ms / 1000:.1f}s"),
     }
 
