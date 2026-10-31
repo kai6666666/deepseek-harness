@@ -3,7 +3,7 @@
 一条命令从改完代码走到「验收表新增一行」。本文件是工具链总说明；逐次发布的实测记录在
 [`mobile-ui-verification.md`](mobile-ui-verification.md)，失败与异常证据在 [`failures/`](failures/README.md)。
 
-## 一、五步链
+## 一、五步链（+ 可选第六步）
 
 ```text
 bash tools/ship.sh [版本号] [--wait] [--strict] [--fix-drift] [--no-drift] ...
@@ -17,6 +17,7 @@ bash tools/ship.sh [版本号] [--wait] [--strict] [--fix-drift] [--no-drift] ..
 | 3/5 | 判定（`clicked` / `match` / `msgs==0` / 菜单 7 行 / 各阶段 ok） | 不合格则留 `-fail.png` 并归档 | 3 |
 | 4/5 | 登记表推送（`record.py`，17 列） | `docs/agents/mobile-ui-verification.md` | 1 |
 | 5/5 | 一致性体检（`drift_check.py --save --diff`） | `verify-<ver>.drift.json`、`.diff.json` | 4（漂移）/ 5（strict 扰动） |
+| 6/6 | 同版本二次取证（`--reverify`，重启后再取一次） | `verify-<ver>.run2.json`、`.reverify.json`、`-run2.png` | 6（两次不一致） |
 
 无参数时自动读远端 `MOBILE_UI_VERSION` 并 +1：
 
@@ -34,6 +35,7 @@ python3 tools/release.py --bump-only        # 只查询下一个版本号
 | 3 | 取证不合格 | 不登记 | `failures/verify-*.json[/png]` |
 | 4 | 九项漂移 | `🚩N · 🚩` | `failures/drift-*.json`（+ change） |
 | 5 | 九项一致但过程有扰动（`--strict`） | `0/9·… · ⚠` | `failures/perturb-*.json` |
+| 6 | 二次取证与首轮不一致（`--reverify`） | 保持原状态 | `failures/reverify-*.json` |
 
 ## 三、选项
 
@@ -46,6 +48,7 @@ python3 tools/release.py --bump-only        # 只查询下一个版本号
 | `--no-drift` | 跳过 5/5 |
 | `--fix-drift` | 5/5 先自愈（meta 体积 / client 字节 / 表内 client）再判定 |
 | `--strict` | `wait + changes + fixed > 0` 即 exit 5，并归档扰动汇总 |
+| `--reverify` | 发布后再取一次证据，九项稳定字段逐一比对；不一致 exit 6 |
 
 ## 四、验收表 17 列
 
@@ -136,3 +139,15 @@ tools/trend.py          从验收表生成 trend.md（APK/耗时趋势与差值�
 tools/push.sh           薄壳：exec python3 tools/release.py "$@"
 files/mp-verify.cjs     一次连 CDP 跑完四段取证，输出结构化 JSON
 ```
+
+## 同版本二次取证（`--reverify`）
+
+发布完成后再重启设备、用 `MP_RETRY=2` 重新取一次证据，与首轮逐字段比对：
+
+```bash
+bash tools/ship.sh 1.1.0-147 --skip-build --verify-only --wait --reverify
+python3 tools/reverify.py --make 1.1.0-147   # 只生成设备脚本
+python3 tools/reverify.py 1.1.0-147          # 只比对首轮 vs 次轮
+```
+
+比对字段固定为 `ok / version / stages / items / clicked / mode / text / match / msgs` 九项，耗时不参与判定（记 `Δms`）；不一致时写 `verify-<ver>.reverify.json` 并归档到 `failures/reverify-<ver>-<ts>.json`，退出码 6。
