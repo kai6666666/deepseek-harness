@@ -273,12 +273,36 @@ def install_step(version, apk):
     return None
 
 
+def remote_version():
+    """读远端 EngineManager.kt 里的 MOBILE_UI_VERSION。"""
+    _, blob = get_file("app/src/main/java/com/dsh/android/EngineManager.kt")
+    m = re.search(r'const val MOBILE_UI_VERSION = "([^"]+)"', blob.decode("utf-8"))
+    if not m:
+        raise SystemExit("[bump] 远端读不到 MOBILE_UI_VERSION")
+    return m.group(1)
+
+
+def bump(version):
+    """1.1.0-145 → 1.1.0-146（只抬最后一段 build 号）。"""
+    m = re.match(r"^(\d+\.\d+\.\d+)-(\d+)$", version.strip())
+    if not m:
+        raise SystemExit(f"[bump] 版本号格式不认识：{version}")
+    return f"{m.group(1)}-{int(m.group(2)) + 1}"
+
+
 def main():
-    if len(sys.argv) < 2:
-        raise SystemExit("用法：python3 tools/release.py 1.1.0-146")
-    version = sys.argv[1]
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    if "--bump-only" in sys.argv:
+        print(bump(remote_version()))
+        return
+    if not args or args[0] in ("auto", "next"):
+        rv = remote_version()
+        version = bump(rv)
+        print(f"[bump] 远端版本 {rv} → {version}")
+    else:
+        version = args[0]
     if not re.match(r"^\d+\.\d+\.\d+-\d+$", version):
-        raise SystemExit("版本号要形如 1.1.0-146")
+        raise SystemExit("版本号要形如 1.1.0-146（或直接留空自动 +1）")
     push(version)
     started = dispatch(version)
     run_id = wait_run(started)
