@@ -355,11 +355,10 @@ window.__ModuleLoader__.load({
 }
    官方 tabs：留节点、移出可视区
 [data-mobile] .wSkVaW_tabs {
-  position: fixed !important;
-  left: -4000px !important;
-  top: -4000px !important;
+  /* 只留节点、不渲染：镜像条是唯一可见组，重复问题从根上没了 */
+  display: none !important;
+  position: static !important;
   width: 360px !important;
-  display: flex !important;
   margin: 0 !important;
   padding: 0 !important;
 }
@@ -3805,7 +3804,7 @@ mpSetMenuOpenClass(false);
 			setInterval(() => {
 				try { mpEnsureViewsMore(); } catch (e) { /* 静默 */ }
 				try { mpLayoutTabsInline(); } catch (e) { /* 静默 */ }
-				try { mpDebugPanel(); } catch (e) { /* 静默 */ }
+
 				try {
 					if (mpViewsMenuEl && !document.body.contains(mpViewsMenuEl)) { mpViewsMenuEl = null; }
 				} catch (e) { /* 静默 */ }
