@@ -1,0 +1,7 @@
+[watch] 每 15s 体检一次，Ctrl+C 退出
+[watch] 19:19:21 基线：9 项，全部一致
+[watch] 19:19:59 状态变化：漂移 0 → 1
+        ✅→❌ 设备取证戳 = 最新版本：1.1.0-147 → None
+[watch] 落盘 /storage/emulated/0/Download/verify-1.1.0-147.watch.json（1 项漂移）
+[archive] docs/agents/failures/drift-1.1.0-147-20261031-192000.json
+[archive] docs/agents/failures/README.md（1 行，漂移）
