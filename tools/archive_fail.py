@@ -5,6 +5,7 @@
 用法：
     python3 tools/archive_fail.py 1.1.0-146
     python3 tools/archive_fail.py --drift 1.1.0-146   # 环境漂移（drift_check 不合格）
+    python3 tools/archive_fail.py --log 1.1.0-146 --file /tmp/ship-watch-1.1.0-146.log --count 2
 读取：
     /sdcard/Download/verify-<ver>-fail.json（优先）或 verify-<ver>.json
     /sdcard/Download/dsh-<ver>-fail.png（存在则一起归档）
@@ -141,9 +142,49 @@ def update_readme(version, ts, doc, jname, pname=None):
     print(f"[archive] {README_PATH}（{len(rows)} 行）")
 
 
+def update_readme_log(version, lname, count):
+    try:
+        cur = req("GET", f"/contents/{README_PATH}?ref=main")
+        text = base64.b64decode(cur["content"]).decode()
+    except Exception:
+        text = TEMPLATE
+    rows = [l for l in text.splitlines()
+            if l.startswith("| ") and not l.startswith("| 时间") and "---" not in l]
+    nice = time.strftime("%Y-%m-%d %H:%M", time.localtime())
+    rows = [r for r in rows if f"| {version} |" not in r]
+    rows.append(f"| {nice} | {version} | — | 等待期状态变化{count}次（环境巡检日志） | [log]({os.path.basename(lname)}) |")
+    rows.sort(key=lambda r: r.split("|")[1].strip(), reverse=True)
+    put(README_PATH, (TEMPLATE + "\n".join(rows) + "\n").encode(),
+        f"watch: 归档 {version} 等待期巡检日志")
+    print(f"[archive] {README_PATH}（{len(rows)} 行，等待期日志）")
+
+
 def main():
     if len(sys.argv) < 2:
         raise SystemExit("用法：python3 tools/archive_fail.py 1.1.0-146 | --drift 1.1.0-146")
+
+    if sys.argv[1] == "--log":
+        if len(sys.argv) < 3:
+            raise SystemExit("用法：python3 tools/archive_fail.py --log 1.1.0-146 --file /tmp/ship-watch-1.1.0-146.log --count 2")
+        v = sys.argv[2]
+        src = ""
+        cnt = 0
+        if "--file" in sys.argv:
+            j = sys.argv.index("--file")
+            if j + 1 < len(sys.argv):
+                src = sys.argv[j + 1]
+        if "--count" in sys.argv:
+            j = sys.argv.index("--count")
+            if j + 1 < len(sys.argv):
+                cnt = int(sys.argv[j + 1] or 0)
+        if not src or not os.path.exists(src):
+            raise SystemExit(f"[archive] 找不到巡检日志 {src}")
+        ts = time.strftime("%Y%m%d-%H%M%S")
+        lname = f"{DIR}/watch-{v}-{ts}.log"
+        put(lname, open(src, "rb").read(), f"watch: 归档 {v} 等待期巡检日志")
+        print(f"[archive] {lname}")
+        update_readme_log(v, lname, cnt)
+        return
 
     if sys.argv[1] == "--drift":
         if len(sys.argv) < 3:
