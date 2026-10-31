@@ -28,8 +28,8 @@ HEADER = """# 移动端 UI 插件 · 发布验收记录
 
 每次发布按 `bash tools/ship.sh <ver> --wait` → 设备侧 `sh /sdcard/Download/install-<ver>.sh` → 自动登记一行。
 
-| 版本 | 设备戳 | CI run | APK | 七行菜单 | 创造模式 | 文案一致 | 消息数 | 截图 | 记录时间 |
-|---|---|---|---|---|---|---|---|---|---|
+| 版本 | 设备戳 | CI run | APK | client | dex 戳 | 七行菜单 | 创造模式 | 文案一致 | 消息数 | 截图 | 记录时间 |
+|---|---|---|---|---|---|---|---|---|---|---|---|
 """
 
 
@@ -134,22 +134,28 @@ def parse(version):
         "shot": shot,
         "run": str(meta.get("run_id") or "—"),
         "apk": (f"{meta['apk_mb']} MB" if meta.get("apk_mb") else "—"),
+        "client": (f"{meta['client']:,} B" if meta.get("client") else "—"),
+        "dex": (f"{meta['dex_hit']}/2" if meta.get("dex_hit") is not None else "—"),
     }
 
 
 def row(version, d):
     ok = lambda b: "✅" if b else "❌"
-    return (f"| {version} | {d['stamp']} | {d['run']} | {d['apk']} | {ok(d['items_ok'])} ({len(d['items'])}) | {d['mode']} | "
+    return (f"| {version} | {d['stamp']} | {d['run']} | {d['apk']} | {d['client']} | {d['dex']} | "
+            f"{ok(d['items_ok'])} ({len(d['items'])}) | {d['mode']} | "
             f"{ok(d['match'])} | {d['msgs']} | {os.path.basename(d['shot'])} | "
             f"{time.strftime('%Y-%m-%d %H:%M')} |\n")
 
 
 def _migrate_cells(line):
-    """老表 8 列 → 新表 10 列：在第 2、3 位补上 CI run 与 APK。"""
+    """老表列数补齐到 12 列：8 列插 run/apk/client/dex，10 列插 client/dex。"""
     cells = [c.strip() for c in line.strip().strip("|").split("|")]
-    if len(cells) == 8:
-        cells = cells[:2] + ["—", "—"] + cells[2:]
-    if len(cells) != 10:
+    n = len(cells)
+    if n == 8:
+        cells = cells[:2] + ["—"] * 4 + cells[2:]
+    elif n == 10:
+        cells = cells[:4] + ["—", "—"] + cells[4:]
+    if len(cells) != 12:
         return None
     return "| " + " | ".join(cells) + " |"
 
