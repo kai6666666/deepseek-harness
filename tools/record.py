@@ -66,20 +66,56 @@ def _load_ev(lines, key):
 
 
 def parse(version):
-    path = f"{LOG_DIR}/verify-{version}.txt"
-    if not os.path.exists(path):
-        raise SystemExit(f"[record] 找不到 {path}，先跑 install-{version}.sh")
-    lines = open(path, encoding="utf-8", errors="replace").read().splitlines()
-    ev2 = _load_ev(lines, "ev2") or {}
-    ev3 = _load_ev(lines, "ev3") or {}
-    items = ev2.get("items") or []
-    mode = ev3.get("mode")
-    match = bool(ev3.get("match"))
-    msgs = ev3.get("msgs", -1)
+    txt = f"{LOG_DIR}/verify-{version}.txt"
+    js = f"{LOG_DIR}/verify-{version}.json"
+    if not os.path.exists(txt) and not os.path.exists(js):
+        raise SystemExit(f"[record] 找不到 {txt} / {js}，先跑 install-{version}.sh")
+
+    lines = []
+    if os.path.exists(txt):
+        lines = open(txt, encoding="utf-8", errors="replace").read().splitlines()
+
+    src = "txt"
+    if os.path.exists(js):
+        try:
+            obj = json.load(open(js, encoding="utf-8"))
+            if isinstance(obj.get("items"), list) and "ok" in obj:
+                src = "json"
+        except Exception:
+            obj = None
+    else:
+        obj = None
+
+    if src == "json":
+        items = obj.get("items") or []
+        mode = obj.get("mode")
+        match = bool(obj.get("match"))
+        msgs = obj.get("msgs", -1)
+    else:
+        vline = next((l for l in lines if l.startswith("verify: ")), None)
+        if vline:
+            try:
+                obj = json.loads(vline.split("verify: ", 1)[1])
+            except Exception:
+                obj = None
+        if obj:
+            items = obj.get("items") or []
+            mode = obj.get("mode")
+            match = bool(obj.get("match"))
+            msgs = obj.get("msgs", -1)
+        else:
+            ev2 = _load_ev(lines, "ev2") or {}
+            ev3 = _load_ev(lines, "ev3") or {}
+            items = ev2.get("items") or []
+            mode = ev3.get("mode")
+            match = bool(ev3.get("match"))
+            msgs = ev3.get("msgs", -1)
+
     stamp = next((l.split("=", 1)[1] for l in lines if l.startswith("stamp=")), "?")
     shot = next((l.split("=", 1)[1] for l in lines if l.startswith("shot=")),
                 f"/sdcard/Download/dsh-{version}-ui.png")
     return {
+        "src": src,
         "items": items,
         "items_ok": items == EXPECTED,
         "mode": mode,
@@ -133,10 +169,10 @@ def main():
         raise SystemExit("用法：python3 tools/record.py 1.1.0-146")
     version = sys.argv[1]
     d = parse(version)
-    jpath = f"{LOG_DIR}/verify-{version}.json"
-    with open(jpath, "w") as f:
+    rpath = f"{LOG_DIR}/verify-{version}.record.json"
+    with open(rpath, "w") as f:
         json.dump({"version": version, **d}, f, ensure_ascii=False, indent=2)
-    print(f"[record] 结构化结果 {jpath}")
+    print(f"[record] 解析结果（来源 {d['src']}）{rpath}")
     print("[record]", json.dumps(d, ensure_ascii=False))
     text = write_local(version, d)
     push_doc(text)
