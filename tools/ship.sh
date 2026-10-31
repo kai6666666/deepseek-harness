@@ -8,8 +8,12 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 VER="${1:-}"
-[ -n "$VER" ] || { echo "用法：bash tools/ship.sh <版本，如 1.1.0-146> [--skip-build] [--wait] [--timeout=900]"; exit 1; }
-shift || true
+if [ -z "$VER" ] || [ "${VER#--}" != "$VER" ]; then
+  VER="$(python3 tools/release.py --bump-only)" || { echo "[ship] 自动取版本失败（检查 /tmp/gh_token 与网络）"; exit 1; }
+  echo "[ship] 未给版本号，自动取远端 +1 → $VER"
+else
+  shift || true
+fi
 
 WAIT=0; SKIP=0; ONLY_VERIFY=0; TIMEOUT=900
 for a in "$@"; do
