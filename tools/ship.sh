@@ -53,6 +53,10 @@ r.write_install_script(v, install=not only)
 PY
 fi
 
+# ①.5 拍基线快照（发布动作前）
+echo "[ship] 1.5/5 拍九项基线快照"
+python3 tools/drift_check.py --baseline "$VER" || echo "[ship] 基线快照失败（继续）"
+
 # ② 装机 + 取证
 DEV="$(adb devices 2>/dev/null | awk 'NR>1 && $2=="device"{print $1; exit}')"
 if [ -n "$DEV" ]; then
@@ -143,7 +147,7 @@ if [ "$NODRIFT" -eq 1 ]; then
   exit 0
 fi
 echo "[ship] 5/5 一致性体检（远端版本 / 验收表 / 设备戳 / client / APK）"
-DRIFT_ARGS="--save $VER"
+DRIFT_ARGS="--save $VER --diff"
 [ "$FIXDRIFT" -eq 1 ] && DRIFT_ARGS="--fix $DRIFT_ARGS"
 if python3 tools/drift_check.py $DRIFT_ARGS; then
   echo "[ship] 5/5 九项一致，发布完成：$VER"
