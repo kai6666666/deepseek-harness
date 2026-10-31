@@ -314,7 +314,11 @@ def main():
             save = sys.argv[i + 1]
 
     if "--baseline" in sys.argv:
+        i = sys.argv.index("--baseline")
+        want = sys.argv[i + 1] if i + 1 < len(sys.argv) and not sys.argv[i + 1].startswith("--") else None
         d0 = collect()
+        if want:
+            d0["lv"] = want
         v, p, _ = snapshot(d0, d0["checks"])
         print(f"[baseline] {v} 九项快照 → {p}")
         return 0
