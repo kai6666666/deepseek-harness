@@ -168,6 +168,19 @@ def download(run_id, version):
     dst = os.path.join(DOWNLOAD_DIR, f"dsh-ci-{version}.apk")
     shutil.copyfile(apk, dst)
     print(f"[ok] {dst}")
+    meta = {
+        "version": version,
+        "run_id": str(run_id),
+        "apk": os.path.basename(dst),
+        "apk_size": os.path.getsize(dst),
+        "apk_mb": round(os.path.getsize(dst) / 1048576, 1),
+        "client": clen,
+        "dex_hit": hit,
+        "at": time.strftime("%Y-%m-%d %H:%M"),
+    }
+    with open(f"{DOWNLOAD_DIR}/verify-{version}.meta.json", "w") as f:
+        json.dump(meta, f, ensure_ascii=False, indent=2)
+    print(f"[ok] 元数据 verify-{version}.meta.json（run {run_id}，{meta['apk_mb']} MB）")
     write_evidence()
     write_install_script(version)
     install_step(version, dst)
