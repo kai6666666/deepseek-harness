@@ -6,6 +6,7 @@
     python3 tools/archive_fail.py 1.1.0-146
     python3 tools/archive_fail.py --drift 1.1.0-146   # 环境漂移（drift_check 不合格）
     python3 tools/archive_fail.py --log 1.1.0-146 --file /tmp/ship-watch-1.1.0-146.log --count 2
+    python3 tools/archive_fail.py --change 1.1.0-146     # 发布期间实际值变化（diff.json）
 读取：
     /sdcard/Download/verify-<ver>-fail.json（优先）或 verify-<ver>.json
     /sdcard/Download/dsh-<ver>-fail.png（存在则一起归档）
@@ -142,6 +143,25 @@ def update_readme(version, ts, doc, jname, pname=None):
     print(f"[archive] {README_PATH}（{len(rows)} 行）")
 
 
+def update_readme_change(version, jname, doc):
+    try:
+        cur = req("GET", f"/contents/{README_PATH}?ref=main")
+        text = base64.b64decode(cur["content"]).decode()
+    except Exception:
+        text = TEMPLATE
+    rows = [l for l in text.splitlines()
+            if l.startswith("| ") and not l.startswith("| 时间") and "---" not in l]
+    nice = time.strftime("%Y-%m-%d %H:%M", time.localtime())
+    rows = [r for r in rows if f"| {version} |" not in r]
+    ch = doc.get("changed") or []
+    head = f"（{ch[0]['name']}：{ch[0]['from']}→{ch[0]['to']}）" if ch else ""
+    rows.append(f"| {nice} | {version} | — | 发布期间实际值变化{len(ch)}项{head} | [json]({os.path.basename(jname)}) |")
+    rows.sort(key=lambda r: r.split("|")[1].strip(), reverse=True)
+    put(README_PATH, (TEMPLATE + "\n".join(rows) + "\n").encode(),
+        f"change: 归档 {version} 发布期间变更清单")
+    print(f"[archive] {README_PATH}（{len(rows)} 行，变更清单）")
+
+
 def update_readme_log(version, lname, count):
     try:
         cur = req("GET", f"/contents/{README_PATH}?ref=main")
@@ -162,6 +182,26 @@ def update_readme_log(version, lname, count):
 def main():
     if len(sys.argv) < 2:
         raise SystemExit("用法：python3 tools/archive_fail.py 1.1.0-146 | --drift 1.1.0-146")
+
+    if sys.argv[1] == "--change":
+        if len(sys.argv) < 3:
+            raise SystemExit("用法：python3 tools/archive_fail.py --change 1.1.0-146")
+        v = sys.argv[2]
+        src = f"{DOWNLOAD}/verify-{v}.diff.json"
+        if "--file" in sys.argv:
+            j = sys.argv.index("--file")
+            if j + 1 < len(sys.argv):
+                src = sys.argv[j + 1]
+        if not os.path.exists(src):
+            raise SystemExit(f"[archive] 找不到变更清单 {src}")
+        doc = json.load(open(src, encoding="utf-8"))
+        ts = time.strftime("%Y%m%d-%H%M%S")
+        jname = f"{DIR}/change-{v}-{ts}.json"
+        put(jname, json.dumps(doc, ensure_ascii=False, indent=2).encode(),
+            f"change: 归档 {v} 发布期间变更清单")
+        print(f"[archive] {jname}")
+        update_readme_change(v, jname, doc)
+        return
 
     if sys.argv[1] == "--log":
         if len(sys.argv) < 3:
