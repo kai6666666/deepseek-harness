@@ -132,6 +132,7 @@ tools/ship.sh           五步链、等待期巡检、strict、归档调度
 tools/record.py         17 列表格、旧表迁移、版本降序、同版替换
 tools/archive_fail.py   五个归档通道 + 索引维护
 tools/drift_check.py    九项体检、自愈、快照、diff、巡检
+tools/trend.py          从验收表生成 trend.md（APK/耗时趋势与差值）
 tools/push.sh           薄壳：exec python3 tools/release.py "$@"
 files/mp-verify.cjs     一次连 CDP 跑完四段取证，输出结构化 JSON
 ```
