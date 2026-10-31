@@ -10294,52 +10294,101 @@ function mpNavPlugins(create) {
 
 /* 创建插件：起一个新会话，把需求原样写进输入框并发送 */
 function mpCreatePluginSession() {
+	/* 走「新建会话 → 切成创造模式 → 预填文案」，不点官方那条会自带文案的入口：
+	   官方入口会反复把它的文案写回输入框，跟我们要写的那句打架。 */
 	const PROMPT = "创建一个带会话视图入口的 DSH 插件。";
-	const pick = (re) => Array.prototype.slice.call(document.querySelectorAll("button,a,[role=button]"))
-		.find((e) => {
-			const t = ((e.getAttribute("aria-label") || e.textContent || "") + "").trim();
-			return re.test(t) && t.length < 20;
-		});
-	const neu = pick(/新建|新会话|新任务/);
-	if (neu) { try { neu.click(); } catch (e) { /* 忽略 */ } }
-	let tries = 0;
+	const PRESETS = /^(标准模式|PTC 模式|极简模式|创造模式|快准狠模式)/;
+	const vis = (el) => {
+		if (!el) return false;
+		const r = el.getBoundingClientRect();
+		return r.width > 0 && r.height > 0;
+	};
+	const scan = (sel, fn) => Array.prototype.slice.call(document.querySelectorAll(sel)).find(fn);
+	/* ① 新建会话：优先屏幕上可见的入口，否则开抽屉点「新建会话」 */
+	const direct = scan("button,a,[role=button]", (e) => vis(e) && /^(新建会话|新建|新会话)$/.test((e.textContent || "").trim()) && (e.textContent || "").trim().length < 12);
+	if (direct) {
+		try { direct.click(); } catch (e) { /* 忽略 */ }
+	} else {
+		const nav = scan("button", (e) => vis(e) && e.getAttribute("aria-label") === "打开导航");
+		if (nav) {
+			try { nav.click(); } catch (e) { /* 忽略 */ }
+			setTimeout(() => {
+				const neu = scan("button,a,[role=button]", (e) => vis(e) && /^(新建会话|新建|新会话)$/.test((e.textContent || "").trim()) && (e.textContent || "").trim().length < 12);
+				if (neu) { try { neu.click(); } catch (e) { /* 忽略 */ } }
+			}, 600);
+		}
+	}
+	setTimeout(() => {
+		const collapse = scan("button", (e) => vis(e) && /收起侧边栏/.test(e.getAttribute("aria-label") || ""));
+		if (collapse) { try { collapse.click(); } catch (e) { /* 忽略 */ } }
+	}, 1500);
+	/* ② 切创造模式；③ 等编辑器稳定为空后写一次；④ 30 秒内被清空就补回（最多 3 次） */
+	let ticks = 0;
+	let presetOK = false;
+	let presetTries = 0;
+	let lastPresetClick = 0;
+	let wrote = 0;
+	let lastWrite = 0;
+	let emptySince = 0;
 	const timer = setInterval(() => {
-		tries++;
-		if (tries < 5) return; /* 约 1.5s：等 Lexical 编辑器挂载完成，太早写入会被丢弃 */
-		const ta = document.querySelector("textarea");
-		const ed = ta || document.querySelector('[contenteditable="true"][role="textbox"], [contenteditable="true"]');
-		if (!ed) { if (tries > 20) clearInterval(timer); return; }
-		/* 先真的把焦点放进去（React 编辑器只认 activeElement 内的输入） */
-		try { ed.click(); } catch (e) { /* 忽略 */ }
-		try { ed.focus(); } catch (e) { /* 忽略 */ }
-		if (ta) {
-			const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value").set;
-			try { setter.call(ta, PROMPT); } catch (e) { ta.value = PROMPT; }
-			ta.dispatchEvent(new Event("input", { bubbles: true }));
-		} else if ((ed.textContent || "").indexOf("DSH 插件") < 0) {
-			/* React 编辑器不认 execCommand（返回 true 但内容被丢弃）；用 paste 事件写入，实测生效 */
+		ticks++;
+		if (ticks > 140) { clearInterval(timer); return; }
+		const ed = document.querySelector('[contenteditable="true"][role="textbox"], [contenteditable="true"]') || document.querySelector("textarea");
+		if (!ed) return;
+		const txt = ((ed.value !== undefined ? ed.value : ed.textContent) || "");
+		const clean = txt.trim();
+		/* ② 模式 */
+		if (!presetOK) {
+			const trig = scan("button,[role=button]", (e) => {
+				if (!vis(e)) return false;
+				const aria = e.getAttribute("aria-label") || "";
+				const t = (e.textContent || "").trim();
+				return !aria && PRESETS.test(t) && t.length < 20;
+			});
+			if (!trig) { if (++presetTries > 30) presetOK = true; return; }
+			if (/^创造模式/.test((trig.textContent || "").trim())) { presetOK = true; return; }
+			if (Date.now() - lastPresetClick < 1200) return;
+			lastPresetClick = Date.now();
+			try { trig.click(); } catch (e) { /* 忽略 */ }
+			setTimeout(() => {
+				const item = scan('[role="menuitem"], [role="option"]', (e) => /^创造模式/.test((e.textContent || "").trim()));
+				if (item) { try { item.click(); } catch (e) { /* 忽略 */ } }
+			}, 250);
+			if (++presetTries > 30) presetOK = true;
+			return;
+		}
+		/* ③ 写文案 */
+		if (clean === PROMPT) {
+			emptySince = 0;
 			try {
-				const dt = new DataTransfer();
-				dt.setData("text/plain", PROMPT);
-				ed.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
-			} catch (e) { try { document.execCommand("insertText", false, PROMPT); } catch (e2) { /* 忽略 */ } }
+				const r = document.createRange();
+				r.selectNodeContents(ed);
+				r.collapse(false);
+				const sel = window.getSelection();
+				sel.removeAllRanges();
+				sel.addRange(r);
+				if (document.activeElement !== ed) ed.focus();
+			} catch (e) { /* 忽略 */ }
+			return;
 		}
-		if (!ta && (ed.textContent || "").indexOf("DSH 插件") < 0) {
-			try { document.execCommand("insertText", false, PROMPT); } catch (e) { /* 忽略 */ }
+		if (clean.length === 0) {
+			if (!emptySince) emptySince = Date.now();
+			if (Date.now() - emptySince < 1200) return;   /* 等它稳定为空 */
+		} else if (clean.indexOf("DSH 插件") < 0) {
+			clearInterval(timer);                          /* 主人自己写了别的 */
+			return;
 		}
-		const done = ta ? (ta.value || "").indexOf("DSH 插件") >= 0 : (ed.textContent || "").indexOf("DSH 插件") >= 0;
-		if (!done) { if (tries > 20) clearInterval(timer); return; }
-		clearInterval(timer);
-		/* 修复 30g：只预填，不自动发送 —— 主人自己按发送 */
+		if (wrote >= 3) { clearInterval(timer); return; }
+		if (Date.now() - lastWrite < 1500) return;
+		lastWrite = Date.now();
+		wrote++;
+		emptySince = 0;
 		try {
-			const r = document.createRange();
-			r.selectNodeContents(ed);
-			r.collapse(false);
-			const sel = window.getSelection();
-			sel.removeAllRanges();
-			sel.addRange(r);
 			ed.focus();
-		} catch (e) { /* 忽略 */ }
+			const dt = new DataTransfer();
+			dt.setData("text/plain", PROMPT);
+			ed.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
+		} catch (e) { try { document.execCommand("insertText", false, PROMPT); } catch (e2) { /* 忽略 */ } }
 	}, 300);
 }
 
