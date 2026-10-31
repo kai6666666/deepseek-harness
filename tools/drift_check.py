@@ -5,6 +5,7 @@
 用法：
     python3 tools/drift_check.py            # 表格输出，漂移时退出码 1
     python3 tools/drift_check.py --json     # 机器可读
+    python3 tools/drift_check.py --save <ver>  # 另存 verify-<ver>.drift.json 供登记表引用
 数据来源：
     远端  EngineManager.kt 的 MOBILE_UI_VERSION、lib/client.js 的 size
     本地  tools/../mobile-ui-plugin/.../client.js（字节数 + sha256 前 16 位）
@@ -17,6 +18,7 @@ import json
 import os
 import re
 import sys
+import time
 import urllib.request
 
 try:
@@ -146,6 +148,22 @@ def main():
             row.get("round") not in (None, "—", "?"))
 
     drift = [c for c in checks if not c["ok"]]
+
+    save = None
+    if "--save" in sys.argv:
+        i = sys.argv.index("--save")
+        if i + 1 < len(sys.argv):
+            save = sys.argv[i + 1]
+
+    if save:
+        rec = {"version": save, "drift": len(drift), "total": len(checks),
+               "ok": not drift, "failed": [c["name"] for c in drift],
+               "head": (drift[0]["name"] if drift else ""),
+               "remote": rv, "doc": lv, "client": {"local": lsize, "remote": rsize, "sha16": lsha},
+               "checks": checks, "at": time.strftime("%Y-%m-%d %H:%M:%S")}
+        path = f"{DOWNLOAD}/verify-{save}.drift.json"
+        json.dump(rec, open(path, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
+        print(f"[drift] 已写 {path}")
 
     if as_json:
         print(json.dumps({"remote": rv, "doc": lv, "client": {"local": lsize, "remote": rsize, "sha16": lsha},
