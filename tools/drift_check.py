@@ -8,6 +8,8 @@
     python3 tools/drift_check.py --save <ver>  # 另存 verify-<ver>.drift.json 供登记表引用
     python3 tools/drift_check.py --fix         # 能自愈的项直接修（meta 体积 / 表内 client），修完再体检
     python3 tools/drift_check.py --watch 30    # 常驻巡检：状态由绿转红时立刻归档差异
+    python3 tools/drift_check.py --baseline    # 拍一张九项实际值快照 verify-<ver>.baseline.json
+    python3 tools/drift_check.py --diff        # 与快照逐项 diff，输出变更清单
 数据来源：
     远端  EngineManager.kt 的 MOBILE_UI_VERSION、lib/client.js 的 size
     本地  mobile-ui-plugin/.../client.js（字节数 + sha256 前 16 位）
@@ -207,6 +209,38 @@ def apply_fix(data):
     return fixed
 
 
+def snapshot(data, checks):
+    v = data["lv"] or "unknown"
+    rec = {"version": v, "at": time.strftime("%Y-%m-%d %H:%M:%S"),
+           "remote": data["rv"], "doc": data["lv"],
+           "client": {"local": data["lsize"], "remote": data["rsize"], "sha16": data["lsha"]},
+           "map": {c["name"]: str(c["actual"]) for c in checks},
+           "ok": {c["name"]: bool(c["ok"]) for c in checks}}
+    path = f"{DOWNLOAD}/verify-{v}.baseline.json"
+    json.dump(rec, open(path, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
+    return v, path, rec
+
+
+def diff_against(data, checks):
+    v = data["lv"] or "unknown"
+    path = f"{DOWNLOAD}/verify-{v}.baseline.json"
+    if not os.path.exists(path):
+        return v, None, []
+    base = json.load(open(path, encoding="utf-8"))
+    bmap = base.get("map") or {}
+    changed = []
+    for c in checks:
+        old = bmap.get(c["name"])
+        now = str(c["actual"])
+        if old is not None and old != now:
+            changed.append({"name": c["name"], "from": old, "to": now, "ok": bool(c["ok"])})
+    rec = {"version": v, "base_at": base.get("at"), "at": time.strftime("%Y-%m-%d %H:%M:%S"),
+           "changes": len(changed), "changed": changed}
+    out = f"{DOWNLOAD}/verify-{v}.diff.json"
+    json.dump(rec, open(out, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
+    return v, out, changed
+
+
 def signature(checks):
     return tuple((c["name"], bool(c["ok"]), str(c["actual"])) for c in checks)
 
@@ -279,7 +313,23 @@ def main():
         if i + 1 < len(sys.argv):
             save = sys.argv[i + 1]
 
+    if "--baseline" in sys.argv:
+        d0 = collect()
+        v, p, _ = snapshot(d0, d0["checks"])
+        print(f"[baseline] {v} 九项快照 → {p}")
+        return 0
+
     data = collect()
+
+    changed = []
+    if "--diff" in sys.argv:
+        v, dp, changed = diff_against(data, data["checks"])
+        if dp is None:
+            print(f"[diff] 没有 {v} 的基线快照，跳过（先跑 --baseline）")
+        else:
+            print(f"[diff] 与基线逐项比对：{'无变化' if not changed else str(len(changed)) + ' 项变化'}")
+            for c in changed:
+                print(f"       {'❌' if not c['ok'] else '·'} {c['name']}：{c['from']} → {c['to']}")
     fixed = []
     if do_fix and any(not c["ok"] for c in data["checks"]):
         fixed = apply_fix(data)
@@ -296,6 +346,7 @@ def main():
         rec = {"version": save, "drift": len(drift), "total": len(checks), "ok": not drift,
                "failed": [c["name"] for c in drift], "head": (drift[0]["name"] if drift else ""),
                "fixed": fixed, "wait": int(os.environ.get("MP_WAIT_CHG") or 0),
+               "changes": len(changed), "changed": changed,
                "remote": data["rv"], "doc": data["lv"],
                "client": {"local": data["lsize"], "remote": data["rsize"], "sha16": data["lsha"]},
                "checks": checks, "at": time.strftime("%Y-%m-%d %H:%M:%S")}
