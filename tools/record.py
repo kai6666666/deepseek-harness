@@ -28,8 +28,8 @@ HEADER = """# 移动端 UI 插件 · 发布验收记录
 
 每次发布按 `bash tools/ship.sh <ver> --wait` → 设备侧 `sh /sdcard/Download/install-<ver>.sh` → 自动登记一行。
 
-| 版本 | 设备戳 | CI run | APK | client | dex 戳 | 七行菜单 | 创造模式 | 文案一致 | 消息数 | 截图 | 记录时间 |
-|---|---|---|---|---|---|---|---|---|---|---|---|
+| 版本 | 设备戳 | CI run | APK | client | dex 戳 | 七行菜单 | 创造模式 | 文案一致 | 消息数 | 重试 | 耗时 | 截图 | 记录时间 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 """
 
 
@@ -123,6 +123,30 @@ def parse(version):
         except Exception:
             meta = {}
 
+    # 重试次数与耗时：优先取 CDP 结果里的 retries/ms，其次取 summary 行
+    _retries = None
+    _ms = None
+    if isinstance(obj, dict):
+        rr = obj.get("retries") or {}
+        if rr:
+            try:
+                _retries = sum(int(x or 0) for x in rr.values())
+            except Exception:
+                _retries = None
+        if obj.get("ms") is not None:
+            try:
+                _ms = int(obj["ms"])
+            except Exception:
+                _ms = None
+    if _retries is None or _ms is None:
+        sl = next((l for l in lines if l.startswith("summary: ") or l.startswith("stages=")), "")
+        m = re.search(r"retries=(\d+)", sl)
+        if _retries is None and m:
+            _retries = int(m.group(1))
+        m = re.search(r"\bms=(\d+)", sl)
+        if _ms is None and m:
+            _ms = int(m.group(1))
+
     return {
         "src": src,
         "items": items,
@@ -136,6 +160,8 @@ def parse(version):
         "apk": (f"{meta['apk_mb']} MB" if meta.get("apk_mb") else "—"),
         "client": (f"{meta['client']:,} B" if meta.get("client") else "—"),
         "dex": (f"{meta['dex_hit']}/2" if meta.get("dex_hit") is not None else "—"),
+        "retries": ("—" if _retries is None else f"r{_retries}"),
+        "ms": ("—" if not _ms else f"{_ms / 1000:.1f}s"),
     }
 
 
@@ -143,19 +169,21 @@ def row(version, d):
     ok = lambda b: "✅" if b else "❌"
     return (f"| {version} | {d['stamp']} | {d['run']} | {d['apk']} | {d['client']} | {d['dex']} | "
             f"{ok(d['items_ok'])} ({len(d['items'])}) | {d['mode']} | "
-            f"{ok(d['match'])} | {d['msgs']} | {os.path.basename(d['shot'])} | "
-            f"{time.strftime('%Y-%m-%d %H:%M')} |\n")
+            f"{ok(d['match'])} | {d['msgs']} | {d['retries']} | {d['ms']} | "
+            f"{os.path.basename(d['shot'])} | {time.strftime('%Y-%m-%d %H:%M')} |\n")
 
 
 def _migrate_cells(line):
-    """老表列数补齐到 12 列：8 列插 run/apk/client/dex，10 列插 client/dex。"""
+    """老表列数补齐到 14 列：先补到 12 列（run/apk/client/dex），再在截图前插重试/耗时。"""
     cells = [c.strip() for c in line.strip().strip("|").split("|")]
     n = len(cells)
     if n == 8:
         cells = cells[:2] + ["—"] * 4 + cells[2:]
     elif n == 10:
         cells = cells[:4] + ["—", "—"] + cells[4:]
-    if len(cells) != 12:
+    if len(cells) == 12:
+        cells = cells[:10] + ["—", "—"] + cells[10:]
+    if len(cells) != 14:
         return None
     return "| " + " | ".join(cells) + " |"
 
