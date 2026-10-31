@@ -1,0 +1,87 @@
+{
+  "version": "1.1.0-146",
+  "drift": 1,
+  "total": 9,
+  "ok": false,
+  "failed": [
+    "meta.dex 命中 = 2"
+  ],
+  "head": "meta.dex 命中 = 2",
+  "fixed": [
+    "meta.apk_size 185759962 → 185759955"
+  ],
+  "remote": "1.1.0-146",
+  "doc": "1.1.0-146",
+  "client": {
+    "local": 571733,
+    "remote": 571733,
+    "sha16": "2ecc6b0f2fca3a18"
+  },
+  "checks": [
+    {
+      "name": "远端版本 = 验收表最新版本",
+      "expect": "1.1.0-146",
+      "actual": "1.1.0-146",
+      "ok": true,
+      "fixable": false
+    },
+    {
+      "name": "验收表设备戳 = 该行版本",
+      "expect": "1.1.0-146",
+      "actual": "1.1.0-146",
+      "ok": true,
+      "fixable": false
+    },
+    {
+      "name": "远端 client 字节 = 本地",
+      "expect": 571733,
+      "actual": 571733,
+      "ok": true,
+      "fixable": false
+    },
+    {
+      "name": "验收表 client = 本地 client",
+      "expect": "571,733 B",
+      "actual": "571,733 B",
+      "ok": true,
+      "fixable": true
+    },
+    {
+      "name": "meta.client = 本地 client",
+      "expect": 571733,
+      "actual": 571733,
+      "ok": true,
+      "fixable": true
+    },
+    {
+      "name": "meta.dex 命中 = 2",
+      "expect": 1,
+      "actual": 2,
+      "ok": false,
+      "fixable": false
+    },
+    {
+      "name": "设备取证戳 = 最新版本",
+      "expect": "1.1.0-146",
+      "actual": "1.1.0-146",
+      "ok": true,
+      "fixable": false
+    },
+    {
+      "name": "APK 体积 = meta 记录",
+      "expect": 185759955,
+      "actual": 185759955,
+      "ok": true,
+      "fixable": true
+    },
+    {
+      "name": "验收表轮次已记录",
+      "expect": "≥1",
+      "actual": "1",
+      "ok": true,
+      "fixable": false
+    }
+  ],
+  "at": "2026-10-31 17:08:37",
+  "_archived_at": "2026-10-31 17:08:40"
+}
