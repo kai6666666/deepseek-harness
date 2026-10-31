@@ -134,17 +134,17 @@ def collect():
 
     add("远端版本 = 验收表最新版本", rv, lv, rv and lv and rv == lv)
     add("验收表设备戳 = 该行版本", lv, row.get("stamp"), lv and row.get("stamp") == lv)
-    add("远端 client 字节 = 本地", rsize, lsize, rsize == lsize)
+    add("远端 client 字节 = 本地", lsize, rsize, rsize == lsize)
     if lv:
         m = meta(lv) or {}
         add("验收表 client = 本地 client", f"{lsize:,} B", row.get("client"),
             row.get("client") == f"{lsize:,} B", fixable=True)
-        add("meta.client = 本地 client", m.get("client"), lsize, m.get("client") == lsize, fixable=True)
+        add("meta.client = 本地 client", lsize, m.get("client"), m.get("client") == lsize, fixable=True)
         add("meta.dex 命中 = 2", 2, m.get("dex_hit"), m.get("dex_hit") == 2)
         ds = device_stamp(lv)
         add("设备取证戳 = 最新版本", lv, ds, ds == lv)
         asz = apk_size(lv)
-        add("APK 体积 = meta 记录", m.get("apk_size"), asz,
+        add("APK 体积 = meta 记录", asz, m.get("apk_size"),
             asz is not None and m.get("apk_size") == asz, fixable=True)
         add("验收表轮次已记录", "≥1", row.get("round"), row.get("round") not in (None, "—", "?"))
     return {"rv": rv, "rsize": rsize, "lsize": lsize, "lsha": lsha, "row": row, "lv": lv, "checks": checks}
