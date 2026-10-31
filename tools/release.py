@@ -174,42 +174,42 @@ def download(run_id, version):
 
 
 def write_evidence():
-    """三段取证参数，装机脚本依次喂给 c4.cjs。"""
-    for name, expr in (("mp-ev1.json", EV1), ("mp-ev2.json", EV2), ("mp-ev3.json", EV3)):
-        with open(f"{DOWNLOAD_DIR}/{name}", "w") as f:
-            f.write(json.dumps({"expression": expr, "awaitPromise": True, "returnByValue": True}))
-    print("[ok] 取证参数 mp-ev1/2/3.json")
+    """取证资产：mp-verify.cjs（一次连 CDP 跑完三段）落到 Download，供装机脚本推进设备。"""
+    src = f"{WORKSPACE}/files/mp-verify.cjs"
+    with open(src, "rb") as f:
+        blob = f.read()
+    with open(f"{DOWNLOAD_DIR}/mp-verify.cjs", "wb") as f:
+        f.write(blob)
+    print(f"[ok] 取证脚本 mp-verify.cjs（{len(blob)} B）")
 
 
 def write_install_script(version):
-    """装机 + 重启 + 三段取证 + 截图 + 版本戳，Android 侧一条 sh 跑完。"""
+    """装机 + 重启 + 一次 mp-verify 取证 + 截图 + 版本戳，Android 侧一条 sh 跑完。"""
     body = f"""#!/system/bin/sh
 # 装机 + 重启 + 取证（Android 侧执行：sh /sdcard/Download/install-{version}.sh）
-cp /sdcard/Download/dsh-ci-{version}.apk /data/local/tmp/d.apk
+APP=com.dsh.android
+V={version}
+cp /sdcard/Download/dsh-ci-$V.apk /data/local/tmp/d.apk
 pm install -r /data/local/tmp/d.apk || exit 1
-am force-stop com.dsh.android
-am start -n com.dsh.android/.MainActivity >/dev/null 2>&1
+am force-stop $APP
+am start -n $APP/.MainActivity >/dev/null 2>&1
 sleep 30
-P=$(pidof com.dsh.android)
-LOG=/sdcard/Download/verify-{version}.txt
+# 推进取证脚本（一次装好，后续复用）
+cp /sdcard/Download/mp-verify.cjs /data/local/tmp/mp-verify.cjs
+chmod 644 /data/local/tmp/mp-verify.cjs
+run-as $APP sh -c 'cat /data/local/tmp/mp-verify.cjs > files/mp-verify.cjs'
+P=$(pidof $APP)
+LOG=/sdcard/Download/verify-$V.txt
 : > "$LOG"
 echo "pid=$P" | tee -a "$LOG"
-RUN="run-as com.dsh.android files/termux/usr/bin/node files/c4.cjs"
-for n in 1 2 3; do
-  cp /sdcard/Download/mp-ev$n.json /data/local/tmp/ev.json
-  chmod 644 /data/local/tmp/ev.json
-  EV=$(cat /data/local/tmp/ev.json)
-  O=$($RUN "$P" Runtime.evaluate "$EV" 2>&1)
-  case "$O" in
-    *"Execution context was destroyed"*) sleep 3; O=$($RUN "$P" Runtime.evaluate "$EV" 2>&1) ;;
-  esac
-  echo "ev$n: $O" | tee -a "$LOG"
-  [ "$n" = 1 ] && sleep 2
-  [ "$n" = 2 ] && sleep 10
-done
-screencap -p /sdcard/Download/dsh-{version}-ui.png
-echo "shot=/sdcard/Download/dsh-{version}-ui.png" | tee -a "$LOG"
-S=$(run-as com.dsh.android cat files/home/.dsh/mobile-ui/dsh-android-mobile/.mobile_ui_version)
+O=$(run-as $APP files/termux/usr/bin/node files/mp-verify.cjs "$P" "files/verify-$V.json" "$V" 2>&1)
+echo "verify: $O" | tee -a "$LOG"
+run-as $APP cat "files/verify-$V.json" > /data/local/tmp/v.json
+cp /data/local/tmp/v.json /sdcard/Download/verify-$V.json
+cat /sdcard/Download/verify-$V.json >> "$LOG"
+screencap -p /sdcard/Download/dsh-$V-ui.png
+echo "shot=/sdcard/Download/dsh-$V-ui.png" | tee -a "$LOG"
+S=$(run-as $APP cat files/home/.dsh/mobile-ui/dsh-android-mobile/.mobile_ui_version)
 echo "stamp=$S" | tee -a "$LOG"
 echo
 """
