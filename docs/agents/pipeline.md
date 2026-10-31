@@ -15,7 +15,7 @@ bash tools/ship.sh [版本号] [--wait] [--strict] [--fix-drift] [--no-drift] ..
 | 1.5/5 | 拍九项基线快照 | `verify-<ver>.baseline.json` | — （不阻断） |
 | 2/5 | 装机 + 取证（等设备侧脚本，可 `--wait`） | `verify-<ver>.json`、`.sum`、`-ui.png` | 2（超时） |
 | 3/5 | 判定（`clicked` / `match` / `msgs==0` / 菜单 7 行 / 各阶段 ok） | 不合格则留 `-fail.png` 并归档 | 3 |
-| 4/5 | 登记表推送（`record.py`，17 列） | `docs/agents/mobile-ui-verification.md` | 1 |
+| 4/5 | 登记表推送（`record.py`，18 列） | `docs/agents/mobile-ui-verification.md` | 1 |
 | 5/5 | 一致性体检（`drift_check.py --save --diff`） | `verify-<ver>.drift.json`、`.diff.json` | 4（漂移）/ 5（strict 扰动） |
 | 6/6 | 同版本二次取证（`--reverify`，重启后再取一次） | `verify-<ver>.run2.json`、`.reverify.json`、`-run2.png` | 6（两次不一致） |
 
@@ -50,7 +50,7 @@ python3 tools/release.py --bump-only        # 只查询下一个版本号
 | `--strict` | `wait + changes + fixed > 0` 即 exit 5，并归档扰动汇总 |
 | `--reverify` | 发布后再取一次证据，九项稳定字段逐一比对；不一致 exit 6 |
 
-## 四、验收表 17 列
+## 四、验收表 18 列
 
 | # | 列 | 来源 |
 |---|---|---|
@@ -71,6 +71,7 @@ python3 tools/release.py --bump-only        # 只查询下一个版本号
 | 15 | 记录时间 | 登记时刻 |
 | 16 | 漂移 | `0/9` / `🚩N`，后缀 `·fixK·chgN·waitN` |
 | 17 | 状态 | `✅` / `⚠` / `🚩` / `—` |
+| 18 | 稳定 | `verify-<ver>.reverify.json` 的 `verdict`：✅ / ⚠ / — |
 
 漂移列后缀语义：
 
