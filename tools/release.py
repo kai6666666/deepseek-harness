@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""一条命令出正式包：推 client.js + 抬 MOBILE_UI_VERSION → 触发 CI → 等构建 → 下载 system APK。
+"""一条命令出正式包：推 client.js + 抬 MOBILE_UI_VERSION → CI → 下载 → 校验 → 生成装机取证脚本。
 
 用法：
-    python3 tools/release.py 1.1.0-143
+    python3 tools/release.py 1.1.0-146
 产物：
     /tmp/dsh-ci-<ver>/app-system-release.apk
     /storage/emulated/0/Download/dsh-ci-<ver>.apk
+    /storage/emulated/0/Download/install-<ver>.sh      （Android 侧一条命令装机+取证）
 """
 import base64
 import json
@@ -28,9 +29,17 @@ REPO = "kai6666666/deepseek-harness"
 API = f"https://api.github.com/repos/{REPO}"
 WORKSPACE = "/storage/emulated/0/MT2/apks/deepseek harness/DSHAPP-main"
 CLIENT = f"{WORKSPACE}/mobile-ui-plugin/dsh-android-mobile/lib/client.js"
-ENGINE = f"{WORKSPACE}/app/src/main/java/com/dsh/android/EngineManager.kt"
 TOKEN_FILE = "/tmp/gh_token"
 DOWNLOAD_DIR = "/storage/emulated/0/Download"
+
+# ① 打开抽屉 → 点一个会话（会触发页面重建，所以单独一段）
+EV1 = r"""(async()=>{const sleep=ms=>new Promise(r=>setTimeout(r,ms));const scan=(s,f)=>[...document.querySelectorAll(s)].find(f);const vis=e=>{const r=e.getBoundingClientRect();return r.width>0&&r.height>0};const nav=scan('button',e=>e.getAttribute('aria-label')==='打开导航');nav&&nav.click();await sleep(700);const skip=/^(新建会话|插件|自动化任务|搜索会话|设置|视图选项|添加工作区|收起侧边栏|账号菜单|打开导航)$/;const rows=[...document.querySelectorAll('[class*="session" i], a, [role=button]')].filter(e=>{const t=(e.textContent||'').trim();const r=e.getBoundingClientRect();return vis(e)&&r.height>14&&r.height<64&&t.length>1&&t.length<60&&!skip.test(t)&&t.indexOf('工作区')<0&&t.indexOf('新会话')<0});const row=rows.sort((a,b)=>a.getBoundingClientRect().height-b.getBoundingClientRect().height)[0];if(row)row.dispatchEvent(new MouseEvent('click',{bubbles:true}));return 'opened';})()"""
+
+# ② 开 ⋯ 读菜单 → 点「创建你的插件」→ 立刻返回（不做长等待，避免 CDP 超时）
+EV2 = r"""(async()=>{const sleep=ms=>new Promise(r=>setTimeout(r,ms));const scan=(s,f)=>[...document.querySelectorAll(s)].find(f);const more=scan('.wSkVaW_header button',e=>e.getAttribute('aria-label')==='更多操作');more&&more.click();await sleep(1500);const items=[...document.querySelectorAll('[role=menuitem]')].map(e=>e.textContent.trim());let it=null;for(let i=0;i<3&&!it;i++){it=scan('[data-mp-plugin-item] [role=menuitem], [data-mp-plugin-item] button',e=>(e.textContent||'').trim()==='创建你的插件');if(!it)await sleep(500);}document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));await sleep(250);it&&it.click();return JSON.stringify({items:items,clicked:!!it});})()"""
+
+# ③ 等 10s 后读三项：模式 / 文案 / 消息条数
+EV3 = r"""(()=>{const trig=[...document.querySelectorAll('button,[role=button]')].find(e=>/^(标准模式|PTC 模式|极简模式|创造模式)/.test((e.textContent||'').trim()));const ed=document.querySelector('[contenteditable=true][role=textbox],[contenteditable=true]');const t=(ed&&ed.textContent)||'';return JSON.stringify({mode:trig?(trig.textContent||'').trim():null,text:t.slice(0,40),match:t.trim()==='创建一个带会话视图入口的 DSH 插件。',msgs:document.querySelectorAll('[class*=_message_]').length});})()"""
 
 
 def token():
@@ -101,9 +110,10 @@ def dispatch(version):
 def wait_run(started, timeout_min=45):
     deadline = time.time() + timeout_min * 60
     run_id = None
+    stamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(started - 30))
     while time.time() < deadline:
         runs = req("GET", "/actions/runs?per_page=5")["workflow_runs"]
-        cand = [r for r in runs if r["name"] == "android-release" and r["created_at"] >= time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(started - 30))]
+        cand = [r for r in runs if r["name"] == "android-release" and r["created_at"] >= stamp]
         if cand:
             run_id = cand[0]["id"]
             break
@@ -113,8 +123,7 @@ def wait_run(started, timeout_min=45):
     print(f"[ci] run {run_id}")
     while time.time() < deadline:
         jobs = req("GET", f"/actions/runs/{run_id}/jobs")["jobs"]
-        state = [(j["name"], j["status"], j["conclusion"]) for j in jobs]
-        print("[ci]", state)
+        print("[ci]", [(j["name"], j["status"], j["conclusion"]) for j in jobs])
         if all(j["status"] == "completed" for j in jobs):
             if all(j["conclusion"] == "success" for j in jobs):
                 return run_id
@@ -136,7 +145,7 @@ def download(run_id, version):
     out = f"/tmp/dsh-ci-{version}"
     os.makedirs(out, exist_ok=True)
     zpath = os.path.join(out, "sys.zip")
-    # 用 curl 下：artifact 会 302 到 Azure Blob，urllib 会把 Authorization 一起带过去导致 401
+    # 用 curl 下：artifact 会 302 到 Azure Blob，urllib 会把 Authorization 带过去导致 401
     subprocess.run(["curl", "-sL", "--retry", "5", "--retry-all-errors",
                     "-H", f"Authorization: Bearer {token()}",
                     "-o", zpath, f"{API}/actions/artifacts/{sysart['id']}/zip"], check=True)
@@ -159,20 +168,45 @@ def download(run_id, version):
     dst = os.path.join(DOWNLOAD_DIR, f"dsh-ci-{version}.apk")
     shutil.copyfile(apk, dst)
     print(f"[ok] {dst}")
+    write_evidence()
     write_install_script(version)
     install_step(version, dst)
 
 
+def write_evidence():
+    """三段取证参数，装机脚本依次喂给 c4.cjs。"""
+    for name, expr in (("mp-ev1.json", EV1), ("mp-ev2.json", EV2), ("mp-ev3.json", EV3)):
+        with open(f"{DOWNLOAD_DIR}/{name}", "w") as f:
+            f.write(json.dumps({"expression": expr, "awaitPromise": True, "returnByValue": True}))
+    print("[ok] 取证参数 mp-ev1/2/3.json")
+
+
 def write_install_script(version):
-    """写一份可在 Android 侧直接跑的装机脚本（任何终端 App 里 sh 一下即可）。"""
+    """装机 + 重启 + 三段取证 + 截图 + 版本戳，Android 侧一条 sh 跑完。"""
     body = f"""#!/system/bin/sh
-# 装机 + 重启 + 读版本戳（Android 侧执行：sh /sdcard/Download/install-{version}.sh）
-set -e
+# 装机 + 重启 + 取证（Android 侧执行：sh /sdcard/Download/install-{version}.sh）
 cp /sdcard/Download/dsh-ci-{version}.apk /data/local/tmp/d.apk
-pm install -r /data/local/tmp/d.apk
+pm install -r /data/local/tmp/d.apk || exit 1
 am force-stop com.dsh.android
 am start -n com.dsh.android/.MainActivity >/dev/null 2>&1
-sleep 25
+sleep 30
+P=$(pidof com.dsh.android)
+echo "pid=$P"
+RUN="run-as com.dsh.android files/termux/usr/bin/node files/c4.cjs"
+for n in 1 2 3; do
+  cp /sdcard/Download/mp-ev$n.json /data/local/tmp/ev.json
+  chmod 644 /data/local/tmp/ev.json
+  EV=$(cat /data/local/tmp/ev.json)
+  O=$($RUN "$P" Runtime.evaluate "$EV" 2>&1)
+  case "$O" in
+    *"Execution context was destroyed"*) sleep 3; O=$($RUN "$P" Runtime.evaluate "$EV" 2>&1) ;;
+  esac
+  echo "ev$n: $O"
+  [ "$n" = 1 ] && sleep 2
+  [ "$n" = 2 ] && sleep 10
+done
+screencap -p /sdcard/Download/dsh-{version}-ui.png
+echo "shot=/sdcard/Download/dsh-{version}-ui.png"
 run-as com.dsh.android cat files/home/.dsh/mobile-ui/dsh-android-mobile/.mobile_ui_version
 echo
 """
@@ -188,11 +222,10 @@ def adb_has_device():
         out = subprocess.run(["adb", "devices"], capture_output=True, text=True, timeout=10).stdout
     except Exception:
         return False
-    return any(line.strip().endswith("	device") for line in out.splitlines()[1:] if line.strip())
+    return any(line.strip().endswith("\tdevice") for line in out.splitlines()[1:] if line.strip())
 
 
 def install_step(version, apk):
-    """有 adb 设备就自动装，没有就把 Android 侧一条命令打出来。"""
     if adb_has_device():
         print("[install] 检测到 adb 设备，自动装机")
         subprocess.run(["adb", "install", "-r", apk], check=True)
@@ -211,10 +244,10 @@ def install_step(version, apk):
 
 def main():
     if len(sys.argv) < 2:
-        raise SystemExit("用法：python3 tools/release.py 1.1.0-143")
+        raise SystemExit("用法：python3 tools/release.py 1.1.0-146")
     version = sys.argv[1]
     if not re.match(r"^\d+\.\d+\.\d+-\d+$", version):
-        raise SystemExit("版本号要形如 1.1.0-143")
+        raise SystemExit("版本号要形如 1.1.0-146")
     push(version)
     started = dispatch(version)
     run_id = wait_run(started)
