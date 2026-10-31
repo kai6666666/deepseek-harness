@@ -328,63 +328,46 @@ window.__ModuleLoader__.load({
 [data-mobile] .wSkVaW_headerActions span[title] {
   display: inline-flex !important;
 }
-/* 30c mirror: tabs offscreen + inline mirror bar */
-
-[data-mobile] .wSkVaW_header {
-  overflow: visible !important;
-}
-[data-mobile] .wSkVaW_titleCluster {
-  overflow: visible !important;
-  -webkit-mask-image: none !important;
-  mask-image: none !important;
-}
-[data-mobile] .wSkVaW_titleRow {
-  overflow: visible !important;
-}
-[data-mobile] .wSkVaW_headerActions {
-  display: flex !important;
-  flex-direction: row !important;
-  flex-wrap: nowrap !important;
-  align-items: center !important;
-  justify-content: center !important;
-  gap: 6px !important;
-  min-width: 0 !important;
-}
-[data-mobile] .wSkVaW_headerActions > * {
-  flex: 0 0 auto !important;
-}
-   官方 tabs：留节点、移出可视区
+/* 修复 30f：回退到插件的原样 —— tabs 整排不显示，视图 ⋯ 不显示，
+   徽章（标准模式）与 header 全部交回官方，不再做任何摆位/字号覆盖。 */
 [data-mobile] .wSkVaW_tabs {
-  /* 只留节点、不渲染：镜像条是唯一可见组，重复问题从根上没了 */
-  display: none !important;
-  position: static !important;
+  position: absolute !important;
+  left: -5000px !important;
+  top: 0 !important;
   width: 360px !important;
-  margin: 0 !important;
-  padding: 0 !important;
+  visibility: hidden !important;
+  display: flex !important;
 }
-   官方 ⋯ 与自建 ⋯（旧方案遗留）都藏起来，这里用镜像条里的那一个
-[data-mobile] .wSkVaW_viewsMore,
-[data-mobile] .mp-views-more {
+/* 视图菜单本体不渲染到屏幕上：仅用于启动时把官方 entries/onOpen 抓下来 */
+[data-mobile] .wSkVaW_viewsMoreMenu {
   display: none !important;
 }
-   内联镜像条
+   /* 内联镜像条 */
 .mp-inline-views {
   position: absolute !important;
-  display: inline-flex !important;
+  left: calc(50% - 37px) !important;
+  top: 34px !important;
+  width: 150px !important;
+  display: flex !important;
   align-items: center !important;
-  gap: 12px !important;
+  justify-content: space-between !important;
+  gap: 0 !important;
   margin: 0 !important;
   min-height: 26px !important;
-  z-index: 26 !important;
+  z-index: 60 !important;
   pointer-events: auto !important;
 }
 .mp-inline-tab {
   position: relative !important;
   border: none !important;
   background: transparent !important;
-  padding: 2px 1px 4px !important;
+  padding: 0 !important;
   margin: 0 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  height: 26px !important;
   font-size: 13px !important;
+  font-weight: 500 !important;
   line-height: 18px !important;
   min-height: 26px !important;
   color: var(--dsw-alias-label-tertiary, #8a8a8a) !important;
@@ -408,8 +391,8 @@ window.__ModuleLoader__.load({
   display: inline-flex !important;
   align-items: center !important;
   justify-content: center !important;
-  width: 20px !important;
-  height: 20px !important;
+  width: 22px !important;
+  height: 26px !important;
   border: none !important;
   background: transparent !important;
   border-radius: 6px !important;
@@ -3554,6 +3537,8 @@ mpSetMenuOpenClass(false);
 				return Array.prototype.slice.call(document.querySelectorAll(".wSkVaW_tabs .wSkVaW_tab"));
 			}
 			function mpBuildInlineBar() {
+				/* 修复 30d：改为官方 tabs 直出，镜像条彻底停用 */
+				return;
 				const root = document.documentElement;
 				if (!root.hasAttribute("data-mobile")) return;
 				const header = document.querySelector(".wSkVaW_header");
@@ -3561,9 +3546,24 @@ mpSetMenuOpenClass(false);
 				/* ★ 挂 body + position:fixed：React 重渲染 header 时不会把它摘掉，
 				   也就没有「搬进去被裁、被重置」这一整类问题。位置由下面实时算。 */
 				let bar = document.querySelector(".mp-inline-views");
+				if (bar && bar.getAttribute("data-mpv") !== "2") { bar.remove(); bar = null; }
 				if (!bar) {
 					bar = document.createElement("div");
 					bar.className = "mp-inline-views";
+					bar.setAttribute("data-mpv", "2");
+						/* 触摸优先：pointerdown 就触发，别等 click（header 区域有手势处理，click 常被取消） */
+						if (!bar.__mpTouch) {
+							bar.__mpTouch = 1;
+							bar.addEventListener("pointerdown", function (ev) {
+								const t = ev.target;
+								const more = t && t.closest ? t.closest(".mp-inline-more") : null;
+								const tab = t && t.closest ? t.closest(".mp-inline-tab") : null;
+								if (!more && !tab) return;
+								ev.preventDefault();
+								bar.__mpSuppress = Date.now();
+								if (more) more.click(); else tab.click();
+							}, { passive: false });
+						}
 
 					const makeTab = (label, idx) => {
 						const b = document.createElement("button");
@@ -10178,6 +10178,11 @@ function mpViewsMoreActions(props) {
 	const entries = (props && props.entries) || [];
 	const onOpen = props && props.onOpen;
 	const onDismiss = props && props.onDismiss;
+	/* 修复 30f：把官方的 entries + onOpen 抓下来，供「右上角 ⋯ 菜单」复用；
+	   这里本身不再渲染任何视图列表（视图入口整排已隐藏）。 */
+	window.__mpViewActions = { entries, onOpen, onDismiss, keys: Object.keys(props || {}), raw: props };
+	return null;
+	// eslint-disable-next-line no-unreachable
 	// 官方 entries 为空时（hasEntryActions 刚变 true、visibleViewLimit 已吃掉全部 tab），
 	// 直接读 DOM 里的 tab 兜底，保证菜单永远有内容。
 	let list = entries.map((it) => ({ id: it.id, label: it.label, active: !!it.active, el: null }));
@@ -10236,115 +10241,293 @@ function mpRegisterViewsMore(ctx) {
 	}
 }
 
+/* 修复 30e：官方 ⋯ 菜单 = 「溢出视图列表」+「插件入口」两段拼的。
+   主人只要插件那两行，这里按文本精确匹配把视图行藏掉，并收拾空掉的分隔线。 */
+function mpTrimViewsMenu(menu) {
+	if (!menu || menu.__mpTrimmed === "3") return;
+	const VIEWS = ["对话", "轨迹", "会话层级"];
+	const rows = Array.prototype.slice.call(menu.querySelectorAll("[role=menuitem],button,a,li"));
+	let hidden = 0;
+	for (const el of rows) {
+		const tx = (el.textContent || "").replace(/\s+/g, "");
+		if (VIEWS.indexOf(tx) < 0) continue;
+		el.style.setProperty("display", "none", "important");
+		el.setAttribute("data-mp-hidden", "1");
+		hidden++;
+	}
+	/* 分隔线：后面没有可见菜单项就一起藏 */
+	Array.prototype.slice.call(menu.querySelectorAll("[role=separator],hr")).forEach((sep) => {
+		let n = sep.nextElementSibling, any = false;
+		while (n) {
+			if (n.getAttribute("data-mp-hidden") !== "1" && n.getBoundingClientRect().height > 0) { any = true; break; }
+			n = n.nextElementSibling;
+		}
+		if (!any) sep.style.setProperty("display", "none", "important");
+	});
+	/* 顶部若只剩一个空分组容器，也藏掉（避免菜单顶部挂一条空白块） */
+	Array.prototype.slice.call(menu.children).forEach((c) => {
+		if (c.getAttribute("data-mp-hidden") === "1") return;
+		const visible = Array.prototype.slice.call(c.querySelectorAll("*")).some((e) => e.getBoundingClientRect().height > 0);
+		const ownText = (c.textContent || "").trim();
+		if (!visible && !ownText) c.style.setProperty("display", "none", "important");
+	});
+	menu.__mpTrimmed = hidden > 0 ? "3" : "";
+}
+
+/* 修复 30f：右上角 ⋯ 菜单（复制会话为 Markdown / 下载 Session 日志 / 反馈 / 轨迹 / 刷新）
+   末尾追加「浏览更多插件 / 创建你的插件」。点击行为复用宿主自己的入口：
+   · 浏览更多插件 → 侧栏「插件」页 →「发现」
+   · 创建你的插件 → 侧栏「插件」页 →「添加插件」 */
+function mpNavPlugins(create) {
+	const pick = (re) => Array.prototype.slice.call(document.querySelectorAll("button,a,[role=button],[role=tab]"))
+		.find((e) => {
+			const t = ((e.getAttribute("aria-label") || e.textContent || "") + "").trim();
+			return re.test(t) && t.length < 20;
+		});
+	const nav = pick(/^插件$/);
+	if (nav) { try { nav.click(); } catch (e) { /* 忽略 */ } }
+	setTimeout(() => {
+		const target = create ? pick(/添加插件/) : pick(/^已安装$/);
+		if (target) { try { target.click(); } catch (e) { /* 忽略 */ } }
+	}, 300);
+}
+
+/* 创建插件：起一个新会话，把需求原样写进输入框并发送 */
+function mpCreatePluginSession() {
+	const PROMPT = "创建一个带会话视图入口的 DSH 插件。";
+	const pick = (re) => Array.prototype.slice.call(document.querySelectorAll("button,a,[role=button]"))
+		.find((e) => {
+			const t = ((e.getAttribute("aria-label") || e.textContent || "") + "").trim();
+			return re.test(t) && t.length < 20;
+		});
+	const neu = pick(/新建|新会话|新任务/);
+	if (neu) { try { neu.click(); } catch (e) { /* 忽略 */ } }
+	let tries = 0;
+	const timer = setInterval(() => {
+		tries++;
+		if (tries < 5) return; /* 约 1.5s：等 Lexical 编辑器挂载完成，太早写入会被丢弃 */
+		const ta = document.querySelector("textarea");
+		const ed = ta || document.querySelector('[contenteditable="true"][role="textbox"], [contenteditable="true"]');
+		if (!ed) { if (tries > 20) clearInterval(timer); return; }
+		/* 先真的把焦点放进去（React 编辑器只认 activeElement 内的输入） */
+		try { ed.click(); } catch (e) { /* 忽略 */ }
+		try { ed.focus(); } catch (e) { /* 忽略 */ }
+		if (ta) {
+			const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value").set;
+			try { setter.call(ta, PROMPT); } catch (e) { ta.value = PROMPT; }
+			ta.dispatchEvent(new Event("input", { bubbles: true }));
+		} else if ((ed.textContent || "").indexOf("DSH 插件") < 0) {
+			/* React 编辑器不认 execCommand（返回 true 但内容被丢弃）；用 paste 事件写入，实测生效 */
+			try {
+				const dt = new DataTransfer();
+				dt.setData("text/plain", PROMPT);
+				ed.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
+			} catch (e) { try { document.execCommand("insertText", false, PROMPT); } catch (e2) { /* 忽略 */ } }
+		}
+		if (!ta && (ed.textContent || "").indexOf("DSH 插件") < 0) {
+			try { document.execCommand("insertText", false, PROMPT); } catch (e) { /* 忽略 */ }
+		}
+		const done = ta ? (ta.value || "").indexOf("DSH 插件") >= 0 : (ed.textContent || "").indexOf("DSH 插件") >= 0;
+		if (!done) { if (tries > 20) clearInterval(timer); return; }
+		clearInterval(timer);
+		/* 修复 30g：只预填，不自动发送 —— 主人自己按发送 */
+		try {
+			const r = document.createRange();
+			r.selectNodeContents(ed);
+			r.collapse(false);
+			const sel = window.getSelection();
+			sel.removeAllRanges();
+			sel.addRange(r);
+			ed.focus();
+		} catch (e) { /* 忽略 */ }
+	}, 300);
+}
+
+function mpInjectHeaderMenuItems() {
+	const ICONS = ["dsw-icon-plugin-pinwheel-outline-regular", "dsw-icon-plus-outline-regular"];
+	const targets = [
+		{ label: "浏览更多插件", icon: ICONS[0], action: () => mpNavPlugins(false) },
+		{ label: "创建你的插件", icon: ICONS[1], action: () => mpCreatePluginSession() },
+	];
+	const wraps = Array.prototype.slice.call(document.querySelectorAll('[class*="_itemWrap_"]'));
+	/* 锚点：官方「反馈」那一行 —— 两行插件入口插在它前面 */
+	const anchor = wraps.find((w) => (w.textContent || "").trim() === "反馈");
+	if (!anchor || !anchor.parentElement) return;
+	const vp = anchor.parentElement;
+	if (vp.querySelector('[data-mp-plugin-item]')) return; /* 已注入过 */
+	targets.forEach((t) => {
+		const wrap = anchor.cloneNode(true);
+		wrap.setAttribute("data-mp-plugin-item", "1");
+		const lab = wrap.querySelector('span[class*="_itemLabel_"]');
+		if (lab) lab.textContent = t.label;
+		const icon = wrap.querySelector('span[class*="_itemIcon_"]');
+		if (icon) icon.style.removeProperty("display");
+		const svg = wrap.querySelector("svg");
+		if (svg) {
+			svg.setAttribute("data-icon", t.icon);
+			svg.setAttribute("width", "16");
+			svg.setAttribute("height", "16");
+			const use = svg.querySelector("use");
+			if (use) use.setAttribute("href", "#" + t.icon);
+		}
+		const btn = wrap.querySelector("button");
+		if (btn) {
+			btn.addEventListener("click", (ev) => {
+				ev.preventDefault();
+				ev.stopPropagation();
+				try { document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); } catch (e) { /* 忽略 */ }
+				t.action();
+			}, true);
+		}
+		vp.insertBefore(wrap, anchor);
+	});
+}
+
+/* 修复 30h：会话列表的「排序 / 筛选」菜单里，移除底部「轨迹」「刷新」两行。
+   只认「同时包含排序方式与筛选会话」的容器，不碰标题栏那个 ⋯ 菜单。 */
+function mpTrimSessionMenu() {
+	const menus = Array.prototype.slice.call(document.querySelectorAll('div[class*="_list_"],div[role="menu"],[class*="menu"]'));
+	for (const menu of menus) {
+		const t = menu.innerText || "";
+		if (t.indexOf("排序方式") < 0 || t.indexOf("筛选会话") < 0) continue;
+		const rows = Array.prototype.slice.call(menu.querySelectorAll('[role="menuitem"],button,a,li'));
+		for (const el of rows) {
+			const tx = (el.textContent || "").trim();
+			if (tx !== "轨迹" && tx !== "刷新") continue;
+			el.style.setProperty("display", "none", "important");
+			el.setAttribute("data-mp-hidden-row", "1");
+			/* 连同外面那层只包这一个按钮的包裹层一起藏，避免留下空白高度 */
+			const wrap = el.parentElement;
+			if (wrap && wrap.children.length === 1 && (wrap.textContent || "").trim() === tx) {
+				wrap.style.setProperty("display", "none", "important");
+				wrap.setAttribute("data-mp-hidden-row", "1");
+			}
+		}
+		/* 空掉的分隔线一起收 */
+		Array.prototype.slice.call(menu.querySelectorAll('[role="separator"],hr')).forEach((sep) => {
+			let n = sep.nextElementSibling, any = false;
+			while (n) {
+				if (n.getAttribute("data-mp-hidden-row") !== "1" && n.getBoundingClientRect().height > 0) { any = true; break; }
+				n = n.nextElementSibling;
+			}
+			if (!any) sep.style.setProperty("display", "none", "important");
+		});
+	}
+}
+
 function apply(ctx) {
 			mpCtx = ctx;
-		/* ★ 修复 30c · 自包含心跳：不依赖任何安装链/其它分支是否执行。
-			   每 400ms 做三件事：确保镜像条存在、同步选中态、按徽章位置摆好。 */
-			(function mpStartInlineViews() {
-				if (window.__mpInlineViewsTimer) return;
-				window.__mpInlineViewsTimer = setInterval(() => {
+		/* ★ 修复 30d · 官方 tabs 直出：不再建镜像条。
+		   官方 tab / ⋯ 自己收点击、自己弹菜单；这里只做两件事：
+		   ① 保住 tabs 容器 360px 宽（visibleViewLimit 才等于 2，轨迹不被收进 moreTabs）
+		   ② 把整条 tabs 摆到「标准模式」徽章右边同一水平线。 */
+			(function mpStartOfficialTabs() {
+				/* 修复 30f：已回退，tabs 交给官方（隐藏），不再摆位 */
+				document.querySelectorAll(".mp-inline-views").forEach((n) => n.remove());
+				return;
+				if (window.__mpOffTabsTimer) return;
+				window.__mpOffTabsTimer = setInterval(() => {
 					try {
-						const root = document.documentElement;
-						let bar = document.querySelector(".mp-inline-views");
-						if (!root.hasAttribute("data-mobile")) {
-							if (bar) bar.style.display = "none";
-							return;
-						}
+						document.querySelectorAll(".mp-inline-views").forEach((n) => n.remove());
+						if (!document.documentElement.hasAttribute("data-mobile")) return;
 						const header = document.querySelector(".wSkVaW_header");
-						if (!header) { if (bar) bar.style.display = "none"; return; }
-						if (!bar) {
-							bar = document.createElement("div");
-							bar.className = "mp-inline-views";
-							const mk = (label, idx, cls) => {
-								const b = document.createElement("button");
-								b.type = "button";
-								b.className = cls;
-								b.textContent = label;
-								b.addEventListener("click", (ev) => {
-									ev.preventDefault(); ev.stopPropagation();
-									const tabs = [...document.querySelectorAll(".wSkVaW_tabs .wSkVaW_tab")];
-									if (tabs[idx]) { try { tabs[idx].click(); } catch (e) {} }
-								}, { passive: false });
-								return b;
-							};
-							bar.appendChild(mk("对话", 0, "mp-inline-tab"));
-							bar.appendChild(mk("轨迹", 1, "mp-inline-tab"));
-							const more = document.createElement("button");
-							more.type = "button";
-							more.className = "mp-inline-more";
-							more.setAttribute("aria-label", "更多会话视图");
-							more.innerHTML = '<svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><circle cx="3" cy="8" r="1.6"/><circle cx="8" cy="8" r="1.6"/><circle cx="13" cy="8" r="1.6"/></svg>';
-							more.addEventListener("click", (ev) => {
-								ev.preventDefault(); ev.stopPropagation();
-								const tabs = [...document.querySelectorAll(".wSkVaW_tabs .wSkVaW_tab")];
-								const menu = document.createElement("div");
-								menu.className = "mp-views-menu";
-								const list = document.createElement("div");
-								list.className = "mp-views-menu-list";
-								tabs.forEach((tb, i) => {
-									const it = document.createElement("button");
-									it.type = "button";
-									it.className = "mp-views-item" + (tb.getAttribute("aria-selected") === "true" ? " mp-views-item-active" : "");
-									it.textContent = (tb.textContent || "").trim() || (i === 0 ? "对话" : "轨迹");
-									it.addEventListener("click", (e2) => { e2.preventDefault(); e2.stopPropagation(); try { tb.click(); } catch (e) {} menu.remove(); }, { passive: false });
-									list.appendChild(it);
-								});
-								menu.appendChild(list);
-								document.body.appendChild(menu);
-								const r = more.getBoundingClientRect();
-								const mw = menu.getBoundingClientRect().width || 160;
-								const mh = menu.getBoundingClientRect().height || 90;
-								menu.style.left = Math.max(8, Math.min(window.innerWidth - mw - 8, r.right - mw)) + "px";
-								menu.style.top = Math.max(8, Math.min(window.innerHeight - mh - 8, r.bottom + 6)) + "px";
-							}, { passive: false });
-							bar.appendChild(more);
-							header.appendChild(bar);
+						const row = document.querySelector(".wSkVaW_tabs");
+						if (!header || !row) return;
+						/* React 可能把 display 改回 none / 宽度改窄，每 tick 守一次 */
+						if (row.style.display === "none") row.style.removeProperty("display");
+						row.style.setProperty("visibility", "visible", "important");
+						row.style.setProperty("width", "360px", "important");
+						row.style.setProperty("min-width", "360px", "important");
+						/* 行高锁死 35：和官方 tab 的真实高度一致，中心线才稳定，不被「先量到 25 再撑到 35」来回抖 */
+						row.style.setProperty("height", "35px", "important");
+						row.style.setProperty("align-items", "center", "important");
+						/* 祖先别裁剪（历史坑：titleCluster 有 clip/overflow hidden） */
+						for (let p = row.parentElement; p && p !== header; p = p.parentElement) {
+							p.style.setProperty("overflow", "visible", "important");
 						}
-						// 如果镜像条是旧代码 create 在 body 上的，搬进 header（坐标以 header 为基准）
-					if (bar.parentElement !== header) header.appendChild(bar);
-					bar.style.display = "inline-flex";
-						// 同步选中态
-						const tabs = [...document.querySelectorAll(".wSkVaW_tabs .wSkVaW_tab")];
-						const act = tabs.findIndex((t) => t.getAttribute("aria-selected") === "true");
-						[...bar.querySelectorAll(".mp-inline-tab")].forEach((b, i) => b.classList.toggle("mp-active", i === act));
-						/* 找「标准模式」徽章的真实盒子 */
-						let br = null;
-						const probe = (el) => {
-							if (!el) return null;
-							const r = el.getBoundingClientRect();
-							return r.width > 4 && r.height > 4 ? r : null;
-						};
-						/* 找包含「标准…模式」的最小盒子（徽章文字常被拆成多个节点，
-						   所以按 textContent 包含判断，再取宽度最小的那个）。 */
+						header.style.setProperty("overflow", "visible", "important");
+						/* 找「标准模式」徽章的最小真实盒（文字常被拆成多节点） */
 						let best = null, bestW = 1e9;
-						for (const el of document.querySelectorAll(".wSkVaW_header *")) {
+						for (const el of header.querySelectorAll("*")) {
 							const tx = (el.textContent || "").trim();
-							if (!/^标准/.test(tx) && !/标准模式/.test(tx)) continue;
+							if (!/标准/.test(tx)) continue;
 							const r = el.getBoundingClientRect();
 							if (r.width < 10 || r.height < 8 || r.width > 320) continue;
 							if (r.width < bestW) { bestW = r.width; best = r; }
 						}
-						br = best;
-						const bw = bar.getBoundingClientRect().width || 110;
-						const bh = bar.getBoundingClientRect().height || 26;
-						let left = br ? br.right + 8 : hr.left + 52;
-						let top = br ? br.top + (br.height - bh) / 2 : hr.top + hr.height - bh - 6;
-						left = Math.max(8, Math.min(window.innerWidth - bw - 8, left));
-						top = Math.max(0, Math.min(window.innerHeight - bh - 4, top));
-						bar.style.left = Math.round(left) + "px";
-						bar.style.top = Math.round(top) + "px";
-					} catch (e) { /* 静默：纯外观 */ }
+						const hr = header.getBoundingClientRect();
+						const rr = row.getBoundingClientRect();
+						const op = row.offsetParent || header;
+						const or = op.getBoundingClientRect();
+						const ocs = getComputedStyle(op);
+						/* absolute 的 left/top 原点是 padding box：要减掉 offsetParent 的 padding（header 有 padding-left:60） */
+						const cbLeft = or.left + (parseFloat(ocs.paddingLeft) || 0);
+						const cbTop = or.top; /* 顶边基准不含 padding：实测加了会整体上移 10px */
+						const wantLeft = best ? best.right + 10 : hr.left + 8;
+						const wantTop = best ? best.top + (best.height - 35) / 2 + 6 : hr.top + 34; /* +6：实测行内渲染比目标高 6px，补偿后与徽章中心对齐 */
+						row.style.setProperty("left", Math.max(0, Math.round(wantLeft - cbLeft)) + "px", "important");
+						row.style.setProperty("top", Math.max(0, Math.round(wantTop - cbTop)) + "px", "important");
+						try {
+							const menu = document.querySelector(".wSkVaW_viewsMoreMenu");
+							if (menu) mpTrimViewsMenu(menu);
+						} catch (e) { /* 静默 */ }
+						/* 闭环校正：不猜 offsetParent 的 padding 语义，写完后量真实屏幕坐标，差多少补多少 */
+						for (const axis of ["left", "top"]) {
+						const target = axis === "left" ? wantLeft : wantTop;
+						for (let pass = 0; pass < 2; pass++) {
+						const cur = row.getBoundingClientRect()[axis];
+						const delta = target - cur;
+						if (Math.abs(delta) < 1) break;
+						const css = parseFloat(getComputedStyle(row)[axis]) || 0;
+						row.style.setProperty(axis, Math.max(0, Math.round(css + delta)) + "px", "important");
+						}
+						}
+						/* 二次校正：写 top 之前量到的行高可能还没含子项撑开的高度，写完整行再对齐一次中心 */
+						const rr2 = row.getBoundingClientRect();
+						if (best && rr2.height > 0) {
+						const fine = 0; /* 行高已锁 35，二次校正停用（否则与固定行高互相打架） */
+						if (Math.abs(fine) >= 1) {
+						const cur = parseFloat(getComputedStyle(row).top) || 0;
+						row.style.setProperty("top", Math.max(0, Math.round(cur + fine)) + "px", "important");
+						}
+						}
+					} catch (e) { /* 纯外观，静默 */ }
 				}, 400);
 			})();
+			/* 启动捕获：官方视图 ⋯ 的菜单组件里带着「浏览更多插件 / 创建你的插件」的 onOpen，
+			   程序化点开一次（菜单本体已被 CSS 藏掉，不会闪现），抓到回调后立刻关闭。 */
+			if (false && !window.__mpCaptureTimer) {
+				window.__mpCaptureTimer = setInterval(() => {
+					try {
+						if (window.__mpViewActions && window.__mpViewActions.entries && window.__mpViewActions.entries.length) return;
+						const b = document.querySelector(".wSkVaW_viewsMore");
+						if (!b) return;
+						b.click();
+						setTimeout(() => {
+							try {
+								if (window.__mpViewActions && window.__mpViewActions.onDismiss) window.__mpViewActions.onDismiss();
+							} catch (e) { /* 静默 */ }
+						}, 60);
+					} catch (e) { /* 静默 */ }
+				}, 1200);
+			}
+			window.__mpInjectHeaderMenuItems = mpInjectHeaderMenuItems;
+			window.__mpTrimSessionMenu = mpTrimSessionMenu;
+			window.__mpCreatePluginSession = mpCreatePluginSession;
+if (!window.__mpHeaderMenuTimer) {
+				window.__mpHeaderMenuTimer = setInterval(() => {
+					try { mpInjectHeaderMenuItems(); } catch (e) { /* 静默 */ }
+					try { mpTrimSessionMenu(); } catch (e) { /* 静默 */ }
+				}, 300);
+			}
 			mpSessionsCache = ctx.get("sessions") ?? null;
 			mpRegisterPrivilegedSection(ctx);
 			mpRegisterBubbleSection(ctx);
 			mpRegisterLogsSection(ctx);
 			mpRegisterDevEnvSection(ctx);
-			/* 修复 30c：**不注册** views.actions —— 一旦 hasEntryActions=true，
-			   官方就会按 visibleViewLimit=floor((rowWidth-48)/120) 裁 tab，
-			   手机上只能留 1 个（轨迹被吞）。这里保持空槽位让 tab 全显示，
-			   ⋯ 由 DOM 注入的 mp-views-more 提供。 */
+			/* 修复 30c：注册 views.actions，让官方 ⋯ 及其「浏览更多插件 / 创建你的插件」
+			   菜单由官方渲染；官方按宽度裁 tab 的问题由「tabs 容器保持 360px 宽」解决。 */
+			mpRegisterViewsMore(ctx);
 			mpInstallPendingTrust();   /* 修复 51：越早越好 */
 			mpWatchSessions(ctx);       /* 修复 51：等服务就绪 */
 			injectStyles();
