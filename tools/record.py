@@ -219,7 +219,14 @@ def write_local(version, d):
             if fixed:
                 rows.append(fixed)
     rows = [r for r in rows if not r.startswith(f"| {version} |")]
-    text = HEADER + "\n".join(rows) + ("\n" if rows else "") + row(version, d)
+    rows.append(row(version, d).strip())
+
+    def _vkey(line):
+        m = re.match(r"\|\s*(\d+)\.(\d+)\.(\d+)-(\d+)\s*\|", line)
+        return tuple(int(x) for x in m.groups()) if m else (-1, -1, -1, -1)
+
+    rows.sort(key=_vkey, reverse=True)
+    text = HEADER + "\n".join(rows) + "\n"
     open(DOC, "w", encoding="utf-8").write(text)
     print(f"[record] 本地已写入 {DOC}（{len(rows) + 1} 行）")
     return text
