@@ -101,6 +101,8 @@ if [ "$RC" -ne 0 ]; then
     cp "$JSON" "$KEEP" 2>/dev/null && echo "[ship] 现场已保留：$KEEP"
   fi
   echo "[ship] 不合格，未登记（证据：$JSON / dsh-$VER-fail.png）"
+  echo "[ship] 归档现场到 docs/agents/failures/"
+  python3 tools/archive_fail.py "$VER" || echo "[ship] 归档失败（检查 token/网络）"
   exit "$RC"
 fi
 
