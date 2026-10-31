@@ -28,8 +28,8 @@ HEADER = """# 移动端 UI 插件 · 发布验收记录
 
 每次发布按 `bash tools/ship.sh <ver> --wait` → 设备侧 `sh /sdcard/Download/install-<ver>.sh` → 自动登记一行。
 
-| 版本 | 设备戳 | CI run | APK | client | dex 戳 | 七行菜单 | 创造模式 | 文案一致 | 消息数 | 轮次 | 重试 | 耗时 | 截图 | 记录时间 | 漂移 |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 版本 | 设备戳 | CI run | APK | client | dex 戳 | 七行菜单 | 创造模式 | 文案一致 | 消息数 | 轮次 | 重试 | 耗时 | 截图 | 记录时间 | 漂移 | 状态 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 """
 
 
@@ -179,7 +179,24 @@ def parse(version):
         "retries": ("—" if _retries is None else f"r{_retries}" + (f" ×{_attempt + 1}" if _attempt > 0 else "")),
         "ms": ("—" if not _ms else f"{_ms / 1000:.1f}s"),
         "drift": _drift_cell(version),
+        "state": _state_cell(version),
     }
+
+
+def _state_cell(version):
+    """状态列：🚩 漂移 / ⚠ 过程扰动 / ✅ 干净通过。"""
+    p = f"{LOG_DIR}/verify-{version}.drift.json"
+    if not os.path.exists(p):
+        return "—"
+    try:
+        d = json.load(open(p, encoding="utf-8"))
+    except Exception:
+        return "—"
+    if int(d.get("drift", 0)):
+        return "🚩"
+    if int(d.get("wait", 0) or 0) + int(d.get("changes", 0) or 0) + len(d.get("fixed") or []):
+        return "⚠"
+    return "✅"
 
 
 def _drift_cell(version):
@@ -206,7 +223,7 @@ def row(version, d):
     return (f"| {version} | {d['stamp']} | {d['run']} | {d['apk']} | {d['client']} | {d['dex']} | "
             f"{ok(d['items_ok'])} ({len(d['items'])}) | {d['mode']} | "
             f"{ok(d['match'])} | {d['msgs']} | {d['round']} | {d['retries']} | {d['ms']} | "
-            f"{os.path.basename(d['shot'])} | {time.strftime('%Y-%m-%d %H:%M')} | {d.get('drift', '—')} |\n")
+            f"{os.path.basename(d['shot'])} | {time.strftime('%Y-%m-%d %H:%M')} | {d.get('drift', '—')} | {d.get('state', '—')} |\n")
 
 
 def _migrate_cells(line):
@@ -223,7 +240,9 @@ def _migrate_cells(line):
         cells = cells[:10] + ["—"] + cells[10:]
     if len(cells) == 15:
         cells = cells + ["—"]
-    if len(cells) != 16:
+    if len(cells) == 16:
+        cells = cells + ["—"]
+    if len(cells) != 17:
         return None
     return "| " + " | ".join(cells) + " |"
 
