@@ -184,5 +184,9 @@ if [ "$STRICT" -eq 1 ]; then
     exit 5
   fi
 fi
+if [ -s "$DL/verify-$VER.drift.json" ]; then
+  echo "[ship] 5/5 刷新登记行（写入漂移与状态）"
+  python3 tools/record.py "$VER" || echo "[ship] 刷新登记失败"
+fi
 echo "[ship] 5/5 九项一致，发布完成：$VER"
 exit 0
