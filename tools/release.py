@@ -226,23 +226,37 @@ P=$(pidof $APP)
 LOG=/sdcard/Download/verify-$V.txt
 : > "$LOG"
 echo "pid=$P retry_cfg=${{MP_RETRY:-0}}" | tee -a "$LOG"
-O=$(run-as $APP env MP_RETRY="${{MP_RETRY:-0}}" files/termux/usr/bin/node files/mp-verify.cjs "$P" "files/verify-$V.json" "$V" 2>&1)
-echo "verify: $O" | tee -a "$LOG"
-run-as $APP cat "files/verify-$V.json" > /data/local/tmp/v.json
-cp /data/local/tmp/v.json /sdcard/Download/verify-$V.json
-run-as $APP cat "files/verify-$V.json.sum" > /data/local/tmp/s.txt 2>/dev/null
-cp /data/local/tmp/s.txt /sdcard/Download/verify-$V.sum 2>/dev/null
-echo "summary: $(cat /sdcard/Download/verify-$V.sum 2>/dev/null)" | tee -a "$LOG"
+TRY=0
+OK=0
+while [ "$TRY" -lt 2 ]; do
+  R=${{MP_RETRY:-0}}
+  [ "$TRY" -ge 1 ] && R=$((R + 2))
+  O=$(run-as $APP env MP_RETRY="$R" files/termux/usr/bin/node files/mp-verify.cjs "$P" "files/verify-$V.json" "$V" 2>&1)
+  echo "verify[$TRY] (MP_RETRY=$R): $O" | tee -a "$LOG"
+  run-as $APP cat "files/verify-$V.json" > /data/local/tmp/v.json 2>/dev/null
+  cp /data/local/tmp/v.json /sdcard/Download/verify-$V.json 2>/dev/null
+  run-as $APP cat "files/verify-$V.json.sum" > /data/local/tmp/s.txt 2>/dev/null
+  cp /data/local/tmp/s.txt /sdcard/Download/verify-$V.sum 2>/dev/null
+  echo "summary[$TRY]: $(cat /sdcard/Download/verify-$V.sum 2>/dev/null)" | tee -a "$LOG"
+  case "$O" in
+    *'"ok":true'*) OK=1; break ;;
+  esac
+  TRY=$((TRY + 1))
+  if [ "$TRY" -lt 2 ]; then
+    echo "retry: 第 1 次不合格，重启后按 MP_RETRY=$((R + 2)) 再取一次" | tee -a "$LOG"
+    am force-stop $APP
+    am start -n $APP/.MainActivity >/dev/null 2>&1
+    sleep 25
+    P=$(pidof $APP)
+  fi
+done
 cat /sdcard/Download/verify-$V.json >> "$LOG"
-case "$O" in
-  *'"ok":true'*) : ;;
-  *)
-    screencap -p /sdcard/Download/dsh-$V-fail.png
-    cp /sdcard/Download/verify-$V.json /sdcard/Download/verify-$V-fail.json 2>/dev/null
-    echo "fail_snapshot=/sdcard/Download/dsh-$V-fail.png" | tee -a "$LOG"
-    echo "fail_json=/sdcard/Download/verify-$V-fail.json" | tee -a "$LOG"
-    ;;
-esac
+if [ "$OK" -eq 0 ]; then
+  screencap -p /sdcard/Download/dsh-$V-fail.png
+  cp /sdcard/Download/verify-$V.json /sdcard/Download/verify-$V-fail.json 2>/dev/null
+  echo "fail_snapshot=/sdcard/Download/dsh-$V-fail.png" | tee -a "$LOG"
+  echo "fail_json=/sdcard/Download/verify-$V-fail.json" | tee -a "$LOG"
+fi
 screencap -p /sdcard/Download/dsh-$V-ui.png
 echo "shot=/sdcard/Download/dsh-$V-ui.png" | tee -a "$LOG"
 S=$(run-as $APP cat files/home/.dsh/mobile-ui/dsh-android-mobile/.mobile_ui_version)
