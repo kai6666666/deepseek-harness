@@ -51,23 +51,34 @@ def req(method, path, body=None):
         return json.loads(raw) if raw.strip() else None
 
 
+def _load_ev(lines, key):
+    """从 `evN: RESULT {...}` 这行里做两次 json 解码，取到浏览器里返回的对象。"""
+    line = next((l for l in lines if l.startswith(key + ":")), None)
+    if not line:
+        return None
+    payload = line.split("RESULT ", 1)[1] if "RESULT " in line else line.split(":", 1)[1]
+    try:
+        outer = json.loads(payload)
+        value = outer["result"]["value"]
+        return json.loads(value) if isinstance(value, str) else value
+    except Exception:
+        return None
+
+
 def parse(version):
     path = f"{LOG_DIR}/verify-{version}.txt"
     if not os.path.exists(path):
         raise SystemExit(f"[record] 找不到 {path}，先跑 install-{version}.sh")
-    text = open(path, encoding="utf-8", errors="replace").read()
-
-    m = re.search(r"items\\\":\[(.*?)\]", text)
-    items = re.findall(r'\\"([^\\"]+)\\"', m.group(1)) if m else []
-    mode = re.search(r'mode\\":\\"([^\\"]+)\\"', text)
-    mode = mode.group(1) if mode else ("标准模式" if 'mode\\":null' in text else "?")
-    match = "match\\\":true" in text
-    msgs = re.search(r"msgs\\\":(\d+)", text)
-    msgs = int(msgs.group(1)) if msgs else -1
-    stamp = re.search(r"stamp=([\w.\-]+)", text)
-    stamp = stamp.group(1) if stamp else "?"
-    shot = re.search(r"shot=(\S+)", text)
-    shot = shot.group(1) if shot else f"/sdcard/Download/dsh-{version}-ui.png"
+    lines = open(path, encoding="utf-8", errors="replace").read().splitlines()
+    ev2 = _load_ev(lines, "ev2") or {}
+    ev3 = _load_ev(lines, "ev3") or {}
+    items = ev2.get("items") or []
+    mode = ev3.get("mode")
+    match = bool(ev3.get("match"))
+    msgs = ev3.get("msgs", -1)
+    stamp = next((l.split("=", 1)[1] for l in lines if l.startswith("stamp=")), "?")
+    shot = next((l.split("=", 1)[1] for l in lines if l.startswith("shot=")),
+                f"/sdcard/Download/dsh-{version}-ui.png")
     return {
         "items": items,
         "items_ok": items == EXPECTED,
@@ -122,6 +133,10 @@ def main():
         raise SystemExit("用法：python3 tools/record.py 1.1.0-146")
     version = sys.argv[1]
     d = parse(version)
+    jpath = f"{LOG_DIR}/verify-{version}.json"
+    with open(jpath, "w") as f:
+        json.dump({"version": version, **d}, f, ensure_ascii=False, indent=2)
+    print(f"[record] 结构化结果 {jpath}")
     print("[record]", json.dumps(d, ensure_ascii=False))
     text = write_local(version, d)
     push_doc(text)
