@@ -191,7 +191,9 @@ am force-stop com.dsh.android
 am start -n com.dsh.android/.MainActivity >/dev/null 2>&1
 sleep 30
 P=$(pidof com.dsh.android)
-echo "pid=$P"
+LOG=/sdcard/Download/verify-{version}.txt
+: > "$LOG"
+echo "pid=$P" | tee -a "$LOG"
 RUN="run-as com.dsh.android files/termux/usr/bin/node files/c4.cjs"
 for n in 1 2 3; do
   cp /sdcard/Download/mp-ev$n.json /data/local/tmp/ev.json
@@ -201,13 +203,14 @@ for n in 1 2 3; do
   case "$O" in
     *"Execution context was destroyed"*) sleep 3; O=$($RUN "$P" Runtime.evaluate "$EV" 2>&1) ;;
   esac
-  echo "ev$n: $O"
+  echo "ev$n: $O" | tee -a "$LOG"
   [ "$n" = 1 ] && sleep 2
   [ "$n" = 2 ] && sleep 10
 done
 screencap -p /sdcard/Download/dsh-{version}-ui.png
-echo "shot=/sdcard/Download/dsh-{version}-ui.png"
-run-as com.dsh.android cat files/home/.dsh/mobile-ui/dsh-android-mobile/.mobile_ui_version
+echo "shot=/sdcard/Download/dsh-{version}-ui.png" | tee -a "$LOG"
+S=$(run-as com.dsh.android cat files/home/.dsh/mobile-ui/dsh-android-mobile/.mobile_ui_version)
+echo "stamp=$S" | tee -a "$LOG"
 echo
 """
     path = f"{DOWNLOAD_DIR}/install-{version}.sh"
@@ -239,6 +242,7 @@ def install_step(version, apk):
         return out == version
     print("[install] 没有可用的 adb 设备（本机 adb 未连）——已生成 Android 侧脚本：")
     print(f"          sh /sdcard/Download/install-{version}.sh")
+    print(f"          跑完后登记：python3 tools/record.py {version}")
     return None
 
 
