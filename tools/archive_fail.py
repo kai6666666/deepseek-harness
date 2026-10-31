@@ -151,6 +151,10 @@ def main():
         v = sys.argv[2]
         ts = time.strftime("%Y%m%d-%H%M%S")
         src = f"{DOWNLOAD}/verify-{v}.drift.json"
+        if "--file" in sys.argv:
+            j = sys.argv.index("--file")
+            if j + 1 < len(sys.argv):
+                src = sys.argv[j + 1]
         if not os.path.exists(src):
             raise SystemExit(f"[archive] 找不到漂移报告 {src}")
         doc = json.load(open(src, encoding="utf-8"))
