@@ -15,12 +15,13 @@ else
   shift || true
 fi
 
-WAIT=0; SKIP=0; ONLY_VERIFY=0; TIMEOUT=900
+WAIT=0; SKIP=0; ONLY_VERIFY=0; PAUSE=0; TIMEOUT=900
 for a in "$@"; do
   case "$a" in
     --wait) WAIT=1 ;;
     --skip-build) SKIP=1 ;;
     --verify-only) SKIP=1; ONLY_VERIFY=1 ;;
+    --pause-on-fail) PAUSE=1 ;;
     --timeout=*) TIMEOUT="${a#*=}" ;;
     *) echo "[ship] 忽略未知参数 $a" ;;
   esac
@@ -74,11 +75,8 @@ else
   exit 0
 fi
 
-# ③ 登记表
-echo "[ship] 3/4 解析证据并推送登记表"
-python3 tools/record.py "$VER" || { echo "[ship] 登记失败"; exit 1; }
-
-# ④ 结论
+# ③ 结论判定（不通过就不登记）
+echo "[ship] 3/4 判定取证结果"
 python3 - "$VER" <<'PY'
 import json, sys
 v = sys.argv[1]
@@ -88,7 +86,25 @@ if not d.get("clicked"): bad.append("未点到「创建你的插件」")
 if not d.get("match"): bad.append("输入框文案不一致")
 if d.get("msgs") != 0: bad.append(f"消息数={d.get('msgs')}")
 if len(d.get("items") or []) != 7: bad.append(f"菜单行数={len(d.get('items') or [])}")
-print("[ship] 4/4", "全部通过" if not bad else "不通过：" + "；".join(bad),
+print("[ship] 3/4 结果", "全部通过" if not bad else "不通过：" + "；".join(bad),
       f"｜retries={sum((d.get('retries') or {}).values())} ms={d.get('ms')}")
 sys.exit(0 if not bad else 3)
 PY
+RC=$?
+if [ "$RC" -ne 0 ]; then
+  if [ -n "$DEV" ]; then
+    adb shell screencap -p "/sdcard/Download/dsh-$VER-fail.png" >/dev/null 2>&1 || true
+    adb pull "/sdcard/Download/dsh-$VER-fail.png" "$DL/dsh-$VER-fail.png" >/dev/null 2>&1 || true
+  fi
+  if [ "$PAUSE" -eq 1 ]; then
+    KEEP="$DL/verify-$VER-fail-$(date +%Y%m%d-%H%M%S).json"
+    cp "$JSON" "$KEEP" 2>/dev/null && echo "[ship] 现场已保留：$KEEP"
+  fi
+  echo "[ship] 不合格，未登记（证据：$JSON / dsh-$VER-fail.png）"
+  exit "$RC"
+fi
+
+# ④ 登记表
+echo "[ship] 4/4 全部通过，推送登记表"
+python3 tools/record.py "$VER" || { echo "[ship] 登记失败"; exit 1; }
+exit 0
