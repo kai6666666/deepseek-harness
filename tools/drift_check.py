@@ -7,6 +7,7 @@
     python3 tools/drift_check.py --json        # 机器可读
     python3 tools/drift_check.py --save <ver>  # 另存 verify-<ver>.drift.json 供登记表引用
     python3 tools/drift_check.py --fix         # 能自愈的项直接修（meta 体积 / 表内 client），修完再体检
+    python3 tools/drift_check.py --watch 30    # 常驻巡检：状态由绿转红时立刻归档差异
 数据来源：
     远端  EngineManager.kt 的 MOBILE_UI_VERSION、lib/client.js 的 size
     本地  mobile-ui-plugin/.../client.js（字节数 + sha256 前 16 位）
@@ -19,6 +20,7 @@ import hashlib
 import json
 import os
 import re
+import subprocess
 import sys
 import time
 import urllib.request
@@ -135,10 +137,10 @@ def collect():
     add("远端 client 字节 = 本地", rsize, lsize, rsize == lsize)
     if lv:
         m = meta(lv) or {}
-        add("验收表 client = 本地 client", row.get("client"),
-            f"{lsize:,} B", row.get("client") == f"{lsize:,} B", fixable=True)
+        add("验收表 client = 本地 client", f"{lsize:,} B", row.get("client"),
+            row.get("client") == f"{lsize:,} B", fixable=True)
         add("meta.client = 本地 client", m.get("client"), lsize, m.get("client") == lsize, fixable=True)
-        add("meta.dex 命中 = 2", m.get("dex_hit"), 2, m.get("dex_hit") == 2)
+        add("meta.dex 命中 = 2", 2, m.get("dex_hit"), m.get("dex_hit") == 2)
         ds = device_stamp(lv)
         add("设备取证戳 = 最新版本", lv, ds, ds == lv)
         asz = apk_size(lv)
@@ -205,7 +207,69 @@ def apply_fix(data):
     return fixed
 
 
+def signature(checks):
+    return tuple((c["name"], bool(c["ok"]), str(c["actual"])) for c in checks)
+
+
+def watch_record(data, checks):
+    """把当前状态落成 watch 报告，供 archive_fail --drift --file 归档。"""
+    drift = [c for c in checks if not c["ok"]]
+    lv = data["lv"] or "unknown"
+    rec = {"version": lv, "drift": len(drift), "total": len(checks), "ok": not drift,
+           "failed": [c["name"] for c in drift], "head": (drift[0]["name"] if drift else ""),
+           "fixed": [], "watch": True, "remote": data["rv"], "doc": data["lv"],
+           "client": {"local": data["lsize"], "remote": data["rsize"], "sha16": data["lsha"]},
+           "checks": checks, "at": time.strftime("%Y-%m-%d %H:%M:%S")}
+    path = f"{DOWNLOAD}/verify-{lv}.watch.json"
+    json.dump(rec, open(path, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
+    return lv, path, rec
+
+
+def watch(interval):
+    interval = max(3, int(interval))
+    print(f"[watch] 每 {interval}s 体检一次，Ctrl+C 退出")
+    last_sig = None
+    last_bad = 0
+    while True:
+        try:
+            data = collect()
+            checks = data["checks"]
+            drift = [c for c in checks if not c["ok"]]
+            sig = signature(checks)
+            stamp = time.strftime("%H:%M:%S")
+            if last_sig is None:
+                print(f"[watch] {stamp} 基线：{len(checks)} 项，" + ("全部一致" if not drift else f"{len(drift)} 项漂移"))
+            elif sig != last_sig:
+                print(f"[watch] {stamp} 状态变化：漂移 {last_bad} → {len(drift)}")
+                prev = dict((n, (ok, val)) for n, ok, val in last_sig)
+                for c in checks:
+                    old = prev.get(c["name"])
+                    if old and (old[0] != c["ok"] or old[1] != str(c["actual"])):
+                        print(f"        {'✅→❌' if not c['ok'] else '❌→✅'} {c['name']}：{old[1]} → {c['actual']}")
+                if drift and last_bad == 0:
+                    lv, path, rec = watch_record(data, checks)
+                    print(f"[watch] 落盘 {path}（{len(drift)} 项漂移）")
+                    try:
+                        subprocess.run([sys.executable, "tools/archive_fail.py", "--drift", lv, "--file", path],
+                                       check=False, cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+                    except Exception as e:
+                        print("[watch] 归档失败：", e)
+            last_sig = sig
+            last_bad = len(drift)
+            time.sleep(interval)
+        except KeyboardInterrupt:
+            print("[watch] 已停止")
+            return 0
+
+
 def main():
+    if "--watch" in sys.argv:
+        i = sys.argv.index("--watch")
+        n = 30
+        if i + 1 < len(sys.argv) and sys.argv[i + 1].isdigit():
+            n = int(sys.argv[i + 1])
+        return watch(n)
+
     as_json = "--json" in sys.argv
     do_fix = "--fix" in sys.argv
 
