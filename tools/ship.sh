@@ -87,7 +87,7 @@ if not d.get("match"): bad.append("输入框文案不一致")
 if d.get("msgs") != 0: bad.append(f"消息数={d.get('msgs')}")
 if len(d.get("items") or []) != 7: bad.append(f"菜单行数={len(d.get('items') or [])}")
 print("[ship] 3/4 结果", "全部通过" if not bad else "不通过：" + "；".join(bad),
-      f"｜retries={sum((d.get('retries') or {}).values())} ms={d.get('ms')}")
+      f"｜retries={sum((d.get('retries') or {}).values())} attempt={d.get('attempt', 0)} ms={d.get('ms')}")
 sys.exit(0 if not bad else 3)
 PY
 RC=$?
