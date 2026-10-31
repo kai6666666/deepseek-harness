@@ -15,7 +15,7 @@ else
   shift || true
 fi
 
-WAIT=0; SKIP=0; ONLY_VERIFY=0; PAUSE=0; NODRIFT=0; TIMEOUT=900
+WAIT=0; SKIP=0; ONLY_VERIFY=0; PAUSE=0; NODRIFT=0; FIXDRIFT=0; TIMEOUT=900
 for a in "$@"; do
   case "$a" in
     --wait) WAIT=1 ;;
@@ -23,6 +23,7 @@ for a in "$@"; do
     --verify-only) SKIP=1; ONLY_VERIFY=1 ;;
     --pause-on-fail) PAUSE=1 ;;
     --no-drift) NODRIFT=1 ;;
+    --fix-drift) FIXDRIFT=1 ;;
     --timeout=*) TIMEOUT="${a#*=}" ;;
     *) echo "[ship] 忽略未知参数 $a" ;;
   esac
@@ -117,7 +118,9 @@ if [ "$NODRIFT" -eq 1 ]; then
   exit 0
 fi
 echo "[ship] 5/5 一致性体检（远端版本 / 验收表 / 设备戳 / client / APK）"
-if python3 tools/drift_check.py --save "$VER"; then
+DRIFT_ARGS="--save $VER"
+[ "$FIXDRIFT" -eq 1 ] && DRIFT_ARGS="--fix $DRIFT_ARGS"
+if python3 tools/drift_check.py $DRIFT_ARGS; then
   echo "[ship] 5/5 九项一致，发布完成：$VER"
 else
   echo "[ship] 5/5 ⚠ 存在漂移，本次发布标记为可疑：$VER"
