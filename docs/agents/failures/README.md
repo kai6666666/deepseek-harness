@@ -1,8 +1,10 @@
 # 失败现场归档
 
-`tools/archive_fail.py <版本>` 会把一次不合格的取证现场推到本目录：
+`tools/archive_fail.py <版本>` 在两轮取证都不合格后归档现场：证据 JSON（`stages` / `retries` / `attempt` / `ms`）与失败瞬间整屏截图。
+合格记录进 `../mobile-ui-verification.md`，本目录只收失败。
 
-- `verify-<版本>-<时间戳>.json`：`mp-verify.cjs` 的原始输出（含 `stages` / `retries` / `attempt` / `ms`）
-- `verify-<版本>-<时间戳>-ui.png`：失败瞬间的整屏截图（设备侧 `dsh-<版本>-fail.png`）
+## 归档索引
 
-归档只在「两轮取证都不合格」时发生；合格记录进 `../mobile-ui-verification.md`，不进本目录。
+| 时间 | 版本 | 轮次 | 失败原因 | 证据 |
+|---|---|---|---|---|
+| 2026-10-31 16:06 | 9.9.9-4 | 2 | 未点到「创建你的插件」；输入框文案不一致；消息数=2；菜单行数=2；阶段失败:ev2a | [json](verify-9.9.9-4-20261031-160618.json) |
