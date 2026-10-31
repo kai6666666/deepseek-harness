@@ -193,8 +193,10 @@ def _drift_cell(version):
         return "—"
     n = int(d.get("drift", 0))
     fx = len(d.get("fixed") or [])
+    wt = int(d.get("wait", 0) or 0)
     base = f"🚩{n}" if n else f"0/{d.get('total', 9)}"
-    return base + (f"·fix{fx}" if fx else "")
+    base += f"·fix{fx}" if fx else ""
+    return base + (f"·wait{wt}" if wt else "")
 
 
 def row(version, d):
