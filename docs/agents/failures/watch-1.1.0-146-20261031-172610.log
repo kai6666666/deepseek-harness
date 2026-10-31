@@ -1,6 +1,0 @@
-[watch] 每 15s 体检一次，Ctrl+C 退出
-[watch] 17:25:43 基线：9 项，全部一致
-[watch] 17:26:03 状态变化：漂移 0 → 1
-        ✅→❌ meta.client = 本地 client：571733 → 571000
-[watch] 落盘 /storage/emulated/0/Download/verify-1.1.0-146.watch.json（1 项漂移）
-[archive] docs/agents/failures/drift-1.1.0-146-20261031-172604.json
