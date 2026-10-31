@@ -66,6 +66,7 @@ def rows():
             "retry": c[11],
             "drift": c[15],
             "state": c[16],
+            "stable": c[17] if len(c) > 17 else "—",
         })
     return out
 
@@ -110,14 +111,14 @@ def build(rs):
         lines.append(f"最新版本 **{latest['ver']}**｜共 {n} 次记录｜✅ {green} 次｜同码发布 {same_n} 次｜"
                      f"APK 均值 {sum(apks) / len(apks):.1f} MB｜取证均值 {sum(mss) / len(mss):.1f} s\n" if apks and mss
                      else f"最新版本 **{latest['ver']}**｜共 {n} 次记录\n")
-    lines.append("| 版本 | 代码 | APK (MB) | ΔAPK | 取证 (s) | Δ取证 | 轮次 | 重试 | 漂移 | 状态 |")
-    lines.append("|---|---|---|---|---|---|---|---|---|---|")
+    lines.append("| 版本 | 代码 | APK (MB) | ΔAPK | 取证 (s) | Δ取证 | 轮次 | 重试 | 漂移 | 状态 | 稳定 |")
+    lines.append("|---|---|---|---|---|---|---|---|---|---|---|")
     for r in sorted(rs, key=lambda x: vkey(x["ver"]), reverse=True):
         apk = "—" if r["apk"] is None else f"{r['apk']:.1f}"
         ms = "—" if r["ms"] is None else f"{r['ms']:.1f}"
         code = "同码" if r.get("same_code") else "新码"
         lines.append(f"| {r['ver']} | {code} | {apk} | {fmt_delta(r['dapk'])} | {ms} | "
-                     f"{fmt_delta(r['dms'], 's')} | {r['round']} | {r['retry']} | {r['drift']} | {r['state']} |")
+                     f"{fmt_delta(r['dms'], 's')} | {r['round']} | {r['retry']} | {r['drift']} | {r['state']} | {r['stable']} |")
     lines.append("")
     lines.append("## 代码分组（client 字节数）\n")
     lines.append("| client | 版本 | 推断 |")
@@ -132,6 +133,7 @@ def build(rs):
     lines.append("- **代码**：`同码` = client 字节数与上一版完全相同，仅版本号/文档变化；`新码` = client 真实改动。")
     lines.append("- **轮次 / 重试**：`1 / r0` 表示首轮一次通过；出现 `2` 或 `×2` 说明重试救过一次。")
     lines.append("- **漂移 / 状态**：`0/9 · ✅` 干净；`·fixK` 自愈、`·chgN` 发布期变更、`·waitN` 等待期扰动，`⚠` 表示过程被操作过。")
+    lines.append("- **稳定**：`✅` 表示同版本二次取证与首轮九项一致；`⚠` 不一致；`—` 未跑 `--reverify`。")
     lines.append("")
     return "\n".join(lines) + "\n", rs
 
