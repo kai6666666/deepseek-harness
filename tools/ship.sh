@@ -11,11 +11,12 @@ VER="${1:-}"
 [ -n "$VER" ] || { echo "用法：bash tools/ship.sh <版本，如 1.1.0-146> [--skip-build] [--wait] [--timeout=900]"; exit 1; }
 shift || true
 
-WAIT=0; SKIP=0; TIMEOUT=900
+WAIT=0; SKIP=0; ONLY_VERIFY=0; TIMEOUT=900
 for a in "$@"; do
   case "$a" in
     --wait) WAIT=1 ;;
     --skip-build) SKIP=1 ;;
+    --verify-only) SKIP=1; ONLY_VERIFY=1 ;;
     --timeout=*) TIMEOUT="${a#*=}" ;;
     *) echo "[ship] 忽略未知参数 $a" ;;
   esac
@@ -24,6 +25,7 @@ done
 DL=/storage/emulated/0/Download
 APK="$DL/dsh-ci-$VER.apk"
 JSON="$DL/verify-$VER.json"
+if [ "$ONLY_VERIFY" -eq 1 ]; then SCRIPT="$DL/verify-$VER.sh"; else SCRIPT="$DL/install-$VER.sh"; fi
 START=$(date +%s)
 
 # ① 出包（或只重生脚本）
@@ -31,15 +33,15 @@ if [ "$SKIP" -eq 0 ]; then
   echo "[ship] 1/4 出包 + 下载 + 校验"
   bash tools/push.sh "$VER" || { echo "[ship] 出包失败"; exit 1; }
 else
-  echo "[ship] 1/4 跳过出包，重生取证资产与装机脚本"
-  [ -s "$APK" ] || echo "[ship] 提示：$APK 不存在，装机脚本会失败"
-  python3 - "$VER" <<'PY' || exit 1
+  echo "[ship] 1/4 跳过出包，重生取证资产与$( [ "$ONLY_VERIFY" -eq 1 ] && echo 仅取证脚本 || echo 装机脚本 )"
+  [ "$ONLY_VERIFY" -eq 1 ] || [ -s "$APK" ] || echo "[ship] 提示：$APK 不存在，装机脚本会失败"
+  python3 - "$VER" "$ONLY_VERIFY" <<'PY' || exit 1
 import sys
 sys.path.insert(0, "tools")
 import release as r
-v = sys.argv[1]
+v, only = sys.argv[1], sys.argv[2] == "1"
 r.write_evidence()
-r.write_install_script(v)
+r.write_install_script(v, install=not only)
 PY
 fi
 
@@ -48,11 +50,11 @@ DEV="$(adb devices 2>/dev/null | awk 'NR>1 && $2=="device"{print $1; exit}')"
 if [ -n "$DEV" ]; then
   echo "[ship] 2/4 检测到 adb 设备 $DEV，直接装机"
   adb install -r "$APK" || { echo "[ship] adb install 失败"; exit 1; }
-  adb shell sh "/sdcard/Download/install-$VER.sh" || echo "[ship] 设备侧取证脚本返回非 0（继续尝试取证据）"
+  adb shell sh "/sdcard/Download/$(basename "$SCRIPT")" || echo "[ship] 设备侧取证脚本返回非 0（继续尝试取证据）"
   adb pull "/sdcard/Download/verify-$VER.json" "$JSON" >/dev/null 2>&1 || true
 elif [ "$WAIT" -eq 1 ]; then
   echo "[ship] 2/4 本机没有 adb 设备。请在这台设备上执行："
-  echo "         sh /sdcard/Download/install-$VER.sh"
+  echo "         sh $SCRIPT"
   echo "[ship]     等 verify-$VER.json 出现（最多 ${TIMEOUT}s）…"
   deadline=$((START + TIMEOUT)); ok=0
   while [ "$(date +%s)" -lt "$deadline" ]; do
@@ -62,7 +64,7 @@ elif [ "$WAIT" -eq 1 ]; then
   [ "$ok" -eq 1 ] || { echo "[ship] 超时：没等到新的 $JSON"; exit 2; }
 else
   echo "[ship] 2/4 本机没有 adb 设备。在设备上执行："
-  echo "         sh /sdcard/Download/install-$VER.sh"
+  echo "         sh $SCRIPT"
   echo "       跑完再执行：python3 tools/record.py $VER"
   echo "[ship] 想全自动就加 --wait：bash tools/ship.sh $VER --skip-build --wait"
   exit 0
