@@ -84,6 +84,7 @@ if not d.get("clicked"): bad.append("未点到「创建你的插件」")
 if not d.get("match"): bad.append("输入框文案不一致")
 if d.get("msgs") != 0: bad.append(f"消息数={d.get('msgs')}")
 if len(d.get("items") or []) != 7: bad.append(f"菜单行数={len(d.get('items') or [])}")
-print("[ship] 4/4", "全部通过" if not bad else "不通过：" + "；".join(bad))
+print("[ship] 4/4", "全部通过" if not bad else "不通过：" + "；".join(bad),
+      f"｜retries={sum((d.get('retries') or {}).values())} ms={d.get('ms')}")
 sys.exit(0 if not bad else 3)
 PY
