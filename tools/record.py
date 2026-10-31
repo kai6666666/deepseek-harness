@@ -26,10 +26,10 @@ LOG_DIR = "/storage/emulated/0/Download"
 EXPECTED = ["复制会话为 Markdown", "下载 Session 日志", "浏览更多插件", "创建你的插件", "反馈", "轨迹", "刷新"]
 HEADER = """# 移动端 UI 插件 · 发布验收记录
 
-每次发布按 `tools/push.sh <ver>` → `sh /sdcard/Download/install-<ver>.sh` → `python3 tools/record.py <ver>` 追加一行。
+每次发布按 `bash tools/ship.sh <ver> --wait` → 设备侧 `sh /sdcard/Download/install-<ver>.sh` → 自动登记一行。
 
-| 版本 | 设备戳 | 七行菜单 | 创造模式 | 文案一致 | 消息数 | 截图 | 记录时间 |
-|---|---|---|---|---|---|---|---|
+| 版本 | 设备戳 | CI run | APK | 七行菜单 | 创造模式 | 文案一致 | 消息数 | 截图 | 记录时间 |
+|---|---|---|---|---|---|---|---|---|---|
 """
 
 
@@ -114,6 +114,15 @@ def parse(version):
     stamp = next((l.split("=", 1)[1] for l in lines if l.startswith("stamp=")), "?")
     shot = next((l.split("=", 1)[1] for l in lines if l.startswith("shot=")),
                 f"/sdcard/Download/dsh-{version}-ui.png")
+
+    meta = {}
+    mpath = f"{LOG_DIR}/verify-{version}.meta.json"
+    if os.path.exists(mpath):
+        try:
+            meta = json.load(open(mpath, encoding="utf-8"))
+        except Exception:
+            meta = {}
+
     return {
         "src": src,
         "items": items,
@@ -123,27 +132,44 @@ def parse(version):
         "msgs": msgs,
         "stamp": stamp,
         "shot": shot,
+        "run": str(meta.get("run_id") or "—"),
+        "apk": (f"{meta['apk_mb']} MB" if meta.get("apk_mb") else "—"),
     }
 
 
 def row(version, d):
     ok = lambda b: "✅" if b else "❌"
-    return (f"| {version} | {d['stamp']} | {ok(d['items_ok'])} ({len(d['items'])}) | {d['mode']} | "
+    return (f"| {version} | {d['stamp']} | {d['run']} | {d['apk']} | {ok(d['items_ok'])} ({len(d['items'])}) | {d['mode']} | "
             f"{ok(d['match'])} | {d['msgs']} | {os.path.basename(d['shot'])} | "
             f"{time.strftime('%Y-%m-%d %H:%M')} |\n")
 
 
+def _migrate_cells(line):
+    """老表 8 列 → 新表 10 列：在第 2、3 位补上 CI run 与 APK。"""
+    cells = [c.strip() for c in line.strip().strip("|").split("|")]
+    if len(cells) == 8:
+        cells = cells[:2] + ["—", "—"] + cells[2:]
+    if len(cells) != 10:
+        return None
+    return "| " + " | ".join(cells) + " |"
+
+
 def write_local(version, d):
     os.makedirs(os.path.dirname(DOC), exist_ok=True)
-    text = open(DOC, encoding="utf-8").read() if os.path.exists(DOC) else HEADER
-    line = row(version, d)
-    if f"| {version} |" in text:
-        text = "\n".join(l for l in text.splitlines() if not l.startswith(f"| {version} |")) + "\n"
-        if not text.endswith("\n"):
-            text += "\n"
-    text += line
+    rows = []
+    if os.path.exists(DOC):
+        for line in open(DOC, encoding="utf-8").read().splitlines():
+            if not line.startswith("| "):
+                continue
+            if "---" in line or line.startswith("| 版本"):
+                continue
+            fixed = _migrate_cells(line)
+            if fixed:
+                rows.append(fixed)
+    rows = [r for r in rows if not r.startswith(f"| {version} |")]
+    text = HEADER + "\n".join(rows) + ("\n" if rows else "") + row(version, d)
     open(DOC, "w", encoding="utf-8").write(text)
-    print(f"[record] 本地已写入 {DOC}")
+    print(f"[record] 本地已写入 {DOC}（{len(rows) + 1} 行）")
     return text
 
 
