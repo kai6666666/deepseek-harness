@@ -117,10 +117,14 @@ if [ "$NODRIFT" -eq 1 ]; then
   exit 0
 fi
 echo "[ship] 5/5 一致性体检（远端版本 / 验收表 / 设备戳 / client / APK）"
-if python3 tools/drift_check.py; then
+if python3 tools/drift_check.py --save "$VER"; then
   echo "[ship] 5/5 九项一致，发布完成：$VER"
 else
   echo "[ship] 5/5 ⚠ 存在漂移，本次发布标记为可疑：$VER"
+  echo "[ship] 归档漂移报告到 docs/agents/failures/"
+  python3 tools/archive_fail.py --drift "$VER" || echo "[ship] 漂移归档失败（检查 token/网络）"
+  echo "[ship] 重新登记（漂移列会标 🚩）"
+  python3 tools/record.py "$VER" || echo "[ship] 重登记失败"
   exit 4
 fi
 exit 0
