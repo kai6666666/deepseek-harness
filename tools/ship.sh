@@ -149,9 +149,17 @@ fi
 echo "[ship] 5/5 一致性体检（远端版本 / 验收表 / 设备戳 / client / APK）"
 DRIFT_ARGS="--save $VER --diff"
 [ "$FIXDRIFT" -eq 1 ] && DRIFT_ARGS="--fix $DRIFT_ARGS"
-if python3 tools/drift_check.py $DRIFT_ARGS; then
-  echo "[ship] 5/5 九项一致，发布完成：$VER"
-else
+python3 tools/drift_check.py $DRIFT_ARGS
+DRC=$?
+DIFF="$DL/verify-$VER.diff.json"
+CHANGES=0
+[ -s "$DIFF" ] && CHANGES=$(python3 -c "import json,sys;print(json.load(open(sys.argv[1])).get('changes',0))" "$DIFF" 2>/dev/null || true)
+[ -z "${CHANGES:-}" ] && CHANGES=0
+if [ "$CHANGES" -gt 0 ]; then
+  echo "[ship] 发布期间实际值变化 ${CHANGES} 项，归档变更清单"
+  python3 tools/archive_fail.py --change "$VER" || echo "[ship] 变更清单归档失败（检查 token/网络）"
+fi
+if [ "$DRC" -ne 0 ]; then
   echo "[ship] 5/5 ⚠ 存在漂移，本次发布标记为可疑：$VER"
   echo "[ship] 归档漂移报告到 docs/agents/failures/"
   python3 tools/archive_fail.py --drift "$VER" || echo "[ship] 漂移归档失败（检查 token/网络）"
@@ -159,4 +167,5 @@ else
   python3 tools/record.py "$VER" || echo "[ship] 重登记失败"
   exit 4
 fi
+echo "[ship] 5/5 九项一致，发布完成：$VER"
 exit 0
