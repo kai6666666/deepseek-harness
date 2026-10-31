@@ -95,7 +95,13 @@ def reasons(doc):
 def drift_reasons(doc):
     n = int(doc.get("drift", 0))
     failed = doc.get("failed") or []
-    return f"环境漂移:{n}项" + ("（" + "；".join(failed[:2]) + "）" if failed else "")
+    fixed = doc.get("fixed") or []
+    s = f"环境漂移:{n}项"
+    if failed:
+        s += "（" + "；".join(failed[:2]) + "）"
+    if fixed:
+        s += f"；自愈{len(fixed)}项（" + "；".join(fixed[:2]) + "）"
+    return s
 
 
 def update_readme_drift(version, jname, doc):
