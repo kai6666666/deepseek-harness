@@ -178,6 +178,8 @@ if [ "$STRICT" -eq 1 ]; then
   if [ "$PERTURB" -gt 0 ]; then
     python3 -c "import json,sys;d=json.load(open(sys.argv[1]));print('[ship] strict: wait=%d changes=%d fixed=%d' % (int(d.get('wait',0)),int(d.get('changes',0)),len(d.get('fixed') or [])))" "$DJ" 2>/dev/null || true
     echo "[ship] strict: 发布过程存在扰动，标记 ⚠（exit 5）：$VER"
+    echo "[ship] 归档扰动汇总到 docs/agents/failures/"
+    python3 tools/archive_fail.py --perturb "$VER" || echo "[ship] 扰动归档失败（检查 token/网络）"
     python3 tools/record.py "$VER" || echo "[ship] strict 重登记失败"
     exit 5
   fi
