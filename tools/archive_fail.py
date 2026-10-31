@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""把一次不合格的取证现场归档到仓库 docs/agents/failures/。
+"""把一次不合格的取证现场归档到 docs/agents/failures/，并追加一行归档索引。
 
 用法：
     python3 tools/archive_fail.py 1.1.0-146
@@ -10,10 +10,12 @@
 产出：
     docs/agents/failures/verify-<ver>-<时间戳>.json
     docs/agents/failures/verify-<ver>-<时间戳>-ui.png（有截图时）
+    docs/agents/failures/README.md（追加一行索引）
 """
 import base64
 import json
 import os
+import re
 import sys
 import time
 import urllib.request
@@ -27,6 +29,19 @@ REPO = "kai6666666/deepseek-harness"
 API = f"https://api.github.com/repos/{REPO}"
 DOWNLOAD = "/storage/emulated/0/Download"
 TOKEN_FILE = "/tmp/gh_token"
+DIR = "docs/agents/failures"
+README_PATH = f"{DIR}/README.md"
+
+TEMPLATE = """# 失败现场归档
+
+`tools/archive_fail.py <版本>` 在两轮取证都不合格后归档现场：证据 JSON（`stages` / `retries` / `attempt` / `ms`）与失败瞬间整屏截图。
+合格记录进 `../mobile-ui-verification.md`，本目录只收失败。
+
+## 归档索引
+
+| 时间 | 版本 | 轮次 | 失败原因 | 证据 |
+|---|---|---|---|---|
+"""
 
 
 def token():
@@ -56,7 +71,44 @@ def put(path, blob, message):
     if sha:
         body["sha"] = sha
     req("PUT", f"/contents/{path}", body)
-    return True
+
+
+def reasons(doc):
+    out = []
+    if not doc.get("clicked"):
+        out.append("未点到「创建你的插件」")
+    if not doc.get("match"):
+        out.append("输入框文案不一致")
+    if doc.get("msgs") != 0:
+        out.append(f"消息数={doc.get('msgs')}")
+    n = len(doc.get("items") or [])
+    if n != 7:
+        out.append(f"菜单行数={n}")
+    stages = doc.get("stages") or {}
+    bad = [k for k, v in stages.items() if not str(v).startswith("ok")]
+    if bad:
+        out.append("阶段失败:" + ",".join(bad))
+    return "；".join(out) or "未分类"
+
+
+def update_readme(version, ts, doc, jname, pname=None):
+    try:
+        cur = req("GET", f"/contents/{README_PATH}?ref=main")
+        text = base64.b64decode(cur["content"]).decode()
+    except Exception:
+        text = TEMPLATE
+    rows = [l for l in text.splitlines()
+            if l.startswith("| ") and not l.startswith("| 时间") and "---" not in l]
+    evidence = f"[json]({os.path.basename(jname)})"
+    if pname:
+        evidence += f" · [png]({os.path.basename(pname)})"
+    nice = time.strftime("%Y-%m-%d %H:%M", time.localtime())
+    rows = [r for r in rows if f"| {version} |" not in r]
+    rows.append(f"| {nice} | {version} | {(doc.get('attempt') or 0) + 1} | {reasons(doc)} | {evidence} |")
+    rows.sort(key=lambda r: r.split("|")[1].strip(), reverse=True)
+    put(README_PATH, (TEMPLATE + "\n".join(rows) + "\n").encode(),
+        f"fail: 归档 {version} 并登记索引")
+    print(f"[archive] {README_PATH}（{len(rows)} 行）")
 
 
 def main():
@@ -75,15 +127,18 @@ def main():
     doc["_archived_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
     doc["_source"] = os.path.basename(jpath)
     blob = json.dumps(doc, ensure_ascii=False, indent=2).encode()
-    jname = f"docs/agents/failures/verify-{v}-{ts}.json"
+    jname = f"{DIR}/verify-{v}-{ts}.json"
     put(jname, blob, f"fail: 归档 {v} 不合格现场")
     print(f"[archive] {jname}")
 
+    pname = None
     png = f"{DOWNLOAD}/dsh-{v}-fail.png"
     if os.path.exists(png):
-        pname = f"docs/agents/failures/verify-{v}-{ts}-ui.png"
+        pname = f"{DIR}/verify-{v}-{ts}-ui.png"
         put(pname, open(png, "rb").read(), f"fail: 归档 {v} 失败截图")
         print(f"[archive] {pname}")
+
+    update_readme(v, ts, doc, jname, pname)
 
 
 if __name__ == "__main__":
