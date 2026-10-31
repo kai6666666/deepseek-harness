@@ -225,11 +225,14 @@ run-as $APP sh -c 'cat /data/local/tmp/mp-verify.cjs > files/mp-verify.cjs'
 P=$(pidof $APP)
 LOG=/sdcard/Download/verify-$V.txt
 : > "$LOG"
-echo "pid=$P" | tee -a "$LOG"
-O=$(run-as $APP files/termux/usr/bin/node files/mp-verify.cjs "$P" "files/verify-$V.json" "$V" 2>&1)
+echo "pid=$P retry_cfg=${{MP_RETRY:-0}}" | tee -a "$LOG"
+O=$(run-as $APP env MP_RETRY="${{MP_RETRY:-0}}" files/termux/usr/bin/node files/mp-verify.cjs "$P" "files/verify-$V.json" "$V" 2>&1)
 echo "verify: $O" | tee -a "$LOG"
 run-as $APP cat "files/verify-$V.json" > /data/local/tmp/v.json
 cp /data/local/tmp/v.json /sdcard/Download/verify-$V.json
+run-as $APP cat "files/verify-$V.json.sum" > /data/local/tmp/s.txt 2>/dev/null
+cp /data/local/tmp/s.txt /sdcard/Download/verify-$V.sum 2>/dev/null
+echo "summary: $(cat /sdcard/Download/verify-$V.sum 2>/dev/null)" | tee -a "$LOG"
 cat /sdcard/Download/verify-$V.json >> "$LOG"
 screencap -p /sdcard/Download/dsh-$V-ui.png
 echo "shot=/sdcard/Download/dsh-$V-ui.png" | tee -a "$LOG"
