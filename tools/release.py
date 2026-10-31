@@ -196,14 +196,25 @@ def write_evidence():
     print(f"[ok] 取证脚本 mp-verify.cjs（{len(blob)} B）")
 
 
-def write_install_script(version):
-    """装机 + 重启 + 一次 mp-verify 取证 + 截图 + 版本戳，Android 侧一条 sh 跑完。"""
+def write_install_script(version, install=True):
+    """install=True：装机 + 重启 + 取证；install=False：只重启 + 取证（设备上已是该版本）。"""
+    kind = "install" if install else "verify"
+    if install:
+        head = """cp /sdcard/Download/dsh-ci-$V.apk /data/local/tmp/d.apk
+pm install -r /data/local/tmp/d.apk || exit 1"""
+        note = "装机 + 重启 + 取证"
+        extra = "（只重跑取证时用 sh /sdcard/Download/verify-%s.sh）" % version
+    else:
+        head = """test -n "$(run-as $APP cat files/home/.dsh/mobile-ui/dsh-android-mobile/.mobile_ui_version 2>/dev/null)" || echo "[warn] 读不到设备版本戳\""""
+        note = "仅重启 + 取证（不装机）"
+        extra = "（不重新装机，直接复用设备上已装版本）"
     body = f"""#!/system/bin/sh
-# 装机 + 重启 + 取证（Android 侧执行：sh /sdcard/Download/install-{version}.sh）
+# {note}{extra}
 APP=com.dsh.android
 V={version}
-cp /sdcard/Download/dsh-ci-$V.apk /data/local/tmp/d.apk
-pm install -r /data/local/tmp/d.apk || exit 1
+{head}
+PM=$(pm path $APP 2>/dev/null | head -1)
+[ -n "$PM" ] || echo "[warn] $APP 未安装，取证会失败"
 am force-stop $APP
 am start -n $APP/.MainActivity >/dev/null 2>&1
 sleep 30
@@ -226,7 +237,7 @@ S=$(run-as $APP cat files/home/.dsh/mobile-ui/dsh-android-mobile/.mobile_ui_vers
 echo "stamp=$S" | tee -a "$LOG"
 echo
 """
-    path = f"{DOWNLOAD_DIR}/install-{version}.sh"
+    path = f"{DOWNLOAD_DIR}/{kind}-{version}.sh"
     with open(path, "w") as f:
         f.write(body)
     os.chmod(path, 0o755)
