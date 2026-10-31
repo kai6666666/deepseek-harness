@@ -29,8 +29,8 @@ HEADER = """# 移动端 UI 插件 · 发布验收记录
 每次发布按 `bash tools/ship.sh <ver> --wait` → 设备侧 `sh /sdcard/Download/install-<ver>.sh` → 自动登记一行。
 工具链说明见 [pipeline.md](pipeline.md)，异常证据见 [failures/](failures/README.md)。
 
-| 版本 | 设备戳 | CI run | APK | client | dex 戳 | 七行菜单 | 创造模式 | 文案一致 | 消息数 | 轮次 | 重试 | 耗时 | 截图 | 记录时间 | 漂移 | 状态 |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 版本 | 设备戳 | CI run | APK | client | dex 戳 | 七行菜单 | 创造模式 | 文案一致 | 消息数 | 轮次 | 重试 | 耗时 | 截图 | 记录时间 | 漂移 | 状态 | 稳定 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 """
 
 
@@ -181,7 +181,20 @@ def parse(version):
         "ms": ("—" if not _ms else f"{_ms / 1000:.1f}s"),
         "drift": _drift_cell(version),
         "state": _state_cell(version),
+        "stable": _stability_cell(version),
     }
+
+
+def _stability_cell(version):
+    """稳定列：读 verify-<ver>.reverify.json（--reverify 产出）。"""
+    p = f"{LOG_DIR}/verify-{version}.reverify.json"
+    if not os.path.exists(p):
+        return "—"
+    try:
+        d = json.load(open(p, encoding="utf-8"))
+    except Exception:
+        return "—"
+    return "✅" if d.get("verdict") == "pass" else "⚠"
 
 
 def _state_cell(version):
@@ -224,7 +237,7 @@ def row(version, d):
     return (f"| {version} | {d['stamp']} | {d['run']} | {d['apk']} | {d['client']} | {d['dex']} | "
             f"{ok(d['items_ok'])} ({len(d['items'])}) | {d['mode']} | "
             f"{ok(d['match'])} | {d['msgs']} | {d['round']} | {d['retries']} | {d['ms']} | "
-            f"{os.path.basename(d['shot'])} | {time.strftime('%Y-%m-%d %H:%M')} | {d.get('drift', '—')} | {d.get('state', '—')} |\n")
+            f"{os.path.basename(d['shot'])} | {time.strftime('%Y-%m-%d %H:%M')} | {d.get('drift', '—')} | {d.get('state', '—')} | {d.get('stable', '—')} |\n")
 
 
 def _migrate_cells(line):
@@ -243,7 +256,9 @@ def _migrate_cells(line):
         cells = cells + ["—"]
     if len(cells) == 16:
         cells = cells + ["—"]
-    if len(cells) != 17:
+    if len(cells) == 17:
+        cells = cells + ["—"]
+    if len(cells) != 18:
         return None
     return "| " + " | ".join(cells) + " |"
 
