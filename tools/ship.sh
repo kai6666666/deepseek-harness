@@ -15,7 +15,7 @@ else
   shift || true
 fi
 
-WAIT=0; SKIP=0; ONLY_VERIFY=0; PAUSE=0; NODRIFT=0; FIXDRIFT=0; TIMEOUT=900
+WAIT=0; SKIP=0; ONLY_VERIFY=0; PAUSE=0; NODRIFT=0; FIXDRIFT=0; STRICT=0; TIMEOUT=900
 MP_WAIT_CHG=0; export MP_WAIT_CHG
 for a in "$@"; do
   case "$a" in
@@ -25,6 +25,7 @@ for a in "$@"; do
     --pause-on-fail) PAUSE=1 ;;
     --no-drift) NODRIFT=1 ;;
     --fix-drift) FIXDRIFT=1 ;;
+    --strict) STRICT=1 ;;
     --timeout=*) TIMEOUT="${a#*=}" ;;
     *) echo "[ship] 忽略未知参数 $a" ;;
   esac
@@ -166,6 +167,20 @@ if [ "$DRC" -ne 0 ]; then
   echo "[ship] 重新登记（漂移列会标 🚩）"
   python3 tools/record.py "$VER" || echo "[ship] 重登记失败"
   exit 4
+fi
+if [ "$STRICT" -eq 1 ]; then
+  DJ="$DL/verify-$VER.drift.json"
+  PERTURB=0
+  if [ -s "$DJ" ]; then
+    PERTURB=$(python3 -c "import json,sys;d=json.load(open(sys.argv[1]));print(int(d.get('wait',0))+int(d.get('changes',0))+len(d.get('fixed') or []))" "$DJ" 2>/dev/null || true)
+  fi
+  [ -z "${PERTURB:-}" ] && PERTURB=0
+  if [ "$PERTURB" -gt 0 ]; then
+    python3 -c "import json,sys;d=json.load(open(sys.argv[1]));print('[ship] strict: wait=%d changes=%d fixed=%d' % (int(d.get('wait',0)),int(d.get('changes',0)),len(d.get('fixed') or [])))" "$DJ" 2>/dev/null || true
+    echo "[ship] strict: 发布过程存在扰动，标记 ⚠（exit 5）：$VER"
+    python3 tools/record.py "$VER" || echo "[ship] strict 重登记失败"
+    exit 5
+  fi
 fi
 echo "[ship] 5/5 九项一致，发布完成：$VER"
 exit 0
