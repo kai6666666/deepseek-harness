@@ -4,6 +4,7 @@
 
 用法：
     python3 tools/archive_fail.py 1.1.0-146
+    python3 tools/archive_fail.py --drift 1.1.0-146   # 环境漂移（drift_check 不合格）
 读取：
     /sdcard/Download/verify-<ver>-fail.json（优先）或 verify-<ver>.json
     /sdcard/Download/dsh-<ver>-fail.png（存在则一起归档）
@@ -91,6 +92,29 @@ def reasons(doc):
     return "；".join(out) or "未分类"
 
 
+def drift_reasons(doc):
+    n = int(doc.get("drift", 0))
+    failed = doc.get("failed") or []
+    return f"环境漂移:{n}项" + ("（" + "；".join(failed[:2]) + "）" if failed else "")
+
+
+def update_readme_drift(version, jname, doc):
+    try:
+        cur = req("GET", f"/contents/{README_PATH}?ref=main")
+        text = base64.b64decode(cur["content"]).decode()
+    except Exception:
+        text = TEMPLATE
+    rows = [l for l in text.splitlines()
+            if l.startswith("| ") and not l.startswith("| 时间") and "---" not in l]
+    nice = time.strftime("%Y-%m-%d %H:%M", time.localtime())
+    rows = [r for r in rows if f"| {version} |" not in r]
+    rows.append(f"| {nice} | {version} | — | {drift_reasons(doc)} | [json]({os.path.basename(jname)}) |")
+    rows.sort(key=lambda r: r.split("|")[1].strip(), reverse=True)
+    put(README_PATH, (TEMPLATE + "\n".join(rows) + "\n").encode(),
+        f"drift: 归档 {version} 环境漂移并登记索引")
+    print(f"[archive] {README_PATH}（{len(rows)} 行，漂移）")
+
+
 def update_readme(version, ts, doc, jname, pname=None):
     try:
         cur = req("GET", f"/contents/{README_PATH}?ref=main")
@@ -113,7 +137,25 @@ def update_readme(version, ts, doc, jname, pname=None):
 
 def main():
     if len(sys.argv) < 2:
-        raise SystemExit("用法：python3 tools/archive_fail.py 1.1.0-146")
+        raise SystemExit("用法：python3 tools/archive_fail.py 1.1.0-146 | --drift 1.1.0-146")
+
+    if sys.argv[1] == "--drift":
+        if len(sys.argv) < 3:
+            raise SystemExit("用法：python3 tools/archive_fail.py --drift 1.1.0-146")
+        v = sys.argv[2]
+        ts = time.strftime("%Y%m%d-%H%M%S")
+        src = f"{DOWNLOAD}/verify-{v}.drift.json"
+        if not os.path.exists(src):
+            raise SystemExit(f"[archive] 找不到漂移报告 {src}")
+        doc = json.load(open(src, encoding="utf-8"))
+        doc["_archived_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+        jname = f"{DIR}/drift-{v}-{ts}.json"
+        put(jname, json.dumps(doc, ensure_ascii=False, indent=2).encode(),
+            f"drift: 归档 {v} 环境漂移")
+        print(f"[archive] {jname}")
+        update_readme_drift(v, jname, doc)
+        return
+
     v = sys.argv[1]
     ts = time.strftime("%Y%m%d-%H%M%S")
 
