@@ -10312,10 +10312,14 @@ function mpCreatePluginSession() {
 		const nav = scan("button", (e) => vis(e) && e.getAttribute("aria-label") === "打开导航");
 		if (nav) {
 			try { nav.click(); } catch (e) { /* 忽略 */ }
-			setTimeout(() => {
+			/* 抽屉拉起有动画，单次 600ms 常常点空 → 改成 6 次轮询，点到为止 */
+			let ntries = 0;
+			const tickNew = () => {
 				const neu = scan("button,a,[role=button]", (e) => vis(e) && /^(新建会话|新建|新会话)$/.test((e.textContent || "").trim()) && (e.textContent || "").trim().length < 12);
-				if (neu) { try { neu.click(); } catch (e) { /* 忽略 */ } }
-			}, 600);
+				if (neu) { try { neu.click(); } catch (e) { /* 忽略 */ } return; }
+				if (++ntries < 6) setTimeout(tickNew, 300);
+			};
+			setTimeout(tickNew, 400);
 		}
 	}
 	setTimeout(() => {
