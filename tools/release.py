@@ -234,6 +234,15 @@ run-as $APP cat "files/verify-$V.json.sum" > /data/local/tmp/s.txt 2>/dev/null
 cp /data/local/tmp/s.txt /sdcard/Download/verify-$V.sum 2>/dev/null
 echo "summary: $(cat /sdcard/Download/verify-$V.sum 2>/dev/null)" | tee -a "$LOG"
 cat /sdcard/Download/verify-$V.json >> "$LOG"
+case "$O" in
+  *'"ok":true'*) : ;;
+  *)
+    screencap -p /sdcard/Download/dsh-$V-fail.png
+    cp /sdcard/Download/verify-$V.json /sdcard/Download/verify-$V-fail.json 2>/dev/null
+    echo "fail_snapshot=/sdcard/Download/dsh-$V-fail.png" | tee -a "$LOG"
+    echo "fail_json=/sdcard/Download/verify-$V-fail.json" | tee -a "$LOG"
+    ;;
+esac
 screencap -p /sdcard/Download/dsh-$V-ui.png
 echo "shot=/sdcard/Download/dsh-$V-ui.png" | tee -a "$LOG"
 S=$(run-as $APP cat files/home/.dsh/mobile-ui/dsh-android-mobile/.mobile_ui_version)
