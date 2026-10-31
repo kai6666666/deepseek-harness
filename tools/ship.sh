@@ -187,6 +187,7 @@ fi
 if [ -s "$DL/verify-$VER.drift.json" ]; then
   echo "[ship] 5/5 刷新登记行（写入漂移与状态）"
   python3 tools/record.py "$VER" || echo "[ship] 刷新登记失败"
+  python3 tools/trend.py --push >/dev/null 2>&1 || echo "[ship] 趋势报表刷新失败"
 fi
 echo "[ship] 5/5 九项一致，发布完成：$VER"
 exit 0
