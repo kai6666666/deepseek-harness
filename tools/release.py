@@ -231,7 +231,7 @@ OK=0
 while [ "$TRY" -lt 2 ]; do
   R=${{MP_RETRY:-0}}
   [ "$TRY" -ge 1 ] && R=$((R + 2))
-  O=$(run-as $APP env MP_RETRY="$R" files/termux/usr/bin/node files/mp-verify.cjs "$P" "files/verify-$V.json" "$V" 2>&1)
+  O=$(run-as $APP env MP_RETRY="$R" MP_ATTEMPT="$TRY" files/termux/usr/bin/node files/mp-verify.cjs "$P" "files/verify-$V.json" "$V" 2>&1)
   echo "verify[$TRY] (MP_RETRY=$R): $O" | tee -a "$LOG"
   run-as $APP cat "files/verify-$V.json" > /data/local/tmp/v.json 2>/dev/null
   cp /data/local/tmp/v.json /sdcard/Download/verify-$V.json 2>/dev/null
