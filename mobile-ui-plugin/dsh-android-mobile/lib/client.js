@@ -2172,28 +2172,32 @@ window.__ModuleLoader__.load({
 		}
 
 		// ── 7. 设置页两级化（全 inline style，不用 CSS 规则——见 CSS 区注释） ──
+		const mpSettingsSync = new WeakMap();
 		function setupSettingsDialog(dialog) {
 			if (!mpIsMobile()) return; // 修复 40：仅移动端；桌面端完全走官方
-			if (dialog.dataset.mpReady) return;
-			dialog.dataset.mpReady = "1";
-			const nav = Array.from(dialog.children).find((c) => c.tagName === "NAV");
-			if (!nav) return;
+			const old = mpSettingsSync.get(dialog);
+			if (old) { try { old(); } catch (e) {} return; }
+			const nav0 = Array.from(dialog.children).find((c) => c.tagName === "NAV");
+			if (!nav0) return;
 			dialog.dataset.mpSettings = "1";
-			// 隐藏安卓壳遗留的"开发者选项"：其功能依赖 window.androidBridge /
-			// /api/android/*，在 Web 进程中不存在，保留会进入一个空壳页面。
-			nav.querySelectorAll("button").forEach((b) => {
+			// 隐藏安卓壳遗留的"开发者选项"（依赖 window.androidBridge，Web 进程里没有）
+			nav0.querySelectorAll("button").forEach((b) => {
 				if ((b.innerText || "").trim() === "开发者选项") b.style.display = "none";
 			});
-			const content = nav.nextElementSibling;
-			setupPluginGrouping(content);
-			setupNavIcons(nav);
-			const isNarrow = () => mpIsMobile();
-			// — 全屏 + 纵向布局（避免旧样式闪烁：立即应用，不等动画结束） —
+			const sysTop = getComputedStyle(document.documentElement).getPropertyValue("--dsh-android-system-top").trim() || "0px";
+			const BAR_H = 48;
+			const barPad = `calc(${BAR_H}px + ${sysTop})`;
+			const bodyBg = getComputedStyle(document.body).backgroundColor || "#fff";
+			// 面板改成一列：官方默认 flex-flow: row wrap，会把返回条挤成 60px 窄条，
+			// 也会让内容区只剩 26px 高（实测 y=780 h=26）。
 			Object.assign(dialog.style, {
 				width: "100vw", maxWidth: "100vw", height: "100vh", maxHeight: "100vh",
 				borderRadius: "0", boxShadow: "none", position: "fixed", top: "0", left: "0",
-				flexDirection: "column", overflow: "hidden",
+				overflow: "hidden", padding: "0",
 			});
+			dialog.style.setProperty("display", "flex", "important");
+			dialog.style.setProperty("flex-direction", "column", "important");
+			dialog.style.setProperty("flex-wrap", "nowrap", "important");
 			const overlay = dialog.parentElement;
 			if (overlay) {
 				overlay.style.left = "0";
@@ -2201,92 +2205,49 @@ window.__ModuleLoader__.load({
 				overlay.style.height = "100vh";
 				overlay.style.alignItems = "stretch";
 			}
-			const navTitle = nav.querySelector(".VOzbGW_navTitle");
-			if (navTitle) navTitle.style.display = "none";
-			// 顶部返回条：只有圆形返回按钮 + 标题，不再放 ✕
-			const backBar = document.createElement("div");
-			backBar.className = "mp-back-bar";
-			backBar.innerHTML = '<button type="button" class="mp-back-circle" aria-label="返回">‹</button>'
+			// 顶栏：固定吸顶，标题左对齐（返回键 + 页面名，只有一层）
+			const bar = document.createElement("div");
+			bar.className = "mp-back-bar";
+			bar.innerHTML = '<button type="button" class="mp-back-circle" aria-label="返回">‹</button>'
 				+ '<span class="mp-title">设置</span>';
-			Object.assign(backBar.style, {
-				display: "flex", flex: "0 0 auto", alignItems: "center", gap: "4px",
-				minHeight: "56px", padding: "8px 12px", boxSizing: "border-box",
-				borderBottom: "none", background: "transparent", position: "relative",
+			Object.assign(bar.style, {
+				position: "absolute", top: "0", left: "0", right: "0", zIndex: "30",
+				display: "flex", alignItems: "center", gap: "8px",
+				height: `calc(${BAR_H}px + ${sysTop})`, padding: `${sysTop} 12px 0 12px`,
+				boxSizing: "border-box", background: bodyBg,
+				borderBottom: "1px solid rgba(128,128,128,.16)",
 			});
-			// 回退 CSS 规则：用 !important 压内联 padding，让出状态栏
-			const sysTop = getComputedStyle(document.documentElement).getPropertyValue("--dsh-android-system-top").trim() || "0px";
-			backBar.style.setProperty("padding-top", sysTop, "important");
-			const backBtn = backBar.querySelector(".mp-back-circle");
+			const backBtn = bar.querySelector(".mp-back-circle");
 			Object.assign(backBtn.style, {
-				width: "36px", height: "36px", borderRadius: "50%", background: "var(--dsw-alias-interactive-bg-hover, #f0f0f0)",
+				width: "34px", height: "34px", borderRadius: "50%", background: "transparent",
 				border: "none", cursor: "pointer", display: "inline-flex", alignItems: "center",
-				justifyContent: "center", fontSize: "20px", color: "#222", flex: "0 0 auto",
+				justifyContent: "center", fontSize: "22px", lineHeight: "1",
+				color: "var(--dsw-alias-label-primary, #222)", flex: "0 0 auto", padding: "0",
 			});
-			const titleSpan = backBar.querySelector(".mp-title");
+			const titleSpan = bar.querySelector(".mp-title");
 			Object.assign(titleSpan.style, {
-				position: "absolute", left: "50%", top: "50%", transform: "translate(-50%, -50%)",
-				maxWidth: "70%", fontSize: "17px", fontWeight: "600",
+				flex: "1 1 auto", minWidth: "0", fontSize: "17px", fontWeight: "600",
 				color: "var(--dsw-alias-label-primary, #222)", whiteSpace: "nowrap",
-				overflow: "hidden", textOverflow: "ellipsis", padding: "0 4px",
+				overflow: "hidden", textOverflow: "ellipsis",
 			});
-			dialog.insertBefore(backBar, nav);
+			dialog.insertBefore(bar, dialog.firstChild);
 			const closeDialog = () => {
 				const mask = dialog.parentElement?.querySelector(".VOzbGW_mask");
 				if (mask) mask.click();
 			};
-			// 返回按钮：一级页关闭设置，二级页回一级
-			const showList = () => {
-				titleSpan.textContent = "设置";
-				// 用 !important 压过 dsh-market 的
-				//   @media (max-width:560px){ [role=dialog]:has([data-dsh-market-root])>nav{display:none} }
-				// 市场组件（data-dsh-market-root）挂载后一直留在 dialog 里，:has() 只看 DOM
-				// 存在性不看可见性，返回列表页时普通内联 display 会被该规则覆盖 → 列表页空白。
+			const refs = { nav: null };
+			const styleNav = (nav, firstName) => {
 				nav.style.setProperty("display", "flex", "important");
-				if (content) content.style.display = "none";
-				applyNavStyle();
-			};
-			const showContent = (titleText) => {
-				const sectionTitle = content?.querySelector(".zGbnIq_title, h2");
-				titleSpan.textContent = titleText || (sectionTitle ? sectionTitle.textContent : "设置");
-				// 与 showList 对称：用 !important，确保能覆盖 showList 留下的 flex !important
-				nav.style.setProperty("display", "none", "important");
-				if (content) {
-					content.style.display = "flex";
-					content.style.flexDirection = "column";
-					content.style.flex = "1 1 0%";
-					content.style.minHeight = "0";
-					content.style.overflowY = "auto";
-				}
-				const options = content?.querySelector(".VOzbGW_options");
-				if (options) {
-					options.style.flex = "1 1 0%";
-					options.style.minHeight = "0";
-					options.style.overflowY = "auto";
-				}
-			};
-			// 设置页的「退一层」语义（二级 → 一级 → 关闭），返回按钮与**系统返回键**共用。
-			// 系统返回键由原生经 "window.__DSH_MOBILE_BACK__" 调进来，见 §12。
-			const backOneLevel = () => {
-				const atList = !content || content.style.display === "none";
-				if (atList) closeDialog();
-				else showList();
-			};
-			backBtn.addEventListener("click", backOneLevel);
-			// ⚠️ 用 WeakMap 而不是 DOM 属性存回调：DOM 属性只能存字符串，
-			//   而这里要存的是带闭包的函数（"content"/"closeDialog" 都在闭包里）。
-			mpDialogBack.set(dialog, backOneLevel);
-			// nav 竖向化 + 分类小标题 + 可滚动
-			const applyNavStyle = () => {
-				if (!isNarrow()) return;
-				nav.style.flexDirection = "column";
-				nav.style.alignItems = "stretch";
-				nav.style.overflowY = "auto";
-				nav.style.overflowX = "hidden";
-				nav.style.width = "100%";
-				nav.style.gap = "2px";
-				nav.style.padding = "10px";
-				nav.style.flex = "1 1 0%";
-				nav.style.minHeight = "0";
+				nav.style.setProperty("flex-direction", "column", "important");
+				nav.style.setProperty("align-items", "stretch", "important");
+				nav.style.setProperty("overflow-y", "auto", "important");
+				nav.style.setProperty("overflow-x", "hidden", "important");
+				nav.style.setProperty("width", "100%", "important");
+				nav.style.setProperty("gap", "2px", "important");
+				nav.style.setProperty("padding", `${barPad} 10px 16px`, "important");
+				nav.style.setProperty("box-sizing", "border-box", "important");
+				nav.style.setProperty("flex", "1 1 0%", "important");
+				nav.style.setProperty("min-height", "0", "important");
 				const navList = nav.querySelector(".VOzbGW_navList");
 				if (navList) {
 					navList.style.flex = "1 1 0%";
@@ -2297,8 +2258,8 @@ window.__ModuleLoader__.load({
 					const groups = [
 						{ label: "通用", items: ["通用设置"] },
 						{ label: "模型", items: ["模型"] },
-						{ label: "插件", items: ["插件"] },
-						{ label: "高级", items: ["Agent 预设", "快照", "附件缓存", "特权权限", "悬浮气泡"] },
+						{ label: "插件", items: ["内置插件", "插件"] },
+						{ label: "高级", items: ["Agent 预设", "快照", "附件缓存", "特权权限", "悬浮气泡", "插件市场", "开发环境", "运行日志与诊断", "多模态配置"] },
 					];
 					for (const g of groups) {
 						const first = [...navList.querySelectorAll("button")].find((b) => g.items.includes((b.innerText || "").trim()));
@@ -2329,26 +2290,69 @@ window.__ModuleLoader__.load({
 					b.style.fontSize = "15px";
 					b.style.flex = "none";
 					b.style.textAlign = "left";
-					// 移动端一级列表不显示"当前项"高亮（官方 .VOzbGW_navCell.VOzbGW_active
-					// 的背景色块）：二级页是全屏的，nav 根本看不见，回到列表时这行残留的
-					// 色块只会让人误以为"刚才那下没退掉"（用户 2026-09-14 反馈）。
-					// ⚠️ 必须用内联样式：匹配设置 dialog 的 CSS 规则会把 dialog 推出屏幕
-					// （x=-301、关不掉），此处禁用 CSS 规则。内联样式优先级高于该类规则，
-					// 且官方 React 不管理 background 属性，重渲染不会把它冲掉。
 					b.style.background = "transparent";
 				});
+				if (firstName) titleSpan.textContent = firstName;
 			};
-			const contentHeader = content?.querySelector(".VOzbGW_header");
-			if (contentHeader) contentHeader.style.display = "none";
-			nav.addEventListener("click", (e) => {
-				const btn = e.target.closest("button");
-				if (!btn) return;
-				const titleText = (btn.innerText || "").trim();
-				setTimeout(() => showContent(titleText || "设置"), 0);
+			const sync = () => {
+				const nav = Array.from(dialog.children).find((c) => c.tagName === "NAV") || dialog.querySelector("nav");
+				const options = dialog.querySelector(".VOzbGW_options");
+				if (!nav || !options) return;
+				if (refs.nav !== nav) {
+					refs.nav = nav;
+					nav.addEventListener("click", (e) => {
+						const btn = e.target.closest("button");
+						if (!btn) return;
+						const t = (btn.innerText || "").trim() || "设置";
+						dialog.dataset.mpView = "content";
+						dialog.dataset.mpTitle = t;
+						setTimeout(sync, 0);
+					});
+				}
+				const navTitle = dialog.querySelector(".VOzbGW_navTitle");
+				const header = dialog.querySelector(".VOzbGW_header");
+				if (navTitle) navTitle.style.setProperty("display", "none", "important");
+				if (header) header.style.setProperty("display", "none", "important");
+				const view = dialog.dataset.mpView === "content" ? "content" : "list";
+				if (view === "list") {
+					titleSpan.textContent = "设置";
+					options.style.setProperty("display", "none", "important");
+					styleNav(nav, "设置");
+				} else {
+					const t = dialog.dataset.mpTitle || "设置";
+					titleSpan.textContent = t;
+					nav.style.setProperty("display", "none", "important");
+					options.style.setProperty("display", "block", "important");
+					options.style.setProperty("padding", `${barPad} 16px 28px`, "important");
+					options.style.setProperty("box-sizing", "border-box", "important");
+					options.style.setProperty("width", "100%", "important");
+					options.style.setProperty("flex", "1 1 0%", "important");
+					options.style.setProperty("min-height", "0", "important");
+					options.style.setProperty("overflow-y", "auto", "important");
+					// 官方每个分节自带的 H2 与顶栏标题重复 → 只留顶栏一处
+					options.querySelectorAll(".zGbnIq_title, h1, h2, h3").forEach((h) => {
+						if ((h.textContent || "").trim() === t) h.style.setProperty("display", "none", "important");
+					});
+				}
+			};
+			const back = () => {
+				if ((dialog.dataset.mpView || "list") === "content") {
+					dialog.dataset.mpView = "list";
+					sync();
+				} else {
+					closeDialog();
+				}
+			};
+			backBtn.addEventListener("click", back);
+			mpDialogBack.set(dialog, back);
+			mpSettingsSync.set(dialog, sync);
+			sync();
+		}
+		function mpSyncSettings() {
+			document.querySelectorAll('[role="dialog"][aria-modal="true"]').forEach((d) => {
+				const f = mpSettingsSync.get(d);
+				if (f) { try { f(); } catch (e) { /* 静默 */ } }
 			});
-			// 立即应用，去掉 800ms 延迟（旧样式闪烁根因）
-			applyNavStyle();
-			showList();
 		}
 
 			// ── 8. 移动端外壳（0.1.5 融合版）──
@@ -4347,7 +4351,7 @@ mpSetMenuOpenClass(false);
 				mpPatchTrajectoryTiming();
 				mpScheduleStatus();   // 通知栏状态：跟着 DOM 变化走（内部 1s 节流）
 				mpScheduleTranscript();   // 悬浮窗转录：同一批 DOM 变化，内部 1.5s 节流
-				document.querySelectorAll('[role="dialog"][aria-modal="true"]').forEach(setupSettingsDialog);
+				document.querySelectorAll('[role="dialog"][aria-modal="true"]').forEach(setupSettingsDialog); mpSyncSettings();
 			}, 300);
 		});
 
@@ -9946,16 +9950,23 @@ function mpDevEnvSection() {
 	const timerRef = React.useRef(null);
 
 	const load = React.useCallback(async () => {
+		const ctl = typeof AbortController === "function" ? new AbortController() : null;
+		const to = ctl ? setTimeout(() => { try { ctl.abort(); } catch (e) {} }, 10000) : null;
 		try {
-			const res = await fetch(MP_DEV_API, { cache: "no-store" });
+			const res = await fetch(MP_DEV_API, { cache: "no-store", signal: ctl ? ctl.signal : undefined });
 			const data = await res.json();
-			setState({ phase: "ready", ...data });
+			setState({ phase: "ready", ...data, error: "" });
 			if (data && data.job && data.job.running) {
 				if (timerRef.current) clearTimeout(timerRef.current);
 				timerRef.current = setTimeout(() => { load(); }, 2000);
 			}
 		} catch (e) {
-			setState({ phase: "ready", ok: false });
+			const msg = e && e.name === "AbortError"
+				? "宿主端 10 秒没有响应（/api/dsh-android/devenv）"
+				: String((e && e.message) || e || "读取失败");
+			setState({ phase: "ready", ok: false, error: msg, status: null });
+		} finally {
+			if (to) clearTimeout(to);
 		}
 	}, []);
 
@@ -10050,7 +10061,7 @@ function mpDevEnvSection() {
 	if (state.phase === "loading") {
 		return React.createElement("div", { style: MP_DEV_S.section },
 			React.createElement("h2", { style: MP_DEV_S.heading }, t("title")),
-			React.createElement("p", { style: MP_DEV_S.intro }, "…"));
+			React.createElement("p", { style: MP_DEV_S.intro }, "正在读取开发环境状态…"));
 	}
 
 	const status = state.status;
@@ -10095,9 +10106,11 @@ function mpDevEnvSection() {
 		React.createElement("h2", { style: MP_DEV_S.heading }, t("title")),
 		React.createElement("p", { style: MP_DEV_S.intro }, t("intro")),
 
-		groups.map(groupCard),
+		groups.length ? groups.map(groupCard) : React.createElement("div", { style: MP_DEV_S.card },
+			React.createElement("p", { style: Object.assign({}, MP_DEV_S.intro, { margin: "0 0 8px" }) },
+				state.error || t("unknown")),
+			React.createElement("button", { style: MP_DEV_S.btn, onClick: load }, "重新读取")),
 
-		status ? null : React.createElement("p", { style: MP_DEV_S.intro }, t("unknown")),
 confirming && plan.remove.length ? React.createElement("div", { style: Object.assign({}, MP_DEV_S.card, { borderColor: "#d05050" }) },
 React.createElement("div", { style: { fontSize: "13px", whiteSpace: "pre-wrap" } },
 t("confirmRemove", plan.remove.map((i) => "· " + i.label).join("\n"))),
@@ -10597,7 +10610,7 @@ if (!window.__mpHeaderMenuTimer) {
 			mpBuildShell();
 			mpSyncDrawer();
 			bindTitleRename();
-			document.querySelectorAll('[role="dialog"][aria-modal="true"]').forEach(setupSettingsDialog);
+			document.querySelectorAll('[role="dialog"][aria-modal="true"]').forEach(setupSettingsDialog); mpSyncSettings();
 			document.addEventListener("click", onNewSessionClick, true);
 			document.addEventListener("click", onSessionRowClick, true);
 			document.addEventListener("click", onPanelRowClick, true);   /* 修复 66 */
