@@ -46,10 +46,10 @@ APK
 | 包 | applicationId | 下载 |
 |---|---|---|
 | `dsh-android-0.4.2-arm64.apk` | `com.dsh.android` | [点击下载](https://github.com/kai6666666/deepseek-harness/releases/download/v0.4.2/dsh-android-0.4.2-arm64.apk) |
+| `dsh-android-0.4.2-gecko-arm64.apk` | `com.dsh.webview` | [点击下载](https://github.com/kai6666666/deepseek-harness/releases/download/v0.4.2/dsh-android-0.4.2-gecko-arm64.apk) |
 
 其余版本与历史记录见 [Releases](https://github.com/kai6666666/deepseek-harness/releases/latest)。
-`gecko` 版（`com.dsh.webview`，内置 GeckoView）目前随 CI 产物发布，需要时从
-GitHub Actions 的 `android-release` 工作流下载，或按「从源码构建」自己出包。
+`gecko` 版内置 GeckoView，系统 WebView 太旧或不可用时用它；两个包可以同时安装。
 
 | 包 | applicationId | 适用 |
 |---|---|---|
