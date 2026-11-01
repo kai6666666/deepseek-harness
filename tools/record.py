@@ -113,6 +113,10 @@ def parse(version):
             msgs = ev3.get("msgs", -1)
 
     stamp = next((l.split("=", 1)[1] for l in lines if l.startswith("stamp=")), "?")
+    # 设备脚本先写 verify-<ver>.json，最后才写 stamp=（截图/收尾之间有几秒空窗）。
+    # ship 若按 json 出现就继续，txt 里可能还没有 stamp → 回退到取证 JSON 的 version。
+    if not stamp or stamp == "?":
+        stamp = (obj or {}).get("version") or "?"
     shot = next((l.split("=", 1)[1] for l in lines if l.startswith("shot=")),
                 f"/sdcard/Download/dsh-{version}-ui.png")
 
