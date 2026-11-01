@@ -41,7 +41,15 @@ APK
 
 ### 安装
 
-从 [Releases](../../releases) 下载 APK，侧载安装。
+直接下载最新发行版（**v0.4.2**，system 内核，arm64-v8a）：
+
+| 包 | applicationId | 下载 |
+|---|---|---|
+| `dsh-android-0.4.2-arm64.apk` | `com.dsh.android` | [点击下载](https://github.com/kai6666666/deepseek-harness/releases/download/v0.4.2/dsh-android-0.4.2-arm64.apk) |
+
+其余版本与历史记录见 [Releases](https://github.com/kai6666666/deepseek-harness/releases/latest)。
+`gecko` 版（`com.dsh.webview`，内置 GeckoView）目前随 CI 产物发布，需要时从
+GitHub Actions 的 `android-release` 工作流下载，或按「从源码构建」自己出包。
 
 | 包 | applicationId | 适用 |
 |---|---|---|
