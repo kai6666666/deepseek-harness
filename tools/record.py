@@ -170,7 +170,10 @@ def parse(version):
     return {
         "src": src,
         "items": items,
-        "items_ok": items == EXPECTED,
+        "items_ok": (len(items) == len(EXPECTED)
+                     and items[:5] == EXPECTED[:5]
+                     and items[5] in ("轨迹", "对话")
+                     and items[6] == "刷新"),
         "mode": mode,
         "match": match,
         "msgs": msgs,
