@@ -44,6 +44,12 @@ vc=39
   prompt: "创建一个 DSH 会话视图插件。", whenDraftExists: "append" })`；
   服务不可用时才回退到旧的 DOM 流程。
 
+### 发布
+
+- 移动端 UI build：`1.1.0-154`（CI run `41301507952`，APK 185,668,979 B）。
+- 验收记录：[`docs/agents/mobile-ui-verification.md`](docs/agents/mobile-ui-verification.md) 的 1.1.0-154 行（`0/9 · ✅`）。
+- 发布产物：GitHub Release `v0.4.2` 附件 `dsh-android-0.4.2-arm64.apk`。
+
 ---
 
 ## [0.4.1] — 2026-10-23
