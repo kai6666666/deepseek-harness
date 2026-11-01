@@ -2334,8 +2334,12 @@ window.__ModuleLoader__.load({
 						amDesc.textContent = "为图片生成与视频生成配置 Agnes 账号池；自定义号优先，内置免费号池兜底。";
 					}
 					// 官方每个分节自带的 H2 与顶栏标题重复 → 只留顶栏一处
+					// 允许「页面名（补充说明）」形态，例如「特权权限（uid 2000 / root）」
 					options.querySelectorAll(".zGbnIq_title, h1, h2, h3").forEach((h) => {
-						if ((h.textContent || "").trim() === t) h.style.setProperty("display", "none", "important");
+						const ht = (h.textContent || "").trim();
+						if (ht === t || ht.startsWith(t + "（") || ht.startsWith(t + "(")) {
+							h.style.setProperty("display", "none", "important");
+						}
 					});
 				}
 			};
