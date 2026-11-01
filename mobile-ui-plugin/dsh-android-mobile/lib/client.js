@@ -2257,7 +2257,6 @@ window.__ModuleLoader__.load({
 				if (navList && !navList.querySelector("[data-mp-group]")) {
 					const groups = [
 						{ label: "通用", items: ["通用设置"] },
-						{ label: "模型", items: ["模型"] },
 						{ label: "插件", items: ["内置插件", "插件"] },
 						{ label: "高级", items: ["Agent 预设", "快照", "附件缓存", "特权权限", "悬浮气泡", "插件市场", "开发环境", "运行日志与诊断", "多模态配置"] },
 					];
