@@ -2328,6 +2328,11 @@ window.__ModuleLoader__.load({
 					options.style.setProperty("flex", "1 1 0%", "important");
 					options.style.setProperty("min-height", "0", "important");
 					options.style.setProperty("overflow-y", "auto", "important");
+					// 多模态配置：设备上装的是旧版插件，页面里还留着面向开发者的措辞 → 就地改成用户向
+					const amDesc = options.querySelector(".am-page-desc");
+					if (amDesc && /插件自己的设置页/.test(amDesc.textContent || "")) {
+						amDesc.textContent = "为图片生成与视频生成配置 Agnes 账号池；自定义号优先，内置免费号池兜底。";
+					}
 					// 官方每个分节自带的 H2 与顶栏标题重复 → 只留顶栏一处
 					options.querySelectorAll(".zGbnIq_title, h1, h2, h3").forEach((h) => {
 						if ((h.textContent || "").trim() === t) h.style.setProperty("display", "none", "important");
