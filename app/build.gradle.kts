@@ -32,7 +32,7 @@ android {
         // 全部包（node / bash / dpkg / python）都装在 filesDir 下的 $PREFIX 里，
         // 一升到 29 就会全线 Permission denied。Termux 官方 App 同样停在 28。
         targetSdk = 28
-        versionCode = 38
+        versionCode = 39
         // 后缀语义：`credperm` = 凭据文件权限修复（0.2.9 首发）；
         // `tooliso` = 工具插件注册失败的隔离（可选工具注册失败不再拖垮引擎启动）；
         // `rescue` = 坏插件不再让 App 打不开（四级降级阶梯 + AI 自助修复通道）。
@@ -253,7 +253,16 @@ android {
         //   已全部撤回（见 git 记录）。今后调试包不改前两位版本号、不进夸克。
         //   本次改动：删掉 0.4.0 的右边缘「浏览」把手（它挡住了右侧栏内容），
         //   入口只剩官方右侧边栏那一项。
-        versionName = "0.4.1-debug"
+        // ⚠️ 34（本次）**换 versionName：0.4.1-debug → 0.4.2**（发行版）。
+        //   ① 设置页统一为单层标题（返回键 + 页面名），去掉每页重复的 H1/H2、
+        //      「打开配置文件 / ✕」与内容区被压成 26px 的布局 bug；
+        //   ② 「创建你的插件」改走官方 `uiWorkspace.startSession(void 0, {
+        //      agentPreset:"cordis", prompt:"创建一个 DSH 会话视图插件。",
+        //      whenDraftExists:"append" })`；
+        //   ③ ⋯ 菜单里的「对话 / 轨迹」改为真开关：菜单不关闭即可连续来回切；
+        //   ④ 悬浮气泡补 `showDetails / hideDetails` 中文词典，不再露出原始键名；
+        //   ⑤ 开发环境分节补 10s 超时、错误态与重试，插件市场空态正常。
+        versionName = "0.4.2"
 
         // 只支持 arm64-v8a：内置的引擎资产与 Termux bootstrap 都是 arm64 架构
         ndk {
