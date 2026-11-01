@@ -4184,31 +4184,38 @@ mpSetMenuOpenClass(false);
 				const targetLabel = inTrace ? "对话" : "轨迹";
 				const targetTab = tabs.find((t) => (t.textContent || "").trim() === targetLabel);
 				if (!targetTab) return;
-				// 图标：对话 = 气泡；轨迹 = 折线
-				const iconSvg = inTrace
+				const iconFor = (label) => label === "轨迹"
 					? '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">' +
-						'<path d="M2.5 3.5h11v7h-6l-3.2 2.6V10.5h-1.8z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>'
-					: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">' +
 						'<path d="M2 11.5c2.5 0 2.5-7 5-7s2.5 7 5 7" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>' +
-						'<circle cx="13.8" cy="11.5" r="1.2" fill="currentColor"/></svg>';
-				mpInjectMenuItem(list, "view-switch", targetLabel, iconSvg, () => {
-					// 借用官方 tab 的 DOM click() 触发 React 状态切换
-					const t = [...document.querySelectorAll(".wSkVaW_tab")]
-						.find((x) => (x.textContent || "").trim() === targetLabel);
-					t?.click();
-				});
-				// 标签/图标随视图状态刷新（同一菜单项复用，避免重复项堆积）
-				const item = list.querySelector('[data-mp-item="view-switch"]');
-				if (item) {
+						'<circle cx="13.8" cy="11.5" r="1.2" fill="currentColor"/></svg>'
+					: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">' +
+						'<path d="M2.5 3.5h11v7h-6l-3.2 2.6V10.5h-1.8z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>';
+				// 把菜单项刷成「下一次可点的目标」
+				const paint = (label) => {
+					const item = list.querySelector('[data-mp-item="view-switch"]');
+					if (!item) return;
 					const labelEl = item.querySelector('span[class*="_itemLabel_"]');
-					if (labelEl && labelEl.textContent !== targetLabel) labelEl.textContent = targetLabel;
+					if (labelEl && labelEl.textContent !== label) labelEl.textContent = label;
 					const iconEl = item.querySelector('span[class*="_itemIcon_"]');
-					if (iconEl && iconEl.dataset.mpIconFor !== targetLabel) {
-						iconEl.dataset.mpIconFor = targetLabel;
-						iconEl.innerHTML = iconSvg;
-						item.dataset.mpLabel = targetLabel;
+					if (iconEl && iconEl.dataset.mpIconFor !== label) {
+						iconEl.dataset.mpIconFor = label;
+						iconEl.innerHTML = iconFor(label);
 					}
-				}
+					item.dataset.mpLabel = label;
+				};
+				mpInjectMenuItem(list, "view-switch", targetLabel, iconFor(targetLabel), () => {
+					// 点击瞬间按当前激活 tab 重新算目标（不用闭包里的旧值）
+					const now = [...document.querySelectorAll(".wSkVaW_tab")];
+					const act = now.find(isActive);
+					const next = !!act && (act.textContent || "").trim() === "轨迹" ? "对话" : "轨迹";
+					const tab = now.find((x) => (x.textContent || "").trim() === next);
+					tab?.click();
+					// 菜单保持打开：立刻把本项翻成「切过去之后可点的反向目标」
+					const afterLabel = next === "轨迹" ? "对话" : "轨迹";
+					paint(afterLabel);
+					setTimeout(() => { try { mpInjectTraceItem(list); } catch (e) { /* 静默 */ } }, 120);
+				});
+				paint(targetLabel);
 			}
 
 			// ── 8b. 点击会话标题 → 重命名（沿用官方 sessions.rename）──
@@ -10319,8 +10326,26 @@ function mpNavPlugins(create) {
 
 /* 创建插件：起一个新会话，把需求原样写进输入框并发送 */
 function mpCreatePluginSession() {
-	/* 走「新建会话 → 切成创造模式 → 预填文案」，不点官方那条会自带文案的入口：
-	   官方入口会反复把它的文案写回输入框，跟我们要写的那句打架。 */
+	/* 优先：原版 DSH 的调用方式
+	   ctx.uiWorkspace.startSession(void 0, { agentPreset: "cordis", prompt, whenDraftExists: "append" })
+	   提示词取官方 entry-customization 的 createPrompt.conversation。 */
+	const EN = (typeof document !== "undefined" && (document.documentElement.lang || "").toLowerCase().startsWith("en"));
+	const OFFICIAL_PROMPT = EN ? "Create a DSH conversation view plugin." : "创建一个 DSH 会话视图插件。";
+	try {
+		const c = window.__mpCtx;
+		const ws = c && typeof c.get === "function" ? c.get("uiWorkspace") : null;
+		if (ws && typeof ws.startSession === "function") {
+			ws.startSession(void 0, {
+				agentPreset: "cordis",
+				prompt: OFFICIAL_PROMPT,
+				whenDraftExists: "append",
+			});
+			return;
+		}
+	} catch (e) {
+		console.warn("[dsh-android-mobile] 官方 startSession 调用失败，回退 DOM 流程:", e && e.message);
+	}
+	/* 回退：走「新建会话 → 切成创造模式 → 预填文案」 */
 	const PROMPT = "创建一个带会话视图入口的 DSH 插件。";
 	const PRESETS = /^(标准模式|PTC 模式|极简模式|创造模式|快准狠模式)/;
 	const vis = (el) => {
@@ -10592,6 +10617,7 @@ function apply(ctx) {
 			window.__mpInjectHeaderMenuItems = mpInjectHeaderMenuItems;
 			window.__mpTrimSessionMenu = mpTrimSessionMenu;
 			window.__mpCreatePluginSession = mpCreatePluginSession;
+			window.__mpCtx = ctx;   /* 官方插件上下文：mpCreatePluginSession 用它取 uiWorkspace */
 if (!window.__mpHeaderMenuTimer) {
 				window.__mpHeaderMenuTimer = setInterval(() => {
 					try { mpInjectHeaderMenuItems(); } catch (e) { /* 静默 */ }
