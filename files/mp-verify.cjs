@@ -78,7 +78,7 @@ const EV2A = `(async()=>{const sleep=ms=>new Promise(r=>setTimeout(r,ms));const 
 const EV2B = `(()=>{setTimeout(()=>{try{const scan=(s,f)=>[...document.querySelectorAll(s)].find(f);const it=scan('[data-mp-plugin-item] [role=menuitem], [data-mp-plugin-item] button',e=>(e.textContent||'').trim()==='创建你的插件');it&&it.click();}catch(e){}},0);return 'scheduled';})()`;
 
 // ③ 读三项：模式 / 文案 / 消息条数
-const EV3 = `(()=>{const trig=[...document.querySelectorAll('button,[role=button]')].find(e=>/^(标准模式|PTC 模式|极简模式|创造模式)/.test((e.textContent||'').trim()));const ed=document.querySelector('[contenteditable=true][role=textbox],[contenteditable=true]');const t=(ed&&ed.textContent)||'';return JSON.stringify({mode:trig?(trig.textContent||'').trim():null,text:t.slice(0,40),match:t.trim()==='创建一个带会话视图入口的 DSH 插件。',msgs:document.querySelectorAll('[class*=_message_]').length});})()`;
+const EV3 = `(()=>{const trig=[...document.querySelectorAll('button,[role=button]')].find(e=>/^(标准模式|PTC 模式|极简模式|创造模式)/.test((e.textContent||'').trim()));const ed=document.querySelector('[contenteditable=true][role=textbox],[contenteditable=true]');const t=(ed&&ed.textContent)||'';const hit=t.indexOf('创建一个 DSH 会话视图插件。')>=0||t.indexOf('Create a DSH conversation view plugin.')>=0;return JSON.stringify({mode:trig?(trig.textContent||'').trim():null,text:t.slice(0,40),match:hit,msgs:document.querySelectorAll('[class*=_message_]').length});})()`;
 
 async function evalExpr(path, expr, timeout) {
   const raw = await call(path, 'Runtime.evaluate', { expression: expr, awaitPromise: true, returnByValue: true }, timeout);
