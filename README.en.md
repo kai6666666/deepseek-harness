@@ -52,10 +52,11 @@ Download the latest release (**v0.4.2**, system WebView, arm64-v8a):
 | Package | applicationId | Download |
 |---|---|---|
 | `dsh-android-0.4.2-arm64.apk` | `com.dsh.android` | [Download](https://github.com/kai6666666/deepseek-harness/releases/download/v0.4.2/dsh-android-0.4.2-arm64.apk) |
+| `dsh-android-0.4.2-gecko-arm64.apk` | `com.dsh.webview` | [Download](https://github.com/kai6666666/deepseek-harness/releases/download/v0.4.2/dsh-android-0.4.2-gecko-arm64.apk) |
 
 All versions: [Releases](https://github.com/kai6666666/deepseek-harness/releases/latest).
-The `gecko` build (`com.dsh.webview`, bundled GeckoView) ships with CI artifacts — grab it
-from the `android-release` workflow, or build it yourself (see “Build from source”).
+The `gecko` build bundles GeckoView — use it when the system WebView is old or broken.
+Both packages can be installed side by side.
 
 | Package | applicationId | For |
 |---|---|---|
