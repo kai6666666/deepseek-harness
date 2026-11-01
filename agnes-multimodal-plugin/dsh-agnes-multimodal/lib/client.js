@@ -497,7 +497,7 @@ window.__ModuleLoader__.load({
 						h("h2", { className: "am-page-title" }, NAV_LABEL)
 					),
 					h("p", { className: "am-page-desc" },
-						"管理 Agnes AI 账号池。这一页是插件自己的设置页，与「插件」页并列。"
+						"为图片生成与视频生成配置 Agnes 账号池；自定义号优先，内置免费号池兜底。"
 					)
 				);
 
