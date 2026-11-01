@@ -233,10 +233,13 @@ def diff_against(data, checks):
     base = json.load(open(path, encoding="utf-8"))
     bmap = base.get("map") or {}
     changed = []
+    # 这些检查的值每发一版必然变化（版本号、设备戳、新 APK、client 字节），
+    # 属于「发布动作的预期结果」，不计入「发布期间环境被改动」的变更清单。
+    EXPECTED = ("远端版本", "验收表设备戳", "设备取证戳", "APK 体积", "client")
     for c in checks:
         old = bmap.get(c["name"])
         now = str(c["actual"])
-        if old is not None and old != now:
+        if old is not None and old != now and not any(k in c["name"] for k in EXPECTED):
             changed.append({"name": c["name"], "from": old, "to": now, "ok": bool(c["ok"])})
     rec = {"version": v, "base_at": base.get("at"), "at": time.strftime("%Y-%m-%d %H:%M:%S"),
            "changes": len(changed), "changed": changed}
