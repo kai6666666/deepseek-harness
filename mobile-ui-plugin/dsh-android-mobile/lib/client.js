@@ -3016,8 +3016,30 @@ return col ? col.querySelector('[class*="toggle"]') : null;
 					mpMask().classList.toggle("mp-drawer-open", on);
 				}
 			}
+			// 修复 61：web-all 的 installMobileSidebarDismiss 会在 sessionRow 点击后
+			// 用 rAF 程序化点击官方 toggle，把刚打开的 ··· portal 菜单连锚点一起收走。
+			// 菜单打开期间、以及行操作点击后的短窗口内，拦掉这类 toggle.click()。
+			if (!window.__mpToggleClickGuard) {
+				window.__mpRowActionAt = 0;
+				document.addEventListener("click", (e) => {
+					const t = e.target;
+					if (t instanceof Element && t.closest('[class*="rowActions"]')) {
+						window.__mpRowActionAt = performance.now();
+					}
+				}, true);
+				const nativeClick = HTMLElement.prototype.click;
+				HTMLElement.prototype.click = function (...args) {
+					try {
+						const isToggle = this.matches?.('[data-dsh-responsive-part="sidebar-toggle"]');
+						const recentRowAction = performance.now() - (window.__mpRowActionAt || 0) < 600;
+						if (isToggle && (mpMenuOpen() || recentRowAction)) return;
+					} catch (e) { /* 静默 */ }
+					return nativeClick.apply(this, args);
+				};
+				window.__mpToggleClickGuard = true;
+			}
 			function mpMenuOpen() {
-// rc3 的三处「更多」都是 role=menu 的 portal；用可见性排除“已关闭但节点还在”
+ // rc3 的三处「更多」都是 role=menu 的 portal；用可见性排除“已关闭但节点还在”
 const nodes = document.querySelectorAll('[role="menu"], [class*="moreMenu"]');
 for (const n of nodes) {
 const r = n.getBoundingClientRect();
