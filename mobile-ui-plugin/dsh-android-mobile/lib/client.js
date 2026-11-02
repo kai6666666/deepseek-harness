@@ -10353,6 +10353,8 @@ function mpCreatePluginSession() {
 	   提示词取官方 entry-customization 的 createPrompt.conversation。 */
 	const EN = (typeof document !== "undefined" && (document.documentElement.lang || "").toLowerCase().startsWith("en"));
 	const OFFICIAL_PROMPT = EN ? "Create a DSH conversation view plugin." : "创建一个 DSH 会话视图插件。";
+	let runFallback = null;
+	let startRequested = false;
 	try {
 		const c = window.__mpCtx;
 		const ws = c && typeof c.get === "function" ? c.get("uiWorkspace") : null;
@@ -10362,13 +10364,14 @@ function mpCreatePluginSession() {
 				prompt: OFFICIAL_PROMPT,
 				whenDraftExists: "append",
 			});
-			return;
+			startRequested = true;
 		}
 	} catch (e) {
 		console.warn("[dsh-android-mobile] 官方 startSession 调用失败，回退 DOM 流程:", e && e.message);
 	}
 	/* 回退：走「新建会话 → 切成创造模式 → 预填文案」 */
-	const PROMPT = "创建一个带会话视图入口的 DSH 插件。";
+	runFallback = (skipNew) => {
+	const PROMPT = OFFICIAL_PROMPT;
 	const PRESETS = /^(标准模式|PTC 模式|极简模式|创造模式|快准狠模式)/;
 	const vis = (el) => {
 		if (!el) return false;
@@ -10377,6 +10380,7 @@ function mpCreatePluginSession() {
 	};
 	const scan = (sel, fn) => Array.prototype.slice.call(document.querySelectorAll(sel)).find(fn);
 	/* ① 新建会话：优先屏幕上可见的入口，否则开抽屉点「新建会话」 */
+	if (!skipNew) {
 	const direct = scan("button,a,[role=button]", (e) => vis(e) && /^(新建会话|新建|新会话)$/.test((e.textContent || "").trim()) && (e.textContent || "").trim().length < 12);
 	if (direct) {
 		try { direct.click(); } catch (e) { /* 忽略 */ }
@@ -10398,6 +10402,7 @@ function mpCreatePluginSession() {
 		const collapse = scan("button", (e) => vis(e) && /收起侧边栏/.test(e.getAttribute("aria-label") || ""));
 		if (collapse) { try { collapse.click(); } catch (e) { /* 忽略 */ } }
 	}, 1500);
+	}
 	/* ② 切创造模式；③ 等编辑器稳定为空后写一次；④ 30 秒内被清空就补回（最多 3 次） */
 	let ticks = 0;
 	let presetOK = false;
@@ -10466,6 +10471,17 @@ function mpCreatePluginSession() {
 			ed.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
 		} catch (e) { try { document.execCommand("insertText", false, PROMPT); } catch (e2) { /* 忽略 */ } }
 	}, 300);
+	};
+	if (startRequested) {
+		setTimeout(() => {
+			const ed = document.querySelector('[contenteditable="true"][role="textbox"], [contenteditable="true"]') || document.querySelector("textarea");
+			const t = ed ? ((ed.value !== undefined ? ed.value : ed.textContent) || "") : "";
+			if (t.trim() !== "") return;
+			try { runFallback(true); } catch (e) { /* 忽略 */ }
+		}, 800);
+		return;
+	}
+	runFallback(false);
 }
 
 function mpInjectHeaderMenuItems() {
