@@ -98,7 +98,7 @@ python3 tools/release.py --bump-only        # 只查询下一个版本号
 
 ## 五之二、本地发布归档（`release-archive/`）
 
-`ship.sh` 成功收尾（含 `--no-drift`）会自动调用 `tools/archive_release.py`，把本次产物复制到
+`ship.sh` 在 exit 0 / 3 / 4 / 5 的收尾点都会调用 `tools/archive_release.py`，把本次产物复制到
 工作区 `release-archive/<appVersion>/`，不改动 Download 源文件：
 
 ```text
