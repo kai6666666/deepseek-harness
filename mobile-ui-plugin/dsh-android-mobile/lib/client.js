@@ -3032,7 +3032,7 @@ return col ? col.querySelector('[class*="toggle"]') : null;
 					try {
 						const isToggle = this.matches?.('[data-dsh-responsive-part="sidebar-toggle"]');
 						const recentRowAction = performance.now() - (window.__mpRowActionAt || 0) < 600;
-						if (isToggle && (mpMenuOpen() || recentRowAction)) return;
+						if (isToggle && recentRowAction) return;
 					} catch (e) { /* 静默 */ }
 					return nativeClick.apply(this, args);
 				};
