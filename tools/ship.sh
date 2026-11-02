@@ -38,6 +38,12 @@ JSON="$DL/verify-$VER.json"
 if [ "$ONLY_VERIFY" -eq 1 ]; then SCRIPT="$DL/verify-$VER.sh"; else SCRIPT="$DL/install-$VER.sh"; fi
 START=$(date +%s)
 
+# 发布归档：APK / 证据 / 脚本 → 工作区 release-archive/<appVersion>/
+archive_release() {
+  echo "[ship] 归档发布产物到 release-archive/（build=$VER）"
+  python3 tools/archive_release.py --build "$VER" || echo "[ship] 归档失败（不影响发布结果）"
+}
+
 # ① 出包（或只重生脚本）
 if [ "$SKIP" -eq 0 ]; then
   echo "[ship] 1/5 出包 + 下载 + 校验"
@@ -146,6 +152,7 @@ python3 tools/record.py "$VER" || { echo "[ship] 登记失败"; exit 1; }
 # ⑤ 一致性体检
 if [ "$NODRIFT" -eq 1 ]; then
   echo "[ship] 5/5 跳过一致性体检（--no-drift）"
+  archive_release
   exit 0
 fi
 echo "[ship] 5/5 一致性体检（远端版本 / 验收表 / 设备戳 / client / APK）"
@@ -211,6 +218,7 @@ if [ "$REVERIFY" -eq 1 ]; then
   if [ $? -ne 0 ]; then
     echo "[ship] 6/6 ⚠ 两次取证不一致，标记可疑（exit 6）：$VER"
     python3 tools/record.py "$VER" || echo "[ship] 重登记失败"
+    archive_release
     exit 6
   fi
   echo "[ship] 6/6 两次取证一致，稳定性通过"
@@ -220,4 +228,5 @@ if [ "$REVERIFY" -eq 1 ]; then
 fi
 
 echo "[ship] 5/5 九项一致，发布完成：$VER"
+archive_release
 exit 0
