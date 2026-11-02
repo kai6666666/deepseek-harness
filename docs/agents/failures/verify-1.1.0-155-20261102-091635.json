@@ -1,0 +1,38 @@
+{
+  "ok": false,
+  "version": "1.1.0-155",
+  "stages": {
+    "ev1": "ok",
+    "ev2a": "ok",
+    "ev2b": "ok",
+    "ev3": "ok"
+  },
+  "retries": {
+    "ev1": 1,
+    "ev2a": 1,
+    "ev2b": 0,
+    "ev3": 0
+  },
+  "retry_cfg": 0,
+  "attempt": 0,
+  "items": [
+    "复制会话为 Markdown",
+    "下载 Session 日志",
+    "浏览更多插件",
+    "创建你的插件",
+    "反馈",
+    "轨迹",
+    "刷新"
+  ],
+  "clicked": true,
+  "mode": "标准模式",
+  "text": "",
+  "match": false,
+  "msgs": 0,
+  "target": "/devtools/page/403AE534B0FF5C91EFAA34D15DAB9D80",
+  "ms": 40254,
+  "stage_sum": "ev1:ok(r1),ev2a:ok(r1),ev2b:ok(r0),ev3:ok(r0)",
+  "sum": "stages=ev1:ok(r1),ev2a:ok(r1),ev2b:ok(r0),ev3:ok(r0) retries=2 retry_cfg=0 attempt=0 ms=40254",
+  "_archived_at": "2026-11-02 09:16:35",
+  "_source": "verify-1.1.0-155.json"
+}
