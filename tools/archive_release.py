@@ -69,10 +69,15 @@ def copy(src, dst, dry=False):
 
 def archive_apk(build, ver, rel, dry):
     src = f"{DOWNLOAD}/dsh-ci-{build}.apk"
-    if not os.path.isfile(src):
-        return None, "missing"
     name = f"dsh-android-{ver}-arm64.apk"
     dst = f"{rel}/apk/{name}"
+    if not os.path.isfile(src):
+        if os.path.isfile(dst):
+            return dst, "exists"
+        alt = f"{rel}/apk/dsh-android-{ver}-{build}-arm64.apk"
+        if os.path.isfile(alt):
+            return alt, "exists"
+        return None, "missing"
     if os.path.isfile(dst) and sha256(src) != sha256(dst):
         name = f"dsh-android-{ver}-{build}-arm64.apk"
         dst = f"{rel}/apk/{name}"
