@@ -40,6 +40,9 @@ vc=39
   `installMobileSidebarDismiss` 在 `sessionRow` 点击后用 rAF 程序化点击官方抽屉
   toggle，菜单锚点被带出视口。`dsh-android-mobile` 增加守卫：菜单打开期间、以及
   行操作点击后的 600ms 内，拦掉这类 `toggle.click()`；真实点击与菜单项动作不受影响。
+- **「创建你的插件」只开新会话、草稿为空**：`startSession()` 在部分构建里不落
+  `prompt`。调用后 800ms 检查输入框，仍为空就走 DOM 兜底（不重复新建会话，
+  直接写官方提示词并切创造模式）。
 
 ### 变更
 
@@ -51,6 +54,7 @@ vc=39
 ### 发布
 
 - 移动端 UI build：`1.1.0-154`（CI run `41301507952`，APK 185,668,979 B）。
+- 后续修复 build：`1.1.0-157`（CI run `41482760262`，APK 185,576,547 B；会话行「⋯」菜单守卫 + 创建插件草稿兜底）。
 - 验收记录：[`docs/agents/mobile-ui-verification.md`](docs/agents/mobile-ui-verification.md) 的 1.1.0-154 行（`0/9 · ✅`）。
 - 发布产物：GitHub Release `v0.4.2` 附件 `dsh-android-0.4.2-arm64.apk`。
 
