@@ -96,6 +96,32 @@ python3 tools/release.py --bump-only        # 只查询下一个版本号
 | 变更清单 | `archive_fail.py --change <ver>` | `changes>0` | `change-<ver>-<ts>.json` |
 | 扰动汇总 | `archive_fail.py --perturb <ver>` | `--strict` 触发（exit 5） | `perturb-<ver>-<ts>.json` |
 
+## 五之二、本地发布归档（`release-archive/`）
+
+`ship.sh` 成功收尾（含 `--no-drift`）会自动调用 `tools/archive_release.py`，把本次产物复制到
+工作区 `release-archive/<appVersion>/`，不改动 Download 源文件：
+
+```text
+release-archive/0.4.2/
+├── apk/                 dsh-android-<appVersion>[-<build>]-arm64.apk
+├── evidence/<build>/    verify-<build>.{json,meta,drift,diff,baseline,record,sum,txt}、截图
+├── scripts/             install-/verify-<build>.sh、mp-verify-<build>.cjs
+├── SHA256SUMS.txt       增量缓存校验和（只对新文件重算）
+├── README.md            按 evidence 目录自动生成
+└── archive.jsonl        每次归档追加一行
+```
+
+手工补归档 / 只看会做什么：
+
+```bash
+python3 tools/archive_release.py --build 1.1.0-154
+python3 tools/archive_release.py --build 1.1.0-154 --dry-run
+cd '/storage/emulated/0/MT2/apks/deepseek harness/release-archive/0.4.2' && sha256sum -c SHA256SUMS.txt
+```
+
+规则：同一 appVersion 下 APK 字节不同时自动追加 `-<build>` 后缀，不覆盖旧包；证据按 build 分目录；
+缺文件只跳过，不影响发布退出码。
+
 ## 六、一致性体检
 
 ```bash
@@ -137,6 +163,7 @@ tools/record.py         17 列表格、旧表迁移、版本降序、同版替�
 tools/archive_fail.py   五个归档通道 + 索引维护
 tools/drift_check.py    九项体检、自愈、快照、diff、巡检
 tools/trend.py          从验收表生成 trend.md（APK/耗时趋势与差值）
+tools/archive_release.py 发布收尾把 APK/证据/脚本复制到 release-archive/<appVersion>/
 tools/push.sh           薄壳：exec python3 tools/release.py "$@"
 files/mp-verify.cjs     一次连 CDP 跑完四段取证，输出结构化 JSON
 ```
