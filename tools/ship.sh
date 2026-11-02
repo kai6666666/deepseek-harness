@@ -142,6 +142,7 @@ if [ "$RC" -ne 0 ]; then
   echo "[ship] 不合格，未登记（证据：$JSON / dsh-$VER-fail.png）"
   echo "[ship] 归档现场到 docs/agents/failures/"
   python3 tools/archive_fail.py "$VER" || echo "[ship] 归档失败（检查 token/网络）"
+  archive_release
   exit "$RC"
 fi
 
@@ -174,6 +175,7 @@ if [ "$DRC" -ne 0 ]; then
   python3 tools/archive_fail.py --drift "$VER" || echo "[ship] 漂移归档失败（检查 token/网络）"
   echo "[ship] 重新登记（漂移列会标 🚩）"
   python3 tools/record.py "$VER" || echo "[ship] 重登记失败"
+  archive_release
   exit 4
 fi
 if [ "$STRICT" -eq 1 ]; then
@@ -189,6 +191,7 @@ if [ "$STRICT" -eq 1 ]; then
     echo "[ship] 归档扰动汇总到 docs/agents/failures/"
     python3 tools/archive_fail.py --perturb "$VER" || echo "[ship] 扰动归档失败（检查 token/网络）"
     python3 tools/record.py "$VER" || echo "[ship] strict 重登记失败"
+    archive_release
     exit 5
   fi
 fi
