@@ -10,6 +10,7 @@
     /storage/emulated/0/Download/install-<ver>.sh      （Android 侧一条命令装机+取证）
 """
 import base64
+import http.client
 import json
 import os
 import re
@@ -39,7 +40,7 @@ EV1 = r"""(async()=>{const sleep=ms=>new Promise(r=>setTimeout(r,ms));const scan
 EV2 = r"""(async()=>{const sleep=ms=>new Promise(r=>setTimeout(r,ms));const scan=(s,f)=>[...document.querySelectorAll(s)].find(f);const more=scan('.wSkVaW_header button',e=>e.getAttribute('aria-label')==='更多操作');more&&more.click();await sleep(1500);const items=[...document.querySelectorAll('[role=menuitem]')].map(e=>e.textContent.trim());let it=null;for(let i=0;i<3&&!it;i++){it=scan('[data-mp-plugin-item] [role=menuitem], [data-mp-plugin-item] button',e=>(e.textContent||'').trim()==='创建你的插件');if(!it)await sleep(500);}document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));await sleep(250);it&&it.click();return JSON.stringify({items:items,clicked:!!it});})()"""
 
 # ③ 等 10s 后读三项：模式 / 文案 / 消息条数
-EV3 = r"""(()=>{const trig=[...document.querySelectorAll('button,[role=button]')].find(e=>/^(标准模式|PTC 模式|极简模式|创造模式)/.test((e.textContent||'').trim()));const ed=document.querySelector('[contenteditable=true][role=textbox],[contenteditable=true]');const t=(ed&&ed.textContent)||'';return JSON.stringify({mode:trig?(trig.textContent||'').trim():null,text:t.slice(0,40),match:t.trim()==='创建一个带会话视图入口的 DSH 插件。',msgs:document.querySelectorAll('[class*=_message_]').length});})()"""
+EV3 = r"""(()=>{const trig=[...document.querySelectorAll('button,[role=button]')].find(e=>/^(标准模式|PTC 模式|极简模式|创造模式)/.test((e.textContent||'').trim()));const ed=document.querySelector('[contenteditable=true][role=textbox],[contenteditable=true]');const t=(ed&&ed.textContent)||'';return JSON.stringify({mode:trig?(trig.textContent||'').trim():null,text:t.slice(0,40),match:t.trim()==='创建一个 DSH 会话视图插件。',msgs:document.querySelectorAll('[class*=_message_]').length});})()"""
 
 
 def token():
@@ -49,15 +50,29 @@ def token():
 
 def req(method, path, body=None, timeout=300):
     data = json.dumps(body).encode() if body is not None else None
-    r = urllib.request.Request(API + path, data=data, method=method)
-    r.add_header("Authorization", f"Bearer {token()}")
-    r.add_header("Accept", "application/vnd.github+json")
-    r.add_header("User-Agent", "dsh-release")
-    if data is not None:
-        r.add_header("Content-Type", "application/json")
-    with urllib.request.urlopen(r, timeout=timeout) as resp:
-        raw = resp.read().decode()
-        return json.loads(raw) if raw.strip() else None
+    last = None
+    for attempt in range(6):
+        r = urllib.request.Request(API + path, data=data, method=method)
+        r.add_header("Authorization", f"Bearer {token()}")
+        r.add_header("Accept", "application/vnd.github+json")
+        r.add_header("User-Agent", "dsh-release")
+        if data is not None:
+            r.add_header("Content-Type", "application/json")
+        try:
+            with urllib.request.urlopen(r, timeout=timeout) as resp:
+                chunks = []
+                while True:
+                    part = resp.read(65536)
+                    if not part:
+                        break
+                    chunks.append(part)
+                raw = b"".join(chunks).decode()
+                return json.loads(raw) if raw.strip() else None
+        except (http.client.IncompleteRead, ConnectionError, TimeoutError, json.JSONDecodeError, UnicodeDecodeError) as e:
+            last = e
+            print(f"[http] {method} {path.split('?')[0]} 第 {attempt + 1} 次读取中断: {e}")
+            time.sleep(2 + attempt * 2)
+    raise last
 
 
 def get_file(path):
@@ -65,34 +80,86 @@ def get_file(path):
     return d["sha"], base64.b64decode(d["content"])
 
 
+def get_file_sha(path):
+    """只读响应前 4KB 解析 sha；避免 800KB base64 被链路截断。"""
+    url = API + f"/contents/{path}?ref=main"
+    for attempt in range(6):
+        r = urllib.request.Request(url, method="GET")
+        r.add_header("Authorization", f"Bearer {token()}")
+        r.add_header("Accept", "application/vnd.github+json")
+        r.add_header("User-Agent", "dsh-release")
+        try:
+            with urllib.request.urlopen(r, timeout=60) as resp:
+                raw = resp.read(4096).decode("utf-8", "ignore")
+            m = re.search(r'"sha"\s*:\s*"([0-9a-f]{40})"', raw)
+            if m:
+                return m.group(1)
+            raise ValueError("sha not found in first 4KB")
+        except Exception as e:
+            print(f"[http] GET sha {path} 第 {attempt + 1} 次失败: {e}")
+            time.sleep(2 + attempt * 2)
+    raise RuntimeError(f"无法读取 {path} 的 sha")
+
+
 def put_file(path, blob, sha, message):
-    d = req("PUT", f"/contents/{path}", {
+    body = json.dumps({
         "message": message,
         "content": base64.b64encode(blob).decode(),
         "sha": sha,
         "branch": "main",
-    })
-    return d["content"]["sha"]
+    }).encode()
+    last = None
+    for attempt in range(6):
+        r = urllib.request.Request(API + f"/contents/{path}", data=body, method="PUT")
+        r.add_header("Authorization", f"Bearer {token()}")
+        r.add_header("Accept", "application/vnd.github+json")
+        r.add_header("User-Agent", "dsh-release")
+        r.add_header("Content-Type", "application/json")
+        try:
+            with urllib.request.urlopen(r, timeout=300) as resp:
+                resp.read(2048)  # 响应体很大，只读开头即可确认 2xx
+                return ""
+        except Exception as e:
+            last = e
+            print(f"[http] PUT {path} 第 {attempt + 1} 次失败: {e}")
+            time.sleep(2 + attempt * 2)
+    raise last
+
+
+def get_raw(path):
+    url = f"https://raw.githubusercontent.com/{REPO}/main/{path}"
+    for attempt in range(6):
+        r = urllib.request.Request(url, method="GET")
+        r.add_header("User-Agent", "dsh-release")
+        try:
+            with urllib.request.urlopen(r, timeout=120) as resp:
+                raw = resp.read()
+            if raw:
+                return raw
+            raise ValueError("empty raw")
+        except Exception as e:
+            print(f"[http] GET raw {path} 第 {attempt + 1} 次失败: {e}")
+            time.sleep(2 + attempt * 2)
+    raise RuntimeError(f"无法读取 {path} 的 raw 内容")
 
 
 def push(version):
     newc = open(CLIENT, "rb").read()
-    sha, oldc = get_file("mobile-ui-plugin/dsh-android-mobile/lib/client.js")
-    if oldc != newc:
-        put_file("mobile-ui-plugin/dsh-android-mobile/lib/client.js", newc, sha,
-                 "mobile-ui: 更新 client.js")
-        print(f"[push] client.js {len(oldc)} -> {len(newc)} B")
-    else:
-        print("[push] client.js 无变化")
+    sha = get_file_sha("mobile-ui-plugin/dsh-android-mobile/lib/client.js")
+    oldc = b""
+    put_file("mobile-ui-plugin/dsh-android-mobile/lib/client.js", newc, sha,
+             "mobile-ui: 更新 client.js")
+    print(f"[push] client.js {len(oldc)} -> {len(newc)} B")
 
-    sha, old = get_file("app/src/main/java/com/dsh/android/EngineManager.kt")
-    txt = old.decode("utf-8")
+    engine_path = "app/src/main/java/com/dsh/android/EngineManager.kt"
+    txt = get_raw(engine_path).decode("utf-8")
     m = re.search(r'const val MOBILE_UI_VERSION = "([^"]+)"', txt)
     cur = m.group(1) if m else "?"
     new = re.sub(r'(const val MOBILE_UI_VERSION = ")[^"]+(")',
                  r"\g<1>" + version + r"\g<2>", txt, count=1)
     if new != txt:
-        put_file("app/src/main/java/com/dsh/android/EngineManager.kt", new.encode("utf-8"), sha,
+        sha = get_file_sha(engine_path)
+        put_file(engine_path, new.encode("utf-8"), sha,
                  f"chore: MOBILE_UI_VERSION -> {version}")
         print(f"[push] MOBILE_UI_VERSION {cur} -> {version}")
     else:
@@ -145,10 +212,13 @@ def download(run_id, version):
     out = f"/tmp/dsh-ci-{version}"
     os.makedirs(out, exist_ok=True)
     zpath = os.path.join(out, "sys.zip")
-    # 用 curl 下：artifact 会 302 到 Azure Blob，urllib 会把 Authorization 带过去导致 401
-    subprocess.run(["curl", "-sL", "--retry", "5", "--retry-all-errors",
-                    "-H", f"Authorization: Bearer {token()}",
-                    "-o", zpath, f"{API}/actions/artifacts/{sysart['id']}/zip"], check=True)
+    if os.path.exists(zpath) and zipfile.is_zipfile(zpath):
+        print(f"[dl] 复用已下载的 {zpath}（{os.path.getsize(zpath)} B）")
+    else:
+        # 用 curl 下：artifact 会 302 到 Azure Blob，urllib 会把 Authorization 带过去导致 401
+        subprocess.run(["curl", "-sL", "--retry", "5", "--retry-all-errors",
+                        "-H", f"Authorization: Bearer {token()}",
+                        "-o", zpath, f"{API}/actions/artifacts/{sysart['id']}/zip"], check=True)
     with zipfile.ZipFile(zpath) as z:
         z.extractall(out)
     apk = next(os.path.join(out, n) for n in os.listdir(out) if n.endswith(".apk"))
