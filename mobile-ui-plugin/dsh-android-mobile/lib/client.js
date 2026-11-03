@@ -10588,6 +10588,35 @@ function apply(ctx) {
 			window.__mpTrimSessionMenu = mpTrimSessionMenu;
 			window.__mpCreatePluginSession = mpCreatePluginSession;
 			window.__mpCtx = ctx;   /* 官方插件上下文：mpCreatePluginSession 用它取 uiWorkspace */
+			/* 修复 70：web-all 在启动后会把实例上的 startSession 再换成空壳；
+			   在捕获阶段接管官方「创建你的插件」菜单项，直接走原型链原版方法。 */
+			if (!window.__mpCreatePluginClickGuard) {
+				window.__mpCreatePluginClickGuard = true;
+				document.addEventListener("click", (e) => {
+					const t = e.target instanceof Element ? e.target : null;
+					if (!t) return;
+					const item = t.closest('[role="menuitem"], button');
+					if (!item || item.closest("[data-mp-plugin-item]")) return;
+					const label = (item.textContent || "").trim();
+					if (label !== "创建你的插件" && label !== "Create your plugin") return;
+					e.preventDefault();
+					e.stopImmediatePropagation();
+					const rr = item.getBoundingClientRect();
+					const region = rr.left > window.innerWidth * 0.55 ? "rightbar"
+						: rr.right < window.innerWidth * 0.45 ? "sidebar"
+						: mpDetectPluginRegion();
+					mpCreatePluginSession(region);
+				}, true);
+			}
+			/* 修复 69：web-all 启用时实例上的 startSession 是 native 空壳；
+			   把原型链上的 DSH 原版方法装回实例，官方左/右栏菜单项也会走同一条修复路径。 */
+			try {
+				const ws0 = ctx.get("uiWorkspace");
+				const proto0 = ws0 && Object.getPrototypeOf(ws0);
+				if (ws0 && proto0 && typeof proto0.startSession === "function") {
+					ws0.startSession = proto0.startSession;
+				}
+			} catch (e) { /* 静默 */ }
 if (!window.__mpHeaderMenuTimer) {
 				window.__mpHeaderMenuTimer = setInterval(() => {
 					try { mpInjectHeaderMenuItems(); } catch (e) { /* 静默 */ }
