@@ -40,22 +40,25 @@ vc=39
   `installMobileSidebarDismiss` 在 `sessionRow` 点击后用 rAF 程序化点击官方抽屉
   toggle，菜单锚点被带出视口。`dsh-android-mobile` 增加守卫：菜单打开期间、以及
   行操作点击后的 600ms 内，拦掉这类 `toggle.click()`；真实点击与菜单项动作不受影响。
-- **「创建你的插件」只开新会话、草稿为空**：`startSession()` 在部分构建里不落
-  `prompt`。调用后 800ms 检查输入框，仍为空就走 DOM 兜底（不重复新建会话，
-  直接写官方提示词并切创造模式）。
+- **「创建你的插件」只开新会话、草稿为空**：`@linxin666/dsh-web-all` 会把
+  `uiWorkspace` 实例上的 `startSession` 替换成 native 空壳，调用后没有任何效果，
+  所以草稿与创造模式都不落地。`dsh-android-mobile` 改为取原型链上的 DSH 原版
+  `startSession` 并用正确 receiver 调用，参数与官方完全一致（`agentPreset:
+  "cordis"`、`prompt`、`whenDraftExists: "append"`），不再做 DOM 兜底。
 
 ### 变更
 
 - **「创建你的插件」改走原版 DSH 调用**：
-  `uiWorkspace.startSession(void 0, { agentPreset: "cordis",
-  prompt: "创建一个 DSH 会话视图插件。", whenDraftExists: "append" })`；
-  服务不可用时才回退到旧的 DOM 流程。
+  `uiWorkspace.startSession(void 0, { agentPreset: "cordis", prompt, whenDraftExists: "append" })`；
+  三个入口按 region 使用官方提示词（左侧栏 / 会话视图 / 右侧栏），不再回退到 DOM 流程。
 
 ### 发布
 
 - 移动端 UI build：`1.1.0-154`（CI run `41301507952`，APK 185,668,979 B）。
-- 后续修复 build：`1.1.0-157`（CI run `41482760262`，APK 185,576,547 B；会话行「⋯」菜单守卫 + 创建插件草稿兜底）。
-- 验收记录：[`docs/agents/mobile-ui-verification.md`](docs/agents/mobile-ui-verification.md) 的 1.1.0-154 行（`0/9 · ✅`）。
+- 正式修复 build：`1.1.0-158`（CI run `41586246550`，APK 185,529,739 B，client 573,910 B；
+  web-all `startSession` 空壳绕过 + 三区域官方提示词，验收 `0/9 · ✅`）。
+- 过渡 build：`1.1.0-157`（CI run `41482760262`，含草稿 DOM 兜底，仅存档，不作为最终方案）。
+- 验收记录：[`docs/agents/mobile-ui-verification.md`](docs/agents/mobile-ui-verification.md) 的 1.1.0-158 行（`0/9 · ✅`）。
 - 发布产物：GitHub Release `v0.4.2` 附件 `dsh-android-0.4.2-arm64.apk`。
 
 ---
