@@ -17,3 +17,32 @@
 | 1.1.0-147 | 1.1.0-147 | 41228141959 | 177.2 MB | 571,733 B | 2/2 | ✅ (7) | 创造模式 | ✅ | 0 | 1 | r0 | 19.1s | dsh-1.1.0-147-ui.png | 2026-10-31 19:26 | 0/9 | ✅ | ✅ |
 | 1.1.0-146 | 1.1.0-146 | 41212045348 | 177.2 MB | 571,733 B | 2/2 | ✅ (7) | 创造模式 | ✅ | 0 | 1 | r0 | 19.1s | dsh-1.1.0-146-ui.png | 2026-10-31 18:10 | 0/9 | ✅ | — |
 | 1.1.0-145 | 1.1.0-145 | 41200674829 | 177.2 MB | 571,733 B | 2/2 | ✅ (7) | 创造模式 | ✅ | 0 | 1 | r0 | 19.1s | dsh-1.1.0-145-ui.png | 2026-10-31 15:55 | — | — | — |
+
+## 1.1.0-160 第三方 UI 回归
+
+### dshmarket 1.73.7
+
+394 px 视口下「发现 / 已安装 / 高级 / 主题 / 收藏 / 返回发现」六个状态全部通过：
+
+```text
+.nUhMVa_root  394 px
+.nUhMVa_head  394 px
+.nUhMVa_body  394 px
+.nUhMVa_card  362 px
+document.scrollWidth = innerWidth = 394 px
+```
+
+安装确认弹窗 346 × 454，`max-width:369.846px`、`max-height:774.154px`、`overflow:auto`，取消按钮可关闭。
+
+### dsh-web-all 0.4.14
+
+```text
+html[data-mp-drawer-open]   = true
+[data-dsh-frame]::after     = none
+.mp-drawer-mask             = mp-drawer-mask mp-drawer-open
+```
+
+取证文件：`release-archive/0.4.2/evidence/1.1.0-160/` 下的
+`market-tabs-1.1.0-160.json`、`market-tabs2-1.1.0-160.json`、
+`market-confirm-1.1.0-160.json`、`adapt-1.1.0-160.json` 与
+`dsh-1.1.0-160-market.png`。
