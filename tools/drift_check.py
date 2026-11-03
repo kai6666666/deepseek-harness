@@ -60,15 +60,29 @@ def api(path, method="GET", body=None):
         return json.loads(raw) if raw.strip() else None
 
 
+def get_raw(path):
+    out = "/tmp/drift-" + hashlib.sha256(path.encode()).hexdigest()[:12]
+    if os.path.exists(out):
+        os.remove(out)
+    url = f"https://raw.githubusercontent.com/{REPO}/main/{path}"
+    last = None
+    for attempt in range(8):
+        p = subprocess.run(["curl", "-sL", "--max-time", "90", "-C", "-", url, "-o", out])
+        if p.returncode == 0 and os.path.exists(out) and os.path.getsize(out) > 0:
+            return open(out, "rb").read()
+        last = p.returncode
+        time.sleep(2 + attempt * 2)
+    raise RuntimeError(f"raw {path} 下载失败 rc={last}")
+
+
 def remote_version():
-    d = api("/contents/app/src/main/java/com/dsh/android/EngineManager.kt?ref=main")
-    txt = base64.b64decode(d["content"]).decode()
+    txt = get_raw("app/src/main/java/com/dsh/android/EngineManager.kt").decode("utf-8", "ignore")
     m = re.search(r'const val MOBILE_UI_VERSION = "([^"]+)"', txt)
     return m.group(1) if m else None
 
 
 def remote_client_size():
-    return api("/contents/mobile-ui-plugin/dsh-android-mobile/lib/client.js?ref=main").get("size")
+    return len(get_raw("mobile-ui-plugin/dsh-android-mobile/lib/client.js"))
 
 
 def local_client():
