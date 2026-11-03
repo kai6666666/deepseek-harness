@@ -60,8 +60,9 @@ vc=39
 - 会话视图入口 build：`1.1.0-158`（CI run `41586246550`，APK 185,529,739 B，client 573,910 B）。
 - 过渡 build：`1.1.0-157`（CI run `41482760262`，含草稿 DOM 兜底，仅存档，不作为最终方案）。
 - 验收记录：[`docs/agents/mobile-ui-verification.md`](docs/agents/mobile-ui-verification.md) 的 1.1.0-159 行（`0/9 · ✅`）。
-- 发布产物：GitHub Release `v0.4.2` 附件 `dsh-android-0.4.2-arm64.apk` 已于 2026-11-03
-  替换为 `1.1.0-159`（185,593,927 B，sha256 `0df3cb4d31ed1c246f98f39a6b816c18ec4b850ec4bac7288eb2082f32c14d11`）。
+- 发布产物：GitHub Release `v0.4.2` 两个附件已于 2026-11-03 替换为 `1.1.0-159`：
+  - `dsh-android-0.4.2-arm64.apk`：185,593,927 B，sha256 `0df3cb4d31ed1c246f98f39a6b816c18ec4b850ec4bac7288eb2082f32c14d11`
+  - `dsh-android-0.4.2-gecko-arm64.apk`：274,695,471 B，sha256 `e829603d8130c3e1a61ec1394cab91cec59ddbcb4dc6b7b970e8f337ef950d85`
 
 ---
 
