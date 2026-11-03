@@ -55,10 +55,11 @@ vc=39
 ### 发布
 
 - 移动端 UI build：`1.1.0-154`（CI run `41301507952`，APK 185,668,979 B）。
-- 正式修复 build：`1.1.0-158`（CI run `41586246550`，APK 185,529,739 B，client 573,910 B；
-  web-all `startSession` 空壳绕过 + 三区域官方提示词，验收 `0/9 · ✅`）。
+- 正式修复 build：`1.1.0-159`（CI run `41593566860`，APK 185,593,927 B，client 575,358 B；
+  官方左/右栏菜单项捕获 + 原型链原版 `startSession`，验收 `0/9 · ✅`）。
+- 会话视图入口 build：`1.1.0-158`（CI run `41586246550`，APK 185,529,739 B，client 573,910 B）。
 - 过渡 build：`1.1.0-157`（CI run `41482760262`，含草稿 DOM 兜底，仅存档，不作为最终方案）。
-- 验收记录：[`docs/agents/mobile-ui-verification.md`](docs/agents/mobile-ui-verification.md) 的 1.1.0-158 行（`0/9 · ✅`）。
+- 验收记录：[`docs/agents/mobile-ui-verification.md`](docs/agents/mobile-ui-verification.md) 的 1.1.0-159 行（`0/9 · ✅`）。
 - 发布产物：GitHub Release `v0.4.2` 附件 `dsh-android-0.4.2-arm64.apk`。
 
 ---
