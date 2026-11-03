@@ -3008,6 +3008,7 @@ return col ? col.querySelector('[class*="toggle"]') : null;
 				// 整页变暗、点「设置」点到的是遮罩、点遮罩又触发 mpCloseDrawer 把侧栏收起。
 				// 这里做**唯一收口**：非窄屏一律强制关闭（与窄屏判定相与）。
 				const on = mpIsMobile() && !!open;
+				document.documentElement.toggleAttribute("data-mp-drawer-open", on);
 				const col = mpSidebarCol();
 				if (col) col.classList.toggle("mp-drawer-open", on);
 				// 遮罩是懒建的：宽屏下若它还不存在就不必创建（少一个节点少一份风险）；
@@ -10403,6 +10404,31 @@ function mpInvokeOfficialPluginItem(label, tries) {
 	}
 	return false;
 }
+function mpInstallThirdPartyCss() {
+	if (typeof document === "undefined" || document.getElementById("mp-thirdparty-adapt")) return;
+	const st = document.createElement("style");
+	st.id = "mp-thirdparty-adapt";
+	st.textContent = `
+/* dshmarket：市场根节点复用了官方的 uV2eYG_root，被 align-items:center 压成 32px */
+.nUhMVa_root { align-items: stretch !important; padding-left: 0 !important; padding-right: 0 !important; }
+.nUhMVa_head, .nUhMVa_body { width: 100% !important; max-width: none !important; box-sizing: border-box !important; }
+.nUhMVa_head { padding-left: 16px !important; padding-right: 16px !important; }
+.nUhMVa_headTop, .nUhMVa_body, .nUhMVa_row1, .nUhMVa_card { min-width: 0 !important; }
+.nUhMVa_card, .nUhMVa_banner, .nUhMVa_modalNote { overflow-wrap: anywhere; }
+.nUhMVa_stickyHead { max-width: 100% !important; }
+.nUhMVa_confirmModal { max-width: calc(100vw - 24px) !important; max-height: calc(100dvh - 32px) !important; overflow: auto !important; }
+@media (max-width: 768px) {
+  .nUhMVa_recentRow { scroll-snap-type: x proximity; -webkit-overflow-scrolling: touch; padding-bottom: 8px !important; }
+  .nUhMVa_recentTile { scroll-snap-align: start; }
+  .nUhMVa_stickyHead { overflow-x: auto !important; overflow-y: hidden !important; scrollbar-width: none; }
+  .nUhMVa_stickyHead::-webkit-scrollbar { display: none; }
+}
+/* dsh-web-all：移动端抽屉已有 mp-drawer-mask，去掉它叠加的第二层 ::after 遮罩 */
+html[data-mp-drawer-open] [data-dsh-frame]::after { content: none !important; }
+html[data-dsh-frame-active] [data-dsh-frame] { min-height: 0 !important; }
+`;
+	document.head.appendChild(st);
+}
 function mpDetectPluginRegion() {
 	const anchor = document.querySelector(
 		'[aria-haspopup="menu"][aria-expanded="true"], ' +
@@ -10588,6 +10614,7 @@ function apply(ctx) {
 			window.__mpTrimSessionMenu = mpTrimSessionMenu;
 			window.__mpCreatePluginSession = mpCreatePluginSession;
 			window.__mpCtx = ctx;   /* 官方插件上下文：mpCreatePluginSession 用它取 uiWorkspace */
+			mpInstallThirdPartyCss();
 			/* 修复 70：web-all 在启动后会把实例上的 startSession 再换成空壳；
 			   在捕获阶段接管官方「创建你的插件」菜单项，直接走原型链原版方法。 */
 			if (!window.__mpCreatePluginClickGuard) {
