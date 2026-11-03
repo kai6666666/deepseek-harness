@@ -1,0 +1,30 @@
+{
+  "ok": false,
+  "version": "1.1.0-160",
+  "stages": {
+    "ev1": "ok",
+    "ev2a": "fail: ev2a: items=0",
+    "ev2b": "fail",
+    "ev3": "ok"
+  },
+  "retries": {
+    "ev1": 0,
+    "ev2a": 3,
+    "ev2b": 3,
+    "ev3": 0
+  },
+  "retry_cfg": 0,
+  "attempt": 0,
+  "items": [],
+  "clicked": false,
+  "mode": null,
+  "text": "",
+  "match": false,
+  "msgs": 0,
+  "target": "/devtools/page/581DD70AD647D00BDB4824CA86E908F7",
+  "ms": 38062,
+  "stage_sum": "ev1:ok(r0),ev2a:fail:(r3),ev2b:fail(r3),ev3:ok(r0)",
+  "sum": "stages=ev1:ok(r0),ev2a:fail:(r3),ev2b:fail(r3),ev3:ok(r0) retries=6 retry_cfg=0 attempt=0 ms=38062",
+  "_archived_at": "2026-11-03 12:20:08",
+  "_source": "verify-1.1.0-160.json"
+}
