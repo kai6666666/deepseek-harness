@@ -43,8 +43,13 @@ vc=39
 - **「创建你的插件」只开新会话、草稿为空**：`@linxin666/dsh-web-all` 会把
   `uiWorkspace` 实例上的 `startSession` 替换成 native 空壳，调用后没有任何效果，
   所以草稿与创造模式都不落地。`dsh-android-mobile` 改为取原型链上的 DSH 原版
-  `startSession` 并用正确 receiver 调用，参数与官方完全一致（`agentPreset:
-  "cordis"`、`prompt`、`whenDraftExists: "append"`），不再做 DOM 兜底。
+  `startSession` 并用正确 receiver 调用，参数与官方完全一致（`agentPreset:"cordis"`、`prompt`、`whenDraftExists:"append"`），不再做 DOM 兜底。
+- **dshmarket 在移动端被压成 32px 宽**：市场根节点复用了官方 `uV2eYG_root` 的
+  `align-items:center`，导致标题、搜索、卡片全部挤成一条。`dsh-android-mobile`
+  在市场根节点内恢复 `align-items:stretch` 与 100% 宽，394px 视口下卡片恢复到 362px。
+- **dsh-web-all 叠加第二层抽屉遮罩**：移动端已有 `mp-drawer-mask`，web-all 的
+  `[data-dsh-frame]::after` 会再盖一层。抽屉打开时给 `<html>` 加
+  `data-mp-drawer-open`，只关掉 web-all 的 `::after`，保留市场/会话全部点击。
 
 ### 变更
 
@@ -55,14 +60,15 @@ vc=39
 ### 发布
 
 - 移动端 UI build：`1.1.0-154`（CI run `41301507952`，APK 185,668,979 B）。
-- 正式修复 build：`1.1.0-159`（CI run `41593566860`，APK 185,593,927 B，client 575,358 B；
-  官方左/右栏菜单项捕获 + 原型链原版 `startSession`，验收 `0/9 · ✅`）。
+- 正式修复 build：`1.1.0-160`（CI run `41633704830`，APK 185,591,763 B，client 577,112 B；
+  dshmarket 全宽布局 + dsh-web-all 双遮罩收敛，验收 `0/9 · ✅`）。
+- 官方菜单修复 build：`1.1.0-159`（CI run `41593566860`，APK 185,593,927 B，client 575,358 B）。
 - 会话视图入口 build：`1.1.0-158`（CI run `41586246550`，APK 185,529,739 B，client 573,910 B）。
 - 过渡 build：`1.1.0-157`（CI run `41482760262`，含草稿 DOM 兜底，仅存档，不作为最终方案）。
-- 验收记录：[`docs/agents/mobile-ui-verification.md`](docs/agents/mobile-ui-verification.md) 的 1.1.0-159 行（`0/9 · ✅`）。
-- 发布产物：GitHub Release `v0.4.2` 两个附件已于 2026-11-03 替换为 `1.1.0-159`：
-  - `dsh-android-0.4.2-arm64.apk`：185,593,927 B，sha256 `0df3cb4d31ed1c246f98f39a6b816c18ec4b850ec4bac7288eb2082f32c14d11`
-  - `dsh-android-0.4.2-gecko-arm64.apk`：274,695,471 B，sha256 `e829603d8130c3e1a61ec1394cab91cec59ddbcb4dc6b7b970e8f337ef950d85`
+- 验收记录：[`docs/agents/mobile-ui-verification.md`](docs/agents/mobile-ui-verification.md) 的 1.1.0-160 行（`0/9 · ✅`）。
+- 发布产物：GitHub Release `v0.4.2` 两个附件已于 2026-11-03 替换为 `1.1.0-160`：
+  - `dsh-android-0.4.2-arm64.apk`：185,591,763 B，sha256 `d960a75221261b040948a39b56590194c5acde264fc07f8ba9157d7c73f765ae`
+  - `dsh-android-0.4.2-gecko-arm64.apk`：274,726,703 B，sha256 `e744ec6d5eb4dfbb051c5e711b82c3742db1232a2c7a0843e4293f54ef6de83b`
 
 ---
 
