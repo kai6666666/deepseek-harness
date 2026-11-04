@@ -10426,6 +10426,20 @@ function mpInstallThirdPartyCss() {
 /* dsh-web-all：移动端抽屉已有 mp-drawer-mask，去掉它叠加的第二层 ::after 遮罩 */
 html[data-mp-drawer-open] [data-dsh-frame]::after { content: none !important; }
 html[data-dsh-frame-active] [data-dsh-frame] { min-height: 0 !important; }
+/* dsh-web-all 的折叠态会把侧栏钉成 52px 图标条；关闭时完全收起，打开时恢复抽屉宽度 */
+html[data-mobile] [data-dsh-frame] [data-pane="sidebar"]:not(.mp-drawer-open) {
+  display: none !important;
+}
+html[data-mobile] [data-dsh-frame] [data-pane="sidebar"].mp-drawer-open {
+  display: block !important;
+  position: fixed !important;
+  left: 0 !important;
+  top: 0 !important;
+  bottom: 0 !important;
+  width: min(320px, 85vw) !important;
+  z-index: 1100 !important;
+  pointer-events: auto !important;
+}
 `;
 	document.head.appendChild(st);
 }
