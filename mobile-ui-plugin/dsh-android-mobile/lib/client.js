@@ -3038,7 +3038,9 @@ return col ? col.querySelector('[class*="toggle"]') : null;
 				// 遮罩是懒建的：宽屏下若它还不存在就不必创建（少一个节点少一份风险）；
 				// 若已存在（从窄屏切过来），下面这行负责把它的打开类摘掉。
 				if (on || document.querySelector(".mp-drawer-mask")) {
-					mpMask().classList.toggle("mp-drawer-open", on);
+					const mask = mpMask();
+					mask.classList.toggle("mp-drawer-open", on);
+					if (!on) mask.classList.remove("mp-drawer-closing");
 				}
 			}
 			// 修复 61：web-all 的 installMobileSidebarDismiss 会在 sessionRow 点击后
@@ -3262,6 +3264,7 @@ mpSetMenuOpenClass(false);
 				if (mpOfficialDrawerOpen()) { mpCloseDrawer(); return; }
 				const btn = mpOfficialToggle();
 				if (btn) btn.click();
+				mpSetDrawerOpen(true);
 				mpAwaitOfficialOpen();
 			}
 			// 修复 25：抽屉关闭。
@@ -3385,6 +3388,7 @@ mpSetMenuOpenClass(false);
 				}
 				const btn = mpOfficialToggle();
 				if (btn) btn.click();
+				mpSetDrawerOpen(true);
 				mpAwaitOfficialOpen();
 			}
 			// rc.1 的抽屉状态由 React 异步写回；60ms 读一次太早会读到旧的
