@@ -3945,8 +3945,21 @@ mpSetMenuOpenClass(false);
 			window.addEventListener("scroll", mpCloseViewsMenu, { passive: true, capture: true });
 			window.addEventListener("resize", mpCloseViewsMenu, { passive: true });
 
+			function mpNormalizeMarketIcon() {
+				const row = [...document.querySelectorAll(".hHd-Xa_panelRow")]
+					.find((r) => (r.innerText || "").trim() === "插件市场");
+				if (!row) return;
+				const svg = row.querySelector(".hHd-Xa_panelGlyph svg");
+				if (!svg || svg.dataset.mpMarketFixed === "1") return;
+				// web-all 0.4.15 的插件市场图标画了 3 列 + 一个旋转块；只留 2×2。
+				[...svg.querySelectorAll("g rect")].slice(4).forEach((r) => { try { r.remove(); } catch (e) {} });
+				[...svg.children].forEach((c) => { if (c.tagName.toLowerCase() === "rect") { try { c.remove(); } catch (e) {} } });
+				svg.dataset.mpMarketFixed = "1";
+			}
+
 			function mpAnchorBurger() {
 				if (!mpIsMobile()) return; // 修复 40：非移动端绝不挂载汉堡
+				mpNormalizeMarketIcon();
 				// 修复 59：header 内容变化时顺手重算居中留白（已合并到下一帧）。
 				mpScheduleHeaderCenter();
 				// ⭐ 修复 47：**先查已连接的，查不到就回退到自持引用**（可能是 detached 的）。
@@ -4216,7 +4229,7 @@ mpSetMenuOpenClass(false);
 				btn.type = "button";
 				btn.className = "mp-nav-btn";
 				btn.setAttribute("aria-label", "打开导航");
-				btn.innerHTML = '<svg width="20" height="20" class="mp-nav-icon" data-icon="dsw-icon-panel-left-outline-regular" aria-hidden="true"><use href="#dsw-icon-panel-left-outline-regular"></use></svg>';
+				btn.innerHTML = '<svg width="16" height="16" class="mp-nav-icon" data-icon="dsw-icon-panel-left-outline-regular" aria-hidden="true"><use href="#dsw-icon-panel-left-outline-regular"></use></svg>';
 				// web-all 0.4.15 在 document 的 click 捕获层会拦掉汉堡的 click，
 				// 导致“点导航没反应”。用 pointerdown/touchstart 抢在 click 之前，
 				// click 只作桌面/JS 兜底；350ms 防抖避免触摸双触发。
