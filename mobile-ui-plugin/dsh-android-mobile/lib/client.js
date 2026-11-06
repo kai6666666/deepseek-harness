@@ -179,6 +179,18 @@ html[data-mobile] .pI_x6G_frame[data-sidebar-drawer][data-sidebar-collapsed] .pI
 }
 /* ⚠️ 侧栏一旦 position:fixed 就脱离网格流，其后的正文列会自动落进第 1 条
    （0px）轨道 → 正文宽度变成 0。必须给正文/右栏显式指定轨道列。 */
+/* 修复 60：官方左右栏按钮**不改位置、不改尺寸、不换图标**，只用层级把它们
+   从右栏溢出的面板下捞回来。
+   实测（1.1.0-167，394×806）：右侧栏收起时 .pI_x6G_rightbarCol 被 grid 压成
+   0 宽并停在 x=394，但它内部的 .P3OORG_panel 是 position:absolute + right:0，
+   于是反向铺成 [0,0,394,806]；其 _tabCell 带 z-index:40，高于官方按钮所在的
+   .pI_x6G_leadingSeat（z-index:15）。结果 elementsFromPoint(26,24) 命中的是
+   _tabTitle/_tabStrip，panel-left 按钮根本不在命中栈里 → 手指点完全无反应，
+   而脚本 .click() 不走命中测试所以能开。
+   只抬这一格，按钮本体与官方逻辑一律不动。 */
+[data-mobile] .pI_x6G_leadingSeat {
+  z-index: 60 !important;
+}
 [data-mobile] .pI_x6G_centerCol {
   grid-column: 2 !important;
 }
@@ -3945,19 +3957,26 @@ mpSetMenuOpenClass(false);
 			window.addEventListener("scroll", mpCloseViewsMenu, { passive: true, capture: true });
 			window.addEventListener("resize", mpCloseViewsMenu, { passive: true });
 
-			function mpAlignLeftToggle() {
+			// 修复 60：左右栏按钮**完全交回 DSH 官方**。
+			//   0.4.8 用 mpAlignLeftToggle() 手工把左按钮 position/top 调到与右按钮
+			//   同一水平线，结果是：图标位置/尺寸不再由官方布局决定，且内联 top 会
+			//   在官方 header 重排后留在原地。这里彻底删掉那段逻辑，只负责把历史
+			//   版本写进 DOM 的内联样式清干净，剩下的位置、图标、点击全部走官方。
+			function mpClearToggleInline() {
 				if (!mpIsMobile()) return;
-				const h = [...document.querySelectorAll("button")]
-					.filter((b) => b.getBoundingClientRect().width > 0 && b.getBoundingClientRect().height > 0);
-				const left = h.find((b) => b.matches('button[aria-label="打开侧边栏"], button[aria-label="收起侧边栏"]'));
-				const right = h.find((b) => b.matches('button[aria-label="打开右侧边栏"], button[aria-label="收起右侧边栏"]'));
-				if (!left) return;
-				if (!right) { left.style.position = ""; left.style.top = ""; return; }
-				// 先归零再量，避免把上一次的偏移量算进 dy 造成来回抖动。
-				left.style.position = "relative";
-				left.style.top = "0px";
-				const dy = right.getBoundingClientRect().top - left.getBoundingClientRect().top;
-				left.style.top = `${Math.abs(dy) < 0.5 ? 0 : dy.toFixed(2)}px`;
+				document
+					.querySelectorAll(
+						'button[aria-label="打开侧边栏"], button[aria-label="收起侧边栏"], ' +
+						'button[aria-label="打开右侧边栏"], button[aria-label="收起右侧边栏"]'
+					)
+					.forEach((b) => {
+						try {
+							if (b.style.position === "relative" || b.style.top) {
+								b.style.position = "";
+								b.style.top = "";
+							}
+						} catch (e) { /* 静默 */ }
+					});
 			}
 
 			function mpNormalizeMarketIcon() {
@@ -3976,7 +3995,7 @@ mpSetMenuOpenClass(false);
 
 			function mpAnchorBurger() {
 				if (!mpIsMobile()) return; // 修复 40：非移动端绝不挂载汉堡
-				mpAlignLeftToggle();
+				mpClearToggleInline();
 				mpNormalizeMarketIcon();
 				// 修复 59：header 内容变化时顺手重算居中留白（已合并到下一帧）。
 				mpScheduleHeaderCenter();
@@ -4255,7 +4274,7 @@ mpSetMenuOpenClass(false);
 
 			function mpBuildShellForMobile() {
 				if (!mpIsMobile()) return; // 修复 40
-				mpAlignLeftToggle();
+				mpClearToggleInline();
 				// 彻底移除旧的/残留的自建按钮。
 				document.querySelectorAll(".mp-nav-btn").forEach((n) => { try { n.remove(); } catch (e) {} });
 				// 有 DSH 官方 panel-left 按钮时不再创建自建按钮。

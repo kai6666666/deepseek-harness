@@ -16,6 +16,19 @@
 > 正是靠 versionCode 区分同一 versionName 的不同构建。
 
 ---
+## [0.4.9] — 2026-11-07
+vc=46
+### 修复
+- **左右栏按钮完全交回 DSH 官方**：删除 `mpAlignLeftToggle()`，不再给官方按钮写
+  `style.position` / `style.top`。图标、位置、尺寸、点击全部由官方 header 决定；
+  启动时顺手清掉历史版本残留的内联样式。
+- **会话视图左侧栏按钮完全无反应**：实测 `elementsFromPoint(26,24)` 命中的是
+  右侧栏溢出的 `_tabTitle` / `_tabStrip`（`_tabCell` z-index:40），而官方按钮所在的
+  `.pI_x6G_leadingSeat` 只有 z-index:15；右侧栏收起时 `.pI_x6G_rightbarCol` 被 grid
+  压成 0 宽停在 x=394，其内部 `.P3OORG_panel` 以 `right:0` 反向铺成 `[0,0,394,806]`，
+  于是整条右栏 header 压在左上角 28×28 上。手指点击被右栏吃掉，脚本 `.click()`
+  不走命中测试因此能打开。修复：`[data-mobile] .pI_x6G_leadingSeat { z-index:60 }`。
+- 移动端 UI 版本提升到 `1.1.0-168`。
 ## [0.4.8] — 2026-11-07
 vc=45
 ### 修复
