@@ -16,6 +16,26 @@
 > 正是靠 versionCode 区分同一 versionName 的不同构建。
 
 ---
+## [0.4.3] — 2026-11-06
+vc=40
+### 内核
+- 升级到 `@deepseek-ai/dsh@0.2.2-rc.1`，Node 仍为 `26.12.1`（满足 `>=24.9.0`）。
+- 引擎锚点 15/15 命中：5 个基础锚点、4 个 tool-call/图片格式锚点、目录选择器、
+  进程检查器、创造模式 persona、HTML module 注入和 fail-loud release。
+- `assetStamp` 改为 `0.2.2-rc.1-1`，确保旧设备重新解包 `engine.bin`。
+- `tools/version.sh` 的引擎正则扩展为 `-alpha.N / -beta.N / -rc.N`，
+  避免 rc.1 被误判为版本不一致。
+
+### 依赖
+- pnpm 从 `11.28.3` 升到 `11.28.5`，与 rc.1 的 `packageManager` 对齐。
+- `dsh-app-pet 1.0.3` 与 `@linxin666/dsh-web-all 0.4.14` 在本次验证中暂时从
+  profile bundles 移除，依赖保留，可无损恢复；不阻塞内核升级。
+
+### 验证
+- 干净 rc.1 服务启动成功：`DeepSeek Harness` 页面 200，版本 `0.2.2-rc.1`。
+- 旧会话格式仍为 v4（`session.v4.jsonl.zstd`），持久化格式版本未变。
+- 移动端核心选择器 `pI_x6G_*`、`uV2eYG_*`、`wSkVaW_*` 仍在；rc.1 新增原生
+  `data-sidebar-drawer` / `pI_x6G_drawerMask`。
 
 ## [0.4.2] — 2026-11-01
 vc=39

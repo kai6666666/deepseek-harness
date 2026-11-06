@@ -19,7 +19,7 @@ _DIR=$(cd "$(dirname "$0")/.." && pwd)
 if [ -f "$_DIR/tools/engine-version.txt" ]; then
   VER=$(tr -d ' \n' < "$_DIR/tools/engine-version.txt")
 fi
-VER="${VER:?用法: VER=0.2.2-alpha.2 $0}"
+VER="${VER:?用法: VER=0.2.2-rc.1 $0}"
 OUT="${OUT:-dist/engine.bin}"
 WORK="${WORK:-/tmp/dsh-engine-$VER}"
 REGISTRY="${REGISTRY:-https://registry.npmmirror.com}"

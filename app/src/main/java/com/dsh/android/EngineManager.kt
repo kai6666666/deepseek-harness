@@ -9288,7 +9288,7 @@ class EngineManager private constructor(private val context: Context) {
 
         /** pnpm：Termux 的 $PREFIX/bin 里没有，插件管理器靠它装 bundle。 */
         private const val PNPM_ASSET = "pnpm-android-arm64.zip"
-        private const val PNPM_VERSION = "11.28.3"
+        private const val PNPM_VERSION = "11.28.5"
         private const val PNPM_STAMP = ".pnpm_version"
 
         /** pnpm 整包解到 `$PREFIX/lib/pnpm`，`bin/pnpm` 只是个 exec 它的脚本。 */
@@ -9620,7 +9620,7 @@ class EngineManager private constructor(private val context: Context) {
           *      （99 → 100 / 33 → 34），否则会回退，设备上静默跑回没有这张卡的旧 UI。
           *      ⚠️ 两个戳都 bump（本常量 99 → 100，-CompatVersion 33 → 34）。
           */
-        private const val MOBILE_UI_VERSION = "1.1.0-161"
+        private const val MOBILE_UI_VERSION = "1.1.0-162"
         private const val MOBILE_UI_STAMP = ".mobile_ui_version"
 
         // ── 出厂默认设置 ─────────────────────────────────────────────

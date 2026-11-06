@@ -30,7 +30,7 @@ ng(){ FAIL=$((FAIL+1)); echo "FAIL|$1" >> $RES; say "[FAIL] $1"; true; }
 sk(){ SKIP=$((SKIP+1)); echo "SKIP|$1" >> $RES; say "[SKIP] $1"; true; }
 
 V=$(cat $R/engine/node_modules/@deepseek-ai/dsh/package.json 2>/dev/null | $N -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.parse(s).version)}catch{console.log("")}})')
-if [ "$V" = "0.2.2-alpha.2" ]; then ok "引擎版本 $V"; else ng "引擎版本 ${V:-unknown}"; fi
+if [ "$V" = "0.2.2-rc.1" ]; then ok "引擎版本 $V"; else ng "引擎版本 ${V:-unknown}"; fi
 
 if [ "$GUEST" = "1" ]; then sk "开发环境（guest 跳过）"
 else

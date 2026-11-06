@@ -147,6 +147,16 @@ window.__ModuleLoader__.load({
 [data-mobile] .pI_x6G_frame {
   grid-template-columns: 0px minmax(0, 1fr) 0px !important;
 }
+/* rc.1 原生抽屉（data-sidebar-drawer）：移动端只保留本插件的 left 动画和遮罩。
+   原生 transform/visibility 会和 left 动画叠加，原生 drawerMask 还会压在自定义
+   抽屉之上吃掉点击，所以这里统一让位。 */
+[data-mobile] .pI_x6G_frame[data-sidebar-drawer] .pI_x6G_sidebarCol {
+  visibility: visible !important;
+  transform: none !important;
+}
+[data-mobile] .pI_x6G_drawerMask {
+  display: none !important;
+}
 /* ⚠️ 侧栏一旦 position:fixed 就脱离网格流，其后的正文列会自动落进第 1 条
    （0px）轨道 → 正文宽度变成 0。必须给正文/右栏显式指定轨道列。 */
 [data-mobile] .pI_x6G_centerCol {
