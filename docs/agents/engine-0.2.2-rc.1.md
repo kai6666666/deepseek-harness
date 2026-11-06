@@ -124,12 +124,33 @@ CI：
 
 ```text
 APK 构建 run 42197373925：success
-Release 构建 run 42198603761：进行中
+Release 构建 run 42198603761：success（首版）
+Release 构建 run 42205805833：success（最终 mobile drawer 修复）
+system 185,065,831 B / gecko 273,851,976 B
 ```
+
+## 真机验证（0.4.3）
+
+```text
+versionName=0.4.3  versionCode=40
+files/engine/.stamp=0.2.2-rc.1-1
+@deepseek-ai/dsh/package.json version=0.2.2-rc.1
+.mobile_ui_version=1.1.0-162
+.pnpm_version=11.28.5
+pnpm -v=11.28.5
+HTTP 401（带 token 的引擎已就绪）
+```
+
+- 旧会话直接显示，未触发 SessionFormatError。
+- 菜单 7 项：复制 Markdown、下载 Session 日志、浏览更多插件、创建你的插件、反馈、轨迹、刷新。
+- 「创建你的插件」写入官方草稿：`创建一个 DSH 会话视图插件。`
+- dshmarket 根节点 394 px 全宽。
+- 抽屉关闭 `left=-340`，打开 `left=0`；原生 `pI_x6G_drawerMask` 为 `display:none`。
+- 移动端 client 与最终源文件 SHA-256 一致：
+  `e17161172062bd3c1d1e3f37316366a765ddb8a9f15c6ee6e9ad208b72d20d34`
 
 ## 待办
 
-1. 用 release APK 覆盖安装，保留数据。
-2. 验证启动后 `.mobile_ui_version=1.1.0-162`、`.pnpm_version=11.28.5`、引擎 rc.1。
-3. 验证旧会话、新会话、菜单 7 项、dshmarket、皮肤、技能中心。
-4. 通过后再决定是否恢复 web-all / app-pet。
+1. 合并 PR #1。
+2. 下载 run 42205805833 的 system / gecko artifact。
+3. 创建 `v0.4.3` Release 并上传双 APK；`v0.4.2` 保持不动。
