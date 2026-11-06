@@ -80,6 +80,7 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          token: ${{ secrets.RELEASE_PAT }}
           tag_name: ${{ inputs.tag }}
           target_commitish: ${{ inputs.target_commitish }}
           name: ${{ inputs.tag }}
