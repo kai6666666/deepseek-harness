@@ -151,8 +151,15 @@ window.__ModuleLoader__.load({
    原生 transform/visibility 会和 left 动画叠加，原生 drawerMask 还会压在自定义
    抽屉之上吃掉点击，所以这里统一让位。 */
 [data-mobile] .pI_x6G_frame[data-sidebar-drawer] .pI_x6G_sidebarCol {
+  inset: auto !important;
+  top: 0 !important;
+  bottom: 0 !important;
+  left: calc(-1 * min(300px, 85vw) - 40px) !important;
   visibility: visible !important;
   transform: none !important;
+}
+[data-mobile] .pI_x6G_frame[data-sidebar-drawer] .pI_x6G_sidebarCol.mp-drawer-open {
+  left: 0 !important;
 }
 [data-mobile] .pI_x6G_drawerMask {
   display: none !important;
@@ -2997,6 +3004,13 @@ return col ? col.querySelector('[class*="toggle"]') : null;
 			// 官方开合状态的唯一事实源：.hHd-Xa_root 是否带 hHd-Xa_collapsed
 			function mpOfficialDrawerOpen() {
 				const col = mpSidebarCol();
+				// rc.1 起 <768px 使用原生抽屉：真正的开合状态在 frame 的
+				// data-sidebar-collapsed 上，侧栏组件自己的 hHd-Xa_collapsed 在抽屉态
+				// 不一定同步（实测 collapsed=true 时 root 仍无 collapsed 类）。
+				const frame = col ? col.closest(".pI_x6G_frame") : null;
+				if (frame && frame.hasAttribute("data-sidebar-drawer")) {
+					return !frame.hasAttribute("data-sidebar-collapsed");
+				}
 				const root = col ? col.querySelector(".hHd-Xa_root") : null;
 				return !!root && !root.classList.contains("hHd-Xa_collapsed");
 			}
@@ -3244,11 +3258,11 @@ mpSetMenuOpenClass(false);
 				//   observer 监听的是 {childList,subtree,characterData}，**不含 class**
 				//   → 官方随后真正收起时无人复查，抽屉以浮层形式永久占屏。
 				//   mpCloseDrawer 已含「滑出动画 + 等官方状态翻转 + 超时兜底」，直接复用。
-				//   打开方向保持原样（实测 3 轮开合与遮罩关闭均正常）。
+				//   打开方向同样不能只等 60ms（rc.1 的抽屉状态异步更慢）。
 				if (mpOfficialDrawerOpen()) { mpCloseDrawer(); return; }
 				const btn = mpOfficialToggle();
 				if (btn) btn.click();
-				setTimeout(mpSyncDrawer, 60);
+				mpAwaitOfficialOpen();
 			}
 			// 修复 25：抽屉关闭。
 			// ⚠️ 旧实现（修复 ③）用 .mp-drawer-closing 把抽屉**瞬间**隐藏，但遮罩仍走
@@ -3330,14 +3344,20 @@ mpSetMenuOpenClass(false);
 				// 已经收起（同步路径）→ 直接收尾
 				if (!mpOfficialDrawerOpen()) { finish("sync"); return; }
 				const col = mpSidebarCol();
+				const frame = col ? col.closest(".pI_x6G_frame") : null;
+				const drawer = !!frame && frame.hasAttribute("data-sidebar-drawer");
 				const root = col ? col.querySelector(".hHd-Xa_root") : null;
-				if (!root) { finish("noroot"); return; }
-				// ① 首选：观察 root 的 class，等到 collapsed 出现
+				const target = drawer ? frame : root;
+				if (!target) { finish("noroot"); return; }
+				// ① 首选：观察真正承载状态的节点。rc.1 的抽屉态看 frame 的
+				//    data-sidebar-collapsed；旧版看 .hHd-Xa_root 的 class。
 				if (mpCollapseObs) { mpCollapseObs.disconnect(); mpCollapseObs = null; }
 				mpCollapseObs = new MutationObserver(() => {
 					if (!mpOfficialDrawerOpen()) finish("observed");
 				});
-				mpCollapseObs.observe(root, { attributes: true, attributeFilter: ["class"] });
+				mpCollapseObs.observe(target, drawer
+					? { attributes: true, attributeFilter: ["data-sidebar-collapsed"] }
+					: { attributes: true, attributeFilter: ["class"] });
 				// ② 兜底：官方若没动静（或 root 被 React 换掉）也不留卡死
 				if (mpCollapseFallback !== null) clearTimeout(mpCollapseFallback);
 				mpCollapseFallback = setTimeout(() => finish("timeout"), 3000);
@@ -3365,7 +3385,15 @@ mpSetMenuOpenClass(false);
 				}
 				const btn = mpOfficialToggle();
 				if (btn) btn.click();
-				setTimeout(mpSyncDrawer, 60);
+				mpAwaitOfficialOpen();
+			}
+			// rc.1 的抽屉状态由 React 异步写回；60ms 读一次太早会读到旧的
+			// collapsed，表现为「点了导航但抽屉没出来」。打开方向短轮询等它翻转。
+			function mpAwaitOfficialOpen(tries) {
+				const n = tries || 0;
+				if (mpOfficialDrawerOpen()) { mpSetDrawerOpen(true); return; }
+				if (n >= 40) return;
+				setTimeout(() => mpAwaitOfficialOpen(n + 1), 50);
 			}
 
 			// 汉堡按钮：固定左上、浮于正文之上（自建元素，不注入 React 子树）
