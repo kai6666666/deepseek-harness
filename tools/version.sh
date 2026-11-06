@@ -45,10 +45,10 @@ fi
 # ---- 3. 引擎版本一致性 ----
 ENG_ASSERT=$(sed -n 's/.*if \[ "\$V" = "\([^"]*\)".*/\1/p' tools/verify-engine-upgrade.sh 2>/dev/null | head -1)
 ENG_BUILD=$(sed -n 's/.*VER="\${VER:?.*\([0-9]\+\.[0-9]\+\.[0-9]\+[^ ]*\).*/\1/p' tools/build-engine-bin.sh 2>/dev/null | head -1)
-[ -z "$ENG_BUILD" ] && ENG_BUILD=$(grep -oE '[0-9]+\.[0-9]+\.[0-9]+-alpha\.[0-9]+' tools/build-engine-bin.sh 2>/dev/null | head -1)
-ENG_PROV=$(grep -oE '[0-9]+\.[0-9]+\.[0-9]+-alpha\.[0-9]+' tools/provision-glibc-host.sh 2>/dev/null | head -1)
-ENG_DIR1=$(grep -oE '[0-9]+\.[0-9]+\.[0-9]+-alpha\.[0-9]+' tools/build-node-addon-system.sh 2>/dev/null | head -1)
-ENG_DIR2=$(grep -oE '[0-9]+\.[0-9]+\.[0-9]+-alpha\.[0-9]+' tools/build-node-pty.sh 2>/dev/null | head -1)
+[ -z "$ENG_BUILD" ] && ENG_BUILD=$(grep -oE '[0-9]+\.[0-9]+\.[0-9]+-(alpha|beta|rc)\.[0-9]+' tools/build-engine-bin.sh 2>/dev/null | head -1)
+ENG_PROV=$(grep -oE '[0-9]+\.[0-9]+\.[0-9]+-(alpha|beta|rc)\.[0-9]+' tools/provision-glibc-host.sh 2>/dev/null | head -1)
+ENG_DIR1=$(grep -oE '[0-9]+\.[0-9]+\.[0-9]+-(alpha|beta|rc)\.[0-9]+' tools/build-node-addon-system.sh 2>/dev/null | head -1)
+ENG_DIR2=$(grep -oE '[0-9]+\.[0-9]+\.[0-9]+-(alpha|beta|rc)\.[0-9]+' tools/build-node-pty.sh 2>/dev/null | head -1)
 
 ok() { printf '  %-34s %-22s %s\n' "$1" "$2" "OK"; }
 bad() { printf '  %-34s %-22s %s\n' "$1" "$2" "MISMATCH"; FAIL=1; }

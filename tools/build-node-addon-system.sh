@@ -16,13 +16,13 @@
 #   prebuilds.json
 #
 # 用法：
-#   ANDROID_NDK_HOME=/path/to/ndk ENGINE_DIR=/tmp/dsh-engine-0.2.1-rc.3 ./tools/build-node-addon-system.sh
+#   ANDROID_NDK_HOME=/path/to/ndk ENGINE_DIR=/tmp/dsh-engine-0.2.2-rc.1 ./tools/build-node-addon-system.sh
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ASSETS="${APP_ASSETS:-$ROOT/app/src/main/assets}"
 OUT="${OUT:-$ASSETS/node-addon-system-android-arm64.zip}"
-ENGINE_DIR="${ENGINE_DIR:-/tmp/dsh-engine-0.2.2-alpha.2}"
+ENGINE_DIR="${ENGINE_DIR:-/tmp/dsh-engine-0.2.2-rc.1}"
 NODE_HEADERS_VERSION="${NODE_HEADERS_VERSION:-26.12.1}"
 PKG_DIR="$ENGINE_DIR/node_modules/@deepseek-ai/node-addon-system"
 

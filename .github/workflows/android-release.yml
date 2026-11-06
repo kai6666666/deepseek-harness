@@ -58,7 +58,7 @@ jobs:
       - name: 现场构建 engine.bin（无 Release 时）
         if: env.ASSETS_TAG == ''
         run: |
-          VER=0.2.2-alpha.2 OUT="$GITHUB_WORKSPACE/app/src/main/assets/engine.bin" \
+          VER=0.2.2-rc.1 OUT="$GITHUB_WORKSPACE/app/src/main/assets/engine.bin" \
             bash tools/build-engine-bin.sh
 
       # ⚠️ 这一项以前**没有任何步骤负责**，于是 CI 出的包在真机上是残的：
@@ -111,7 +111,7 @@ jobs:
         if: env.ASSETS_TAG == ''
         run: |
           if [ -f tools/build-webview_compat.py ]; then
-            python3 tools/build-webview_compat.py --engine /tmp/dsh-engine-0.2.2-alpha.2
+            python3 tools/build-webview_compat.py --engine /tmp/dsh-engine-0.2.2-rc.1
           else
             echo "::notice title=webview-compat::tools/build-webview_compat.py 不在仓库里，跳过"
           fi

@@ -5,10 +5,11 @@
 #   boosandbox.bin        LD_PRELOAD 沙箱（-shared -fPIC -ldl）
 #   boo-sandbox-run.bin   沙箱启动器（可执行）
 #   linkcompat.bin        link/rename 转译层（-shared -fPIC -ldl）
-#   pnpm-android-arm64.zip  纯 JS，取 npm 上的 pnpm 11.28.3（条目不带顶层目录）
+#   pnpm-android-arm64.zip  纯 JS，取 npm 上的 pnpm 11.28.5（条目不带顶层目录）
 #
 # 不覆盖（需要本机私有产物或额外工具链）：
 #   node-pty / sharp / 各 tool 插件 / mobile-ui / preset / market / ripgrep …
+#   它们的缺失会在设备侧被 ASSETS_MISSING.txt 点名。
 #
 # 用法：
 #   ANDROID_NDK_HOME=/path/to/ndk/27.0.12077973 ./tools/build-native-assets.sh
@@ -18,7 +19,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 JNI="$ROOT/app/src/main/jni"
 ASSETS="${APP_ASSETS:-$ROOT/app/src/main/assets}"
-PNPM_VERSION="${PNPM_VERSION:-11.28.3}"
+PNPM_VERSION="${PNPM_VERSION:-11.28.5}"
 
 mkdir -p "$ASSETS"
 
@@ -42,7 +43,8 @@ if [ "${SKIP_NATIVE:-0}" != "1" ]; then
   [ -x "$CC" ] || { echo "❌ 没有 $CC"; exit 1; }
   echo "== 1/2 原生三元组（NDK: $NDK）"
 
-  # -Wl,--build-id=none：让产物可复现（同源码两次编译字节一致）
+  # -Wl,--build-id=none：让产物可复现（同一份源码两次编译字节一致），
+  # 否则每次 CI 的 .so 都不一样，无法用 sha256 判断「有没有真的改动」。
   "$CC" -shared -fPIC -O2 -Wall -Wl,--build-id=none \
     -o "$ASSETS/boosandbox.bin" "$JNI/boosandbox.c" -ldl
   "$CC" -O2 -Wall -Wl,--build-id=none \
@@ -76,7 +78,7 @@ with zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED, compresslevel=9) as z:
     for dirpath, _, files in os.walk(src):
         for f in files:
             p = os.path.join(dirpath, f)
-            rel = os.path.relpath(p, src)
+            rel = os.path.relpath(p, src)          # 条目不带 package/ 顶层目录
             zi = zipfile.ZipInfo(rel)
             zi.external_attr = (0o755 if rel.startswith('bin/') else 0o644) << 16
             zi.compress_type = zipfile.ZIP_DEFLATED

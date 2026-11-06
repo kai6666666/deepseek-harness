@@ -85,7 +85,7 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     _here = os.path.dirname(os.path.abspath(__file__))
     _verf = os.path.join(_here, "engine-version.txt")
-    _ver = open(_verf).read().strip() if os.path.isfile(_verf) else "0.2.2-alpha.2"
+    _ver = open(_verf).read().strip() if os.path.isfile(_verf) else "0.2.2-rc.1"
     ap.add_argument("--engine", default=os.environ.get("ENGINE_DIR", f"/tmp/dsh-engine-{_ver}"))
     ap.add_argument("--target", default="chrome74")
     ap.add_argument("--compat-version", default="35")
