@@ -3950,8 +3950,9 @@ mpSetMenuOpenClass(false);
 					.find((r) => (r.innerText || "").trim() === "插件市场");
 				if (!row) return;
 				const svg = row.querySelector(".hHd-Xa_panelGlyph svg");
-				if (!svg || svg.dataset.mpMarketFixed === "1") return;
-				// web-all 0.4.15 的插件市场图标画了 3 列 + 一个旋转块；只留 2×2。
+				if (!svg) return;
+				// React 可能只更新 rect 子节点而不换 SVG；每次都按数量裁剪，
+				// 不能只看一次 dataset 标记。
 				[...svg.querySelectorAll("g rect")].slice(4).forEach((r) => { try { r.remove(); } catch (e) {} });
 				[...svg.children].forEach((c) => { if (c.tagName.toLowerCase() === "rect") { try { c.remove(); } catch (e) {} } });
 				svg.dataset.mpMarketFixed = "1";
@@ -4229,7 +4230,7 @@ mpSetMenuOpenClass(false);
 				btn.type = "button";
 				btn.className = "mp-nav-btn";
 				btn.setAttribute("aria-label", "打开导航");
-				btn.innerHTML = '<svg width="16" height="16" class="mp-nav-icon" data-icon="dsw-icon-panel-left-outline-regular" aria-hidden="true"><use href="#dsw-icon-panel-left-outline-regular"></use></svg>';
+				btn.innerHTML = '<svg width="16" height="16" class="hHd-Xa_panelIcon mp-nav-icon" data-icon="dsw-icon-panel-left-outline-regular" aria-hidden="true"><use href="#dsw-icon-panel-left-outline-regular"></use></svg>';
 				// web-all 0.4.15 在 document 的 click 捕获层会拦掉汉堡的 click，
 				// 导致“点导航没反应”。用 pointerdown/touchstart 抢在 click 之前，
 				// click 只作桌面/JS 兜底；350ms 防抖避免触摸双触发。
@@ -4260,6 +4261,18 @@ mpSetMenuOpenClass(false);
 					mpNavLastActivate = performance.now();
 					mpToggleDrawer();
 				}, { capture: true });
+				const mpWindowNavPointer = (e) => {
+					const t = e.target;
+					if (!t || !t.closest || !t.closest(".mp-nav-btn")) return;
+					e.preventDefault();
+					e.stopPropagation();
+					e.stopImmediatePropagation();
+					if (performance.now() - mpNavLastActivate < 350) return;
+					mpNavLastActivate = performance.now();
+					mpToggleDrawer();
+				};
+				window.addEventListener("pointerdown", mpWindowNavPointer, { capture: true });
+				window.addEventListener("touchstart", mpWindowNavPointer, { capture: true, passive: false });
 				document.body.appendChild(btn);
 				mpNavBtnEl = btn; // ⭐ 修复 47：自持引用，detached 后也能重挂
 				// 修复 30：汉堡锚定进 header（CSS .mp-nav-btn.mp-in-header 相对 header 定位）。

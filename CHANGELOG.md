@@ -16,6 +16,19 @@
 > 正是靠 versionCode 区分同一 versionName 的不同构建。
 
 ---
+## [0.4.6] — 2026-11-06
+vc=43
+### 修复
+- **侧栏入口彻底使用官方图标**：使用与圈选按钮相同的 16px
+  `dsw-icon-panel-left-outline-regular`，并带上官方 `hHd-Xa_panelIcon` 样式类。
+- **打开后不再自动收回**：在 `window` 捕获阶段拦截 web-all 的
+  `pointerdown/touchstart/click`，避免它的 mobile sidebar dismiss 在同一手势里
+  又把抽屉关掉；实测打开后 3 秒仍保持。
+- **插件市场图标每次渲染后重新裁剪**：React 可能只更新 rect 子节点而不换 SVG，
+  所以不再只看一次性标记；始终保留 2×2 四格。
+- **遮罩点击关闭**：原生整屏遮罩被点击时调用官方 toggle。
+- 移动端 UI 版本提升到 `1.1.0-165`。
+
 ## [0.4.5] — 2026-11-06
 vc=42
 ### 修复
