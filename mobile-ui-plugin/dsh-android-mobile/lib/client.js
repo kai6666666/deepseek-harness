@@ -2192,6 +2192,9 @@ window.__ModuleLoader__.load({
 		const mpSettingsSync = new WeakMap();
 		function setupSettingsDialog(dialog) {
 			if (!mpIsMobile()) return; // 修复 40：仅移动端；桌面端完全走官方
+			// rc.1 起侧栏根节点在 <768px 也会带 role=dialog/aria-modal；
+			// 它不是设置面板。误把它全屏化会得到「侧栏铺满 + 顶部设置 + 无法返回」。
+			if (dialog.classList.contains("hHd-Xa_root") || dialog.closest(".pI_x6G_sidebarCol")) return;
 			const old = mpSettingsSync.get(dialog);
 			if (old) { try { old(); } catch (e) {} return; }
 			const nav0 = Array.from(dialog.children).find((c) => c.tagName === "NAV");
@@ -3262,6 +3265,9 @@ mpSetMenuOpenClass(false);
 				//   mpCloseDrawer 已含「滑出动画 + 等官方状态翻转 + 超时兜底」，直接复用。
 				//   打开方向同样不能只等 60ms（rc.1 的抽屉状态异步更慢）。
 				if (mpOfficialDrawerOpen()) { mpCloseDrawer(); return; }
+				// 先摘掉可能残留的视觉打开类，再点官方 toggle；否则 document 捕获监听器
+				// 会把这次程序化 click 误判成“已打开时再点 toggle”，立刻又关回去。
+				mpSetDrawerOpen(false);
 				const btn = mpOfficialToggle();
 				if (btn) btn.click();
 				mpSetDrawerOpen(true);
@@ -3387,6 +3393,9 @@ mpSetMenuOpenClass(false);
 					return;
 				}
 				const btn = mpOfficialToggle();
+				// 清掉残留的 mp-drawer-open，避免 document 捕获监听器把这次程序化
+				// toggle 当成“关闭当前抽屉”而吞掉。
+				mpSetDrawerOpen(false);
 				if (btn) btn.click();
 				mpSetDrawerOpen(true);
 				mpAwaitOfficialOpen();
@@ -4163,7 +4172,24 @@ mpSetMenuOpenClass(false);
 				btn.className = "mp-nav-btn";
 				btn.setAttribute("aria-label", "打开导航");
 				btn.innerHTML = '<svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M3 5.5h14M3 10h14M3 14.5h14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
-				btn.addEventListener("click", (e) => { e.stopPropagation(); mpToggleDrawer(); });
+				// web-all 0.4.15 在 document 的 click 捕获层会拦掉汉堡的 click，
+				// 导致“点导航没反应”。用 pointerdown/touchstart 抢在 click 之前，
+				// click 只作桌面/JS 兜底；350ms 防抖避免触摸双触发。
+				let mpNavLastActivate = 0;
+				const mpActivateNav = (e) => {
+					const now = performance.now();
+					if (now - mpNavLastActivate < 350) return;
+					mpNavLastActivate = now;
+					try { e.preventDefault(); e.stopPropagation(); } catch (err) {}
+					mpToggleDrawer();
+				};
+				btn.addEventListener("pointerdown", mpActivateNav, { capture: true });
+				btn.addEventListener("touchstart", mpActivateNav, { capture: true, passive: false });
+				btn.addEventListener("click", (e) => {
+					e.stopPropagation();
+					if (performance.now() - mpNavLastActivate < 500) return;
+					mpToggleDrawer();
+				}, { capture: true });
 				document.body.appendChild(btn);
 				mpNavBtnEl = btn; // ⭐ 修复 47：自持引用，detached 后也能重挂
 				// 修复 30：汉堡锚定进 header（CSS .mp-nav-btn.mp-in-header 相对 header 定位）。
