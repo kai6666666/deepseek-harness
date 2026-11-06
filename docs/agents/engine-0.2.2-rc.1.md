@@ -149,8 +149,16 @@ HTTP 401（带 token 的引擎已就绪）
 - 移动端 client 与最终源文件 SHA-256 一致：
   `e17161172062bd3c1d1e3f37316366a765ddb8a9f15c6ee6e9ad208b72d20d34`
 
-## 待办
+## 发布
 
-1. 合并 PR #1。
-2. 下载 run 42205805833 的 system / gecko artifact。
-3. 创建 `v0.4.3` Release 并上传双 APK；`v0.4.2` 保持不动。
+`v0.4.3` 已发布：
+
+```text
+https://github.com/kai6666666/deepseek-harness/releases/tag/v0.4.3
+target_commitish 4f9335b6c70753435aac08e8ddb1c2fa1cc716b1
+dsh-android-0.4.3-arm64.apk        186,034,095 B  sha256 760d3c69…
+dsh-android-0.4.3-gecko-arm64.apk  275,140,771 B  sha256 129d5d65…
+SHA256SUMS.txt
+```
+
+`v0.4.2` 保持不动。PR #1 已 squash 合并。
