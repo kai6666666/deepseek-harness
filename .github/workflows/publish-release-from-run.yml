@@ -32,37 +32,49 @@ jobs:
           repository: ${{ github.repository }}
 
       - name: Normalize names
+        env:
+          TAG: ${{ inputs.tag }}
         run: |
           set -e
+          VERSION="${TAG#v}"
           find dist -type f -ls
           mkdir -p out
           SYS=$(find dist/dsh-system-release -name '*.apk' | head -1)
           GECKO=$(find dist/dsh-gecko-release -name '*.apk' | head -1)
           test -n "$SYS" && test -n "$GECKO"
-          cp "$SYS" out/dsh-android-0.4.3-arm64.apk
-          cp "$GECKO" out/dsh-android-0.4.3-gecko-arm64.apk
+          cp "$SYS" "out/dsh-android-${VERSION}-arm64.apk"
+          cp "$GECKO" "out/dsh-android-${VERSION}-gecko-arm64.apk"
           sha256sum out/*.apk > out/SHA256SUMS.txt
           cat out/SHA256SUMS.txt
 
       - name: Write release notes
+        env:
+          TAG: ${{ inputs.tag }}
         run: |
-          cat > notes.md <<'EOF'
-          ## DSH Android 0.4.3
+          VERSION="${TAG#v}"
+          cat > notes.md <<EOF
+          ## DSH Android ${VERSION}
 
-          - 引擎：`@deepseek-ai/dsh@0.2.2-rc.1`
-          - pnpm：`11.28.5`
-          - 移动端 UI：`1.1.0-162`
-          - 锚点：`15/15`，补丁标记：`5/5`
-          - 会话格式：`v4`，旧会话可直接读取
+          - 引擎：\`@deepseek-ai/dsh@0.2.2-rc.1\`
+          - pnpm：\`11.28.5\`
+          - 移动端 UI：\`1.1.0-163\`
+          - 锚点：\`15/15\`，补丁标记：\`5/5\`
+          - 会话格式：\`v4\`，旧会话可直接读取
+
+          ### 修复
+
+          - 侧栏不再被误当设置弹窗全屏化
+          - 汉堡在 web-all 0.4.15 下可正常打开抽屉
+          - \`@linxin666/dsh-web-all\` 0.4.15、\`dsh-app-pet\` 1.0.3 已启用
 
           ### 安装
 
           覆盖安装即可保留数据：
 
-          - `dsh-android-0.4.3-arm64.apk`：系统 WebView 版
-          - `dsh-android-0.4.3-gecko-arm64.apk`：Gecko 版
+          - \`dsh-android-${VERSION}-arm64.apk\`：系统 WebView 版
+          - \`dsh-android-${VERSION}-gecko-arm64.apk\`：Gecko 版
 
-          `v0.4.2` 保持不变。
+          \`v0.4.3\` 保持不变。
           EOF
 
       - name: Create GitHub Release
