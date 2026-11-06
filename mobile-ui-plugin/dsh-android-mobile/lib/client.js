@@ -161,6 +161,19 @@ window.__ModuleLoader__.load({
 [data-mobile] .pI_x6G_frame[data-sidebar-drawer] .pI_x6G_sidebarCol.mp-drawer-open {
   left: 0 !important;
 }
+/* web-all 会把侧栏压成 52px 轨道并用 display:none 控制；这里直接以官方
+   data-sidebar-collapsed 为准恢复抽屉几何，视觉类只负责动画，不再决定能否打开。 */
+html[data-mobile] .pI_x6G_frame[data-sidebar-drawer]:not([data-sidebar-collapsed]) .pI_x6G_sidebarCol {
+  display: block !important;
+  position: fixed !important;
+  inset: 0 auto 0 0 !important;
+  left: 0 !important;
+  width: min(320px, 85vw) !important;
+  z-index: 1100 !important;
+}
+html[data-mobile] .pI_x6G_frame[data-sidebar-drawer][data-sidebar-collapsed] .pI_x6G_sidebarCol {
+  display: none !important;
+}
 [data-mobile] .pI_x6G_drawerMask {
   display: none !important;
 }
@@ -2998,6 +3011,11 @@ window.__ModuleLoader__.load({
 return document.querySelector(".pI_x6G_sidebarCol")
 || document.querySelector('[class*="sidebarCol"]');
 }
+			function mpIsNativeDrawer() {
+				const col = mpSidebarCol();
+				const frame = col ? col.closest(".pI_x6G_frame") : null;
+				return !!frame && frame.hasAttribute("data-sidebar-drawer");
+			}
 			function mpOfficialToggle() {
 const direct = document.querySelector(".hHd-Xa_toggle");
 if (direct) return direct;
@@ -3028,6 +3046,9 @@ return col ? col.querySelector('[class*="toggle"]') : null;
 				return mask;
 			}
 			function mpSetDrawerOpen(open) {
+				// rc.1 原生抽屉：几何/开合/遮罩全由 data-sidebar-collapsed 控制，
+				// 不再写 mp-drawer-open 或自定义遮罩，避免与 web-all 打架。
+				if (mpIsNativeDrawer()) return;
 				// ⚠️ 修复 39（2026-09-16 啾灵反馈）：抽屉/遮罩机制**只在窄屏下成立**。
 				// 宽屏下官方侧栏常驻展开，mpOfficialDrawerOpen() 恒为 true → 这里会给遮罩
 				// 加上 .mp-drawer-open（opacity:1 + pointer-events:auto + inset:0 z=39），
@@ -3213,6 +3234,7 @@ function mpSetMenuOpenClass(on) {
 document.body.classList.toggle("mp-menu-open", !!on);
 }
 function mpSyncDrawer() {
+				if (mpIsNativeDrawer()) return;
 // ⚠️ 菜单（portal）打开期间不要动抽屉：菜单的 anchor 在抽屉里，
 //   抽屉一滑走 anchor 就到屏幕外，菜单会被 clamp 回视口 → 落到会话区。
 				if (mpMenuOpen()) {
@@ -3255,10 +3277,17 @@ mpSetMenuOpenClass(false);
 			}
 			function mpToggleDrawer() {
 				if (!mpIsMobile()) return; // 修复 40：仅移动端；桌面端完全走官方
+				if (mpIsNativeDrawer()) {
+					const btn = mpOfficialToggle();
+					if (btn) btn.click();
+					return;
+				}
 				// 以视觉状态为准：web-all 下官方可能 already expanded，但抽屉被
 				// CSS 隐藏；按官方状态会先“关一次”，用户看到的是“点导航没反应”。
 				const col = mpSidebarCol();
-				if (col && col.classList.contains("mp-drawer-open")) {
+				const frame = col ? col.closest(".pI_x6G_frame") : null;
+				const nativeOpen = !!frame && frame.hasAttribute("data-sidebar-drawer") && !frame.hasAttribute("data-sidebar-collapsed");
+				if (col && (col.classList.contains("mp-drawer-open") || nativeOpen)) {
 					mpCloseDrawer();
 					return;
 				}
@@ -3273,6 +3302,13 @@ mpSetMenuOpenClass(false);
 			//   官方切 56px 图标条 + rail-in 动画就发生在屏幕外，看不见（保住修复 ③ 的效果）。
 			function mpCloseDrawer(opts) {
 				if (!mpIsMobile()) return; // 修复 40：仅移动端；桌面端完全走官方
+				if (mpIsNativeDrawer()) {
+					if (mpOfficialDrawerOpen()) {
+						const btn = mpOfficialToggle();
+						if (btn) btn.click();
+					}
+					return;
+				}
 				const visualOnly = !!(opts && opts.visualOnly);
 				if (mpClosing) return;
 				if (!mpOfficialDrawerOpen()) { mpSetDrawerOpen(false); return; }
@@ -3365,6 +3401,13 @@ mpSetMenuOpenClass(false);
 
 			function mpOpenDrawer() {
 				if (!mpIsMobile()) return; // 修复 40：仅移动端；桌面端完全走官方
+				if (mpIsNativeDrawer()) {
+					if (!mpOfficialDrawerOpen()) {
+						const btn = mpOfficialToggle();
+						if (btn) btn.click();
+					}
+					return;
+				}
 				// 关闭动画进行中：取消关闭、直接重开（官方仍是 expanded，加上类即可滑回）
 				if (mpClosing) {
 					if (mpCloseTimer !== null) { clearTimeout(mpCloseTimer); mpCloseTimer = null; }
@@ -4052,7 +4095,7 @@ mpSetMenuOpenClass(false);
 				//    设置弹窗打开期间抽屉会被"视觉收起"（官方仍是 expanded），
 				//    那种状态下按返回键不该去动抽屉。
 				const col = mpSidebarCol();
-				if (col && col.classList.contains("mp-drawer-open")) { mpCloseDrawer(); return true; }
+				if (col && (col.classList.contains("mp-drawer-open") || (mpIsNativeDrawer() && mpOfficialDrawerOpen()))) { mpCloseDrawer(); return true; }
 
 				// ⑥ 官方右侧栏（右上角那个按钮开出来的「工作区文件 / 新建终端」栏）。
 				//    判据用服务自己的 `isExpanded()`，不猜 DOM —— 右栏收起时面板只是被
@@ -4099,6 +4142,17 @@ mpSetMenuOpenClass(false);
 					e.stopPropagation();
 					e.stopImmediatePropagation();
 					mpCloseDrawer();
+				}, { capture: true });
+				// 原生/ web-all 抽屉打开时，`[data-dsh-frame]::after` 是整屏遮罩；
+				// 点遮罩的事件目标就是 frame。把这一下接成关闭，避免“打开后出不去”。
+				document.addEventListener("click", (e) => {
+					if (!mpIsNativeDrawer() || !mpOfficialDrawerOpen()) return;
+					const col = mpSidebarCol();
+					const frame = col ? col.closest(".pI_x6G_frame") : null;
+					if (frame && e.target === frame) {
+						const btn = mpOfficialToggle();
+						if (btn) btn.click();
+					}
 				}, { capture: true });
 				window.addEventListener("resize", () => { mpSyncMobileAttr(); mpSyncDrawer(); mpScheduleHeaderCenter(); }, { passive: true });
 				// §12：把返回键处理器交给原生。原生拦下系统返回键后调它，
@@ -4179,6 +4233,18 @@ mpSetMenuOpenClass(false);
 				btn.addEventListener("click", (e) => {
 					e.stopPropagation();
 					if (performance.now() - mpNavLastActivate < 500) return;
+					mpToggleDrawer();
+				}, { capture: true });
+				// window 捕获早于 web-all 的 document 捕获；脚本/鼠标的 .click()
+				// 也走这里，避免被 web-all 的 click 拦截层吞掉。
+				window.addEventListener("click", (e) => {
+					const t = e.target;
+					if (!t || !t.closest || !t.closest(".mp-nav-btn")) return;
+					e.preventDefault();
+					e.stopPropagation();
+					e.stopImmediatePropagation();
+					if (performance.now() - mpNavLastActivate < 500) return;
+					mpNavLastActivate = performance.now();
 					mpToggleDrawer();
 				}, { capture: true });
 				document.body.appendChild(btn);

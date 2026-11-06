@@ -25,6 +25,8 @@ vc=42
   不再被 web-all 下「官方 expanded 但 CSS 隐藏」的陈旧状态吃掉第一次点击。
 - **web-all 0.4.15 拦截 click**：入口同时监听 `pointerdown/touchstart`，
   350ms 防抖，click 仅作桌面与脚本兜底。
+- **抽屉遮罩可点击关闭**：原生 `[data-dsh-frame]::after` 遮罩被点到时
+  直接调用官方 toggle，避免“打开后卡在侧栏出不去”。
 - 移动端 UI 版本提升到 `1.1.0-164`。
 
 ## [0.4.4] — 2026-11-06
