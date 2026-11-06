@@ -3945,20 +3945,38 @@ mpSetMenuOpenClass(false);
 			window.addEventListener("scroll", mpCloseViewsMenu, { passive: true, capture: true });
 			window.addEventListener("resize", mpCloseViewsMenu, { passive: true });
 
+			function mpAlignLeftToggle() {
+				if (!mpIsMobile()) return;
+				const h = [...document.querySelectorAll("button")]
+					.filter((b) => b.getBoundingClientRect().width > 0 && b.getBoundingClientRect().height > 0);
+				const left = h.find((b) => b.matches('button[aria-label="打开侧边栏"], button[aria-label="收起侧边栏"]'));
+				const right = h.find((b) => b.matches('button[aria-label="打开右侧边栏"], button[aria-label="收起右侧边栏"]'));
+				if (!left) return;
+				if (!right) { left.style.position = ""; left.style.top = ""; return; }
+				// 先归零再量，避免把上一次的偏移量算进 dy 造成来回抖动。
+				left.style.position = "relative";
+				left.style.top = "0px";
+				const dy = right.getBoundingClientRect().top - left.getBoundingClientRect().top;
+				left.style.top = `${Math.abs(dy) < 0.5 ? 0 : dy.toFixed(2)}px`;
+			}
+
 			function mpNormalizeMarketIcon() {
 				const row = [...document.querySelectorAll(".hHd-Xa_panelRow")]
 					.find((r) => (r.innerText || "").trim() === "插件市场");
 				if (!row) return;
-				const svg = row.querySelector(".hHd-Xa_panelGlyph svg");
-				if (!svg || svg.dataset.mpMarketFixed === "1") return;
-				// web-all 0.4.15 的插件市场图标画了 3 列 + 一个旋转块；只留 2×2。
+				const glyphs = [...row.querySelectorAll(".hHd-Xa_panelGlyph")];
+				glyphs.slice(1).forEach((g) => { try { g.remove(); } catch (e) {} });
+				const svgs = [...row.querySelectorAll("svg")];
+				svgs.slice(1).forEach((s) => { try { s.remove(); } catch (e) {} });
+				const svg = svgs[0];
+				if (!svg) return;
 				[...svg.querySelectorAll("g rect")].slice(4).forEach((r) => { try { r.remove(); } catch (e) {} });
 				[...svg.children].forEach((c) => { if (c.tagName.toLowerCase() === "rect") { try { c.remove(); } catch (e) {} } });
-				svg.dataset.mpMarketFixed = "1";
 			}
 
 			function mpAnchorBurger() {
 				if (!mpIsMobile()) return; // 修复 40：非移动端绝不挂载汉堡
+				mpAlignLeftToggle();
 				mpNormalizeMarketIcon();
 				// 修复 59：header 内容变化时顺手重算居中留白（已合并到下一帧）。
 				mpScheduleHeaderCenter();
@@ -4237,6 +4255,11 @@ mpSetMenuOpenClass(false);
 
 			function mpBuildShellForMobile() {
 				if (!mpIsMobile()) return; // 修复 40
+				mpAlignLeftToggle();
+				// 彻底移除旧的/残留的自建按钮。
+				document.querySelectorAll(".mp-nav-btn").forEach((n) => { try { n.remove(); } catch (e) {} });
+				// 有 DSH 官方 panel-left 按钮时不再创建自建按钮。
+				if (document.querySelector('.IW6AQa_iconButton, button[aria-label="打开侧边栏"], button[aria-label="收起侧边栏"]')) return;
 				// 幂等：拆解后重进窄屏会再次调用，别建出第二个汉堡。
 				if (document.querySelector(".mp-nav-btn")) return;
 				const btn = document.createElement("button");
