@@ -32,7 +32,7 @@ android {
         // 全部包（node / bash / dpkg / python）都装在 filesDir 下的 $PREFIX 里，
         // 一升到 29 就会全线 Permission denied。Termux 官方 App 同样停在 28。
         targetSdk = 28
-        versionCode = 41
+        versionCode = 42
         // 后缀语义：`credperm` = 凭据文件权限修复（0.2.9 首发）；
         // `tooliso` = 工具插件注册失败的隔离（可选工具注册失败不再拖垮引擎启动）；
         // `rescue` = 坏插件不再让 App 打不开（四级降级阶梯 + AI 自助修复通道）。
@@ -262,7 +262,7 @@ android {
         //   ③ ⋯ 菜单里的「对话 / 轨迹」改为真开关：菜单不关闭即可连续来回切；
         //   ④ 悬浮气泡补 `showDetails / hideDetails` 中文词典，不再露出原始键名；
         //   ⑤ 开发环境分节补 10s 超时、错误态与重试，插件市场空态正常。
-        versionName = "0.4.4"
+        versionName = "0.4.5"
 
         // 只支持 arm64-v8a：内置的引擎资产与 Termux bootstrap 都是 arm64 架构
         ndk {

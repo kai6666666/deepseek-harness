@@ -3255,23 +3255,14 @@ mpSetMenuOpenClass(false);
 			}
 			function mpToggleDrawer() {
 				if (!mpIsMobile()) return; // 修复 40：仅移动端；桌面端完全走官方
-				// 关闭中再点汉堡 = 取消关闭、直接重开（而不是又去点官方 toggle）
-				if (mpClosing) { mpOpenDrawer(); return; }
-				// ⭐ 修复 56b：**关闭方向复用 mpCloseDrawer**。
-				//   原实现只做 setTimeout(mpSyncDrawer, 60)：官方 React 要 ~800ms 才
-				//   写出 collapsed，60ms 时读到过期的 expanded → 又保持打开；而主
-				//   observer 监听的是 {childList,subtree,characterData}，**不含 class**
-				//   → 官方随后真正收起时无人复查，抽屉以浮层形式永久占屏。
-				//   mpCloseDrawer 已含「滑出动画 + 等官方状态翻转 + 超时兜底」，直接复用。
-				//   打开方向同样不能只等 60ms（rc.1 的抽屉状态异步更慢）。
-				if (mpOfficialDrawerOpen()) { mpCloseDrawer(); return; }
-				// 先摘掉可能残留的视觉打开类，再点官方 toggle；否则 document 捕获监听器
-				// 会把这次程序化 click 误判成“已打开时再点 toggle”，立刻又关回去。
-				mpSetDrawerOpen(false);
-				const btn = mpOfficialToggle();
-				if (btn) btn.click();
-				mpSetDrawerOpen(true);
-				mpAwaitOfficialOpen();
+				// 以视觉状态为准：web-all 下官方可能 already expanded，但抽屉被
+				// CSS 隐藏；按官方状态会先“关一次”，用户看到的是“点导航没反应”。
+				const col = mpSidebarCol();
+				if (col && col.classList.contains("mp-drawer-open")) {
+					mpCloseDrawer();
+					return;
+				}
+				mpOpenDrawer();
 			}
 			// 修复 25：抽屉关闭。
 			// ⚠️ 旧实现（修复 ③）用 .mp-drawer-closing 把抽屉**瞬间**隐藏，但遮罩仍走
@@ -4171,7 +4162,7 @@ mpSetMenuOpenClass(false);
 				btn.type = "button";
 				btn.className = "mp-nav-btn";
 				btn.setAttribute("aria-label", "打开导航");
-				btn.innerHTML = '<svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M3 5.5h14M3 10h14M3 14.5h14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
+				btn.innerHTML = '<svg width="20" height="20" class="mp-nav-icon" data-icon="dsw-icon-panel-left-outline-regular" aria-hidden="true"><use href="#dsw-icon-panel-left-outline-regular"></use></svg>';
 				// web-all 0.4.15 在 document 的 click 捕获层会拦掉汉堡的 click，
 				// 导致“点导航没反应”。用 pointerdown/touchstart 抢在 click 之前，
 				// click 只作桌面/JS 兜底；350ms 防抖避免触摸双触发。

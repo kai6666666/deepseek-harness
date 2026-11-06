@@ -16,6 +16,17 @@
 > 正是靠 versionCode 区分同一 versionName 的不同构建。
 
 ---
+## [0.4.5] — 2026-11-06
+vc=42
+### 修复
+- **侧栏入口恢复官方图标**：汉堡三条杠改为官方
+  `dsw-icon-panel-left-outline-regular`（左侧栏面板图标），与 DSH 原版一致。
+- **侧栏入口改为视觉状态优先**：只要抽屉当前不可见，点击就执行打开，
+  不再被 web-all 下「官方 expanded 但 CSS 隐藏」的陈旧状态吃掉第一次点击。
+- **web-all 0.4.15 拦截 click**：入口同时监听 `pointerdown/touchstart`，
+  350ms 防抖，click 仅作桌面与脚本兜底。
+- 移动端 UI 版本提升到 `1.1.0-164`。
+
 ## [0.4.4] — 2026-11-06
 vc=41
 ### 修复
