@@ -40,8 +40,9 @@ on:
         required: false
         default: '0'
 
+# 本工作流在分支上要建 Release（公开可下载，绕开 Actions artifact 需要登录的限制）。
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: apk-${{ github.ref }}
@@ -55,6 +56,7 @@ jobs:
     env:
       ASSETS_TAG: ${{ github.event.inputs.assets_release || vars.ASSETS_RELEASE }}
       STRICT_ASSETS: ${{ github.event.inputs.strict_assets || '0' }}
+      REL_TAG: v0.4.3-debug
     steps:
       - uses: actions/checkout@v4
 
@@ -146,14 +148,13 @@ jobs:
       - name: 编译门禁（engine 包，不需要资产）
         run: KTCACHE="$HOME/.kt" bash tools/verify-engine.sh
 
-      # 本分支出包版本戳：main 上的 0.2.2-rc1（vc47）是已发布线，直接改它会让已装机用户
-      # 撞 INSTALL_FAILED_VERSION_DOWNGRADE，所以在构建期覆盖成 0.4.3-debug / vc=48（严格递增）。
-      # CHANGELOG 同步插一条 0.4.3-debug 小节，否则 version.sh 的「CHANGELOG = versionName」判据对不上。
+      # main 上的 0.2.2-rc1（vc47）已判定为废弃版；本分支出包直接改成 0.4.3-debug。
+      # versionCode 仍递增到 48（已装 vc47 的设备可覆盖安装，不必卸载清数据）。
       - name: 版本戳 0.4.3-debug（vc=48）
         run: |
           sed -i 's/versionCode = 47/versionCode = 48/' app/build.gradle.kts
           sed -i 's/versionName = "0.2.2-rc1"/versionName = "0.4.3-debug"/' app/build.gradle.kts
-          python3 -c "import pathlib;c=pathlib.Path('CHANGELOG.md');t=c.read_text(encoding='utf-8');b='## [0.4.3-debug] — 2026-11-07\nvc=48\n\n### 变更\n\n- 引擎 `@deepseek-ai/dsh` 0.2.2-rc.1（与 main 同）。\n- versionName 0.2.2-rc1 → **0.4.3-debug**；versionCode 47 → **48**（必须严格递增，否则已装 0.2.2-rc1 的设备撞 `INSTALL_FAILED_VERSION_DOWNGRADE`）。\n- 锚点门禁（本地已跑）：官方 `check-engine-anchors.mjs` **5/5**；`EngineManager` 13 对 `*_GUARD` **13/13**。\n- `engine.bin` 81,609,187 B，sha256 3f164e306419b214464904ae176877c6879bd7ff67ca3905afd81af88ba71ad4。\n\n---\n\n';c.write_text((b+t) if '## [0.4.3-debug]' not in t else t,encoding='utf-8')"
+          python3 -c "import pathlib;c=pathlib.Path('CHANGELOG.md');t=c.read_text(encoding='utf-8');b='## [0.4.3-debug] — 2026-11-07\nvc=48\n\n### 变更\n\n- 引擎 `@deepseek-ai/dsh` 0.2.2-rc.1（与 main 同），锚点门禁：官方 5/5、`EngineManager` 13 对 `*_GUARD` 13/13。\n- versionName 0.2.2-rc1 → **0.4.3-debug**；versionCode 47 → **48**（保持严格递增，已装 vc47 的设备可覆盖安装）。\n- 0.2.2-rc1（vc47）已判定为**废弃版**，不再维护该命名。\n- `engine.bin` 本地候选：81,609,187 B，sha256 3f164e306419b214464904ae176877c6879bd7ff67ca3905afd81af88ba71ad4。\n\n---\n\n';c.write_text((b+t) if '## [0.4.3-debug]' not in t else t,encoding='utf-8')"
           grep -n 'versionCode = \|versionName = ' app/build.gradle.kts
           sh tools/version.sh --check
 
@@ -169,7 +170,7 @@ jobs:
           du -sh app/src/main/assets || true
           ls -lh app/src/main/assets/*.bin 2>/dev/null || true
 
-      - name: 上传 APK
+      - name: 上传 APK（Actions artifact，内部）
         uses: actions/upload-artifact@v4
         with:
           name: dsh-system-debug
@@ -178,6 +179,29 @@ jobs:
             app/build/outputs/apk/system/debug/output-metadata.json
           if-no-files-found: error
           retention-days: 14
+
+      # 关键一步：artifact 下载需要登录，Release 资产不需要。
+      # 公开仓库 ⇒ 公开 GET https://github.com/<owner>/<repo>/releases/download/<tag>/<name> 即可拉。
+      - name: 发布到 Release（公开可下）
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          APK=$(find app/build/outputs/apk/system/debug -name '*.apk' | head -1)
+          [ -n "$APK" ] || { echo "::error::找不到 APK"; exit 1; }
+          SHA=$(sha256sum "$APK" | cut -d' ' -f1)
+          SIZE=$(stat -c%s "$APK")
+          echo "APK=$APK size=$SIZE sha256=$SHA"
+          NOTES=$(printf '引擎 `@deepseek-ai/dsh@0.2.2-rc.1`（与 main 同）\n\n- versionName **0.4.3-debug** / versionCode **48**\n- APK 字节数 `%s`\n- sha256 `%s`\n- 锚点门禁：官方 5/5、EngineManager 13 对 *_GUARD 13/13\n' "$SIZE" "$SHA")
+          if gh release view "$REL_TAG" >/dev/null 2>&1; then
+            gh release upload "$REL_TAG" "$APK#dsh-android-0.4.3-debug-arm64.apk" --clobber
+          else
+            gh release create "$REL_TAG" "$APK#dsh-android-0.4.3-debug-arm64.apk" \
+              --title "0.4.3-debug（引擎 0.2.2-rc.1 / vc=48）" \
+              --notes "$NOTES" --prerelease
+          fi
+          gh release view "$REL_TAG" --json assets -q '.assets[] | "\(.name) \(.size) \(.url)"'
 
       - name: 上传构建日志（失败时）
         if: failure()
