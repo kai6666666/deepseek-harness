@@ -40,7 +40,6 @@ on:
         required: false
         default: '0'
 
-# 本工作流在分支上要建 Release（公开可下载，绕开 Actions artifact 需要登录的限制）。
 permissions:
   contents: write
 
@@ -103,8 +102,6 @@ jobs:
 
       # 🔴 apk.yml 之前**完全没有**这一步（只有 android-release.yml 有），于是 CI 出的
       # debug 包在真机上首次启动就挂：FileNotFoundException: bootstrap-aarch64.zip。
-      # build-bootstrap.sh 会把 Termux 官方 bootstrap 落到 assets 并做三道体检
-      # （条目数 / SYMLINKS.txt / bootstrap-required.txt 里的 soname）。
       - name: 现场取 Termux bootstrap（bootstrap-aarch64.zip）
         run: |
           OUT="$GITHUB_WORKSPACE/app/src/main/assets/bootstrap-aarch64.zip" \
@@ -148,7 +145,7 @@ jobs:
             echo "::notice title=webview-compat::tools/build-webview_compat.py 不在仓库里，跳过"
           fi
 
-      # 资产门禁（从 android-release.yml 移植）：缺一个就当场失败，别让残包发出去。
+      # 资产闸门（从 android-release.yml 移植）：缺一个就当场失败，别让残包发出去。
       - name: 资产闸门（engine / node-runtime / bootstrap 三件套）
         run: |
           a=app/src/main/assets
@@ -157,11 +154,28 @@ jobs:
             if [ -s "$a/$f" ]; then
               echo "✅ $f $(du -h "$a/$f" | cut -f1)"
             else
-              echo "::error::缺少关键资产 $f 20这个包装到真机上引擎起不来"
+              echo "::error::缺少关键资产 $f —— 这个包装到真机上引擎起不来"
               miss=1
             fi
           done
           exit $miss
+
+      # 真机坑（2026-11-07 实测）：Termux 仓库的 nodejs 包一直在漂，CI 拉到的
+      # 是 v26.13.0，而 TermuxBootstrap 里写死的期望值是 v26.12.1 ⇒ nodeIsUsable()
+      # 判「刚铺好的 node 是坏的」⇒ 引擎启动直接失败（界面显示「引擎启动失败」）。
+      # 这里从包里实际 node 二进制读出版本，把两个常量对齐，并当场自检。
+      - name: Node 运行时版本对齐（NODE_EXECUTABLE_VERSION / NODE_VERSION）
+        run: |
+          set -e
+          unzip -p app/src/main/assets/node-runtime.bin bin/node > /tmp/nodebin
+          REAL=$(strings /tmp/nodebin | grep -oE 'v26\.[0-9]+\.[0-9]+' | head -1)
+          [ -n "$REAL" ] || { echo "::error::读不出 node 运行时版本"; exit 1; }
+          echo "打包内的 node 实际版本：$REAL"
+          KT=app/src/main/java/com/dsh/android/termux/TermuxBootstrap.kt
+          sed -i "s/private const val NODE_EXECUTABLE_VERSION = \"v[0-9.]*\"/private const val NODE_EXECUTABLE_VERSION = \"$REAL\"/" "$KT"
+          sed -i "s/private const val NODE_VERSION = \"[0-9.-]*\"/private const val NODE_VERSION = \"${REAL#v}-1\"/" "$KT"
+          grep -n 'NODE_EXECUTABLE_VERSION = \|NODE_VERSION = ' "$KT" | head -4
+          grep -q "NODE_EXECUTABLE_VERSION = \"$REAL\"" "$KT" || { echo "::error::常量未对齐"; exit 1; }
 
       - name: 工具链自检
         run: |
@@ -178,7 +192,7 @@ jobs:
         run: |
           sed -i 's/versionCode = 47/versionCode = 48/' app/build.gradle.kts
           sed -i 's/versionName = "0.2.2-rc1"/versionName = "0.4.3-debug"/' app/build.gradle.kts
-          python3 -c "import pathlib;c=pathlib.Path('CHANGELOG.md');t=c.read_text(encoding='utf-8');b='## [0.4.3-debug] — 2026-11-07\nvc=48\n\n### 变更\n\n- 引擎 `@deepseek-ai/dsh` 0.2.2-rc.1（与 main 同），锚点门禁：官方 5/5、`EngineManager` 13 对 `*_GUARD` 13/13。\n- versionName 0.2.2-rc1 → **0.4.3-debug**；versionCode 47 → **48**（保持严格递增，已装 vc47 的设备可覆盖安装）。\n- 0.2.2-rc1（vc47）已判定为**废弃版**，不再维护该命名。\n- 补回 apk.yml 缺失的 Termux bootstrap 步骤（旧 debug 包在真机首次启动即 `FileNotFoundException: bootstrap-aarch64.zip`）。\n\n---\n\n';c.write_text((b+t) if '## [0.4.3-debug]' not in t else t,encoding='utf-8')"
+          python3 -c "import pathlib;c=pathlib.Path('CHANGELOG.md');t=c.read_text(encoding='utf-8');b='## [0.4.3-debug] — 2026-11-07\nvc=48\n\n### 变更\n\n- 引擎 `@deepseek-ai/dsh` 0.2.2-rc.1（与 main 同），锚点门禁：官方 5/5、`EngineManager` 13 对 `*_GUARD` 13/13。\n- versionName 0.2.2-rc1 → **0.4.3-debug**；versionCode 47 → **48**（保持严格递增）。\n- 0.2.2-rc1（vc47）已判定为**废弃版**。\n- 补回 apk.yml 缺失的 Termux bootstrap 步骤 + 三件套资产闸门。\n- Node 运行时版本对齐：从包内 `bin/node` 读实际版本回写 `NODE_EXECUTABLE_VERSION` / `NODE_VERSION`（Termux 仓库漂到 v26.13.0，旧常量写死 v26.12.1 会让 `nodeIsUsable()` 把新铺的 node 判成损坏 ⇒ 引擎启动失败）。\n\n---\n\n';c.write_text((b+t) if '## [0.4.3-debug]' not in t else t,encoding='utf-8')"
           grep -n 'versionCode = \|versionName = ' app/build.gradle.kts
           sh tools/version.sh --check
 
@@ -204,8 +218,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      # 关键一步：artifact 下载需要登录，Release 资产不需要。
-      # ⚠️ gh 的 asset 不支持 path#name 重命名，所以先 cp 成目标名再上传。
+      # artifact 下载需要登录，Release 资产不需要（公开仓库 GET 即可）。
       - name: 发布到 Release（公开可下）
         if: success()
         env:
@@ -218,10 +231,17 @@ jobs:
           cp -f "$APK" "/tmp/$NAME"
           SHA=$(sha256sum "/tmp/$NAME" | cut -d' ' -f1)
           SIZE=$(stat -c%s "/tmp/$NAME")
+          NODE=$(strings -a "/tmp/$NAME" | grep -aoE 'v26\.[0-9]+\.[0-9]+' | head -1)
           echo "APK=$APK -> /tmp/$NAME size=$SIZE sha256=$SHA"
-          NOTES=$(printf '引擎 `@deepseek-ai/dsh@0.2.2-rc.1`（与 main 同）\n\n- versionName **0.4.3-debug** / versionCode **48**\n- APK 字节数 `%s`\n- sha256 `%s`\n- 锚点门禁：官方 5/5、EngineManager 13 对 *_GUARD 13/13\n- 已含 assets：engine.bin / node-runtime.bin / bootstrap-aarch64.zip\n' "$SIZE" "$SHA")
+          NOTES=$(printf '引擎 `@deepseek-ai/dsh@0.2.2-rc.1`
+
+- versionName **0.4.3-debug** / versionCode **48**
+- APK 字节数 `%s`
+- sha256 `%s`
+- node 运行时 `%s`（已回写 NODE_EXECUTABLE_VERSION / NODE_VERSION）
+- assets：engine.bin / node-runtime.bin / bootstrap-aarch64.zip
+' "$SIZE" "$SHA" "$NODE")
           if gh release view "$REL_TAG" >/dev/null 2>&1; then
-            echo "release 已存在，更新 notes + 追加资产"
             gh release edit "$REL_TAG" --notes "$NOTES" --prerelease || true
           else
             gh release create "$REL_TAG" --title "0.4.3-debug（引擎 0.2.2-rc.1 / vc=48）" --notes "$NOTES" --prerelease
