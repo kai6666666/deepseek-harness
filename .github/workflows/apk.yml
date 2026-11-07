@@ -105,8 +105,82 @@ jobs:
       - name: 现场构建原生产物 + pnpm
         run: bash tools/build-native-assets.sh
 
+      # ── mobile-ui 正式修复（1.1.0-170）──
+      # 真机实测：rc.1 的侧栏抽屉根是 .hHd-Xa_root（祖先链
+      #   BUTTON.hHd-Xa_panelRow > NAV.hHd-Xa_panelList > DIV.hHd-Xa_root），
+      # 且它自带 role=dialog / aria-modal=true；设置弹窗**共用同一个根类**。
+      # 0.4.2 时代的 [data-pane="sidebar"] 在 rc.1 命中数为 0 ⇒ 旧抽屉规则全失效，
+      # 症状就是「点侧栏设置后抽屉不收起、压住设置界面」。
+      # 这里在**打包插件资产之前**改源码，并把 MOBILE_UI_VERSION bump，
+      # 设备收到新 APK 后会重解 mobile-ui.zip 覆盖旧版。
+      - name: mobile-ui 补丁（抽屉选择器迁移到 .hHd-Xa_root + :has）
+        run: |
+          set -e
+          CJ=mobile-ui-plugin/dsh-android-mobile/lib/client.js
+          [ -f "$CJ" ] || { echo "::error::$CJ 不存在"; exit 1; }
+          python3 - "$CJ" <<'PYEOF'
+import sys
+p = sys.argv[1]
+s = open(p, encoding='utf-8', errors='replace').read()
+MARK = '__mpDrawerFix170'
+if MARK in s:
+    print('already patched, skip')
+    sys.exit(0)
+patch = '''
+
+/* ===== DSH Android 1.1.0-170：抽屉选择器迁移 =====
+ * rc.1 侧栏抽屉根 = .hHd-Xa_root（含 NAV[class*="panelList"]），自带 role=dialog；
+ * 设置弹窗共用同一个根类。旧版靠 [data-pane="sidebar"] 的规则在 rc.1 命中数为 0。
+ * WebView 156 支持 :has()，于是可以只隐藏「含 panelList」的那一个 root。
+ */
+(function () {
+  if (window.__mpDrawerFix170) return;
+  window.__mpDrawerFix170 = true;
+  try {
+    if (document.getElementById('mp-drawer-fix170')) return;
+    var st = document.createElement('style');
+    st.id = 'mp-drawer-fix170';
+    st.textContent = [
+      'html[data-sidebar-collapsed="true"] .hHd-Xa_root:has([class*="panelList"]){display:none !important;pointer-events:none !important;}',
+      'html[data-sidebar-collapsed="false"] .hHd-Xa_root:has([class*="panelList"]){display:flex !important;}',
+      '.hHd-Xa_root:not(:has([class*="panelList"])){z-index:2147483000 !important;background:#111418 !important;box-shadow:0 0 0 100vmax #111418 !important;}'
+    ].join('');
+    (document.head || document.documentElement).appendChild(st);
+  } catch (e) {}
+  document.addEventListener('click', function (ev) {
+    var t = ev.target;
+    if (!t || !t.closest) return;
+    if (!t.closest('.hHd-Xa_root')) return;
+    try { document.documentElement.setAttribute('data-sidebar-collapsed', 'true'); } catch (e) {}
+  }, true);
+})();
+'''
+open(p, 'w', encoding='utf-8').write(s + patch)
+print('patched client.js +%d bytes' % len(patch))
+PYEOF
+          echo "--- 补丁标记 ---"
+          grep -c '__mpDrawerFix170' "$CJ"
+          echo "--- 语法 ---"
+          node --check "$CJ" && echo 'client.js OK'
+          echo "--- 版本戳 ---"
+          EM=app/src/main/java/com/dsh/android/EngineManager.kt
+          sed -i 's/MOBILE_UI_VERSION = "1\.1\.0-169"/MOBILE_UI_VERSION = "1.1.0-170"/' "$EM"
+          grep -n 'MOBILE_UI_VERSION' "$EM" | head -3
+          grep -q 'MOBILE_UI_VERSION = "1.1.0-170"' "$EM" || { echo '::error::MOBILE_UI_VERSION 未 bump'; exit 1; }
+
       - name: 现场打包插件资产（15 个 zip）
         run: bash tools/build-plugin-assets.sh
+
+      # 产物自证：mobile-ui.zip 里必须带上这次补丁，否则真机上还是旧行为。
+      - name: 校验 mobile-ui.zip 含补丁
+        run: |
+          set -e
+          Z=app/src/main/assets/mobile-ui.zip
+          [ -s "$Z" ] || { echo "::error::mobile-ui.zip 未生成"; exit 1; }
+          unzip -p "$Z" 'dsh-android-mobile/lib/client.js' > /tmp/cj.js
+          grep -q '__mpDrawerFix170' /tmp/cj.js && echo '✅ mobile-ui.zip 内含 1.1.0-170 补丁' || { echo '::error::zip 内没有补丁'; exit 1; }
+          grep -q ':has(' /tmp/cj.js && echo '✅ 含 :has() 选择器' || true
+          ls -l "$Z"
 
       - name: 现场编 node-pty 绑定
         run: bash tools/build-node-pty.sh
@@ -148,10 +222,9 @@ jobs:
           done
           exit $miss
 
-      # 真机坑（2026-11-07 实测）：Termux 仓库的 nodejs 包一直在漂，CI 拉到 v26.13.0，
+      # 真机坑（2026-11-07 实测）：Termux 仓库的 nodejs 包一直漂，CI 拉到 v26.13.0，
       # 而 TermuxBootstrap 写死的期望是 v26.12.1 ⇒ nodeIsUsable() 判「刚铺好的 node
       # 是坏的」⇒ 引擎启动失败。这里从包里实际 node 读版本回写两个常量。
-      # 全程容错：资产由 Release 铺（没有 node-runtime.bin）时跳过，不得因此断构建。
       - name: Node 运行时版本对齐
         run: |
           set -u
@@ -190,7 +263,7 @@ jobs:
         run: |
           sed -i 's/versionCode = 47/versionCode = 48/' app/build.gradle.kts
           sed -i 's/versionName = "0.2.2-rc1"/versionName = "0.4.3-debug"/' app/build.gradle.kts
-          python3 -c "import pathlib;c=pathlib.Path('CHANGELOG.md');t=c.read_text(encoding='utf-8');b='## [0.4.3-debug] — 2026-11-07\nvc=48\n\n### 变更\n\n- 引擎 `@deepseek-ai/dsh` 0.2.2-rc.1（与 main 同）；锚点门禁：官方 5/5、EngineManager 13 对 *_GUARD 13/13。\n- versionName **0.4.3-debug** / versionCode **48**（0.2.2-rc1 vc47 已废弃，但 vc 必须严格递增）。\n- 补回 apk.yml 缺失的 Termux bootstrap 步骤 + 三件套资产闸门。\n- Node 运行时版本对齐：从包内 bin/node 读实际版本回写 NODE_EXECUTABLE_VERSION / NODE_VERSION。\n\n---\n\n';c.write_text((b+t) if '## [0.4.3-debug]' not in t else t,encoding='utf-8')"
+          python3 -c "import pathlib;c=pathlib.Path('CHANGELOG.md');t=c.read_text(encoding='utf-8');b='## [0.4.3-debug] — 2026-11-07\nvc=48\n\n### 变更\n\n- 引擎 `@deepseek-ai/dsh` 0.2.2-rc.1；锚点门禁：官方 5/5、EngineManager 13 对 *_GUARD 13/13。\n- versionName **0.4.3-debug** / versionCode **48**。\n- 补回 apk.yml 缺失的 Termux bootstrap 步骤 + 三件套资产闸门。\n- Node 运行时版本对齐（NODE_EXECUTABLE_VERSION / NODE_VERSION 从包内 bin/node 回写）。\n- **mobile-ui 1.1.0-170**：rc.1 侧栏抽屉根改为 .hHd-Xa_root（自带 role=dialog），与设置弹窗共用类名 ⇒ 用 :has([class*=panelList]) 只隐藏真抽屉，并给非抽屉面板抬 z-index；修「点侧栏设置后抽屉不收起、遮挡设置界面」。\n\n---\n\n';c.write_text((b+t) if '## [0.4.3-debug]' not in t else t,encoding='utf-8')"
           grep -n 'versionCode = \|versionName = ' app/build.gradle.kts
           sh tools/version.sh --check
 
@@ -229,8 +302,9 @@ jobs:
           SHA=$(sha256sum "/tmp/$NAME" | cut -d' ' -f1)
           SIZE=$(stat -c%s "/tmp/$NAME")
           NODE=$(grep -oE 'NODE_EXECUTABLE_VERSION = "v[0-9.]+"' app/src/main/java/com/dsh/android/termux/TermuxBootstrap.kt | grep -oE 'v[0-9.]+' | head -1 || true)
-          echo "APK=$APK -> /tmp/$NAME size=$SIZE sha256=$SHA node=${NODE:-?}"
-          NOTES=$(printf 'engine @deepseek-ai/dsh@0.2.2-rc.1\n\n- versionName **0.4.3-debug** / versionCode **48**\n- apk size `%s` bytes\n- sha256 `%s`\n- node runtime `%s` (NODE_EXECUTABLE_VERSION / NODE_VERSION aligned)\n- assets: engine.bin / node-runtime.bin / bootstrap-aarch64.zip\n' "$SIZE" "$SHA" "${NODE:-?}")
+          MUI=$(grep -oE 'MOBILE_UI_VERSION = "[0-9.]+-[0-9]+"' app/src/main/java/com/dsh/android/EngineManager.kt | grep -oE '[0-9.]+-[0-9]+$' | head -1 || true)
+          echo "APK=$APK -> /tmp/$NAME size=$SIZE sha256=$SHA node=${NODE:-?} mobile-ui=${MUI:-?}"
+          NOTES=$(printf 'engine @deepseek-ai/dsh@0.2.2-rc.1\n\n- versionName **0.4.3-debug** / versionCode **48**\n- apk size `%s` bytes\n- sha256 `%s`\n- node runtime `%s` (NODE_EXECUTABLE_VERSION / NODE_VERSION aligned)\n- mobile-ui `%s` (drawer selector migrated to .hHd-Xa_root + :has)\n- assets: engine.bin / node-runtime.bin / bootstrap-aarch64.zip\n' "$SIZE" "$SHA" "${NODE:-?}" "${MUI:-?}")
           if gh release view "$REL_TAG" >/dev/null 2>&1; then
             gh release edit "$REL_TAG" --notes "$NOTES" --prerelease || true
           else
