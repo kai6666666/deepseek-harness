@@ -182,6 +182,7 @@ jobs:
 
       # 关键一步：artifact 下载需要登录，Release 资产不需要。
       # 公开仓库 ⇒ 公开 GET https://github.com/<owner>/<repo>/releases/download/<tag>/<name> 即可拉。
+      # ⚠️ gh 的 asset 不支持 path#name 重命名，所以先 cp 成目标名再上传。
       - name: 发布到 Release（公开可下）
         if: success()
         env:
@@ -190,18 +191,21 @@ jobs:
           set -e
           APK=$(find app/build/outputs/apk/system/debug -name '*.apk' | head -1)
           [ -n "$APK" ] || { echo "::error::找不到 APK"; exit 1; }
-          SHA=$(sha256sum "$APK" | cut -d' ' -f1)
-          SIZE=$(stat -c%s "$APK")
-          echo "APK=$APK size=$SIZE sha256=$SHA"
+          NAME="dsh-android-0.4.3-debug-arm64.apk"
+          cp -f "$APK" "/tmp/$NAME"
+          SHA=$(sha256sum "/tmp/$NAME" | cut -d' ' -f1)
+          SIZE=$(stat -c%s "/tmp/$NAME")
+          echo "APK=$APK -> /tmp/$NAME size=$SIZE sha256=$SHA"
           NOTES=$(printf '引擎 `@deepseek-ai/dsh@0.2.2-rc.1`（与 main 同）\n\n- versionName **0.4.3-debug** / versionCode **48**\n- APK 字节数 `%s`\n- sha256 `%s`\n- 锚点门禁：官方 5/5、EngineManager 13 对 *_GUARD 13/13\n' "$SIZE" "$SHA")
           if gh release view "$REL_TAG" >/dev/null 2>&1; then
-            gh release upload "$REL_TAG" "$APK#dsh-android-0.4.3-debug-arm64.apk" --clobber
+            echo "release 已存在，追加/覆盖资产"
+            gh release edit "$REL_TAG" --notes "$NOTES" --prerelease || true
           else
-            gh release create "$REL_TAG" "$APK#dsh-android-0.4.3-debug-arm64.apk" \
-              --title "0.4.3-debug（引擎 0.2.2-rc.1 / vc=48）" \
-              --notes "$NOTES" --prerelease
+            gh release create "$REL_TAG" --title "0.4.3-debug（引擎 0.2.2-rc.1 / vc=48）" --notes "$NOTES" --prerelease
           fi
-          gh release view "$REL_TAG" --json assets -q '.assets[] | "\(.name) \(.size) \(.url)"'
+          gh release upload "$REL_TAG" "/tmp/$NAME" --clobber
+          echo '--- 上传后资产 ---'
+          gh release view "$REL_TAG" --json assets -q '.assets[] | "\(.name) \(.size) \(.state)"'
 
       - name: 上传构建日志（失败时）
         if: failure()
