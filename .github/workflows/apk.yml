@@ -101,6 +101,15 @@ jobs:
           OUT="$GITHUB_WORKSPACE/app/src/main/assets/node-runtime.bin" \
             bash tools/build-node-runtime.sh
 
+      # 🔴 apk.yml 之前**完全没有**这一步（只有 android-release.yml 有），于是 CI 出的
+      # debug 包在真机上首次启动就挂：FileNotFoundException: bootstrap-aarch64.zip。
+      # build-bootstrap.sh 会把 Termux 官方 bootstrap 落到 assets 并做三道体检
+      # （条目数 / SYMLINKS.txt / bootstrap-required.txt 里的 soname）。
+      - name: 现场取 Termux bootstrap（bootstrap-aarch64.zip）
+        run: |
+          OUT="$GITHUB_WORKSPACE/app/src/main/assets/bootstrap-aarch64.zip" \
+            bash tools/build-bootstrap.sh
+
       - name: 现场构建原生产物 + pnpm
         run: bash tools/build-native-assets.sh
 
@@ -139,6 +148,21 @@ jobs:
             echo "::notice title=webview-compat::tools/build-webview_compat.py 不在仓库里，跳过"
           fi
 
+      # 资产门禁（从 android-release.yml 移植）：缺一个就当场失败，别让残包发出去。
+      - name: 资产闸门（engine / node-runtime / bootstrap 三件套）
+        run: |
+          a=app/src/main/assets
+          miss=0
+          for f in engine.bin node-runtime.bin bootstrap-aarch64.zip; do
+            if [ -s "$a/$f" ]; then
+              echo "✅ $f $(du -h "$a/$f" | cut -f1)"
+            else
+              echo "::error::缺少关键资产 $f 20这个包装到真机上引擎起不来"
+              miss=1
+            fi
+          done
+          exit $miss
+
       - name: 工具链自检
         run: |
           java -version
@@ -154,7 +178,7 @@ jobs:
         run: |
           sed -i 's/versionCode = 47/versionCode = 48/' app/build.gradle.kts
           sed -i 's/versionName = "0.2.2-rc1"/versionName = "0.4.3-debug"/' app/build.gradle.kts
-          python3 -c "import pathlib;c=pathlib.Path('CHANGELOG.md');t=c.read_text(encoding='utf-8');b='## [0.4.3-debug] — 2026-11-07\nvc=48\n\n### 变更\n\n- 引擎 `@deepseek-ai/dsh` 0.2.2-rc.1（与 main 同），锚点门禁：官方 5/5、`EngineManager` 13 对 `*_GUARD` 13/13。\n- versionName 0.2.2-rc1 → **0.4.3-debug**；versionCode 47 → **48**（保持严格递增，已装 vc47 的设备可覆盖安装）。\n- 0.2.2-rc1（vc47）已判定为**废弃版**，不再维护该命名。\n- `engine.bin` 本地候选：81,609,187 B，sha256 3f164e306419b214464904ae176877c6879bd7ff67ca3905afd81af88ba71ad4。\n\n---\n\n';c.write_text((b+t) if '## [0.4.3-debug]' not in t else t,encoding='utf-8')"
+          python3 -c "import pathlib;c=pathlib.Path('CHANGELOG.md');t=c.read_text(encoding='utf-8');b='## [0.4.3-debug] — 2026-11-07\nvc=48\n\n### 变更\n\n- 引擎 `@deepseek-ai/dsh` 0.2.2-rc.1（与 main 同），锚点门禁：官方 5/5、`EngineManager` 13 对 `*_GUARD` 13/13。\n- versionName 0.2.2-rc1 → **0.4.3-debug**；versionCode 47 → **48**（保持严格递增，已装 vc47 的设备可覆盖安装）。\n- 0.2.2-rc1（vc47）已判定为**废弃版**，不再维护该命名。\n- 补回 apk.yml 缺失的 Termux bootstrap 步骤（旧 debug 包在真机首次启动即 `FileNotFoundException: bootstrap-aarch64.zip`）。\n\n---\n\n';c.write_text((b+t) if '## [0.4.3-debug]' not in t else t,encoding='utf-8')"
           grep -n 'versionCode = \|versionName = ' app/build.gradle.kts
           sh tools/version.sh --check
 
@@ -181,7 +205,6 @@ jobs:
           retention-days: 14
 
       # 关键一步：artifact 下载需要登录，Release 资产不需要。
-      # 公开仓库 ⇒ 公开 GET https://github.com/<owner>/<repo>/releases/download/<tag>/<name> 即可拉。
       # ⚠️ gh 的 asset 不支持 path#name 重命名，所以先 cp 成目标名再上传。
       - name: 发布到 Release（公开可下）
         if: success()
@@ -196,9 +219,9 @@ jobs:
           SHA=$(sha256sum "/tmp/$NAME" | cut -d' ' -f1)
           SIZE=$(stat -c%s "/tmp/$NAME")
           echo "APK=$APK -> /tmp/$NAME size=$SIZE sha256=$SHA"
-          NOTES=$(printf '引擎 `@deepseek-ai/dsh@0.2.2-rc.1`（与 main 同）\n\n- versionName **0.4.3-debug** / versionCode **48**\n- APK 字节数 `%s`\n- sha256 `%s`\n- 锚点门禁：官方 5/5、EngineManager 13 对 *_GUARD 13/13\n' "$SIZE" "$SHA")
+          NOTES=$(printf '引擎 `@deepseek-ai/dsh@0.2.2-rc.1`（与 main 同）\n\n- versionName **0.4.3-debug** / versionCode **48**\n- APK 字节数 `%s`\n- sha256 `%s`\n- 锚点门禁：官方 5/5、EngineManager 13 对 *_GUARD 13/13\n- 已含 assets：engine.bin / node-runtime.bin / bootstrap-aarch64.zip\n' "$SIZE" "$SHA")
           if gh release view "$REL_TAG" >/dev/null 2>&1; then
-            echo "release 已存在，追加/覆盖资产"
+            echo "release 已存在，更新 notes + 追加资产"
             gh release edit "$REL_TAG" --notes "$NOTES" --prerelease || true
           else
             gh release create "$REL_TAG" --title "0.4.3-debug（引擎 0.2.2-rc.1 / vc=48）" --notes "$NOTES" --prerelease
