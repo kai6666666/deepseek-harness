@@ -16,104 +16,28 @@
 > 正是靠 versionCode 区分同一 versionName 的不同构建。
 
 ---
-## [0.4.9] — 2026-11-07
-vc=46
-### 修复
-- **左右栏按钮完全交回 DSH 官方**：删除 `mpAlignLeftToggle()`，不再给官方按钮写
-  `style.position` / `style.top`。图标、位置、尺寸、点击全部由官方 header 决定；
-  启动时顺手清掉历史版本残留的内联样式。
-- **会话视图左侧栏按钮完全无反应**：实测 `elementsFromPoint(26,24)` 命中的是
-  右侧栏溢出的 `_tabTitle` / `_tabStrip`（`_tabCell` z-index:40），而官方按钮所在的
-  `.pI_x6G_leadingSeat` 只有 z-index:15；右侧栏收起时 `.pI_x6G_rightbarCol` 被 grid
-  压成 0 宽停在 x=394，其内部 `.P3OORG_panel` 以 `right:0` 反向铺成 `[0,0,394,806]`，
-  于是整条右栏 header 压在左上角 28×28 上。手指点击被右栏吃掉，脚本 `.click()`
-  不走命中测试因此能打开。修复：`[data-mobile] .pI_x6G_leadingSeat { z-index:60 }`。
-- 移动端 UI 版本提升到 `1.1.0-168`。
-## [0.4.8] — 2026-11-07
-vc=45
-### 修复
-- **彻底移除自建侧栏按钮**：不再创建 `.mp-nav-btn`，已存在的残留节点在启动时删除。
-- **左侧栏按钮与右侧栏按钮水平对齐**：动态读取右侧栏按钮的 `top`，把官方
-  `打开侧边栏` 按钮下移到同一水平线；实测两者均为 `top=24`。
-- **插件市场图标整行归一化**：删除重复 glyph 和重复 svg，只保留第一个，
-  并把第一个 SVG 裁成 2×2 四格；不再只处理单个 rect 集合。
-- 移动端 UI 版本提升到 `1.1.0-167`。
 
-## [0.4.7] — 2026-11-06
-vc=44
-### 修复
-- **直接采用 DSH 官方侧栏入口**：rc.1 会话 header 已有官方
-  `IW6AQa_iconButton`（`panel-left` 图标）。检测到官方按钮时隐藏自建按钮，
-  保留的只有官方图标与官方打开逻辑；自建按钮仅作为官方按钮缺席时兜底。
-- **不再出现两个左栏图标**：自建按钮与官方按钮不再同时显示。
-- **打开后不自动收回**：官方按钮自身的状态机负责开合，实测 3 秒保持。
-- **插件市场图标继续按每次渲染裁剪**：React 更新 rect 后仍只保留 2×2。
-- 移动端 UI 版本提升到 `1.1.0-166`。
-
-## [0.4.6] — 2026-11-06
-vc=43
-### 修复
-- **侧栏入口彻底使用官方图标**：使用与圈选按钮相同的 16px
-  `dsw-icon-panel-left-outline-regular`，并带上官方 `hHd-Xa_panelIcon` 样式类。
-- **打开后不再自动收回**：在 `window` 捕获阶段拦截 web-all 的
-  `pointerdown/touchstart/click`，避免它的 mobile sidebar dismiss 在同一手势里
-  又把抽屉关掉；实测打开后 3 秒仍保持。
-- **插件市场图标每次渲染后重新裁剪**：React 可能只更新 rect 子节点而不换 SVG，
-  所以不再只看一次性标记；始终保留 2×2 四格。
-- **遮罩点击关闭**：原生整屏遮罩被点击时调用官方 toggle。
-- 移动端 UI 版本提升到 `1.1.0-165`。
-
-## [0.4.5] — 2026-11-06
-vc=42
-### 修复
-- **侧栏入口恢复官方图标**：汉堡三条杠改为官方
-  `dsw-icon-panel-left-outline-regular`（左侧栏面板图标），与 DSH 原版一致。
-- **侧栏入口改为视觉状态优先**：只要抽屉当前不可见，点击就执行打开，
-  不再被 web-all 下「官方 expanded 但 CSS 隐藏」的陈旧状态吃掉第一次点击。
-- **web-all 0.4.15 拦截 click**：入口同时监听 `pointerdown/touchstart`，
-  350ms 防抖，click 仅作桌面与脚本兜底。
-- **抽屉遮罩可点击关闭**：原生 `[data-dsh-frame]::after` 遮罩被点到时
-  直接调用官方 toggle，避免“打开后卡在侧栏出不去”。
-- **插件市场图标去重**：去掉 web-all 0.4.15 图标多出的 3 列和旋转块，只保留
-  2×2 网格；侧栏入口使用官方 16px 面板图标。
-- 移动端 UI 版本提升到 `1.1.0-164`。
-
-## [0.4.4] — 2026-11-06
-vc=41
-### 修复
-- **侧栏被误当设置弹窗全屏化**：rc.1 的侧栏根节点在窄屏也带
-  `role=dialog/aria-modal`，移动端脚本把它当成设置面板，写入
-  `100vw/100vh` 并插入「设置」返回条，导致侧栏铺满、无法返回会话。
-  现在排除 `.hHd-Xa_root` / 侧栏子树，只处理真正的设置 dialog。
-- **抽屉程序化打开被自身捕获监听器吞掉**：打开前先清掉残留
-  `mp-drawer-open`，再点官方 toggle，避免 document 捕获层把它误判成关闭。
-- 移动端 UI 版本提升到 `1.1.0-163`。
-
-### 插件
-- `@linxin666/dsh-web-all` 更新到 `0.4.15` 并重新加入 bundles。
-- `dsh-app-pet 1.0.3` 重新加入 bundles，桌宠配置继续下发。
-
-## [0.4.3] — 2026-11-06
-vc=40
-### 内核
-- 升级到 `@deepseek-ai/dsh@0.2.2-rc.1`，Node 仍为 `26.12.1`（满足 `>=24.9.0`）。
-- 引擎锚点 15/15 命中：5 个基础锚点、4 个 tool-call/图片格式锚点、目录选择器、
-  进程检查器、创造模式 persona、HTML module 注入和 fail-loud release。
-- `assetStamp` 改为 `0.2.2-rc.1-1`，确保旧设备重新解包 `engine.bin`。
-- `tools/version.sh` 的引擎正则扩展为 `-alpha.N / -beta.N / -rc.N`，
-  避免 rc.1 被误判为版本不一致。
-
-### 依赖
-- pnpm 从 `11.28.3` 升到 `11.28.5`，与 rc.1 的 `packageManager` 对齐。
-- `dsh-app-pet 1.0.3` 与 `@linxin666/dsh-web-all 0.4.14` 在本次验证中暂时从
-  profile bundles 移除，依赖保留，可无损恢复；不阻塞内核升级。
-
-### 验证
-- 干净 rc.1 服务启动成功：`DeepSeek Harness` 页面 200，版本 `0.2.2-rc.1`。
-- 旧会话格式仍为 v4（`session.v4.jsonl.zstd`），持久化格式版本未变。
-- 移动端核心选择器 `pI_x6G_*`、`uV2eYG_*`、`wSkVaW_*` 仍在；rc.1 新增原生
-  `data-sidebar-drawer` / `pI_x6G_drawerMask`。
-
+## [0.2.2-rc1] — 2026-11-07
+vc=47
+### 变更
+- **版本号对齐 dsh 官方**：`versionName = 0.2.2-rc1`，与引擎 `@deepseek-ai/dsh@0.2.2-rc.1`
+  同名；`versionCode = 47` 继续严格递增（39 → 47），保证从 0.4.9（vc46）可覆盖升级，
+  不会触发 `INSTALL_FAILED_VERSION_DOWNGRADE`。
+- **引擎升级到 `0.2.2-rc.1`**：`engine.bin` 81,470,515 B，
+  sha256 `1d909f00489314896d7af120070df8ea90aee5b74d327e9bbbf744fa773aed73`，
+  MANIFEST 52,835 文件 / 386,190,604 字节，`assetStamp = 0.2.2-rc.1-1`。
+  Node `26.12.1`，pnpm `11.28.5`，会话格式 `v4`（旧会话可直接读取）。
+- **移动端 UI `1.1.0-169`**：一次性带入 rc.1 的六条适配——
+  ① 侧栏开合以 `data-sidebar-collapsed` 为唯一事实源；
+  ② `data-sidebar-drawer` 下恢复 fixed + 宽度 + left 动画，原生 `pI_x6G_drawerMask` 置 none；
+  ③ 设置弹窗排除 `.hHd-Xa_root` / `.pI_x6G_sidebarCol`（rc.1 侧栏根节点带 role=dialog/aria-modal）；
+  ④ 左右栏按钮完全交回官方：不建自建按钮、不写内联 `position/top`，只清历史内联样式；
+  ⑤ `[data-mobile] .pI_x6G_leadingSeat { z-index:60 }`，修复左按钮被右栏溢出面板
+     （`.P3OORG_panel` 以 `right:0` 铺满、`_tabCell` z-index:40）吃掉命中；
+  ⑥ 插件市场行图标整行归一化：删重复 glyph / 重复 svg，只留一个并裁成 2×2 四格。
+- `@linxin666/dsh-web-all` 与 `dsh-app-pet` 在 `dsh.profile.bundles` 中启用。
+- 补回 `publish-release-from-run.yml`（0.4.2 基线缺失该 workflow），资产名随 tag 推导，
+  上传使用 `secrets.RELEASE_PAT`。
 ## [0.4.2] — 2026-11-01
 vc=39
 

@@ -64,7 +64,7 @@ printf '  %-34s %-22s\n' "引擎 provision-glibc-host" "${ENG_PROV:-<none>}"
 echo ""
 
 if [ -n "$CL_VER" ]; then
-    [ "$CL_VER" = "$BASE_VER" ] && ok "CHANGELOG = versionName" "$BASE_VER" || bad "CHANGELOG = versionName" "$CL_VER vs $BASE_VER"
+    [ "$CL_VER" = "$APP_VER" ] && ok "CHANGELOG = versionName" "$APP_VER" || bad "CHANGELOG = versionName" "$CL_VER vs $APP_VER"
 else
     bad "CHANGELOG 里找不到正式版标题" "$CHANGELOG"
 fi
