@@ -95,7 +95,7 @@ jobs:
           OUT="$GITHUB_WORKSPACE/app/src/main/assets/node-runtime.bin" \
             bash tools/build-node-runtime.sh
 
-      # apk.yml 历史上**没有**这一步（只有 android-release.yml 有），于是 debug 包
+      # apk.yml 历史上没有这一步（只有 android-release.yml 有），于是 debug 包
       # 在真机首次启动就挂：FileNotFoundException: bootstrap-aarch64.zip。
       - name: 现场取 Termux bootstrap（bootstrap-aarch64.zip）
         run: |
@@ -151,31 +151,31 @@ jobs:
       # 真机坑（2026-11-07 实测）：Termux 仓库的 nodejs 包一直在漂，CI 拉到 v26.13.0，
       # 而 TermuxBootstrap 写死的期望是 v26.12.1 ⇒ nodeIsUsable() 判「刚铺好的 node
       # 是坏的」⇒ 引擎启动失败。这里从包里实际 node 读版本回写两个常量。
-      # ⚠️ 全程容错：资产由 Release 铺（没有 node-runtime.bin）时跳过，不得因此断构建。
+      # 全程容错：资产由 Release 铺（没有 node-runtime.bin）时跳过，不得因此断构建。
       - name: Node 运行时版本对齐
         run: |
           set -u
           ASSET=app/src/main/assets/node-runtime.bin
           KT=app/src/main/java/com/dsh/android/termux/TermuxBootstrap.kt
           if [ ! -s "$ASSET" ]; then
-            echo "::warning title=node-align::assets 里没有 node-runtime.bin（由 Release 铺资产），跳过对齐"
+            echo "::warning title=node-align::no node-runtime.bin (assets from Release), skip"
             exit 0
           fi
           rm -rf /tmp/nrx && mkdir -p /tmp/nrx
           if ! unzip -o -q "$ASSET" bin/node -d /tmp/nrx; then
-            echo "::warning title=node-align::$ASSET 里解不出 bin/node，跳过对齐"
+            echo "::warning title=node-align::cannot unzip bin/node, skip"
             exit 0
           fi
           REAL=$(strings -a /tmp/nrx/bin/node | grep -oE 'v26\.[0-9]+\.[0-9]+' | head -1 || true)
           if [ -z "$REAL" ]; then
-            echo "::warning title=node-align::读不出 node 版本，跳过对齐"
+            echo "::warning title=node-align::cannot read node version, skip"
             exit 0
           fi
-          echo "打包内 node 实际版本：$REAL"
+          echo "bundled node version: $REAL"
           sed -i "s/private const val NODE_EXECUTABLE_VERSION = \"v[0-9.]*\"/private const val NODE_EXECUTABLE_VERSION = \"$REAL\"/" "$KT"
           sed -i "s/private const val NODE_VERSION = \"[0-9.-]*\"/private const val NODE_VERSION = \"${REAL#v}-1\"/" "$KT"
           grep -n 'NODE_EXECUTABLE_VERSION = \|NODE_VERSION = ' "$KT" | head -4
-          grep -q "NODE_EXECUTABLE_VERSION = \"$REAL\"" "$KT" || { echo "::error::常量未对齐"; exit 1; }
+          grep -q "NODE_EXECUTABLE_VERSION = \"$REAL\"" "$KT" || { echo "::error::node version constants not aligned"; exit 1; }
 
       - name: 工具链自检
         run: |
@@ -190,7 +190,7 @@ jobs:
         run: |
           sed -i 's/versionCode = 47/versionCode = 48/' app/build.gradle.kts
           sed -i 's/versionName = "0.2.2-rc1"/versionName = "0.4.3-debug"/' app/build.gradle.kts
-          python3 -c "import pathlib;c=pathlib.Path('CHANGELOG.md');t=c.read_text(encoding='utf-8');b='## [0.4.3-debug] — 2026-11-07\nvc=48\n\n### 变更\n\n- 引擎 `@deepseek-ai/dsh` 0.2.2-rc.1（与 main 同）；锚点门禁：官方 5/5、EngineManager 13 对 *_GUARD 13/13。\n- versionName **0.4.3-debug** / versionCode **48**（0.2.2-rc1 vc47 已废弃，但 vc 必须严格递增）。\n- 补回 apk.yml 缺失的 Termux bootstrap 步骤 + 三件套资产闸门。\n- Node 运行时版本对齐：从包内 bin/node 读实际版本回写 NODE_EXECUTABLE_VERSION / NODE_VERSION（Termux 仓库漂到 v26.13.0，旧常量写死 v26.12.1 会让 nodeIsUsable() 把新铺的 node 判成损坏 ⇒ 引擎启动失败）。\n\n---\n\n';c.write_text((b+t) if '## [0.4.3-debug]' not in t else t,encoding='utf-8')"
+          python3 -c "import pathlib;c=pathlib.Path('CHANGELOG.md');t=c.read_text(encoding='utf-8');b='## [0.4.3-debug] — 2026-11-07\nvc=48\n\n### 变更\n\n- 引擎 `@deepseek-ai/dsh` 0.2.2-rc.1（与 main 同）；锚点门禁：官方 5/5、EngineManager 13 对 *_GUARD 13/13。\n- versionName **0.4.3-debug** / versionCode **48**（0.2.2-rc1 vc47 已废弃，但 vc 必须严格递增）。\n- 补回 apk.yml 缺失的 Termux bootstrap 步骤 + 三件套资产闸门。\n- Node 运行时版本对齐：从包内 bin/node 读实际版本回写 NODE_EXECUTABLE_VERSION / NODE_VERSION。\n\n---\n\n';c.write_text((b+t) if '## [0.4.3-debug]' not in t else t,encoding='utf-8')"
           grep -n 'versionCode = \|versionName = ' app/build.gradle.kts
           sh tools/version.sh --check
 
@@ -223,28 +223,21 @@ jobs:
         run: |
           set -e
           APK=$(find app/build/outputs/apk/system/debug -name '*.apk' | head -1)
-          [ -n "$APK" ] || { echo "::error::找不到 APK"; exit 1; }
+          [ -n "$APK" ] || { echo "::error::no apk found"; exit 1; }
           NAME="dsh-android-0.4.3-debug-arm64.apk"
           cp -f "$APK" "/tmp/$NAME"
           SHA=$(sha256sum "/tmp/$NAME" | cut -d' ' -f1)
           SIZE=$(stat -c%s "/tmp/$NAME")
           NODE=$(grep -oE 'NODE_EXECUTABLE_VERSION = "v[0-9.]+"' app/src/main/java/com/dsh/android/termux/TermuxBootstrap.kt | grep -oE 'v[0-9.]+' | head -1 || true)
           echo "APK=$APK -> /tmp/$NAME size=$SIZE sha256=$SHA node=${NODE:-?}"
-          NOTES=$(printf '引擎 `@deepseek-ai/dsh@0.2.2-rc.1`
-
-- versionName **0.4.3-debug** / versionCode **48**
-- APK 字节数 `%s`
-- sha256 `%s`
-- node 运行时 `%s`（已回写 NODE_EXECUTABLE_VERSION / NODE_VERSION）
-- assets：engine.bin / node-runtime.bin / bootstrap-aarch64.zip
-' "$SIZE" "$SHA" "${NODE:-?}")
+          NOTES=$(printf 'engine @deepseek-ai/dsh@0.2.2-rc.1\n\n- versionName **0.4.3-debug** / versionCode **48**\n- apk size `%s` bytes\n- sha256 `%s`\n- node runtime `%s` (NODE_EXECUTABLE_VERSION / NODE_VERSION aligned)\n- assets: engine.bin / node-runtime.bin / bootstrap-aarch64.zip\n' "$SIZE" "$SHA" "${NODE:-?}")
           if gh release view "$REL_TAG" >/dev/null 2>&1; then
             gh release edit "$REL_TAG" --notes "$NOTES" --prerelease || true
           else
-            gh release create "$REL_TAG" --title "0.4.3-debug（引擎 0.2.2-rc.1 / vc=48）" --notes "$NOTES" --prerelease
+            gh release create "$REL_TAG" --title "0.4.3-debug (engine 0.2.2-rc.1 / vc=48)" --notes "$NOTES" --prerelease
           fi
           gh release upload "$REL_TAG" "/tmp/$NAME" --clobber
-          echo '--- 上传后资产 ---'
+          echo '--- assets ---'
           gh release view "$REL_TAG" --json assets -q '.assets[] | "\(.name) \(.size) \(.state)"'
 
       - name: 上传构建日志（失败时）
