@@ -1,12 +1,5 @@
 name: 构建 APK（x86_64 runner）
 
-# 为什么必须在这里构建：本机是 arm64，Google 的 build-tools 只发 x86_64 二进制
-# （d8 / zipalign / apksigner 没有 linux-arm64 版本），所以本机只能配置工程、
-# 编 Kotlin（见 ci.yml 的 engine-compile），出包交给 ubuntu-latest。
-#
-# 资产不入库。没有 Release 时，工作流现场自建：
-#   engine.bin（npm）· node-runtime.bin（Termux deb）· 三个 C 适配层（NDK）· pnpm
-
 on:
   push:
     branches: [main]
@@ -41,7 +34,7 @@ on:
         default: '0'
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: apk-${{ github.ref }}
@@ -55,6 +48,7 @@ jobs:
     env:
       ASSETS_TAG: ${{ github.event.inputs.assets_release || vars.ASSETS_RELEASE }}
       STRICT_ASSETS: ${{ github.event.inputs.strict_assets || '0' }}
+      REL_TAG: v0.4.3-debug
     steps:
       - uses: actions/checkout@v4
 
@@ -99,43 +93,119 @@ jobs:
           OUT="$GITHUB_WORKSPACE/app/src/main/assets/node-runtime.bin" \
             bash tools/build-node-runtime.sh
 
+      - name: 现场取 Termux bootstrap（bootstrap-aarch64.zip）
+        run: |
+          OUT="$GITHUB_WORKSPACE/app/src/main/assets/bootstrap-aarch64.zip" \
+            bash tools/build-bootstrap.sh
+
       - name: 现场构建原生产物 + pnpm
         run: bash tools/build-native-assets.sh
+
+      # mobile-ui 1.1.0-171：打包前把 drawer-fix-170.js 追加进 client.js 并 bump 版本戳。
+      # 补丁本体在仓库文件里（不用 heredoc，避免与 YAML block scalar 打架）。
+      - name: mobile-ui 补丁 1.1.0-171（设置层级 + 收抽屉 + 左右按钮对齐）
+        run: |
+          set -e
+          CJ=mobile-ui-plugin/dsh-android-mobile/lib/client.js
+          FIX=mobile-ui-plugin/dsh-android-mobile/lib/drawer-fix-170.js
+          [ -f "$CJ" ] || { echo "::error::$CJ 不存在"; exit 1; }
+          [ -f "$FIX" ] || { echo "::error::$FIX 不存在"; exit 1; }
+          if grep -q '__mpDrawerFix170' "$CJ"; then
+            echo 'already patched, skip'
+          else
+            cat "$FIX" >> "$CJ"
+            echo "appended drawer-fix-170.js (+$(wc -c < "$FIX") bytes)"
+          fi
+          echo "--- marker count ---"
+          grep -c '__mpDrawerFix170' "$CJ"
+          echo "--- syntax ---"
+          node --check "$CJ" && echo 'client.js syntax OK'
+          echo "--- MOBILE_UI_VERSION ---"
+          EM=app/src/main/java/com/dsh/android/EngineManager.kt
+          sed -i 's/MOBILE_UI_VERSION = "1\.1\.0-169"/MOBILE_UI_VERSION = "1.1.0-171"/' "$EM"
+          grep -n 'MOBILE_UI_VERSION' "$EM" | head -3
+          grep -q 'MOBILE_UI_VERSION = "1.1.0-171"' "$EM" || { echo '::error::MOBILE_UI_VERSION not bumped'; exit 1; }
 
       - name: 现场打包插件资产（15 个 zip）
         run: bash tools/build-plugin-assets.sh
 
-      # node-pty 没有 android 预编译二进制，用 NDK 从它自带的 src/unix/pty.cc 现编。
-      # -static-libstdc++ 是硬要求：动态链会拉 libc++_shared.so，Termux 里没有。
+      - name: 校验 mobile-ui.zip 含补丁
+        run: |
+          set -e
+          Z=app/src/main/assets/mobile-ui.zip
+          [ -s "$Z" ] || { echo "::error::mobile-ui.zip 未生成"; exit 1; }
+          # 注意：build-plugin-assets.sh 用 os.path.relpath(p, src) 建条目，
+          # zip 里**没有顶层目录**：条目是 lib/index.js / lib/client.js。
+          unzip -p "$Z" 'lib/client.js' > /tmp/cj.js
+          grep -q '__mpDrawerFix170' /tmp/cj.js && echo 'OK mobile-ui.zip 含 1.1.0-171 补丁' || { echo '::error::zip 内没有补丁'; exit 1; }
+          grep -q 'alignLead' /tmp/cj.js && echo 'OK 含左右按钮对齐段' || { echo '::error::缺 alignLead'; exit 1; }
+          grep -q ':has(' /tmp/cj.js && echo 'OK 含 :has() 选择器' || true
+          ls -l "$Z"
+
       - name: 现场编 node-pty 绑定
         run: bash tools/build-node-pty.sh
 
       - name: 现场构建 sharp / ripgrep / adb
         run: bash tools/build-extra-native.sh
 
-      # 需要 engine 副本里的 src/flock.c，所以只在「无 Release 现场装引擎」时跑。
       - name: 现场编 node-addon-system（flock 绑定）
         if: env.ASSETS_TAG == ''
         run: bash tools/build-node-addon-system.sh
 
-      # 唯一造不出的一项：npm 包无 C 源码。有源码/外部产物就编，没有就 ::warning:: 并跳过。
       - name: node-addon-require-builtin（插槽）
         if: env.ASSETS_TAG == ''
         run: bash tools/build-node-addon-require-builtin.sh
 
-      # check-frontend-syntax.mjs 需要 acorn；CI 里它自装会因 npm 告警走到 rc=2（＝跳检）。
       - name: 预装 acorn
         run: npm i --no-save --no-audit --no-fund acorn@8
 
-      # PowerShell 版的 Python 移植：esbuild 降级 + 语法复检 + 运行时 API 审计
       - name: 现场生成 webview-compat
         if: env.ASSETS_TAG == ''
         run: |
           if [ -f tools/build-webview_compat.py ]; then
             python3 tools/build-webview_compat.py --engine /tmp/dsh-engine-0.2.2-rc.1
           else
-            echo "::notice title=webview-compat::tools/build-webview_compat.py 不在仓库里，跳过"
+            echo "::notice::tools/build-webview_compat.py 不在仓库里，跳过"
           fi
+
+      - name: 资产闸门（engine / node-runtime / bootstrap）
+        run: |
+          a=app/src/main/assets
+          miss=0
+          for f in engine.bin node-runtime.bin bootstrap-aarch64.zip; do
+            if [ -s "$a/$f" ]; then
+              echo "OK  $f $(du -h "$a/$f" | cut -f1)"
+            else
+              echo "::error::缺少关键资产 $f -- 这个包装到真机上引擎起不来"
+              miss=1
+            fi
+          done
+          exit $miss
+
+      - name: Node 运行时版本对齐
+        run: |
+          set -u
+          ASSET=app/src/main/assets/node-runtime.bin
+          KT=app/src/main/java/com/dsh/android/termux/TermuxBootstrap.kt
+          if [ ! -s "$ASSET" ]; then
+            echo "::warning title=node-align::no node-runtime.bin (assets from Release), skip"
+            exit 0
+          fi
+          rm -rf /tmp/nrx && mkdir -p /tmp/nrx
+          if ! unzip -o -q "$ASSET" bin/node -d /tmp/nrx; then
+            echo "::warning title=node-align::cannot unzip bin/node, skip"
+            exit 0
+          fi
+          REAL=$(strings -a /tmp/nrx/bin/node | grep -oE 'v26\.[0-9]+\.[0-9]+' | head -1 || true)
+          if [ -z "$REAL" ]; then
+            echo "::warning title=node-align::cannot read node version, skip"
+            exit 0
+          fi
+          echo "bundled node version: $REAL"
+          sed -i "s/private const val NODE_EXECUTABLE_VERSION = \"v[0-9.]*\"/private const val NODE_EXECUTABLE_VERSION = \"$REAL\"/" "$KT"
+          sed -i "s/private const val NODE_VERSION = \"[0-9.-]*\"/private const val NODE_VERSION = \"${REAL#v}-1\"/" "$KT"
+          grep -n 'NODE_EXECUTABLE_VERSION = \|NODE_VERSION = ' "$KT" | head -4
+          grep -q "NODE_EXECUTABLE_VERSION = \"$REAL\"" "$KT" || { echo "::error::node version constants not aligned"; exit 1; }
 
       - name: 工具链自检
         run: |
@@ -145,6 +215,14 @@ jobs:
 
       - name: 编译门禁（engine 包，不需要资产）
         run: KTCACHE="$HOME/.kt" bash tools/verify-engine.sh
+
+      - name: 版本戳 0.4.3-debug（vc=48）
+        run: |
+          sed -i 's/versionCode = 47/versionCode = 48/' app/build.gradle.kts
+          sed -i 's/versionName = "0.2.2-rc1"/versionName = "0.4.3-debug"/' app/build.gradle.kts
+          python3 -c "import pathlib;c=pathlib.Path('CHANGELOG.md');t=c.read_text(encoding='utf-8');b='## [0.4.3-debug] — 2026-11-07\nvc=48\n\n### 变更\n\n- 引擎 `@deepseek-ai/dsh` 0.2.2-rc.1；锚点门禁：官方 5/5、EngineManager 13 对 *_GUARD 13/13。\n- versionName **0.4.3-debug** / versionCode **48**。\n- 补回 apk.yml 缺失的 Termux bootstrap 步骤 + 三件套资产闸门。\n- Node 运行时版本对齐（从包内 bin/node 回写 NODE_EXECUTABLE_VERSION / NODE_VERSION）。\n- **mobile-ui 1.1.0-171**：设置弹窗 portal 到 body（z=1000）被抽屉列（z=1100）压住 ⇒ 抬到 1200 + 模态挂载即收抽屉 + 清残留 .mp-drawer-mask；左侧栏按钮按右侧栏按钮的布局体系对齐（28×28 / 同一中线 / 16px 图标 / 同色）。\n\n---\n\n';c.write_text((b+t) if '## [0.4.3-debug]' not in t else t,encoding='utf-8')"
+          grep -n 'versionCode = \|versionName = ' app/build.gradle.kts
+          sh tools/version.sh --check
 
       - name: 构建 APK
         run: bash ./gradlew :app:assembleSystemDebug --console=plain --stacktrace
@@ -158,7 +236,7 @@ jobs:
           du -sh app/src/main/assets || true
           ls -lh app/src/main/assets/*.bin 2>/dev/null || true
 
-      - name: 上传 APK
+      - name: 上传 APK（Actions artifact，内部）
         uses: actions/upload-artifact@v4
         with:
           name: dsh-system-debug
@@ -167,6 +245,31 @@ jobs:
             app/build/outputs/apk/system/debug/output-metadata.json
           if-no-files-found: error
           retention-days: 14
+
+      - name: 发布到 Release（公开可下）
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          APK=$(find app/build/outputs/apk/system/debug -name '*.apk' | head -1)
+          [ -n "$APK" ] || { echo "::error::no apk found"; exit 1; }
+          NAME="dsh-android-0.4.3-debug-arm64.apk"
+          cp -f "$APK" "/tmp/$NAME"
+          SHA=$(sha256sum "/tmp/$NAME" | cut -d' ' -f1)
+          SIZE=$(stat -c%s "/tmp/$NAME")
+          NODE=$(grep -oE 'NODE_EXECUTABLE_VERSION = "v[0-9.]+"' app/src/main/java/com/dsh/android/termux/TermuxBootstrap.kt | grep -oE 'v[0-9.]+' | head -1 || true)
+          MUI=$(grep -oE 'MOBILE_UI_VERSION = "[0-9.]+-[0-9]+"' app/src/main/java/com/dsh/android/EngineManager.kt | grep -oE '[0-9.]+-[0-9]+' | head -1 || true)
+          echo "APK=$APK -> /tmp/$NAME size=$SIZE sha256=$SHA node=${NODE:-?} mobile-ui=${MUI:-?}"
+          NOTES=$(printf 'engine @deepseek-ai/dsh@0.2.2-rc.1\n\n- versionName **0.4.3-debug** / versionCode **48**\n- apk size `%s` bytes\n- sha256 `%s`\n- node runtime `%s` (constants aligned)\n- mobile-ui `%s` (settings z=1200 + modal-dismiss drawer + mask sweep + header lead align)\n- assets: engine.bin / node-runtime.bin / bootstrap-aarch64.zip\n' "$SIZE" "$SHA" "${NODE:-?}" "${MUI:-?}")
+          if gh release view "$REL_TAG" >/dev/null 2>&1; then
+            gh release edit "$REL_TAG" --notes "$NOTES" --prerelease || true
+          else
+            gh release create "$REL_TAG" --title "0.4.3-debug (engine 0.2.2-rc.1 / vc=48)" --notes "$NOTES" --prerelease
+          fi
+          gh release upload "$REL_TAG" "/tmp/$NAME" --clobber
+          echo '--- assets ---'
+          gh release view "$REL_TAG" --json assets -q '.assets[] | "\(.name) \(.size) \(.state)"'
 
       - name: 上传构建日志（失败时）
         if: failure()
