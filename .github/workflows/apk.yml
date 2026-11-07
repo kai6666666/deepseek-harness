@@ -146,6 +146,17 @@ jobs:
       - name: 编译门禁（engine 包，不需要资产）
         run: KTCACHE="$HOME/.kt" bash tools/verify-engine.sh
 
+      # 本分支出包版本戳：main 上的 0.2.2-rc1（vc47）是已发布线，直接改它会让已装机用户
+      # 撞 INSTALL_FAILED_VERSION_DOWNGRADE，所以在构建期覆盖成 0.4.3-debug / vc=48（严格递增）。
+      # CHANGELOG 同步插一条 0.4.3-debug 小节，否则 version.sh 的「CHANGELOG = versionName」判据对不上。
+      - name: 版本戳 0.4.3-debug（vc=48）
+        run: |
+          sed -i 's/versionCode = 47/versionCode = 48/' app/build.gradle.kts
+          sed -i 's/versionName = "0.2.2-rc1"/versionName = "0.4.3-debug"/' app/build.gradle.kts
+          python3 -c "import pathlib;c=pathlib.Path('CHANGELOG.md');t=c.read_text(encoding='utf-8');b='## [0.4.3-debug] — 2026-11-07\nvc=48\n\n### 变更\n\n- 引擎 `@deepseek-ai/dsh` 0.2.2-rc.1（与 main 同）。\n- versionName 0.2.2-rc1 → **0.4.3-debug**；versionCode 47 → **48**（必须严格递增，否则已装 0.2.2-rc1 的设备撞 `INSTALL_FAILED_VERSION_DOWNGRADE`）。\n- 锚点门禁（本地已跑）：官方 `check-engine-anchors.mjs` **5/5**；`EngineManager` 13 对 `*_GUARD` **13/13**。\n- `engine.bin` 81,609,187 B，sha256 3f164e306419b214464904ae176877c6879bd7ff67ca3905afd81af88ba71ad4。\n\n---\n\n';c.write_text((b+t) if '## [0.4.3-debug]' not in t else t,encoding='utf-8')"
+          grep -n 'versionCode = \|versionName = ' app/build.gradle.kts
+          sh tools/version.sh --check
+
       - name: 构建 APK
         run: bash ./gradlew :app:assembleSystemDebug --console=plain --stacktrace
 
