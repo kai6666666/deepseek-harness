@@ -68,6 +68,13 @@ jobs:
           key: gradle-${{ runner.os }}-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties', '**/*.gradle.kts') }}
           restore-keys: gradle-${{ runner.os }}-
 
+      # 固定 debug keystore：同一把签名才能覆盖安装（否则每轮都得卸载+还原数据）
+      - name: debug keystore 固定（覆盖安装的前提）
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: dsh-debug-keystore-v1
+
       - name: Android SDK（platform 35 + build-tools 35 + NDK 27）
         uses: android-actions/setup-android@v3
         with:
