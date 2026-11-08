@@ -329,9 +329,27 @@ class EngineManager private constructor(private val context: Context) {
             verifyEngineManifest(staging, stats)
             File(staging, ".stamp").writeText(versionStamp)
 
-            engineDir.deleteRecursively()
+            // ⚠2026-11-09 真机：卸载重装/换机后出现过
+            //   java.io.IOException: 无法将解包目录重命名为 …/files/engine
+            // 不是跨文件系统（staging 就在 filesDir 里），而是旧 engine/ 没删干净
+            // （旧引擎进程占着、只读文件、或残留子目录）→ renameTo 到非空目录必然 ENOTEMPTY。
+            // 三层退路：① 硬删 + 复查；② 旧目录改名挪开；③ 逐文件复制兜底。
+            if (engineDir.exists() && !engineDir.deleteRecursively()) {
+                Log.w(TAG, "engine/ 删除未完全成功，尝试挪开旧目录")
+            }
+            if (engineDir.exists()) {
+                val aside = File(context.filesDir, "engine.old-" + System.currentTimeMillis())
+                if (engineDir.renameTo(aside)) {
+                    aside.deleteRecursively()
+                } else {
+                    Log.w(TAG, "旧 engine/ 无法挪开，改走复制兜底: " + engineDir.absolutePath)
+                }
+            }
             if (!staging.renameTo(engineDir)) {
-                throw java.io.IOException("无法将解包目录重命名为 $engineDir")
+                Log.w(TAG, "staging 改名失败，改走复制兜底: " + engineDir.absolutePath)
+                if (engineDir.exists()) engineDir.deleteRecursively()
+                copyTree(staging, engineDir)
+                staging.deleteRecursively()
             }
             _state.value = State.Extracting(100)
             Log.i(TAG, "引擎资产解包完成：${engineDir.absolutePath}")
@@ -339,6 +357,26 @@ class EngineManager private constructor(private val context: Context) {
             staging.deleteRecursively()
             _state.value = State.Failed("引擎解包失败: ${t.message}")
             throw t
+        }
+    }
+
+    /**
+     * 逐文件复制（renameTo 不可用时的兜底）。
+     *
+     * 覆盖目标同名文件，目录不存在就建。用于「staging → engine」跨设备/目标被占用
+     * 导致 renameTo 失败的情况；1 MB 级缓冲，避免逐字节读写。
+     */
+    private fun copyTree(src: File, dst: File) {
+        if (src.isDirectory) {
+            if (!dst.exists() && !dst.mkdirs()) {
+                throw java.io.IOException("无法创建目录: " + dst.absolutePath)
+            }
+            src.listFiles()?.forEach { child -> copyTree(child, File(dst, child.name)) }
+            return
+        }
+        dst.parentFile?.mkdirs()
+        src.inputStream().use { input ->
+            dst.outputStream().use { out -> input.copyTo(out, 1 shl 20) }
         }
     }
 
