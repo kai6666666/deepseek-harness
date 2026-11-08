@@ -719,6 +719,12 @@ class EngineManager private constructor(private val context: Context) {
                 TAG,
                 "已应用 WebView 降级前端: ${counts.entries.joinToString(", ") { "${it.key}=${it.value}" }} 个文件（$stampInZip）",
             )
+        } catch (t: java.io.FileNotFoundException) {
+            // 降级前端是**按需打包**的资产（tools/build-webview-compat.ps1 产物）：
+            // CI 不产出它时这里就是缺文件，不是故障 —— 新内核本来也不需要。
+            // 原先一律打 W，导致每次启动都有一条「应用 WebView 降级前端失败: webview-compat.zip」，
+            // 排查白屏时纯噪音。
+            Log.i(TAG, "未打包 WebView 降级前端（$WEBVIEW_COMPAT_ASSET），按内核原样运行")
         } catch (t: Throwable) {
             // 打不上就维持原样：新内核本来就不需要它，旧内核也只是回到白屏
             Log.w(TAG, "应用 WebView 降级前端失败: ${t.message}")
