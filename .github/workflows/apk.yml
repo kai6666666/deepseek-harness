@@ -64,9 +64,8 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-            ~/.android
-          key: gradle-${{ runner.os }}-v2-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties', '**/*.gradle.kts') }}
-          restore-keys: gradle-${{ runner.os }}-v2-
+          key: gradle-${{ runner.os }}-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties', '**/*.gradle.kts') }}
+          restore-keys: gradle-${{ runner.os }}-
 
       - name: Android SDK（platform 35 + build-tools 35 + NDK 27）
         uses: android-actions/setup-android@v3
