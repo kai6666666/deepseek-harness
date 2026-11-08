@@ -13,6 +13,7 @@ on:
       - 'tools/ci-fetch-assets.sh'
       - 'tools/build-engine-bin.sh'
       - 'tools/build-node-runtime.sh'
+      - 'tools/node-runtime-wrap.sh'
       - 'tools/build-native-assets.sh'
       - 'tools/build-plugin-assets.sh'
       - 'tools/build-node-pty.sh'
@@ -93,6 +94,17 @@ jobs:
           OUT="$GITHUB_WORKSPACE/app/src/main/assets/node-runtime.bin" \
             bash tools/build-node-runtime.sh
 
+      # node 入口包装：吃掉 --no-open（否则引擎不打印 URL，App 等不到就 kill）
+      # + 启动时补 /data/data/<pkg>/usr|home 符号链接（node 的 RUNPATH 指向它）
+      - name: node-runtime 包装（node 入口）
+        run: |
+          set -e
+          A=app/src/main/assets/node-runtime.bin
+          if [ ! -s "$A" ]; then echo '::warning title=node-wrap::no node-runtime.bin, skip'; exit 0; fi
+          bash tools/node-runtime-wrap.sh "$A"
+          unzip -l "$A" | grep -q 'bin/node.real' && echo 'OK bin/node.real'
+          unzip -p "$A" bin/node | grep -q '__DSH_NODE_WRAP__' && echo 'OK wrapper'
+
       - name: 现场取 Termux bootstrap（bootstrap-aarch64.zip）
         run: |
           OUT="$GITHUB_WORKSPACE/app/src/main/assets/bootstrap-aarch64.zip" \
@@ -102,7 +114,6 @@ jobs:
         run: bash tools/build-native-assets.sh
 
       # mobile-ui 1.1.0-173：打包前把 drawer-fix-170.js 追加进 client.js 并 bump 版本戳。
-      # 补丁本体在仓库文件里（不用 heredoc，避免与 YAML block scalar 打架）。
       - name: mobile-ui 补丁 1.1.0-173（座位作用域 + 左按钮入 header + 去双图标）
         run: |
           set -e
@@ -134,7 +145,6 @@ jobs:
           set -e
           Z=app/src/main/assets/mobile-ui.zip
           [ -s "$Z" ] || { echo "::error::mobile-ui.zip 未生成"; exit 1; }
-          # build-plugin-assets.sh 用 os.path.relpath(p, src) 建条目，zip 里没有顶层目录。
           unzip -p "$Z" 'lib/client.js' > /tmp/cj.js
           grep -q '__mpDrawerFix170' /tmp/cj.js && echo 'OK mobile-ui.zip 含 1.1.0-173 补丁' || { echo '::error::zip 内没有补丁'; exit 1; }
           grep -q 'syncLeadScope' /tmp/cj.js && echo 'OK 含座位作用域段' || { echo '::error::缺 syncLeadScope'; exit 1; }
@@ -192,11 +202,15 @@ jobs:
             exit 0
           fi
           rm -rf /tmp/nrx && mkdir -p /tmp/nrx
-          if ! unzip -o -q "$ASSET" bin/node -d /tmp/nrx; then
-            echo "::warning title=node-align::cannot unzip bin/node, skip"
-            exit 0
+          if ! unzip -o -q "$ASSET" bin/node.real -d /tmp/nrx; then
+            if ! unzip -o -q "$ASSET" bin/node -d /tmp/nrx; then
+              echo "::warning title=node-align::cannot unzip node, skip"
+              exit 0
+            fi
           fi
-          REAL=$(strings -a /tmp/nrx/bin/node | grep -oE 'v26\.[0-9]+\.[0-9]+' | head -1 || true)
+          NB=/tmp/nrx/bin/node.real
+          [ -f "$NB" ] || NB=/tmp/nrx/bin/node
+          REAL=$(strings -a "$NB" | grep -oE 'v26\.[0-9]+\.[0-9]+' | head -1 || true)
           if [ -z "$REAL" ]; then
             echo "::warning title=node-align::cannot read node version, skip"
             exit 0
@@ -220,7 +234,7 @@ jobs:
         run: |
           sed -i 's/versionCode = 47/versionCode = 48/' app/build.gradle.kts
           sed -i 's/versionName = "0.2.2-rc1"/versionName = "0.4.3-debug"/' app/build.gradle.kts
-          python3 -c "import pathlib;c=pathlib.Path('CHANGELOG.md');t=c.read_text(encoding='utf-8');b='## [0.4.3-debug] — 2026-11-07\nvc=48\n\n### 变更\n\n- 引擎 `@deepseek-ai/dsh` 0.2.2-rc.1；锚点门禁：官方 5/5、EngineManager 13 对 *_GUARD 13/13。\n- versionName **0.4.3-debug** / versionCode **48**。\n- 补回 apk.yml 缺失的 Termux bootstrap 步骤 + 三件套资产闸门。\n- Node 运行时版本对齐（从包内 bin/node 回写 NODE_EXECUTABLE_VERSION / NODE_VERSION）。\n- **mobile-ui 1.1.0-173**：设置弹窗抬到 z=1200 + 模态挂载即收抽屉 + 清残留 .mp-drawer-mask；左按钮仅在会话视图改用 header 布局（15px、与右侧同一串类名），面板页保留官方座位（修「点左上跳新会话」与标题 54px 空白）；多模态配置按 dsh-market 做法去掉自定义标记。\n\n---\n\n';c.write_text((b+t) if '## [0.4.3-debug]' not in t else t,encoding='utf-8')"
+          python3 -c "import pathlib;c=pathlib.Path('CHANGELOG.md');t=c.read_text(encoding='utf-8');b='## [0.4.3-debug] — 2026-11-07\nvc=48\n\n### 变更\n\n- 引擎 `@deepseek-ai/dsh` 0.2.2-rc.1；锚点门禁：官方 5/5、EngineManager 13 对 *_GUARD 13/13。\n- versionName **0.4.3-debug** / versionCode **48**。\n- 补回 apk.yml 缺失的 Termux bootstrap 步骤 + 三件套资产闸门。\n- Node 运行时版本对齐（从包内 bin/node 回写 NODE_EXECUTABLE_VERSION / NODE_VERSION）。\n- **node 入口包装**：node-runtime.bin 内含 bin/node(wrapper)+bin/node.real，启动时补 usr/home 符号链接并吞掉 --no-open（引擎才会打印 URL）。\n- **mobile-ui 1.1.0-173**：设置弹窗抬到 z=1200 + 模态挂载即收抽屉 + 清残留 .mp-drawer-mask；左按钮仅在会话视图改用 header 布局（15px、与右侧同一串类名），面板页保留官方座位；多模态配置按 dsh-market 做法去掉自定义标记。\n\n---\n\n';c.write_text((b+t) if '## [0.4.3-debug]' not in t else t,encoding='utf-8')"
           grep -n 'versionCode = \|versionName = ' app/build.gradle.kts
           sh tools/version.sh --check
 
@@ -261,7 +275,7 @@ jobs:
           NODE=$(grep -oE 'NODE_EXECUTABLE_VERSION = "v[0-9.]+"' app/src/main/java/com/dsh/android/termux/TermuxBootstrap.kt | grep -oE 'v[0-9.]+' | head -1 || true)
           MUI=$(grep -oE 'MOBILE_UI_VERSION = "[0-9.]+-[0-9]+"' app/src/main/java/com/dsh/android/EngineManager.kt | grep -oE '[0-9.]+-[0-9]+' | head -1 || true)
           echo "APK=$APK -> /tmp/$NAME size=$SIZE sha256=$SHA node=${NODE:-?} mobile-ui=${MUI:-?}"
-          NOTES=$(printf 'engine @deepseek-ai/dsh@0.2.2-rc.1\n\n- versionName **0.4.3-debug** / versionCode **48**\n- apk size `%s` bytes\n- sha256 `%s`\n- node runtime `%s` (constants aligned)\n- mobile-ui `%s` (seat scope by header + lead button in header + single icon + settings z=1200)\n- assets: engine.bin / node-runtime.bin / bootstrap-aarch64.zip\n' "$SIZE" "$SHA" "${NODE:-?}" "${MUI:-?}")
+          NOTES=$(printf 'engine @deepseek-ai/dsh@0.2.2-rc.1\n\n- versionName **0.4.3-debug** / versionCode **48**\n- apk size `%s` bytes\n- sha256 `%s`\n- node runtime `%s` (constants aligned, wrapper included)\n- mobile-ui `%s` (seat scope + lead button in header + single icon + settings z=1200)\n- assets: engine.bin / node-runtime.bin / bootstrap-aarch64.zip\n' "$SIZE" "$SHA" "${NODE:-?}" "${MUI:-?}")
           if gh release view "$REL_TAG" >/dev/null 2>&1; then
             gh release edit "$REL_TAG" --notes "$NOTES" --prerelease || true
           else
