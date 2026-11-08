@@ -287,7 +287,7 @@ class MainActivity : AppCompatActivity() {
             //   原先按 W 打，每次慢帧都像出了事，排查时被误导。
             Log.i(
                 DshApplication.TAG,
-                "首帧回调未在 ${PAINT_TIMEOUT_MS / 1000} 秒内到达，按兜底收起启动动画" +
+                "首帧回调未在 ${PAINT_TIMEOUT_MS / 1000.0} 秒内到达，按兜底收起启动动画" +
                     "（页面已就绪，属正常慢帧；本机内核常走这条）",
             )
             webViewPainted = true
