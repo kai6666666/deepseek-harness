@@ -120,9 +120,9 @@ jobs:
         run: |
           set -e
           EM=app/src/main/java/com/dsh/android/EngineManager.kt
-          sed -i 's/MOBILE_UI_VERSION = "1\.1\.0-169"/MOBILE_UI_VERSION = "1.1.0-174"/' "$EM"
+          sed -i 's/MOBILE_UI_VERSION = "1\.1\.0-169"/MOBILE_UI_VERSION = "1.1.0-175"/' "$EM"
           grep -n 'MOBILE_UI_VERSION' "$EM" | head -3
-          grep -q 'MOBILE_UI_VERSION = "1.1.0-174"' "$EM" || { echo '::error::MOBILE_UI_VERSION not bumped'; exit 1; }
+          grep -q 'MOBILE_UI_VERSION = "1.1.0-175"' "$EM" || { echo '::error::MOBILE_UI_VERSION not bumped'; exit 1; }
           grep -q '__mpDrawerFix170' app/src/main/assets/webview-polyfill.js && echo 'OK polyfill 带补丁' || { echo '::error::polyfill 没带补丁'; exit 1; }
 
       - name: 现场打包插件资产（15 个 zip）
