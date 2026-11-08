@@ -85,3 +85,5 @@ unzip -l "$IN" | grep -q ' bin/node$' || { echo "[ERR] missing bin/node"; exit 1
 unzip -l "$IN" | grep -q ' bin/node.real$' || { echo "[ERR] missing bin/node.real"; exit 1; }
 unzip -p "$IN" bin/node | grep -q '__DSH_NODE_WRAP__' || { echo "[ERR] wrapper not packed"; exit 1; }
 echo "[OK] node-runtime wrapped: bin/node (wrapper) + bin/node.real"
+
+# build stamp: keystore-stable
