@@ -2986,10 +2986,17 @@ html[data-mobile] .pI_x6G_frame[data-sidebar-drawer][data-sidebar-collapsed] .pI
 					report(
 						(bootSeen ? "官方启动页已消失" : "未见到官方启动页") +
 						" [polls=" + polls + " bootSeen=" + bootSeen +
-						" 首帧正文=" + JSON.stringify(firstText) + "]"
+						// ⚠️ 这里**只是样本**，不是判据：它是 polls=1（50ms）时的快照，
+						//   冷启动那会儿必然还是 "HARNESS Loading plugins…"。
+						//   原生侧只认下面「超时兜底」分支里的「当前正文」。
+						" 首帧样本=" + JSON.stringify(firstText) + "]"
 					);
 				} else if (Date.now() - t0 > UI_READY_MAX_WAIT_MS) {
-					report("超时兜底 [polls=" + polls + " bootSeen=" + bootSeen + "]");
+					// ⚠️ 走到这里才叫「真的没就绪」——只有这个分支带**当前**正文，
+					//   原生侧据 `超时兜底 + 当前正文含 HARNESS` 判「卡在官方启动页」。
+					//   带上当前正文而不是首次样本，否则任何慢启动都会被误判成卡死。
+					report("超时兜底 [polls=" + polls + " bootSeen=" + bootSeen +
+						" 当前正文=" + JSON.stringify(((bodyTxt || "").replace(/\s+/g, " ")).slice(0, 40)) + "]");
 				}
 			}, 50);
 		}
@@ -5181,12 +5188,17 @@ mpSetMenuOpenClass(false);
 		/**
 		 * 等待「界面真的可用」的上限。
 		 *
-		 * ⚠️ 从 6000 提到 9000：判据里新增了「官方前端的启动页已消失」，
+		 * ⚠️ 从 6000 → 9000 → **15000**：9000 时真机冷启动会先打一条「超时兜底」，
+		 *   而它现在带「当前正文」，会被原生侧当成「卡在启动页」去降级救援 —— 慢启动
+		 *   不能被当成卡死。15000 与原生侧 UI_READY_TIMEOUT_MS=20000 错开 5 秒：
+		 *   客户端先放弃、原生侧再兜底，两层各自留出余量。
+		 *
+		 * 原注：从 6000 提到 9000——判据里新增了「官方前端的启动页已消失」，
 		 *   而那一项实测要等到 "readyState === complete" 之后才满足
 		 *   （旧判据 10231ms 满足，官方启动页 10475ms 才消失），
 		 *   留足余量避免在正常启动路径上误触发超时兜底。
 		 */
-		const UI_READY_MAX_WAIT_MS = 9000;
+		const UI_READY_MAX_WAIT_MS = 15000;
 
 		const MP_TIMING_UNAVAILABLE = "首 token 时间不可用";		const MP_TIMING_NOT_RECORDED = "未记录";
 		const MP_TIMING_STEP_START_UNAVAILABLE = "步骤开始时间不可用";
