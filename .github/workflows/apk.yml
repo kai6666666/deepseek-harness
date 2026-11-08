@@ -101,9 +101,9 @@ jobs:
       - name: 现场构建原生产物 + pnpm
         run: bash tools/build-native-assets.sh
 
-      # mobile-ui 1.1.0-171：打包前把 drawer-fix-170.js 追加进 client.js 并 bump 版本戳。
+      # mobile-ui 1.1.0-172：打包前把 drawer-fix-170.js 追加进 client.js 并 bump 版本戳。
       # 补丁本体在仓库文件里（不用 heredoc，避免与 YAML block scalar 打架）。
-      - name: mobile-ui 补丁 1.1.0-171（设置层级 + 收抽屉 + 左右按钮对齐）
+      - name: mobile-ui 补丁 1.1.0-172（设置层级 + 收抽屉 + 左按钮入 header + 去双图标）
         run: |
           set -e
           CJ=mobile-ui-plugin/dsh-android-mobile/lib/client.js
@@ -122,9 +122,9 @@ jobs:
           node --check "$CJ" && echo 'client.js syntax OK'
           echo "--- MOBILE_UI_VERSION ---"
           EM=app/src/main/java/com/dsh/android/EngineManager.kt
-          sed -i 's/MOBILE_UI_VERSION = "1\.1\.0-169"/MOBILE_UI_VERSION = "1.1.0-171"/' "$EM"
+          sed -i 's/MOBILE_UI_VERSION = "1\.1\.0-169"/MOBILE_UI_VERSION = "1.1.0-172"/' "$EM"
           grep -n 'MOBILE_UI_VERSION' "$EM" | head -3
-          grep -q 'MOBILE_UI_VERSION = "1.1.0-171"' "$EM" || { echo '::error::MOBILE_UI_VERSION not bumped'; exit 1; }
+          grep -q 'MOBILE_UI_VERSION = "1.1.0-172"' "$EM" || { echo '::error::MOBILE_UI_VERSION not bumped'; exit 1; }
 
       - name: 现场打包插件资产（15 个 zip）
         run: bash tools/build-plugin-assets.sh
@@ -134,12 +134,11 @@ jobs:
           set -e
           Z=app/src/main/assets/mobile-ui.zip
           [ -s "$Z" ] || { echo "::error::mobile-ui.zip 未生成"; exit 1; }
-          # 注意：build-plugin-assets.sh 用 os.path.relpath(p, src) 建条目，
-          # zip 里**没有顶层目录**：条目是 lib/index.js / lib/client.js。
+          # build-plugin-assets.sh 用 os.path.relpath(p, src) 建条目，zip 里没有顶层目录。
           unzip -p "$Z" 'lib/client.js' > /tmp/cj.js
-          grep -q '__mpDrawerFix170' /tmp/cj.js && echo 'OK mobile-ui.zip 含 1.1.0-171 补丁' || { echo '::error::zip 内没有补丁'; exit 1; }
-          grep -q 'alignLead' /tmp/cj.js && echo 'OK 含左右按钮对齐段' || { echo '::error::缺 alignLead'; exit 1; }
-          grep -q ':has(' /tmp/cj.js && echo 'OK 含 :has() 选择器' || true
+          grep -q '__mpDrawerFix170' /tmp/cj.js && echo 'OK mobile-ui.zip 含 1.1.0-172 补丁' || { echo '::error::zip 内没有补丁'; exit 1; }
+          grep -q 'data-conversation-header-leading' /tmp/cj.js && echo 'OK 含左按钮入 header 段' || { echo '::error::缺 headerLeading 段'; exit 1; }
+          grep -q 'data-am-nav\]::before' /tmp/cj.js && echo 'OK 含去双图标段' || { echo '::error::缺去双图标段'; exit 1; }
           ls -l "$Z"
 
       - name: 现场编 node-pty 绑定
@@ -220,7 +219,7 @@ jobs:
         run: |
           sed -i 's/versionCode = 47/versionCode = 48/' app/build.gradle.kts
           sed -i 's/versionName = "0.2.2-rc1"/versionName = "0.4.3-debug"/' app/build.gradle.kts
-          python3 -c "import pathlib;c=pathlib.Path('CHANGELOG.md');t=c.read_text(encoding='utf-8');b='## [0.4.3-debug] — 2026-11-07\nvc=48\n\n### 变更\n\n- 引擎 `@deepseek-ai/dsh` 0.2.2-rc.1；锚点门禁：官方 5/5、EngineManager 13 对 *_GUARD 13/13。\n- versionName **0.4.3-debug** / versionCode **48**。\n- 补回 apk.yml 缺失的 Termux bootstrap 步骤 + 三件套资产闸门。\n- Node 运行时版本对齐（从包内 bin/node 回写 NODE_EXECUTABLE_VERSION / NODE_VERSION）。\n- **mobile-ui 1.1.0-171**：设置弹窗 portal 到 body（z=1000）被抽屉列（z=1100）压住 ⇒ 抬到 1200 + 模态挂载即收抽屉 + 清残留 .mp-drawer-mask；左侧栏按钮按右侧栏按钮的布局体系对齐（28×28 / 同一中线 / 16px 图标 / 同色）。\n\n---\n\n';c.write_text((b+t) if '## [0.4.3-debug]' not in t else t,encoding='utf-8')"
+          python3 -c "import pathlib;c=pathlib.Path('CHANGELOG.md');t=c.read_text(encoding='utf-8');b='## [0.4.3-debug] — 2026-11-07\nvc=48\n\n### 变更\n\n- 引擎 `@deepseek-ai/dsh` 0.2.2-rc.1；锚点门禁：官方 5/5、EngineManager 13 对 *_GUARD 13/13。\n- versionName **0.4.3-debug** / versionCode **48**。\n- 补回 apk.yml 缺失的 Termux bootstrap 步骤 + 三件套资产闸门。\n- Node 运行时版本对齐（从包内 bin/node 回写 NODE_EXECUTABLE_VERSION / NODE_VERSION）。\n- **mobile-ui 1.1.0-172**：设置弹窗 portal 到 body（z=1000）被抽屉列（z=1100）压住 ⇒ 抬到 1200 + 模态挂载即收抽屉 + 清残留 .mp-drawer-mask；左侧栏按钮改入 header 第 1 列、类名复用右侧按钮、图标统一 15px；多模态配置按 dsh-market 做法去掉自定义标记（只留 shell 齿轮）。\n\n---\n\n';c.write_text((b+t) if '## [0.4.3-debug]' not in t else t,encoding='utf-8')"
           grep -n 'versionCode = \|versionName = ' app/build.gradle.kts
           sh tools/version.sh --check
 
@@ -261,7 +260,7 @@ jobs:
           NODE=$(grep -oE 'NODE_EXECUTABLE_VERSION = "v[0-9.]+"' app/src/main/java/com/dsh/android/termux/TermuxBootstrap.kt | grep -oE 'v[0-9.]+' | head -1 || true)
           MUI=$(grep -oE 'MOBILE_UI_VERSION = "[0-9.]+-[0-9]+"' app/src/main/java/com/dsh/android/EngineManager.kt | grep -oE '[0-9.]+-[0-9]+' | head -1 || true)
           echo "APK=$APK -> /tmp/$NAME size=$SIZE sha256=$SHA node=${NODE:-?} mobile-ui=${MUI:-?}"
-          NOTES=$(printf 'engine @deepseek-ai/dsh@0.2.2-rc.1\n\n- versionName **0.4.3-debug** / versionCode **48**\n- apk size `%s` bytes\n- sha256 `%s`\n- node runtime `%s` (constants aligned)\n- mobile-ui `%s` (settings z=1200 + modal-dismiss drawer + mask sweep + header lead align)\n- assets: engine.bin / node-runtime.bin / bootstrap-aarch64.zip\n' "$SIZE" "$SHA" "${NODE:-?}" "${MUI:-?}")
+          NOTES=$(printf 'engine @deepseek-ai/dsh@0.2.2-rc.1\n\n- versionName **0.4.3-debug** / versionCode **48**\n- apk size `%s` bytes\n- sha256 `%s`\n- node runtime `%s` (constants aligned)\n- mobile-ui `%s` (settings z=1200 + modal-dismiss drawer + mask sweep + lead button in header + single icon)\n- assets: engine.bin / node-runtime.bin / bootstrap-aarch64.zip\n' "$SIZE" "$SHA" "${NODE:-?}" "${MUI:-?}")
           if gh release view "$REL_TAG" >/dev/null 2>&1; then
             gh release edit "$REL_TAG" --notes "$NOTES" --prerelease || true
           else
