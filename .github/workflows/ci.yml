@@ -38,7 +38,10 @@ jobs:
               fail=1
             fi
           done
-          if git ls-files | grep -E '\.(jks|keystore)$' | grep -q .; then
+          # 例外：tools/dsh-debug.keystore 是 Android 公开的 debug 密钥（口令 android），
+          # 只用于 CI 里固定 debug 签名，让 `pm install -r` 能覆盖安装；不用于发版
+          # （发版仍走 keystore.properties 的 release keystore，不入库）。
+          if git ls-files | grep -E '\.(jks|keystore)$' | grep -v '^tools/dsh-debug\.keystore$' | grep -q .; then
             echo "::error::签名私钥（*.jks / *.keystore）被提交了"
             fail=1
           fi
