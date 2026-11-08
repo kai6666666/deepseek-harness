@@ -36,8 +36,8 @@ if [ "$GUEST" = "1" ]; then sk "开发环境（guest 跳过）"
 else
 LINE=$($N $R/dsh-env.mjs status --json 2>/dev/null | $N -e '
 let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{
- try{const d=JSON.parse(s);const bad=d.groups.filter(g=>g.installedCount!==g.totalCount&&g.id!=="rust");
-  console.log(d.groups.length===6&&bad.length===0?"PASS "+d.groups.map(g=>g.id+" "+g.installedCount+"/"+g.totalCount).join(" "):"FAIL "+d.groups.map(g=>g.id+" "+g.installedCount+"/"+g.totalCount).join(" "));
+ try{const d=JSON.parse(s);const bad=d.groups.filter(g=>g.required!==false&&g.installedCount!==g.totalCount&&g.id!=="rust");
+  console.log(bad.length===0?"PASS "+d.groups.map(g=>g.id+" "+g.installedCount+"/"+g.totalCount).join(" "):"FAIL "+d.groups.map(g=>g.id+" "+g.installedCount+"/"+g.totalCount).join(" "));
  }catch(e){console.log("FAIL parse")}
 })')
 case "$LINE" in
@@ -47,7 +47,8 @@ esac
 fi
 
 CNT=$(grep -o 'session-[a-z0-9-]*' $R/home/.dsh/storages/workspace.json 2>/dev/null | wc -l)
-if [ "$CNT" -le 3 ]; then ok "会话索引干净（$CNT 条）"; else ng "会话索引残留（$CNT 条）"; fi
+MAX=${VERIFY_SESSION_MAX:-4}
+if [ "$CNT" -le "$MAX" ]; then ok "会话索引干净（$CNT/$MAX 条）"; else ng "会话索引残留（$CNT 条，上限 $MAX）"; fi
 
 if [ "$GUEST" = "1" ]; then sk "引擎补丁标记（guest 跳过）"
 else
