@@ -113,44 +113,28 @@ jobs:
       - name: 现场构建原生产物 + pnpm
         run: bash tools/build-native-assets.sh
 
-      # mobile-ui 1.1.0-173：打包前把 drawer-fix-170.js 追加进 client.js 并 bump 版本戳。
-      - name: mobile-ui 补丁 1.1.0-173（座位作用域 + 左按钮入 header + 去双图标）
+      # 补丁已迁到 app/src/main/assets/webview-polyfill.js（App 资产通道）。
+      # 这里只负责把版本戳推到 1.1.0-174，让设备重解包一份干净的 client.js。
+      - name: mobile-ui 版本戳 1.1.0-174（补丁在 webview-polyfill）
         run: |
           set -e
-          CJ=mobile-ui-plugin/dsh-android-mobile/lib/client.js
-          FIX=mobile-ui-plugin/dsh-android-mobile/lib/drawer-fix-170.js
-          [ -f "$CJ" ] || { echo "::error::$CJ 不存在"; exit 1; }
-          [ -f "$FIX" ] || { echo "::error::$FIX 不存在"; exit 1; }
-          if grep -q '__mpDrawerFix170' "$CJ"; then
-            echo 'already patched, skip'
-          else
-            cat "$FIX" >> "$CJ"
-            echo "appended drawer-fix-170.js (+$(wc -c < "$FIX") bytes)"
-          fi
-          echo "--- marker count ---"
-          grep -c '__mpDrawerFix170' "$CJ"
-          echo "--- syntax ---"
-          node --check "$CJ" && echo 'client.js syntax OK'
-          echo "--- MOBILE_UI_VERSION ---"
           EM=app/src/main/java/com/dsh/android/EngineManager.kt
-          sed -i 's/MOBILE_UI_VERSION = "1\.1\.0-169"/MOBILE_UI_VERSION = "1.1.0-173"/' "$EM"
+          sed -i 's/MOBILE_UI_VERSION = "1\.1\.0-169"/MOBILE_UI_VERSION = "1.1.0-174"/' "$EM"
           grep -n 'MOBILE_UI_VERSION' "$EM" | head -3
-          grep -q 'MOBILE_UI_VERSION = "1.1.0-173"' "$EM" || { echo '::error::MOBILE_UI_VERSION not bumped'; exit 1; }
+          grep -q 'MOBILE_UI_VERSION = "1.1.0-174"' "$EM" || { echo '::error::MOBILE_UI_VERSION not bumped'; exit 1; }
+          grep -q '__mpDrawerFix170' app/src/main/assets/webview-polyfill.js && echo 'OK polyfill 带补丁' || { echo '::error::polyfill 没带补丁'; exit 1; }
 
       - name: 现场打包插件资产（15 个 zip）
         run: bash tools/build-plugin-assets.sh
 
-      - name: 校验 mobile-ui.zip 含补丁
+      - name: 校验 mobile-ui.zip 是干净的（补丁只在 polyfill）
         run: |
           set -e
           Z=app/src/main/assets/mobile-ui.zip
           [ -s "$Z" ] || { echo "::error::mobile-ui.zip 未生成"; exit 1; }
           unzip -p "$Z" 'lib/client.js' > /tmp/cj.js
-          grep -q '__mpDrawerFix170' /tmp/cj.js && echo 'OK mobile-ui.zip 含 1.1.0-173 补丁' || { echo '::error::zip 内没有补丁'; exit 1; }
-          grep -q 'syncLeadScope' /tmp/cj.js && echo 'OK 含座位作用域段' || { echo '::error::缺 syncLeadScope'; exit 1; }
-          grep -q 'data-conversation-header-leading' /tmp/cj.js && echo 'OK 含左按钮入 header 段' || { echo '::error::缺 headerLeading 段'; exit 1; }
-          grep -q 'data-am-nav\]::before' /tmp/cj.js && echo 'OK 含去双图标段' || { echo '::error::缺去双图标段'; exit 1; }
-          ls -l "$Z"
+          if grep -q '__mpDrawerFix170' /tmp/cj.js; then echo '::error::client.js 仍含补丁（应已迁到 polyfill）'; exit 1; fi
+          ls -l /tmp/cj.js "$Z"
 
       - name: 现场编 node-pty 绑定
         run: bash tools/build-node-pty.sh
