@@ -3,22 +3,15 @@
  * A. 设置弹窗层级：portal 到 body 的模态(z=1000)被抽屉列(z=1100)压住 → 抬到 1200
  * B. 打开设置即收抽屉：portal 模态挂载时点一次官方 toggle
  * C. 清理遗留 .mp-drawer-mask
- * D. 左侧栏按钮：完全采用右侧栏按钮的布局体系
- *      - 官方浮动座位 pI_x6G_leadingSeat 退场（display:none）
- *      - 在 wSkVaW_headerLeading（header grid 第 1 列）里建按钮，类名复用右侧按钮
- *      - 图标 15×15（与右侧实测一致），CSS !important 抗 React 重写
- *      - 点击走官方 [data-sidebar-toggle]
- * E. 多模态配置的双图标：按 dsh-market 的做法，不画自定义标记
- *      - agnes 用 ::before 画自己的图案、又想藏掉齿轮，但 rc.1 把齿轮包进 span.navIcon，
- *        它的 `> svg:first-child` 藏不掉 → 双图标。这里直接 content:none，只留 shell 的 fallback。
+ * D. 左侧栏按钮：会话视图里改用 header 的布局体系（与右侧按钮同一串类名、15px 图标）
+ *      ⚠️ 只能在「存在 [data-conversation-header-leading]（即会话视图）」时把官方浮动座位
+ *         pI_x6G_leadingSeat 退场；面板页（插件/插件市场/自动化任务/任务看板/智能体）
+ *         没有这个容器，必须把座位放回来 —— 否则插件会倒退回它自己的 40px 浮动汉堡：
+ *           · pointerdown 就开抽屉 → 紧随的 click 落在抽屉「新建会话」上 → 跳回新会话（真机复现）
+ *           · 浮动态写 --mp-float-nav-h=54px → 标题被推下 54px（真机复现：pageHead.y 102 → 48）
+ * E. 多模态配置的双图标：照 dsh-market 的做法，不画自定义标记（只留 shell 齿轮）
  *
- * 真机实测依据（PROBE174/175/182/183/186）：
- *   设置 overlay  : body > .VOzbGW_overlay absolute z=1000 > .VOzbGW_panel fixed z=1 (394×806)
- *   抽屉列        : DIV.pI_x6G_sidebarCol fixed z=1100
- *   左按钮(旧)    : .pI_x6G_leadingSeat 绝对 top:11 → box=[12,11,28,28] svg16
- *   右按钮        : .wSkVaW_headerCorner 内 _sm 按钮 → box=[354,22.3,28,28] svg15
- *   header        : grid `auto minmax(0,1fr)`，padding 4px 12px 4px 60px（60 是本插件留的）
- *
+ * 真机实测依据（PROBE174/175/182/183/186/187/188/189）。
  * 注意：不要隐藏 .hHd-Xa_root（侧栏与设置面板共用根类，会整屏白）。
  */
 (function () {
@@ -111,16 +104,14 @@
     if (t) t.click();
   }
 
-  function ensureLeadButton() {
-    if (!document.documentElement.hasAttribute('data-mobile')) return;
-    var hold = headerLeading();
-    var right = rightButton();
-    if (!hold || !right) return;
+  function removeLeadButton() {
+    if (mpLeadBtn && mpLeadBtn.parentNode) {
+      try { mpLeadBtn.parentNode.removeChild(mpLeadBtn); } catch (e) { /* 静默 */ }
+    }
+  }
 
-    var seat = leadingSeat();
+  function mountLeadButton(hold, right, seat) {
     var icon = seat ? seat.querySelector('button svg') : null;
-    if (seat && seat.style.display !== 'none') seat.style.display = 'none';
-
     if (!mpLeadBtn) {
       mpLeadBtn = document.createElement('button');
       mpLeadBtn.type = 'button';
@@ -130,7 +121,7 @@
     var cls = right.className + ' mp-lead-btn';
     if (mpLeadBtn.className !== cls) mpLeadBtn.className = cls;
 
-    var wantIcon = icon || (mpLeadBtn.querySelector('svg'));
+    var wantIcon = icon || mpLeadBtn.querySelector('svg');
     if (wantIcon && (!mpLeadBtn.firstChild || mpLeadBtn.getAttribute('data-mp-icon') !== 'left')) {
       var clone = wantIcon.cloneNode(true);
       clone.setAttribute('width', '15');
@@ -140,8 +131,23 @@
       mpLeadBtn.appendChild(clone);
       mpLeadBtn.setAttribute('data-mp-icon', 'left');
     }
-
     if (mpLeadBtn.parentElement !== hold) hold.insertBefore(mpLeadBtn, hold.firstChild);
+  }
+
+  function syncLeadScope() {
+    if (!document.documentElement.hasAttribute('data-mobile')) return;
+    var seat = leadingSeat();
+    if (!seat) return;
+    var hold = headerLeading();
+    if (!hold) {
+      if (seat.style.display === 'none') seat.style.display = '';
+      removeLeadButton();
+      return;
+    }
+    var right = rightButton();
+    if (!right) return;
+    if (seat.style.display !== 'none') seat.style.display = 'none';
+    mountLeadButton(hold, right, seat);
   }
 
   var leadRaf = 0;
@@ -149,7 +155,7 @@
     if (leadRaf) return;
     leadRaf = requestAnimationFrame(function () {
       leadRaf = 0;
-      try { ensureLeadButton(); } catch (e) { /* 静默 */ }
+      try { syncLeadScope(); } catch (e) { /* 静默 */ }
     });
   }
 
