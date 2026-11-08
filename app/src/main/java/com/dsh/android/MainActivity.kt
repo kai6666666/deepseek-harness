@@ -3305,7 +3305,12 @@ class MainActivity : AppCompatActivity() {
         //     console 只有 `[web] error: {}`（Error 序列化成空对象，判据抓不到）
         //     和这一行，而它恰好抓在 `Loading plugins…` 这个**中间态**上 ——
         //     ① ② 都不匹配 ⇒ 永不降级 ⇒ 用户点了「进入安全模式」也仍然进不去。
-        val stuckOnBootSplash = line.contains("首帧正文=\"HARNESS")
+        //      ⚠️ 判据必须是「超时兜底 + 当前正文含 HARNESS」，**不能**用 ready 分支里的
+        //      「首帧样本」。首帧样本是 polls=1（50ms）的快照，冷启动那会儿必然还是启动页，
+        //      而那一行只在 `ready()` 为真时才打印 —— 用它当判据等于「刚就绪就判卡死」。
+        //      真机证据（r24，2026-11-09 01:26:18）：`插件已激活（onUiReady）` 之后
+        //      **12 毫秒**就触发了一次假救援，界面被硬重启。
+        val stuckOnBootSplash = line.contains("超时兜底") && line.contains("HARNESS")
         if (!selfReported && !batchLoadFailed && !stuckOnBootSplash) return
         degradeToRescue(
             reason = when {
@@ -4103,7 +4108,14 @@ class MainActivity : AppCompatActivity() {
          * 只在 `onUiReady` 回调丢失时才生效（插件异常、桥不可用），
          * 目的是避免启动层永久盖住界面。
          */
-        const val UI_READY_TIMEOUT_MS = 12000L
+        /**
+         * 「等界面就绪」的原生兜底上限。
+         *
+         * 12000 → 20000：真机冷启动 loadUrl → onUiReady 实测 11.9 s，12 秒正好贴脸，
+         * 每次冷启动都先闪一层「界面加载较慢」红层。客户端自己的兜底是
+         * `UI_READY_MAX_WAIT_MS = 15000`（dsh-android-mobile），比这里早 5 秒。
+         */
+        const val UI_READY_TIMEOUT_MS = 20000L
 
         /**
          * WebView 内核的最低主版本号。
