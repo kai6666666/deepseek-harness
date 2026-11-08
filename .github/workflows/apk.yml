@@ -115,14 +115,22 @@ jobs:
         run: bash tools/build-native-assets.sh
 
       # 补丁已迁到 app/src/main/assets/webview-polyfill.js（App 资产通道）。
-      # 这里只负责把版本戳推到 1.1.0-174，让设备重解包一份干净的 client.js。
-      - name: mobile-ui 版本戳 1.1.0-174（补丁在 webview-polyfill）
+      # 版本号只认 tools/mobile-ui-version.txt —— 原先这里是写死的
+      #   sed -i 's/MOBILE_UI_VERSION = "1\.1\.0-169"/MOBILE_UI_VERSION = "1.1.0-175"/'
+      # 每改一次 mobile-ui 都得改这行数字，漏改就直接构建失败（173→174 时踩过）。
+      - name: mobile-ui 版本戳（读 tools/mobile-ui-version.txt）
         run: |
           set -e
           EM=app/src/main/java/com/dsh/android/EngineManager.kt
-          sed -i 's/MOBILE_UI_VERSION = "1\.1\.0-169"/MOBILE_UI_VERSION = "1.1.0-175"/' "$EM"
+          MUI=$(tr -d ' \r\n' < tools/mobile-ui-version.txt)
+          echo "mobile-ui target = $MUI"
+          case "$MUI" in
+            1.1.0-[0-9]*) : ;;
+            *) echo '::error::tools/mobile-ui-version.txt 格式应为 1.1.0-<数字>'; exit 1 ;;
+          esac
+          sed -i -E "s/MOBILE_UI_VERSION = \"[0-9.]+-[0-9]+\"/MOBILE_UI_VERSION = \"$MUI\"/" "$EM"
           grep -n 'MOBILE_UI_VERSION' "$EM" | head -3
-          grep -q 'MOBILE_UI_VERSION = "1.1.0-175"' "$EM" || { echo '::error::MOBILE_UI_VERSION not bumped'; exit 1; }
+          grep -q "MOBILE_UI_VERSION = \"$MUI\"" "$EM" || { echo '::error::MOBILE_UI_VERSION 未按 tools/mobile-ui-version.txt 写入'; exit 1; }
           grep -q '__mpDrawerFix170' app/src/main/assets/webview-polyfill.js && echo 'OK polyfill 带补丁' || { echo '::error::polyfill 没带补丁'; exit 1; }
 
       - name: 现场打包插件资产（15 个 zip）
