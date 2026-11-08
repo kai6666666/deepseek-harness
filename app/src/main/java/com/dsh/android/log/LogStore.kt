@@ -90,6 +90,22 @@ object LogStore {
 
     /** 单文件上限。到了就轮转。 */
     private const val MAX_FILE_BYTES = 1L * 1024L * 1024L
+    /**
+     * 异步档（`engine.log` / `web.log`）的时间兜底 flush 间隔。
+     *
+     * ⚠️ 这两路只在三处 flush：写到 [MAX_FILE_BYTES]、崩溃前的 [flushAsync]、
+     *   进程优雅退出的 [flushAndClose]。**低流量场景永远碰不到任何一处** ——
+     *   一次启动只有几十行网页 console 时，整段日志一直躺在 BufferedWriter 里，
+     *   `am force-stop` 或被系统杀进程时就整段蒸发。
+     *
+     *   真机证据（2026-11-09）：`web.log` 停在 01:28 的 27 行、3816 B，而同一批
+     *   console 在 logcat 里 02:22 还在正常输出（`I DSH : [web] …`）—— 说明
+     *   `onConsole` 回调活着，只是没人把它刷到磁盘。
+     *
+     *   1.5 s 的闸门：高频场景（引擎按 token 吐日志）仍然是成批写，syscall 数量
+     *   维持在同一个量级；低频场景最多丢最后 1.5 s。
+     */
+    private const val ASYNC_FLUSH_INTERVAL_MS = 1500L
 
     /** 轮转代数：`x.log` + `x.log.1`，更老的不留。 */
     private const val KEEP_GENERATIONS = 1
@@ -579,6 +595,9 @@ object LogStore {
     @Volatile
     var droppedAsync = 0L
         private set
+    /** 异步档上一次时间兜底 flush 的时刻（毫秒）。见 [ASYNC_FLUSH_INTERVAL_MS]。 */
+    @Volatile
+    private var lastAsyncFlushAt = 0L
 
     // ── 异步工作线程（engine / web） ──────────────────────────────────────────
 
@@ -605,6 +624,18 @@ object LogStore {
                     }
                     // 轮转在 [writeAsync] 的锁**之外**做（它自己要 close/rename/重开）。
                     if (needRotate) rotateAsync(item.target)
+                    // ⚠️ **时间兜底刷新**：没有这一条，低流量下的 `engine.log` /
+                    //   `web.log` 会一直留在用户态缓冲里，进程被强制杀掉就整段丢失。
+                    //   取锁刷是为了不与 [writeAsync] / [flushAsync] 交叉写同一个
+                    //   BufferedWriter（它们都在同一把锁下操作）。
+                    val nowMs = System.currentTimeMillis()
+                    if (nowMs - lastAsyncFlushAt >= ASYNC_FLUSH_INTERVAL_MS) {
+                        lastAsyncFlushAt = nowMs
+                        lock.withLock {
+                            runCatching { engineWriter?.flush() }
+                            runCatching { webWriter?.flush() }
+                        }
+                    }
                 } catch (_: InterruptedException) {
                     return@Thread
                 } catch (_: Throwable) {
