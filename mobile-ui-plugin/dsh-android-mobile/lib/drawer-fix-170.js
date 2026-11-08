@@ -1,17 +1,23 @@
 /* ===== mobile-ui 补丁（CI 打包前追加到 lib/client.js）=====
  *
- * 内容分四段：
- *   A. 设置弹窗层级：portal 到 body 的模态(z=1000)被抽屉列(z=1100)压住 → 抬到 1200
- *   B. 打开设置即收抽屉：portal 模态挂载时点一次官方 toggle（等价 selectPanel 的效果）
- *   C. 清理遗留 .mp-drawer-mask（原生抽屉模式下不该存在）
- *   D. 左侧栏按钮对齐右侧栏按钮：同一布局体系（28×28、同一垂直中线、16px 图标、同色）
+ * A. 设置弹窗层级：portal 到 body 的模态(z=1000)被抽屉列(z=1100)压住 → 抬到 1200
+ * B. 打开设置即收抽屉：portal 模态挂载时点一次官方 toggle
+ * C. 清理遗留 .mp-drawer-mask
+ * D. 左侧栏按钮：完全采用右侧栏按钮的布局体系
+ *      - 官方浮动座位 pI_x6G_leadingSeat 退场（display:none）
+ *      - 在 wSkVaW_headerLeading（header grid 第 1 列）里建按钮，类名复用右侧按钮
+ *      - 图标 15×15（与右侧实测一致），CSS !important 抗 React 重写
+ *      - 点击走官方 [data-sidebar-toggle]
+ * E. 多模态配置的双图标：按 dsh-market 的做法，不画自定义标记
+ *      - agnes 用 ::before 画自己的图案、又想藏掉齿轮，但 rc.1 把齿轮包进 span.navIcon，
+ *        它的 `> svg:first-child` 藏不掉 → 双图标。这里直接 content:none，只留 shell 的 fallback。
  *
- * 真机实测依据（PROBE174/175/182/183）：
+ * 真机实测依据（PROBE174/175/182/183/186）：
  *   设置 overlay  : body > .VOzbGW_overlay absolute z=1000 > .VOzbGW_panel fixed z=1 (394×806)
- *   抽屉列        : DIV.pI_x6G_sidebarCol fixed z=1100 rect=[0,0,320,806]
- *   左按钮(IW6AQa_iconButton) : box=[12,11,28,28] svg=[18,17,16,16]  ← 挂在 leadingSeat(绝对 top:11)
- *   右按钮(_sm_1ulci_28)      : box=[354,22.3,28,28] svg=[15px]      ← 标题行内垂直居中
- *   → 左中心 25 / 右中心 36.3：坐标系不同（座位 vs 流内居中），所以左"高"。
+ *   抽屉列        : DIV.pI_x6G_sidebarCol fixed z=1100
+ *   左按钮(旧)    : .pI_x6G_leadingSeat 绝对 top:11 → box=[12,11,28,28] svg16
+ *   右按钮        : .wSkVaW_headerCorner 内 _sm 按钮 → box=[354,22.3,28,28] svg15
+ *   header        : grid `auto minmax(0,1fr)`，padding 4px 12px 4px 60px（60 是本插件留的）
  *
  * 注意：不要隐藏 .hHd-Xa_root（侧栏与设置面板共用根类，会整屏白）。
  */
@@ -26,6 +32,16 @@
     + '}\n'
     + 'html[data-mobile] body > [class*="overlay"]:has([role="dialog"][aria-modal="true"]){'
     + 'pointer-events:auto !important;'
+    + '}\n'
+    + 'html[data-mobile] .wSkVaW_header,html[data-mobile] header[class*="header"]{'
+    + 'padding-left:20px !important;'
+    + '}\n'
+    + 'html[data-mobile] [data-conversation-header-leading] button svg,'
+    + 'html[data-mobile] button[aria-label*="右侧边栏"] svg{'
+    + 'width:15px !important;height:15px !important;'
+    + '}\n'
+    + '[data-shortcut-modal="settings"] nav button[data-am-nav]::before{'
+    + 'content:none !important;'
     + '}\n';
 
   function injectCss() {
@@ -42,11 +58,14 @@
     var f = frameDrawer();
     return !!f && !f.hasAttribute('data-sidebar-collapsed');
   }
+  function drawerToggle() {
+    return document.querySelector('[data-sidebar-toggle]')
+      || document.querySelector('[data-sidebar-opener]');
+  }
   function closeDrawer() {
     var f = frameDrawer();
     if (!f || f.hasAttribute('data-sidebar-collapsed')) return false;
-    var t = document.querySelector('[data-sidebar-toggle]')
-      || document.querySelector('[data-sidebar-opener]');
+    var t = drawerToggle();
     if (!t) return false;
     t.click();
     return true;
@@ -75,75 +94,82 @@
     if (drawerOpen()) closeDrawer();
   }
 
-  /* ── D. 左侧栏按钮对齐右侧栏按钮 ──── */
-  function rightSidebarButton() {
+  function headerLeading() { return document.querySelector('[data-conversation-header-leading]'); }
+  function leadingSeat() { return document.querySelector('[class*="leadingSeat"]'); }
+  function rightButton() {
     var bs = document.querySelectorAll('button');
     for (var i = 0; i < bs.length; i++) {
-      var a = bs[i].getAttribute('aria-label') || '';
-      if (a.indexOf('右侧边栏') >= 0) return bs[i];
+      if ((bs[i].getAttribute('aria-label') || '').indexOf('右侧边栏') >= 0) return bs[i];
     }
     return null;
   }
-  function leadingSeat() { return document.querySelector('[class*="leadingSeat"]'); }
+  var mpLeadBtn = null;
 
-  function alignLead() {
+  function onLeadClick(e) {
+    try { e.preventDefault(); e.stopPropagation(); } catch (err) { /* 静默 */ }
+    var t = drawerToggle();
+    if (t) t.click();
+  }
+
+  function ensureLeadButton() {
     if (!document.documentElement.hasAttribute('data-mobile')) return;
+    var hold = headerLeading();
+    var right = rightButton();
+    if (!hold || !right) return;
+
     var seat = leadingSeat();
-    var right = rightSidebarButton();
-    if (!seat || !right) return;
-    var lead = seat.querySelector('button');
-    if (!lead) return;
-    var rr = right.getBoundingClientRect();
-    var sr = seat.getBoundingClientRect();
-    if (rr.width < 1 || sr.width < 1) return;
+    var icon = seat ? seat.querySelector('button svg') : null;
+    if (seat && seat.style.display !== 'none') seat.style.display = 'none';
 
-    [lead, right].forEach(function (b) {
-      var svg = b.querySelector('svg');
-      if (!svg) return;
-      if (svg.getAttribute('width') !== '16') svg.setAttribute('width', '16');
-      if (svg.getAttribute('height') !== '16') svg.setAttribute('height', '16');
-    });
+    if (!mpLeadBtn) {
+      mpLeadBtn = document.createElement('button');
+      mpLeadBtn.type = 'button';
+      mpLeadBtn.setAttribute('aria-label', '打开侧边栏');
+      mpLeadBtn.addEventListener('click', onLeadClick, false);
+    }
+    var cls = right.className + ' mp-lead-btn';
+    if (mpLeadBtn.className !== cls) mpLeadBtn.className = cls;
 
-    var curTop = parseFloat(getComputedStyle(seat).top);
-    if (isNaN(curTop)) curTop = sr.top;
-    var delta = rr.top - sr.top;
-    if (Math.abs(delta) >= 0.5) {
-      seat.style.top = Math.round((curTop + delta) * 100) / 100 + 'px';
+    var wantIcon = icon || (mpLeadBtn.querySelector('svg'));
+    if (wantIcon && (!mpLeadBtn.firstChild || mpLeadBtn.getAttribute('data-mp-icon') !== 'left')) {
+      var clone = wantIcon.cloneNode(true);
+      clone.setAttribute('width', '15');
+      clone.setAttribute('height', '15');
+      try { clone.style.width = '15px'; clone.style.height = '15px'; } catch (e) { /* 静默 */ }
+      mpLeadBtn.innerHTML = '';
+      mpLeadBtn.appendChild(clone);
+      mpLeadBtn.setAttribute('data-mp-icon', 'left');
     }
 
-    try {
-      var c = getComputedStyle(right).color;
-      if (c && lead.style.color !== c) lead.style.color = c;
-    } catch (e) { /* 静默 */ }
+    if (mpLeadBtn.parentElement !== hold) hold.insertBefore(mpLeadBtn, hold.firstChild);
   }
 
   var leadRaf = 0;
-  function scheduleAlign() {
+  function scheduleLead() {
     if (leadRaf) return;
     leadRaf = requestAnimationFrame(function () {
       leadRaf = 0;
-      try { alignLead(); } catch (e) { /* 静默 */ }
+      try { ensureLeadButton(); } catch (e) { /* 静默 */ }
     });
   }
 
   function boot() {
     injectCss();
     sweepMask();
-    scheduleAlign();
+    scheduleLead();
     var obs = new MutationObserver(function (muts) {
       for (var i = 0; i < muts.length; i++) {
         var added = muts[i].addedNodes;
         for (var j = 0; j < added.length; j++) handleAdded(added[j]);
       }
-      scheduleAlign();
+      scheduleLead();
     });
     obs.observe(document.body, { childList: true, subtree: true });
-    window.addEventListener('resize', scheduleAlign);
-    window.addEventListener('orientationchange', scheduleAlign);
-    window.addEventListener('scroll', scheduleAlign, true);
+    window.addEventListener('resize', scheduleLead);
+    window.addEventListener('orientationchange', scheduleLead);
     setInterval(function () {
       sweepMask();
-      scheduleAlign();
+      scheduleLead();
       if (!drawerOpen()) return;
       var kids = document.body.children;
       for (var i = 0; i < kids.length; i++) {
