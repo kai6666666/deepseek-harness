@@ -286,7 +286,12 @@ class EngineManager private constructor(private val context: Context) {
 
         _state.value = State.Extracting(0)
         // 先解到临时目录，成功后再原子替换，避免中途失败留下半成品
-        val staging = File(context.filesDir, "engine.staging")
+        // 每次解包用**唯一**的 staging 目录：engine.staging-<stamp 净化>-<pid>。
+        // 固定名在「两个进程同时解包」时会互删对方的目录（崩溃后残留 + 并发恢复路径），
+        // 唯一化之后彼此隔离；同时清扫过期残留（见 sweepStaleStaging）。
+        val stagingTag = versionStamp.replace(Regex("[^A-Za-z0-9._-]"), "_").take(40)
+        val staging = File(context.filesDir, "engine.staging-$stagingTag-${android.os.Process.myPid()}")
+        sweepStaleStaging(staging.name)
         staging.deleteRecursively()
         staging.mkdirs()
 
@@ -357,6 +362,25 @@ class EngineManager private constructor(private val context: Context) {
             staging.deleteRecursively()
             _state.value = State.Failed("引擎解包失败: ${t.message}")
             throw t
+        }
+    }
+
+    /**
+     * 清扫上一轮残留的 engine.staging* / engine.old-*。
+     *
+     * 只删 30 分钟以前的：并发进程正在写的那份是新的，不能碰。
+     */
+    private fun sweepStaleStaging(currentName: String) {
+        val cutoff = System.currentTimeMillis() - 30L * 60 * 1000
+        context.filesDir.listFiles()?.forEach { f ->
+            val n = f.name
+            val stale = n != currentName &&
+                (n.startsWith("engine.staging") || n.startsWith("engine.old-")) &&
+                f.lastModified() < cutoff
+            if (stale) {
+                Log.w(TAG, "清理过期的解包残留目录: " + n)
+                f.deleteRecursively()
+            }
         }
     }
 
