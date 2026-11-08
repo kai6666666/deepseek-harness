@@ -280,7 +280,12 @@ class MainActivity : AppCompatActivity() {
     /** 等待 Web 内核首帧的兜底超时（见 [awaitWebViewPainted]）。 */
     private val paintTimeoutRunnable = Runnable {
         if (!webViewPainted) {
-            Log.w(DshApplication.TAG, "等待 Web 内核首帧超时，仍收起启动动画")
+            // ⚠️ 不该是 W：这个 runnable 只在「页面已经就绪（onUiReady / 重载后）」
+            //   之后才被武装，所以到点意味着**首帧回调比兜底慢**，不是故障 ——
+            //   真机实测（Xiaomi 25104RADAC / 内核 156）同一台机器上
+            //   `onUiReady → 首帧回调` 有时 75 ms、有时 >1.5 s。
+            //   原先按 W 打，每次慢帧都像出了事，排查时被误导。
+            Log.i(DshApplication.TAG, "首帧回调未在 ${PAINT_TIMEOUT_MS / 1000} 秒内到达，按兜底收起启动动画（页面已就绪，属慢帧）")
             webViewPainted = true
             paintPending = false
             hideOverlay()
@@ -4176,9 +4181,17 @@ class MainActivity : AppCompatActivity() {
          *
          * `postVisualStateCallback` 正常路径实测在几十毫秒内就回调（它只是等下一帧
          * 提交），但**不保证一定触发** —— WebView 被销毁、渲染进程崩溃时不会来。
-         * 取 1.5 秒：足够覆盖一次正常的帧提交，又不至于让用户白等。
+         * ⚠️ **1.5 秒是错的取值，已改 3 秒（2026-11-09 真机证伪）**：
+         *   同一台设备上 `onUiReady → 首帧回调` 实测既有 75 ms，也有 >1.5 s；
+         *   本文件另一处独立记录的值是「帧比 DOM 落后 1.6 秒」。也就是说 1.5 秒的
+         *   兜底**必然**在慢帧路径上先开火，日志里表现为
+         *   `02:19:25.836 [W] 等待 Web 内核首帧超时，仍收起启动动画` 紧跟在
+         *   `02:19:24.328 插件已激活（onUiReady）` 之后 —— 每次慢帧都像出了事。
+         *
+         * 取 3 秒：覆盖 1.6 秒的实测滞后并留一倍余量；真到这一步说明帧回调
+         * 真的没来（内核被销毁 / 渲染进程崩溃），收起启动层仍然是正确动作。
          */
-        const val PAINT_TIMEOUT_MS = 1500L
+        const val PAINT_TIMEOUT_MS = 3000L
 
         // ══ 悬浮气泡：注入脚本 ══════════════════════════════════════════
 
