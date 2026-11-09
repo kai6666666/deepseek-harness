@@ -227,7 +227,17 @@ jobs:
         run: |
           sed -i 's/versionCode = 47/versionCode = 48/' app/build.gradle.kts
           sed -i 's/versionName = "0.2.2-rc1"/versionName = "0.4.3-debug"/' app/build.gradle.kts
-          python3 -c "import pathlib;c=pathlib.Path('CHANGELOG.md');t=c.read_text(encoding='utf-8');b='## [0.4.3-debug] — 2026-11-07\nvc=48\n\n### 变更\n\n- 引擎 `@deepseek-ai/dsh` 0.2.2-rc.1；锚点门禁：官方 5/5、EngineManager 13 对 *_GUARD 13/13。\n- versionName **0.4.3-debug** / versionCode **48**。\n- 补回 apk.yml 缺失的 Termux bootstrap 步骤 + 三件套资产闸门。\n- Node 运行时版本对齐（从包内 bin/node 回写 NODE_EXECUTABLE_VERSION / NODE_VERSION）。\n- **node 入口包装**：node-runtime.bin 内含 bin/node(wrapper)+bin/node.real，启动时补 usr/home 符号链接并吞掉 --no-open（引擎才会打印 URL）。\n- **mobile-ui 1.1.0-173**：设置弹窗抬到 z=1200 + 模态挂载即收抽屉 + 清残留 .mp-drawer-mask；左按钮仅在会话视图改用 header 布局（15px、与右侧同一串类名），面板页保留官方座位；多模态配置按 dsh-market 做法去掉自定义标记。\n\n---\n\n';c.write_text((b+t) if '## [0.4.3-debug]' not in t else t,encoding='utf-8')"
+          # CHANGELOG 的 0.4.3-debug 小节来自 docs/changelog/0.4.3-debug.md（模板文件）。
+          # 原来是一整段 python -c 内联字符串：改一个字都要动 workflow，而且仓库顶部
+          # 的 rc1/vc47 与 CI 注入的 vc48 长期并存、无法 review。
+          if grep -q '^## \[0.4.3-debug\]' CHANGELOG.md; then
+            echo 'CHANGELOG 已含 0.4.3-debug 小节，跳过注入'
+          else
+            { cat docs/changelog/0.4.3-debug.md; cat CHANGELOG.md; } > CHANGELOG.new
+            mv CHANGELOG.new CHANGELOG.md
+            echo 'CHANGELOG 已注入 0.4.3-debug 小节（模板：docs/changelog/0.4.3-debug.md）'
+          fi
+          head -4 CHANGELOG.md
           grep -n 'versionCode = \|versionName = ' app/build.gradle.kts
           sh tools/version.sh --check
 
