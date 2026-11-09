@@ -395,7 +395,15 @@ node:sqlite                                  sqlite    ✅
 产物 tar 内    → 三个 Android 注释锚点各命中 1 次
 ```
 
-**待做（P4 剩余）**：①`EngineManager` 里 4 个纯 bionic 补丁（flock/终端/进程/图片）删除；②另外 3 个非纯字符串补丁迁 diff；③UI 契约层（87 个哈希类名 → 三级选择器 + 审计）。
+**已完成：UI 契约审计基线**
+
+- `tools/ui-contract/audit.mjs`：统计哈希类名唯一数 / 分布，支持 `--json` / `--write-baseline` / `--max`
+- 基线：**159 个唯一类名 / 43 个文件**（`baseline.json`），门禁先锁 159（只许减）
+- `tools/ui-contract/README.md`：三级选择器（`data-*` → ARIA → contract）与迁移顺序
+
+验证：`--max 159` 通过、`--max 158` 返回 1。
+
+**待做（P4 剩余）**：①4 个 bionic 补丁的删除**推迟到 P5 接线后**——它们要端到端跑一遍 flock/终端/进程/图片才能确认可删，盲删会把故障留到真机；②另外 3 个内联补丁迁 diff；③contract 抽取与逐文件迁移。
 
 原始任务清单（保留作对照）：
 
