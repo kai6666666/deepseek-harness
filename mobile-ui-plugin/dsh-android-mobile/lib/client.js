@@ -1143,7 +1143,7 @@ window.__ModuleLoader__.load({
   }
   /* composer 的 "+" 按钮走的是 -solid 变量（#f1f3f5），把它也归零会变成全透明，
      比原来的"浅灰→略深灰"更难看，所以这里直接还原成它的静态底色。 */
-  [data-mobile] .uV2eYG_add:hover:not(:disabled) {
+  [data-mobile] [aria-haspopup="listbox"]:hover:not(:disabled) {
     background: #f5f6f7 !important;
   }
   /* 侧栏"新会话"按钮：9c 把它 hover 设成白卡（elevated-fill），
@@ -4544,7 +4544,7 @@ mpSetMenuOpenClass(false);
 		function mpIsEngineRunning() {
 			// 文案判据（引擎版本与界面语言在本 App 里都固定）。
 			// 兜底：没有主按钮时当作空闲，宁可显示"空闲"也不要谎报在跑。
-			const btn = document.querySelector(".uV2eYG_primary");
+			const btn = document.querySelector("button[aria-busy]");
 			if (!btn) return false;
 			const label = btn.getAttribute("aria-label") || "";
 			return label.indexOf("停止") >= 0 || /stop/i.test(label);
