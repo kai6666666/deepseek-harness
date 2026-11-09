@@ -411,6 +411,11 @@ node:sqlite                                  sqlite    ✅
 - 覆盖度：我方 `client.js` 的 60 个引用里 **59** 个能在 contract 中找到
 - **首个死选择器**：`bOPqQW_root` 在引擎里已不存在（只剩 `_anchor/_pill/_label/_sep`）——静默失效，已记录，`--dead` 检查待做
 
+**已完成：CI 门禁 + npm 回退**
+
+- `apk.yml` 新增「UI 契约门禁」步骤：`audit --dead` + `audit --max 60`
+- `build-runtime.sh` 的 npm 安装按 `npmmirror → npmjs → 离线缓存` 三级回退
+
 **剩余**：①4 个 bionic 补丁删除（推迟到 P5 回归）；②`patchFailLoudExit` 的第 2 步（`profile-boot-<hash>.js`，文件名随构建变）仍留运行期；③`client.js` 59 个哈希引用逐条迁 `data-*`/contract。
 
 原始任务清单（保留作对照）：

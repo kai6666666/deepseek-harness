@@ -127,9 +127,23 @@ if [ "${DSH_RT_SKIP_ENGINE:-0}" != "1" ]; then
   (
     cd "$ROOTFS/opt/dsh"
     [ -f package.json ] || npm init -y >/dev/null 2>&1
-    npm_config_platform=linux npm_config_arch=arm64 npm_config_cache="$CACHE/npm" \
-      npm install --omit=dev --no-audit --no-fund --ignore-scripts --loglevel=error \
-      "@deepseek-ai/dsh@$DSH_VERSION"
+    install_engine() {
+      local reg=$1 extra=$2
+      npm_config_platform=linux npm_config_arch=arm64 npm_config_cache="$CACHE/npm" \
+        npm_config_registry="$reg" \
+        npm install --omit=dev --no-audit --no-fund --ignore-scripts --loglevel=error $extra \
+        "@deepseek-ai/dsh@$DSH_VERSION"
+    }
+    ok=0
+    for reg in "${DSH_RT_NPM_REGISTRY:-https://registry.npmmirror.com}" https://registry.npmjs.org; do
+      log "npm install via $reg"
+      if install_engine "$reg" ""; then ok=1; break; fi
+      log "registry 失败，换下一个：$reg"
+    done
+    if [ "$ok" != "1" ]; then
+      log "registry 全失败，回退离线缓存"
+      install_engine "https://registry.npmjs.org" "--offline" || die "npm install 失败（含离线回退）"
+    fi
     node -e "const p=require('./node_modules/@deepseek-ai/dsh/package.json'); if(p.version!=='$DSH_VERSION'){console.error('version mismatch',p.version);process.exit(1)}; console.log('engine ok',p.version)"
 
     # 官方 linux-arm64 预编译（--ignore-scripts 不会装 optionalDependencies）
