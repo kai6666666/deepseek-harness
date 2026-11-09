@@ -37,8 +37,6 @@ class ProotHost(
 
     private val lastLines: MutableList<String> = Collections.synchronizedList(ArrayList())
 
-    val pid: Int get() = process?.pid() ?: -1
-
     fun start(extraEnv: Map<String, String>): Process {
         require(rootfs.isDirectory) { "rootfs 不存在：$rootfs" }
         require(File(rootfs, "usr/bin/node").isFile) { "rootfs 缺 node" }
@@ -160,9 +158,10 @@ class ProotHost(
         }
         val p = process ?: return true
         if (!p.isAlive) return true
-        runCatching { Os.kill(p.pid(), OsConstants.SIGQUIT) }
-        if (!p.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)) {
-            Log.w(TAG, "SIGQUIT 后仍存活，destroyForcibly")
+        // proot 忽略 SIGTERM；node 已死后 --kill-on-exit 会自行退出。
+        // Android 没暴露 Process.pid()，所以只做最后兜底。
+        if (!p.waitFor(8, java.util.concurrent.TimeUnit.SECONDS)) {
+            Log.w(TAG, "node 已停但 proot 未退，destroyForcibly")
             p.destroyForcibly()
             p.waitFor(3, java.util.concurrent.TimeUnit.SECONDS)
         }

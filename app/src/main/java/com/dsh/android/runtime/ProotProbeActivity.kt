@@ -34,7 +34,7 @@ class ProotProbeActivity : Activity() {
             line("rootfs=" + File(filesDir, "runtime/rootfs").absolutePath)
             val t0 = System.currentTimeMillis()
             host.start(emptyMap())
-            line("started pid=" + host.pid + " (+" + (System.currentTimeMillis() - t0) + "ms)")
+            line("started (+" + (System.currentTimeMillis() - t0) + "ms)")
 
             val token = host.awaitToken(180_000)
             if (token == null) {
@@ -76,7 +76,7 @@ class ProotProbeActivity : Activity() {
         proc.listFiles()?.forEach { p ->
             if (!p.name.all { it.isDigit() }) return@forEach
             val cmd = runCatching { File(p, "cmdline").readBytes() }.getOrNull() ?: return@forEach
-            val s = String(cmd).replace('\u0000', ' ')
+            val s = String(cmd, Charsets.UTF_8).replace('\u0000', ' ')
             if (s.contains(marker) || s.contains("libproot.so")) n++
         }
         return n
