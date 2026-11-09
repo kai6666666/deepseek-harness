@@ -336,7 +336,39 @@ RESULT=PASS
 - [ ] 数据迁移：首次启动把旧 `files/engine` 下的 `.stamp` 读出来，写进新 `.rootfs.stamp`；旧目录保留一代后清理
 - **门禁 P2**：冷启 3 次稳定出 token；`http=401`；杀进程后无孤儿 node（`ps -A | grep node` 为空）；强杀后再次启动不残留 pidfile；`verify --tools` 9/0/1
 
-### P3 · 原生层与沙箱（1.5 周）
+### P3 · 原生层与沙箱（✅ 2026-11-09 真机 12 PASS / 0 FAIL）
+
+三个 C 层已在 rootfs 内用 gcc 重编（`apply-glibc-patches.py` 幂等打补丁）：
+
+```text
+boo-sandbox-run        71,304 B   /usr/local/bin/
+libboosandbox.so       73,344 B   /usr/local/lib/
+liblinkcompat.so       70,992 B   /usr/local/lib/
+```
+
+官方 linux-arm64 预编译补齐（`--ignore-scripts` 不会装 optionalDependencies）：
+
+```text
+@deepseek-ai/node-addon-system-linux-arm64   flock     ✅
+@img/sharp-linux-arm64 + libvips-linux-arm64 sharp     ✅ vips 8.18.7
+node-pty/prebuilds/linux-arm64               node-pty  ✅
+node:sqlite                                  sqlite    ✅
+```
+
+真机 `verify-c.sh` 汇总 **PASS=12 / FAIL=0**：
+
+```text
+① process.platform=linux                       ✅
+② flock / sharp / node-pty / node:sqlite       ✅✅✅✅
+③ workspace 内写放行 / 外写拒绝 / mkdirat 拒绝   ✅✅✅
+   readonly 拒绝写 / /dev/null 可写 / 未知flag=125 ✅✅✅
+   link() 转译（ENOSYS）                        ✅
+④ headless 端到端                              （跳过：需已配置模型）
+```
+
+关键发现：`verify-c.sh` 的 ② 用 `node -e require(...)`，模块解析按 **cwd** 走；引擎装在 `/opt/dsh`，必须带 `NODE_PATH=/opt/dsh/node_modules`（已写进 manifest 的 guest env）。不带 NODE_PATH 时 ② 会误报「缺预编译」。
+
+原始任务清单（保留作对照）：
 
 - [ ] `boo-sandbox-run.c` / `boosandbox.c` / `linkcompat.c` 在 Ubuntu 24.04 内用 gcc 重编（C 方案文档已列出补丁：`linkcompat` 认 `ENOSYS`；`boosandbox` 补 8 个符号：`openat64` `creat64` `__open_2` `__open64_2` `__openat_2` `__openat64_2` `freopen` `freopen64`）
 - [ ] 用 `tools/apply-glibc-patches.py`（已存在）做幂等打补丁，`--check` 进 CI

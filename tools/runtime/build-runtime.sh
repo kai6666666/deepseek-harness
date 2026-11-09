@@ -131,9 +131,38 @@ if [ "${DSH_RT_SKIP_ENGINE:-0}" != "1" ]; then
       npm install --omit=dev --no-audit --no-fund --ignore-scripts --loglevel=error \
       "@deepseek-ai/dsh@$DSH_VERSION"
     node -e "const p=require('./node_modules/@deepseek-ai/dsh/package.json'); if(p.version!=='$DSH_VERSION'){console.error('version mismatch',p.version);process.exit(1)}; console.log('engine ok',p.version)"
+
+    # 官方 linux-arm64 预编译（--ignore-scripts 不会装 optionalDependencies）
+    NAS_VER=$(node -p "require('./node_modules/@deepseek-ai/node-addon-system/package.json').version")
+    SHARP_VER=$(node -p "require('./node_modules/sharp/package.json').version")
+    VIPS_VER=$(node -p "require('./node_modules/sharp/package.json').optionalDependencies['@img/sharp-libvips-linux-arm64']")
+    log "optional: node-addon-system-linux-arm64@$NAS_VER sharp-linux-arm64@$SHARP_VER libvips@$VIPS_VER"
+    npm_config_cache="$CACHE/npm" npm install --no-save --force --ignore-scripts --no-audit --no-fund \
+      "@deepseek-ai/node-addon-system-linux-arm64@$NAS_VER" \
+      "@img/sharp-linux-arm64@$SHARP_VER" \
+      "@img/sharp-libvips-linux-arm64@$VIPS_VER" >/dev/null
   )
 else
   log "跳过引擎安装（DSH_RT_SKIP_ENGINE=1）"
+fi
+
+# ---------- 3.4 C 适配层（glibc 重编） ----------
+JNI_SRC=$REPO_ROOT/app/src/main/jni
+if [ -f "$JNI_SRC/boo-sandbox-run.c" ]; then
+  SRCC=$WORK/glibc-src
+  rm -rf "$SRCC"
+  mkdir -p "$SRCC/app/src/main/jni" "$SRCC/tools"
+  cp "$JNI_SRC"/*.c "$SRCC/app/src/main/jni/"
+  cp "$REPO_ROOT/tools/apply-glibc-patches.py" "$SRCC/tools/"
+  ( cd "$SRCC" && python3 tools/apply-glibc-patches.py )
+  gcc -O2 -o "$ROOTFS/usr/local/bin/boo-sandbox-run"                  "$SRCC/app/src/main/jni/boo-sandbox-run.c"
+  gcc -O2 -shared -fPIC -o "$ROOTFS/usr/local/lib/libboosandbox.so"   "$SRCC/app/src/main/jni/boosandbox.c" -ldl
+  gcc -O2 -shared -fPIC -o "$ROOTFS/usr/local/lib/liblinkcompat.so"   "$SRCC/app/src/main/jni/linkcompat.c" -ldl
+  chmod 755 "$ROOTFS/usr/local/bin/boo-sandbox-run"
+  chmod 644 "$ROOTFS/usr/local/lib/libboosandbox.so" "$ROOTFS/usr/local/lib/liblinkcompat.so"
+  log "C layers: $(ls -l "$ROOTFS/usr/local/bin/boo-sandbox-run" "$ROOTFS/usr/local/lib"/*.so | awk '{printf "%s=%s ", $9, $5}')"
+else
+  log "跳过 C 层（缺 app/src/main/jni）"
 fi
 
 # ---------- 3.5 瘦身（默认开；DSH_RT_PRUNE=0 关闭） ----------
@@ -173,7 +202,7 @@ argv = [
     "HOME=/root", "USER=root", "LOGNAME=root", "SHELL=/bin/bash",
     "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
     "LANG=C.UTF-8", "TERM=xterm-256color", "TMPDIR=/tmp",
-    "NODE_OPTIONS=--dns-result-order=ipv4first",
+    "NODE_OPTIONS=--dns-result-order=ipv4first", "NODE_PATH=/opt/dsh/node_modules",
     "{GUEST_ENV}",
     "/bin/sh", "-c",
     "echo $$ > /tmp/dsh-web.pid; exec /usr/local/bin/dsh web --host 127.0.0.1 --port {PORT} --no-open",
