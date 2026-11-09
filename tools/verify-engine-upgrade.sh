@@ -12,9 +12,161 @@
 #   --llmtools：真模型逐个驱动 6 个工具插件（bubble/ui/logs/statusbar/browser），校验 tool/result
 #   --root    ：配合 --tools/--llmtools 启用 root 用例（默认冻结，只登记 SKIP）
 #   --clean   ：配合 --llm/--llmtools，跑完删掉本次测试会话，只留 home/llm-evidence-<ts>.txt
+#   --tools 需要的 mockrun.sh / pick.js / mocktool.mjs 已内嵌：缺失时自动写入 /data/local/tmp，
+#   要强制刷新可用 VERIFY_HELPERS_REFRESH=1。
 R=/data/user/0/com.dsh.android/files
 N=$R/termux/usr/bin/node
 PASS=0; FAIL=0; SKIP=0
+# ── 设备侧 helpers：自举 ────────────────────────────────────────────────
+# mockrun.sh / pick.js / mocktool.mjs 原先必须手工推到 /data/local/tmp：
+# 换机、清空该目录、或重装后都会让 `--tools` 直接失败（NO_FREE_PORT / 模块找不到）。
+# 现在三份都内嵌在本脚本里，缺失就落地；已有则不覆盖，除非 VERIFY_HELPERS_REFRESH=1。
+HLP="$R/home/.verify-helpers"
+ensure_helpers() {
+  mkdir -p "$HLP" 2>/dev/null
+  # ⚠️ mksh 的 heredoc 是先写到临时文件再搬运：默认 TMPDIR=/data/local，
+  #   run-as 身份写不进去 ⇒ 三份 helper 全部变成 0 字节（已踩）。
+  mkdir -p "$HLP/tmp" 2>/dev/null
+  TMPDIR="$HLP/tmp"; export TMPDIR
+  if [ ! -s "$HLP/pick.js" ] || [ "${VERIFY_HELPERS_REFRESH:-0}" = "1" ]; then
+    cat > "$HLP/pick.js" <<'__DSH_PICK__'
+const net=require("net");
+const p0=Number(process.env.P0||0);
+const tryOne=(p)=>new Promise((r)=>{const s=net.createServer();
+  s.once("error",()=>r(false));
+  s.listen(p,"127.0.0.1",()=>s.close(()=>r(true)));});
+(async()=>{for(let p=p0;p<p0+20;p++){if(await tryOne(p)){console.log(p);process.exit(0)}}
+  process.exit(1)})();
+__DSH_PICK__
+    chmod 700 "$HLP/pick.js" 2>/dev/null
+    echo "helpers: 已写入 $HLP/pick.js"
+  fi
+  if [ ! -s "$HLP/mocktool.mjs" ] || [ "${VERIFY_HELPERS_REFRESH:-0}" = "1" ]; then
+    cat > "$HLP/mocktool.mjs" <<'__DSH_MOCKTOOL__'
+#!/usr/bin/env node
+/**
+ * mock-openai-toolcall.mjs —— 离线验证「插件工具能不能注册/执行」的最小 OpenAI 兼容服务。
+ *
+ * 为什么需要：真机 headless 要跑一轮 tool-call 得有可用模型凭据；凭据失效时
+ * 整条链路就停在 MISSING_CREDENTIAL，看不到 tools.register 是否兼容。
+ * 这个 mock 让引擎以为模型回了 tool_calls，从而把工具真正执行一遍：
+ *   第 1 次请求（无 tools 字段，标题/预热）→ 回纯文本 ok
+ *   第 2 次请求（带 tools、无 tool 结果）→ 回 tool_calls，调用 MOCK_TOOL
+ *   第 3 次请求（带 tool 结果）        → 把工具输出回显成最终文本
+ *
+ * 用法（与 headless 同机）：
+ *   node tools/mock-openai-toolcall.mjs &
+ *   MOCK_TOOL=shell MOCK_ARGS='{"command":"id"}' \
+ *     node .../bin.js --profile headless --patch mock.patch.yml --json "用 shell 执行 id"
+ *
+ * patch 里 provider 的 baseURL 填 http://127.0.0.1:3099/v1，apiKeyEnv 任意（MOCK_KEY=dummy）。
+ */
+import http from 'node:http';
+import fs from 'node:fs';
+
+const PORT = Number(process.env.MOCK_PORT || 3098);
+const TOOL = process.env.MOCK_TOOL || 'shell';
+const ARGS = process.env.MOCK_ARGS || JSON.stringify({ command: 'id' });
+const LOG = process.env.MOCK_LOG || '';
+const log = (m) => { if (LOG) { try { fs.appendFileSync(LOG, m + '\n'); } catch {} } };
+
+const srv = http.createServer((req, res) => {
+  if (!req.url.includes('/chat/completions')) { res.writeHead(404); res.end('no'); return; }
+  let body = '';
+  req.on('data', (c) => { body += c; });
+  req.on('end', () => {
+    let j = {};
+    try { j = JSON.parse(body); } catch {}
+    const msgs = j.messages || [];
+    const toolResults = msgs.filter((m) => m.role === 'tool');
+    const tools = j.tools || [];
+    log(`REQ msgs=${msgs.length} tools=${tools.length} results=${toolResults.length} names=${tools.map((t) => t.function && t.function.name).join(',')}`);
+
+    res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
+    const send = (o) => res.write('data: ' + JSON.stringify(o) + '\n\n');
+    const base = (delta, finish) => ({
+      id: 'chatcmpl-mock', object: 'chat.completion.chunk', created: 1, model: 'mock-1',
+      choices: [{ index: 0, delta, finish_reason: finish || null }],
+    });
+    const done = () => { res.write('data: [DONE]\n\n'); res.end(); };
+
+    if (tools.length === 0) {
+      send(base({ role: 'assistant', content: '' }));
+      send(base({ content: 'ok' }));
+      send(base({}, 'stop'));
+      log('SENT plain ok (request has no tools)');
+      return done();
+    }
+    if (toolResults.length === 0) {
+      send(base({ role: 'assistant', content: '' }));
+      send(base({ tool_calls: [{ index: 0, id: 'call_mock_1', type: 'function', function: { name: TOOL, arguments: ARGS } }] }));
+      send(base({}, 'tool_calls'));
+      log(`SENT tool_call ${TOOL} ${ARGS}`);
+      return done();
+    }
+    const last = toolResults[toolResults.length - 1];
+    const text = 'TOOL_RESULT_BEGIN\n' + String(last.content || '').slice(0, 1200) + '\nTOOL_RESULT_END';
+    send(base({ role: 'assistant', content: '' }));
+    send(base({ content: text }));
+    send(base({}, 'stop'));
+    log('SENT final len=' + text.length);
+    done();
+  });
+});
+srv.listen(PORT, '127.0.0.1', () => log('listening ' + PORT));
+__DSH_MOCKTOOL__
+    chmod 600 "$HLP/mocktool.mjs" 2>/dev/null
+    echo "helpers: 已写入 $HLP/mocktool.mjs"
+  fi
+  if [ ! -s "$HLP/mockrun.sh" ] || [ "${VERIFY_HELPERS_REFRESH:-0}" = "1" ]; then
+    cat > "$HLP/mockrun.sh" <<'__DSH_MOCKRUN__'
+#!/system/bin/sh
+# 设备侧：换 mock 工具 → 起 headless → 打印 tool_call/tool_result
+# 用法：sh mockrun.sh <tool> '<json args>' [mockPatch.yml]
+R=/data/user/0/com.dsh.android/files
+N=$R/termux/usr/bin/node
+TOOL="$1"; ARGS="$2"; PATCH="${3:-mock4.patch.yml}"
+LOG=$R/home/mockrun.log
+[ -f $R/home/mock.pid ] && kill $(cat $R/home/mock.pid) 2>/dev/null
+sleep 1
+: > $LOG
+[ -f $R/home/mock.port ] && MOCK_PORT=$(cat $R/home/mock.port)
+export MOCK_PORT=${MOCK_PORT:-3098}
+PICK=$(P0=$MOCK_PORT $N /data/local/tmp/pick.js)
+if [ -z "$PICK" ]; then echo NO_FREE_PORT; tail -3 $LOG; exit 3; fi
+echo "$PICK" > $R/home/mock.port
+sed -i "s/127\\.0\\.0\\.1:[0-9]*\\/v1/127.0.0.1:$PICK\\/v1/" $R/home/$PATCH
+MOCK_PORT=$PICK
+export MOCK_PORT
+echo "mock port -> $PICK" >>$LOG
+BOUND=0
+for i in 1 2; do
+  MOCK_TOOL=$TOOL MOCK_ARGS=$ARGS MOCK_LOG=$LOG nohup $N $R/home/.verify-helpers/mocktool.mjs >>$LOG 2>&1 &
+  P=$!; echo $P > $R/home/mock.pid
+  for j in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+    sleep 1
+    /system/bin/grep -q "listening" $LOG && { BOUND=1; break; }
+    kill -0 $P 2>/dev/null || break
+  done
+  [ $BOUND -eq 1 ] && break
+  kill $P 2>/dev/null; sleep 1
+done
+if [ $BOUND -ne 1 ]; then echo "MOCK_BIND_FAILED"; tail -3 $LOG; exit 3; fi
+cd $R/engine || exit 9
+PARS="--patch $R/home/$PATCH"
+for f in bubble-tool statusbar-tool logs-tool browser-tool uiagent-tool shell-tool; do
+  [ -f "$R/home/.dsh/$f.patch.yml" ] && PARS="$PARS --patch $R/home/.dsh/$f.patch.yml"
+done
+HOME=$R/home DSH_HOME=$R/home/.dsh PREFIX=$R/termux/usr PATH=$R/termux/usr/bin:$PATH \
+ LD_PRELOAD=$R/liblinkcompat.so MOCK_KEY=dummy DSH_ROOT_RUNNER=$R/dsh-android-root.mjs \
+ $N node_modules/@deepseek-ai/dsh/lib/bin.js --profile headless $PARS --json mock 2>&1 \
+ | /system/bin/grep -E 'tool_call|tool_result' | head -3
+__DSH_MOCKRUN__
+    chmod 700 "$HLP/mockrun.sh" 2>/dev/null
+    echo "helpers: 已写入 $HLP/mockrun.sh"
+  fi
+}
+
 QUIET=0; case "$*" in *--json*) QUIET=1;; esac
 CLEANFLAG=0; case "$*" in *--clean*) CLEANFLAG=1;; esac
 GUEST=0; for a in "$@"; do [ "$a" = "--guest" ] && GUEST=1; done
@@ -95,20 +247,21 @@ case $LLMON in
   esac
 ;; esac
 case "$*" in *--tools*)
+  ensure_helpers
   for t in bubble ui logs statusbar; do
     case $t in
       ui) A='{"action":"ping"}' ;;
       logs) A='{"action":"summary"}' ;;
       *) A='{"action":"get"}' ;;
     esac
-    O=$(sh /data/local/tmp/mockrun.sh $t "$A" mock4.patch.yml 2>&1)
+    O=$(sh $HLP/mockrun.sh $t "$A" mock4.patch.yml 2>&1)
     if echo "$O" | grep -q '"status":"completed"'; then ok "工具 $t"; else ng "工具 $t"; say "$(echo "$O" | head -c 200)"; fi
   done
-  O=$(sh /data/local/tmp/mockrun.sh browser '{"action":"tabs"}' mock5.patch.yml 2>&1)
+  O=$(sh $HLP/mockrun.sh browser '{"action":"tabs"}' mock5.patch.yml 2>&1)
   if echo "$O" | grep -q '"status":"completed"'; then ok "工具 browser"; else ng "工具 browser"; say "$(echo "$O" | head -c 200)"; fi
   case "$*" in
     *--root*)
-      O=$(sh /data/local/tmp/mockrun.sh root '{"command":"id","description":"verify"}' mock5.patch.yml 2>&1)
+      O=$(sh $HLP/mockrun.sh root '{"command":"id","description":"verify"}' mock5.patch.yml 2>&1)
       if echo "$O" | grep -q '"status":"completed"'; then ok "工具 root"; else ng "工具 root"; say "$(echo "$O" | head -c 200)"; fi ;;
     *) sk "工具 root（冻结·待 root 环境）" ;;
   esac
