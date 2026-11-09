@@ -1,7 +1,8 @@
 # 计划 v2：单运行时（PRoot/glibc）全量切换 + dsh-Go 资产吸收
 
 > 本版取代 v1《双路线演进计划》的「混合双模」结论。**决策：不保留 bionic 宿主，不做运行期双模切换。**
-> 基线：`0.4.3-debug` / vc=48 / 引擎 `@deepseek-ai/dsh@0.2.2-rc.1` / 真机 r29（Xiaomi 25104RADAC / Android 16 / arm64-v8a）
+> 基线：`0.4.3` / vc=49 / 引擎 `@deepseek-ai/dsh@0.2.2-rc.1` / 真机 0.4.3（Xiaomi 25104RADAC / Android 16 / arm64-v8a）
+> 仓库状态：分支已清空，只剩 `main`（`3838a7d9`）；Release `v0.4.3` 已发布
 > 依据：`dsh-Go-main` 源码与文档（2026-11-08 快照）、本工程 `docs/agents/proot-glibc-host.md`
 > 落盘：2026-11-09
 
@@ -10,9 +11,25 @@
 ## 〇、先给结论
 
 1. **采用单一路线**：APK 内只保留 PRoot + Ubuntu 24.04(glibc) 运行时，删除 Termux(bionic) 运行时与 `node-runtime.bin`。没有 `HostMode` 开关，没有「重生态模式」按钮，没有两套启动代码。
-2. **代价明码标价**：引擎启动段 +80%（dsh-Go 同机实测 1,072 ms → 1,925 ms），安装体积约 +400~600 MB。用 **boot-cache 路径缓存（-12~14%）+ 点开即拉起 + 常驻预热** 抵消一部分，剩余作为固定成本接受。
+2. **代价明码标价**：引擎启动段 +80%（dsh-Go 同机实测 1,072 ms → 1,925 ms）。**存储不增反降**：现网实测 `files/engine` 586 MB + `files/termux` 477 MB ≈ 1.06 GB；新方案 rootfs 实测 223 MB（Ubuntu base + glibc node）+ engine 586 MB ≈ **809 MB，净省约 250 MB**。APK 侧：删除 `node-runtime.bin` 30.6 MB，加入 `rootfs.tar.xz`（估 55–65 MB），**净增约 25–35 MB**。用 **boot-cache（-12~14%）+ 点开即拉起 + 常驻预热** 抵消启动开销。
 3. **回滚只到版本级**：出问题 = 装回上一个 APK（同签名、`versionCode` 递增），不在 App 内做运行时切换。这样代码里永远只有一条路径，验收只有一套判据。
 4. **补丁体制换血**：121 个 diff + 双哈希 pin 的做法照搬，但先做减法——本工程 10 个补丁里预计 **4 个是纯 bionic 适配，切 glibc 后直接删除**，剩 6 个进构建期 diff。
+
+---
+
+## 〇点五、本轮核对（2026-11-09 发布后复验）
+
+| 项 | 核对方式 | 结果 |
+|---|---|---|
+| 基线门禁 | 真机跑 `verify-engine-upgrade.sh --tools`（从 `main` 取脚本） | **9 PASS / 0 FAIL / 1 SKIP**（nodejs 2/2、索引 2/4、补丁 5/5、bubble/ui/logs/statusbar/browser PASS、root SKIP） |
+| 装机体积 | 设备 `du -sh files/engine files/termux` | engine **586 MB**、termux **477 MB**，合计 **1.06 GB** |
+| rootfs 体积 | P0 目录 `du -sh rootfs` | **223 MB**（Ubuntu base + glibc node） |
+| 补丁规模 | `EngineManager.kt` 正则统计 | `patch*` 函数 **10** 个；`GUARD` 常量 **14** 个、引用 12 处 |
+| UI 耦合 | 全仓哈希类名去重 | **87** 个（`client.js` 内 34 个） |
+| C 方案工具 | 仓库内容 API | `tools/verify-c.sh` 4,984 B、`tools/apply-glibc-patches.py` 6,562 B、`docs/agents/proot-glibc-host.md` 6,319 B，全部存在 |
+| 工作区树 | 跑本地 `tools/verify-engine-upgrade.sh` | **8 PASS / 1 FAIL**——本地树是旧的（缺 2b2d2b47 的 required-only 判据）。**P1 起一律以 `main` 的 API 取值为准，不信任本地副本** |
+
+结论：P0 的可行性结论不变；体积账由「+400~600 MB」修正为「**净省约 250 MB**」；锚点数量修正为 14 个常量（不随补丁删除而减少）。
 
 ---
 
@@ -153,7 +170,7 @@ PROOT_L2S_DIR={ROOTFS}/root/.l2s     LD_LIBRARY_PATH={NATIVE_LIB_DIR}
 
 | # | v1 说法 | 复核后 |
 |---|---|---|
-| 1 | 增量更新用 `bsdiff` | 实际是 **zip 条目级 DSHDLT01**；对 APK 有效，对 `tar.xz` 不适用（见 §6.4） |
+| 1 | 增量更新用 `bsdiff` | 实际是 **zip 条目级 DSHDLT01**；对 APK 有效，对 `tar.xz` 不适用（见 §1.6 与 P6 的资产更新设计） |
 | 2 | dsh-Go「纯协议层不碰 DOM」 | 准确说是 **Flutter 原生 UI + 纯 Dart API 客户端**，不是「协议替代 DOM」；我们只能借鉴「语义契约」思路 |
 | 3 | 121 个补丁 | 121 个 **@0.2.2-rc.1**（目标 89 文件），另有历史 pin；总数 122 含 `pins.json` |
 | 4 | proot 启动参数照抄 C 方案文档 | C 方案文档的 argv 是**简化版**；生产版还有 `--link2symlink --sysvipc -L -0`、`PROOT_LOADER`、`PROOT_L2S_DIR`、`/apex`、selinux 空目录、shm |
@@ -169,11 +186,11 @@ PROOT_L2S_DIR={ROOTFS}/root/.l2s     LD_LIBRARY_PATH={NATIVE_LIB_DIR}
 | 启动代码 | 2 套 argv/环境/停止逻辑 | 1 套 |
 | 验收 | 每条判据 ×2（bionic 9/0/1 + proot 四组） | 1 套 |
 | 数据迁移 | 两向迁移 + 拼写一致性 | 单向一次 |
-| 补丁 | 保留全部 10 个 + bionic 专用锚点 | 删 4 个 bionic 补丁，锚点从 13 降到 9 |
-| UI 耦合 | 87 个哈希类名长期存在（bionic 路径要养） | 仍要治理，但只治一套 |
-| 包体 | 两套运行时（≈300 MB + 800 MB） | 一套（≈800 MB，删除 122 MB 旧资产） |
+| 补丁 | 保留全部 10 个 + 全部锚点 | 删 4 个 bionic 补丁函数（10 → 6）；GUARD 常量 14 个全部保留（均服务模型侧补丁） |
+| UI 耦合 | 87 个哈希类名长期存在（bionic 路径要养） | 仍要治理，但只治一套（实测 87 个，其中 client.js 34 个） |
+| 包体 | 两套运行时（≈1.06 GB 装机） | 一套（≈809 MB 装机，净省 250 MB） |
 | 回滚 | 运行期切换（状态机复杂） | 重装上一版 APK |
-| 代价 | — | 冷启 +80%，固定存储 +400~600 MB |
+| 代价 | — | 冷启 +80%，装机体 **−250 MB**，APK **+25~35 MB** |
 
 **结论**：双模省下的不是风险，是「把风险推迟」；它把一套不确定性变成两套，并且让每次验收都要跑两遍真机。单模的代价可量化、可优化、可接受。
 
@@ -304,7 +321,7 @@ node        v24.22.1（glibc 官方 tarball，未改一个字节）
 | `patchLlmToolCallIdFallback` | 保留 | 模型侧行为 |
 | `patchPresetCordisPersona` | 保留 | 产品功能 |
 
-目标：**10 → 6**，锚点 13 → 9。
+目标：**补丁函数 10 → 6**；`GUARD` 常量 14 个保持不变（都服务保留的模型侧补丁）。
 
 **P4b 构建期 diff + pin 门禁**
 
@@ -535,7 +552,7 @@ def main() -> int:
 |---|---|---|---|
 | P0 不过：Android 16 杀 glibc loader | 中 | 计划终止 | P0 先做；失败则改「官方 linux 预编译 + bionic 重编」另案 |
 | 冷启 +80% 体感明显 | 高 | 体验 | boot-cache + 点开即拉起 + 常驻；对外口径写清楚 |
-| 存储 +400~600 MB | 高 | 装机门槛 | 首装下载制；提供运行时清理 |
+| 存储 | 高 | 装机门槛 | **实测净省 ~250 MB**（1.06 GB → 809 MB），不是增加 |
 | 补丁删多了 | 中 | 功能回归 | 每删一个补丁，跑一次对应用例（flock/终端/进程/图片） |
 | UI 契约抽取漏 | 中 | 局部样式失效 | 三级选择器 + 不注入降级 + CI 审计 |
 | `--link2symlink` 的 `.l2s` 被清 | 低 | 启动失败 | 解包时创建并校验；启动前 `isDirectory` 断言 |
