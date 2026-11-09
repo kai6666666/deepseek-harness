@@ -376,7 +376,28 @@ node:sqlite                                  sqlite    ✅
 - [ ] 沙箱边界复验（C 方案文档的四组）：readonly 写 `/tmp` 拒绝、workspace-write 内成功、ws 外拒绝、`mkdirat` 逃逸拒绝、`/dev/null` 可写、python `open` 内外行为、`sed -i` 拒绝
 - **门禁 P3**：`tools/verify-c.sh` 四组全绿（平台翻面 / 官方预编译 / 沙箱边界 / 端到端）
 
-### P4 · 补丁工程化 + UI 契约（2 周）
+### P4 · 补丁工程化 + UI 契约（🟡 P4b 首批 3/6 已落地，P4a/P4c 待做）
+
+**已完成：构建期 diff + 双哈希 pin（3 个补丁）**
+
+- `tools/runtime/make-patches.py`：从 `EngineManager.kt` 常量自动生成 `.diff` + `pins.json`（before/after 双 sha）
+- `tools/runtime/apply-patches.py`：三态应用器（already / apply / mismatch→exit 1）
+- `runtime/patches/`：`deepseek-tool-order.diff`、`pi-ai-tool-call-id.diff`、`llm-tool-call-id-fallback.diff` + `pins.json`
+- `build-runtime.sh` 在 npm 安装后自动应用，任一 mismatch 即构建失败
+
+验证：
+
+```text
+--check        → WANT ×3
+首次 apply     → 已应用（本次）×3
+再次 apply     → 已应用 ×3（幂等）
+篡改一个字节   → FAIL + rc=1（门禁有效）
+产物 tar 内    → 三个 Android 注释锚点各命中 1 次
+```
+
+**待做（P4 剩余）**：①`EngineManager` 里 4 个纯 bionic 补丁（flock/终端/进程/图片）删除；②另外 3 个非纯字符串补丁迁 diff；③UI 契约层（87 个哈希类名 → 三级选择器 + 审计）。
+
+原始任务清单（保留作对照）：
 
 **P4a 补丁瘦身（先减后搬）**
 

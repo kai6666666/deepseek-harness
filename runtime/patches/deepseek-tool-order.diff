@@ -1,0 +1,28 @@
+--- a/node_modules/@deepseek-ai/dsh-llm-deepseek/lib/index.js
++++ b/node_modules/@deepseek-ai/dsh-llm-deepseek/lib/index.js
+@@ -1563,7 +1563,7 @@
+ }
+ function assistant(message, model, onReplayDegrade) {
+ 	const replay = readReplay(message, model, onReplayDegrade);
+-	return message.content.flatMap((block, index) => {
++	const mapped = message.content.flatMap((block, index) => {
+ 		switch (block.type) {
+ 			case "text": return block.text.length === 0 ? [] : {
+ 				type: "text",
+@@ -1583,6 +1583,16 @@
+ 			default: return unsupported(`assistant content ${block.type}`);
+ 		}
+ 	});
++	/* Android: DeepSeek Messages 要求 assistant 的 tool_use 块连续，且紧后
++	   必须携带全部 tool_result。持久化历史里 assistant 的块是交错的
++	   （text 夹在多个 tool_use 之间），原样发出会被 API 以
++	   "tool_use ids were found without tool_result blocks" 拒绝，
++	   且该历史从此永久发不出去。这里把 tool_use 收敛到末尾，
++	   其余块保持原有相对顺序（thinking 必须留在最前）。
++	   只改本次请求体，不改持久化历史，replay 签名已在映射时贴好。 */
++	const calls = mapped.filter((block) => block.type === "tool_use");
++	if (calls.length === 0) return mapped;
++	return [...mapped.filter((block) => block.type !== "tool_use"), ...calls];
+ }
+ /** Serialize one complete request using already prepared image bytes.
+ * User and tool-result content omits reasoning and tool-call blocks.

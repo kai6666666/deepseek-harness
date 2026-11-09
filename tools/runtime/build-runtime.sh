@@ -141,6 +141,11 @@ if [ "${DSH_RT_SKIP_ENGINE:-0}" != "1" ]; then
       "@deepseek-ai/node-addon-system-linux-arm64@$NAS_VER" \
       "@img/sharp-linux-arm64@$SHARP_VER" \
       "@img/sharp-libvips-linux-arm64@$VIPS_VER" >/dev/null
+
+    log "apply patches ($DSH_VERSION)"
+    python3 "$REPO_ROOT/tools/runtime/apply-patches.py" \
+      --prefix "$ROOTFS/opt/dsh" --dsh-version "$DSH_VERSION" \
+      --patches "$REPO_ROOT/runtime/patches"
   )
 else
   log "跳过引擎安装（DSH_RT_SKIP_ENGINE=1）"

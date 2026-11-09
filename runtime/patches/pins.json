@@ -1,0 +1,28 @@
+{
+  "patches": {
+    "deepseek-tool-order.diff": {
+      "0.2.2-rc.1": {
+        "node_modules/@deepseek-ai/dsh-llm-deepseek/lib/index.js": {
+          "after": "51f066bd571916cdd696445a329175f8d0827c82c1ad7c3867a7905d701951b4",
+          "before": "955dc7bc7ca6c857ff4a7e373b87c143b96a4c43fc80325b67dc0982600dcc75"
+        }
+      }
+    },
+    "llm-tool-call-id-fallback.diff": {
+      "0.2.2-rc.1": {
+        "node_modules/@deepseek-ai/dsh-llm/lib/index.js": {
+          "after": "b470a5ba30d57e0c874945c03931ab46cdefce292a6728a31a0bf522aa324499",
+          "before": "8e541fc98a11897706a122fde1db42f8b2a41b3b354ba3fcb932e9a16929ac6a"
+        }
+      }
+    },
+    "pi-ai-tool-call-id.diff": {
+      "0.2.2-rc.1": {
+        "node_modules/@deepseek-ai/dsh-llm-pi-ai/lib/index.js": {
+          "after": "e3b8e98e81ab2191f86617da22a78a93951c3aacad4743eac0dcf5c11e414618",
+          "before": "1a3ae58f9b4493e15459cc5000ec80f21b5d3f4a9dea6ffb6bc28e5b8817ae8a"
+        }
+      }
+    }
+  }
+}
