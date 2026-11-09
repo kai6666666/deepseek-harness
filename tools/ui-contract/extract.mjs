@@ -19,7 +19,7 @@ if (!ENGINE) {
   process.exit(2)
 }
 
-const HASHED = /(?:\.|["'])([A-Za-z0-9_]{5,8})_([A-Za-z0-9]{2,8})\b/g
+const HASHED = /(?:\.|["'])([A-Za-z0-9_]{4,10})_([A-Za-z0-9]{2,12})\b/g
 const DATA = /\bdata-[a-zA-Z0-9-]+/g
 const ARIA = /\baria-[a-zA-Z0-9-]+/g
 const ROLE = /\brole\s*[:=]\s*["']([a-z]+)["']/g

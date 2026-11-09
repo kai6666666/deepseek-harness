@@ -50,7 +50,7 @@ window.__ModuleLoader__.load({
 }
 
 /* 抽屉让出状态栏（官方侧栏顶部 logoRow 需要安全区） */
-[data-mobile] .pI_x6G_sidebarCol {
+[data-mobile] [data-pane="sidebar"] {
   padding-top: var(--dsh-android-system-top, 0px);
 }
 /* 内容列的顶部让位**不在 CSS 里做**（修复 58 的第一版就是死在这里，别再走回去）：
@@ -59,9 +59,9 @@ window.__ModuleLoader__.load({
    状态栏直接压住汉堡与聊天页 header，实测汉堡 rect.top=3.75）。
 
    第一版在这里加了一条
-     [data-mobile] .pI_x6G_centerCol { padding-top: var(--dsh-android-system-top, 0px) }
+     [data-mobile] [data-pane="conversation"] { padding-top: var(--dsh-android-system-top, 0px) }
    结果**完全不生效**：同一个属性上已经有一条修复 66 加的
-     [data-mobile] .pI_x6G_centerCol { padding-top: var(--mp-float-nav-h, 0px) !important }
+     [data-mobile] [data-pane="conversation"] { padding-top: var(--mp-float-nav-h, 0px) !important }
    它带 !important，后加的规则压不过它（实测 getComputedStyle 仍是 0px）。
 
    也不能在 CSS 里写成 max(两条变量之和 / 取大者)：max() 要 Chrome 79，而本 App
@@ -149,7 +149,7 @@ window.__ModuleLoader__.load({
 }
 /* ⚠️ 侧栏一旦 position:fixed 就脱离网格流，其后的正文列会自动落进第 1 条
    （0px）轨道 → 正文宽度变成 0。必须给正文/右栏显式指定轨道列。 */
-[data-mobile] .pI_x6G_centerCol {
+[data-mobile] [data-pane="conversation"] {
   grid-column: 2 !important;
 }
 [data-mobile] .pI_x6G_rightbarCol {
@@ -159,7 +159,7 @@ window.__ModuleLoader__.load({
    position:fixed，而 fixed 元素若位于带 transform 的祖先内，会以该祖先为
    包含块 → 设置弹窗（fixed 100vw）会被裁进 300px 的抽屉里（实测踩到）。
    left 动画不产生包含块，浮层仍相对视口定位。 */
-[data-mobile] .pI_x6G_sidebarCol {
+[data-mobile] [data-pane="sidebar"] {
   position: fixed !important;
   top: 0;
   bottom: 0;
@@ -169,7 +169,7 @@ window.__ModuleLoader__.load({
   transition: left .22s var(--ds-ease-in-out, ease);
   box-shadow: 0 0 30px rgba(0, 0, 0, .18);
 }
-[data-mobile] .pI_x6G_sidebarCol.mp-drawer-open {
+[data-mobile] [data-pane="sidebar"].mp-drawer-open {
   left: 0;
 }
 /* ⚠️ 修复 26 起**不再**给抽屉加 .mp-drawer-closing —— 规则保留作回滚安全网。
@@ -177,7 +177,7 @@ window.__ModuleLoader__.load({
    （实测 col.contains(dialog) === true）→ 弹窗被连坐隐藏 200ms，露出底层对话界面。
    且它本就是多余的：修复 25 后抽屉是"先滑出屏幕、再点官方 toggle"，
    官方 56px 图标条的 morph 发生在 left=-340 的屏幕外，本来就看不见。 */
-[data-mobile] .pI_x6G_sidebarCol.mp-drawer-closing {
+[data-mobile] [data-pane="sidebar"].mp-drawer-closing {
   visibility: hidden !important;
   transition: none !important;
 }
@@ -191,7 +191,7 @@ window.__ModuleLoader__.load({
   transition: opacity .22s var(--ds-ease-in-out, ease);
 }
 /* ⚠️ 修复 39：打开态**必须**限定在 [data-mobile] 下。
-   宽屏下 .pI_x6G_sidebarCol 没有浮层化（仍是 static），若遮罩可点可见，
+   宽屏下 [data-pane="sidebar"] 没有浮层化（仍是 static），若遮罩可点可见，
    就会盖住侧栏与整页 → 变暗、点不动、误关抽屉（啾灵 2026-09-16 反馈）。
    基类已是 opacity:0 + pointer-events:none，所以这里加上作用域 = 兜底：
    即便 .mp-drawer-open 被以任何方式误加，宽屏下也不会变暗、不会吃点击。 */
@@ -1298,14 +1298,14 @@ window.__ModuleLoader__.load({
 
    修法：**不给插件页写死像素，也不去硬编码它的 hash 类名**。
      汉堡是浮层时，把它真实的 bottom（+ 呼吸位）写成 CSS 变量
-     --mp-float-nav-h，由「.pI_x6G_centerCol」（官方 layout 的稳定类名）
+     --mp-float-nav-h，由「[data-pane="conversation"]」（官方 layout 的稳定类名）
      吃成 padding-top；汉堡回到顶栏里时该变量清零，conversation 页逐像素不变。
      这样任何面板页、任何屏幕、任何系统栏高度都自动对齐，且官方换 hash 类名
      也不会失效（我们不依赖 X_2TxG_page 这个构建期哈希）。
 
    ⚠️ 只动 centerCol 的**上内边距**：它是 flex 列容器、内部只有 main slot
       一个子项，加内边距 = 子项整体下移，不改变子项自身的布局语义。 */
-[data-mobile] .pI_x6G_centerCol {
+[data-mobile] [data-pane="conversation"] {
   padding-top: var(--mp-float-nav-h, 0px) !important;
 }
 
@@ -2970,7 +2970,7 @@ window.__ModuleLoader__.load({
 
 			function mpSidebarCol() {
 // 快路径是旧哈希；rc 换哈希后靠语义后缀兜底（CSS Module 的后半段是稳定的）
-return document.querySelector(".pI_x6G_sidebarCol")
+return document.querySelector("[data-pane="sidebar"]")
 || document.querySelector('[class*="sidebarCol"]');
 }
 			function mpOfficialToggle() {
@@ -3466,7 +3466,7 @@ mpSetMenuOpenClass(false);
 			}
 
 			/* ══ 修复 66：汉堡浮层时给主区让出顶部空间（配合 CSS 的
-			   [data-mobile] .pI_x6G_centerCol { padding-top: var(--mp-float-nav-h) }）══
+			   [data-mobile] [data-pane="conversation"] { padding-top: var(--mp-float-nav-h) }）══
 
 			   背景见 CSS 那条注释：切到全局面板（插件 / 定时任务）后官方顶栏随
 			   conversation 一起卸载，汉堡由 mpAnchorBurger() 回落到 body 的
@@ -3511,7 +3511,7 @@ mpSetMenuOpenClass(false);
 
 				   ⚠️ 两种让位（浮层汉堡、状态栏）必须在**同一个变量**里合并：
 				     吃这个变量的是 CSS 里那条带 !important 的
-				     .pI_x6G_centerCol { padding-top: var(--mp-float-nav-h) }，
+				     [data-pane="conversation"] { padding-top: var(--mp-float-nav-h) }，
 				     同属性上再加一条不带 !important 的规则压不过它。
 				   ⚠️ 合并用 JS 的 Math.max 而不是 CSS 的 max()：后者要 Chrome 79，
 				     本 App 目标内核是 chrome74，老内核上整条声明失效。

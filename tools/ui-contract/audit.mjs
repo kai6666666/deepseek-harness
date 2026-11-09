@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const SCAN = ['app/src/main', 'mobile-ui-plugin']
-const HASHED = /\.([A-Za-z0-9_]{5,8})_([A-Za-z0-9]{2,8})\b/g
+const HASHED = /\.([A-Za-z0-9_]{4,10})_([A-Za-z0-9]{2,12})\b/g
 const SKIP = /(^|\/)(build|\.gradle|node_modules|\.git)(\/|$)/
 // 真 webpack 哈希前缀：大小写混合；Kotlin 常量（MATCH_PARENT）是纯大写，排除
 const isHash = (pre, suf) => /[a-z]/.test(pre) && /[A-Z]/.test(pre) && /[a-z]/.test(suf)
