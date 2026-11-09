@@ -299,9 +299,33 @@ jniLibs           libproot.so 264,137 / loader 18,136 / libtalloc.so 33,592 / li
 - [ ] Gradle：`useLegacyPackaging = true`、`noCompress += listOf("xz","tar")`、`jniLibs.keepDebugSymbols` 保留四个 so
 - **门禁 P1**：`aapt2 dump resources` 能看到四个 so；真机 `nativeLibraryDir` 里 `libproot.so` 可执行（`chmod 755` 由系统完成）；`rootfs.tar.xz` 解包后 `node -v` 正确；两次构建 `rootfs` sha256 一致（可复现）
 
-### P2 · 启动链改造（2 周）
+### P2 · 启动链改造（✅ 2026-11-09 真机通过，commit `a5c0f1a1`）
 
-- [ ] 新增 `runtime/ProotHost.kt`：读 manifest → expand 占位符 → `ProcessBuilder`
+代码：`RuntimeManifest.kt`（2,345 B）、`ProotHost.kt`（6,647 B）、`ProotProbeActivity.kt`（3,470 B）。
+
+真机探针结果（`files/proot-probe.txt`）：
+
+```text
+runtimeVersion=r1-dsh0.2.2-rc.1-node24.22.1-ubuntu24.04.5-0ff89aba1821
+started (+11ms)
+tokenUrl=http://127.0.0.1:43665/?token=…
+token_after_ms=52199          ← 首次冷启（插件全量加载）
+http=401
+health=PASS
+stopped=true
+leftover_node=0
+RESULT=PASS
+```
+
+过程中修掉的三处真实缺陷：
+
+1. `Process.pid()` 在 Android 上不存在 → 停止改为「SIGTERM node → 等 `--kill-on-exit` → 8 s 后 `destroyForcibly`」，不再依赖 proot pid；
+2. 构建脚本把 jniLibs 只放在 `$WORK`，产物目录没有 → 已补 `OUT/<abi>/jniLibs`，并把 `DT_NEEDED` 改写后的 `libproot.so` 一并落盘；
+3. 探针 `exported=false` 时 shell 拉不起（AMS 校验 callingPackage）→ 改 `exported=true` + `files/proot-probe.enable` marker 门控，普通应用拉不起有效负载。
+
+已知待办（P5 做）：首启 52 s 太慢，boot-cache + 预热要压到 20 s 内；`DSH_HOME` 目前落在 guest `/root/.dsh`，接线到宿主 `$DSH_HOME` 时要逐字绑定。
+
+原始任务清单（保留作对照）：
 - [ ] 删除 `EngineManager` 里 bionic 的 node 启动段（`LD_PRELOAD` 三件套、`termux` 前缀、`proot` 无关的环境变量）
 - [ ] `{GUEST_ENV}` 哨兵处理：位于 `/usr/bin/env -i` 之后、`/bin/sh -c` 之前；业务 env（`TZ`、`DEEPSEEK_API_KEY`、代理、`DSH_HOME`）从这里注入
 - [ ] binds 插入点：`/usr/bin/env` 之前；额外绑定 `$DSH_HOME:$DSH_HOME`（**逐字相同**，保历史会话 cwd）、workspace、`/sdcard`（按权限）

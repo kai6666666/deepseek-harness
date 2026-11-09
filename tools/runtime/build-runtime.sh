@@ -99,6 +99,10 @@ chmod 755 "$JNI/libproot.so" "$JNI/libproot-loader.so"
 patchelf --replace-needed libtalloc.so.2 libtalloc.so "$JNI/libproot.so"
 readelf -d "$JNI/libproot.so" | grep -q 'libtalloc.so' || die "DT_NEEDED 未改成功"
 log "jniLibs: $(ls -l "$JNI" | awk 'NR>1{printf "%s=%s ", $9, $5}')"
+# 产物侧也放一份，App 的 jniLibs 直接指向这里
+OUT_JNI=$OUT/$ABI/jniLibs/$ABI
+mkdir -p "$OUT_JNI"
+cp "$JNI"/*.so "$OUT_JNI"/
 
 # ---------- 3. rootfs ----------
 rm -rf "$ROOTFS"
