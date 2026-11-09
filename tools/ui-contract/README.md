@@ -29,6 +29,19 @@ node tools/ui-contract/audit.mjs --max 159       # 超过即 exit 1
 
 三级都拿不到时**不注入**（而不是猜一个选择器），并把 miss 写进 `web.log`。
 
+## 抽取候选映射
+
+```bash
+node tools/ui-contract/extract.mjs --engine <rootfs>/opt/dsh --out tools/ui-contract/contract.json
+```
+
+扫描引擎里 85 个 `@deepseek-ai/*/lib/client.js`，产出 1431 个哈希类名，其中 656 个附近带
+`data-*`、96 个带 `aria-*` 候选。当前 `contract.json` 已入库。
+
+**首个发现**：`bOPqQW_root` 在引擎里已经不存在（只剩 `bOPqQW_{anchor,pill,label,sep}`），
+说明我们有一条 CSS 打在死类名上。这类「静默失效」正是审计要抓的东西——后续把
+「我方引用 − contract 存在」做成 `--dead` 检查。
+
 ## 下一步
 
 - `extract.mjs`：从官方 dist 生成候选映射（class 出现位置 + 相邻属性），人工确认后写入 contract；

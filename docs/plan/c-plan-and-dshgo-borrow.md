@@ -403,6 +403,12 @@ node:sqlite                                  sqlite    ✅
 
 验证：`--max 159` 通过、`--max 158` 返回 1。
 
+**已完成：contract 抽取**
+
+- `tools/ui-contract/extract.mjs`：扫 85 个插件 `lib/client.js`，产出 **1431** 个哈希类名（656 带 `data-*`、96 带 `aria-*` 候选），写入 `contract.json`
+- 覆盖度：我方 `client.js` 的 60 个引用里 **59** 个能在 contract 中找到
+- **首个死选择器**：`bOPqQW_root` 在引擎里已不存在（只剩 `_anchor/_pill/_label/_sep`）——静默失效，已记录，`--dead` 检查待做
+
 **待做（P4 剩余）**：①4 个 bionic 补丁的删除**推迟到 P5 接线后**——它们要端到端跑一遍 flock/终端/进程/图片才能确认可删，盲删会把故障留到真机；②另外 3 个内联补丁迁 diff；③contract 抽取与逐文件迁移。
 
 原始任务清单（保留作对照）：
