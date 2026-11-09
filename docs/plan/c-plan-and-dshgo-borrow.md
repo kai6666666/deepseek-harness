@@ -398,7 +398,7 @@ node:sqlite                                  sqlite    ✅
 **已完成：UI 契约审计基线**
 
 - `tools/ui-contract/audit.mjs`：统计哈希类名唯一数 / 分布，支持 `--json` / `--write-baseline` / `--max`
-- 基线：**60 个唯一类名 / 4 个文件**（`baseline.json`），门禁锁 60；`--dead` = 0
+- 基线：**60 个唯一类名 / 4 个文件**（`baseline.json`），门禁锁 57；`--dead` = 0
 - `tools/ui-contract/README.md`：三级选择器（`data-*` → ARIA → contract）与迁移顺序
 
 验证：`--max 60` 通过、`--max 59` 返回 1；`--dead` rc=0。
@@ -413,8 +413,10 @@ node:sqlite                                  sqlite    ✅
 
 **已完成：CI 门禁 + npm 回退**
 
-- `apk.yml` 新增「UI 契约门禁」步骤：`audit --dead` + `audit --max 60`
+- `apk.yml` 新增「UI 契约门禁」步骤：`audit --dead` + `audit --max 57`
 - `build-runtime.sh` 的 npm 安装按 `npmmirror → npmjs → 离线缓存` 三级回退
+
+**首轮下降**：60 → 57（清掉 3 个只出现在注释里的哈希引用）。
 
 **剩余**：①4 个 bionic 补丁删除（推迟到 P5 回归）；②`patchFailLoudExit` 的第 2 步（`profile-boot-<hash>.js`，文件名随构建变）仍留运行期；③`client.js` 59 个哈希引用逐条迁 `data-*`/contract。
 

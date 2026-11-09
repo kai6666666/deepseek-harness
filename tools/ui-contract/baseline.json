@@ -1,20 +1,18 @@
 {
-  "unique": 60,
+  "unique": 57,
   "files": 4,
   "rows": [
     {
       "file": "mobile-ui-plugin/dsh-android-mobile/lib/client.js",
-      "count": 59,
+      "count": 55,
       "classes": [
         ".JObwrW_trigger",
         ".Nqubda_panel",
-        ".O_Ebla_root",
         ".O_Ebla_title",
         ".SVAs4q_label",
         ".T1PP_q_desc",
         ".VOzbGW_header",
         ".VOzbGW_mask",
-        ".VOzbGW_navIcon",
         ".VOzbGW_navLabel",
         ".VOzbGW_navList",
         ".VOzbGW_navTitle",
@@ -46,7 +44,6 @@
         ".uV2eYG_add",
         ".uV2eYG_dock",
         ".uV2eYG_grow",
-        ".uV2eYG_input",
         ".uV2eYG_primary",
         ".uV2eYG_root",
         ".uV2eYG_row",
@@ -62,7 +59,6 @@
         ".wSkVaW_tabs",
         ".wSkVaW_titleRow",
         ".wSkVaW_viewArea",
-        ".xzv4MW_actions",
         ".xzv4MW_timeEnd",
         ".zGbnIq_title"
       ]

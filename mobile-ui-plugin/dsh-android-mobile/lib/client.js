@@ -2045,7 +2045,7 @@ window.__ModuleLoader__.load({
 		// ── 6.5 设置页导航专属图标 ──
 		// 官方 navIcon() 只给 models / agent-presets / plugins 三个 id 发专属图标，
 		// 其余 id 一律落到 IconSettingsOutline16（齿轮）→ 手机上是一排重复齿轮。
-		// 这里按导航项文本匹配，替换 .VOzbGW_navIcon 里的 SVG。
+		// 这里按导航项文本匹配，替换导航项图标里的 SVG。
 		// 规格对齐官方 Icon*Outline16：viewBox 0 0 16 16、fill:none、stroke:currentColor，
 		// 因此暗色模式自动跟随文字色，无需额外适配。
 		// ⚠️ 用 stroke 而非 fill，9 个并排才不糊；marker 属性 data-mp-icon 做幂等判据。
@@ -2558,7 +2558,7 @@ window.__ModuleLoader__.load({
 		 *   官方 CSS Module 是**按需注入**的 —— 组件没渲染时它的 "<style>" 压根不在
 		 *   "document.styleSheets" 里。若判据只看当下快照，同一个 hash 会在「出现过」
 		 *   与「没出现」之间来回抖动，于是**同一个页面上有的分组头中招、有的正常**
-		 *   （真机实测：22 个 ".O_Ebla_root" 里有 2 个被误加 "bOPqQW_root"，其余正常）。
+		 *   （真机实测：22 个设置页根容器里有 2 个被误加 bOPqQW_root，其余正常）。
 		 *   只要某个 hash **曾经**出现在官方样式表里，就说明官方在用它，永久不再认领。
 		 *   真正过期的 hash 永远不会出现在官方样式表里，因此不受影响。
 		 */
@@ -2672,7 +2672,7 @@ window.__ModuleLoader__.load({
 				 *   官方 CSS Module 按需注入，未渲染组件的规则此刻不在表里。
 				 *   用快照会让同一 hash 在「出现过 / 没出现」之间抖动，表现为
 				 *   **同一个页面上有的分组头中招、有的正常**（真机实测 22 个
-				 *   ".O_Ebla_root" 里只有 2 个被误加）。累积后结论稳定。
+				 *   设置页根容器里只有 2 个被误加）。累积后结论稳定。
 				 *
 				 * ⚠️ 判据必须是「样式表 **或** DOM」两者取或，且 DOM 侧必须排除桥接自己补的类名：
 				 *   官方类名可能**先出现在 DOM、样式表随后才懒注入**。只看样式表会让
@@ -2742,7 +2742,7 @@ window.__ModuleLoader__.load({
 		 * ⚠️ 为什么必须有（2026-10-04）：推导判据修正后，之前误加的类名**不会自己消失** ——
 		 *   它们留在 DOM 上，而 "bOPqQW_root" 那条官方规则（"justify-content: center"）
 		 *   照旧生效，用户看到的错位不会随代码修复而恢复，除非重启页面。
-		 *   真机实测：修好判据后，已被误加的 2 个 ".O_Ebla_root" 仍然是居中状态。
+		 *   真机实测：修好判据后，已被误加的 2 个设置页根容器仍然是居中状态。
 		 */
 		function mpPruneStaleAliases() {
 			if (!mpAliasAdded.size) return;
@@ -4736,7 +4736,7 @@ mpSetMenuOpenClass(false);
 		 * 取节点的文本，**剔除元数据与按钮子树**。
 		 *
 		 * ⚠️ 为什么必须剔除（真机实测）：官方把时间戳与操作按钮放在同一条消息的尾部
-		 *   （".xzv4MW_actions" 里一个 ".xzv4MW_timeStart" 加一个含 svg 的复制按钮），
+		 *   （操作条里一个时间起点节点加一个含 svg 的复制按钮），
 		 *   直接取 "textContent" 会得到「只回复两个字：通了01:14」—— 时间戳粘在用户
 		 *   原话后面，看起来像用户自己打的字。
 		 *
@@ -5266,7 +5266,7 @@ mpSetMenuOpenClass(false);
 				lastDownTarget = e.target;
 			};
 			// ⚠️ 0.1.5 的输入框由 <textarea> 换成 **contenteditable div**
-			//   （`.uV2eYG_input[data-composer-input][role=textbox]`，实测页面里
+			//   （输入框：data-composer-input + role=textbox，实测页面里
 			//   textarea 数量 = 0）。旧判据只认 TEXTAREA → 守卫整体失效，
 			//   官方 keepFocus/auto-focus 会把键盘顶出来。这里两者都认。
 			const isComposerInput = (t) => {
@@ -5331,7 +5331,7 @@ mpSetMenuOpenClass(false);
 		//   又：点输入框不改变草稿，也不会走 controller.track() 的"无触发符即关闭"路径
 		//   → 两条关闭路径同时失效，卡片只能靠再点一次「+」按 toggle 关掉。
 		//   （实测证据：点「+」后菜单 rect [16,17,326,328]；改点输入框后菜单依旧 open=true、
-		//     menuInCard=true；pointerdown 目标 = DIV.uV2eYG_input 且 inCard=true。）
+		//     menuInCard=true；pointerdown 目标 = DIV 输入框且 inCard=true。）
 		// 修法（走官方 API，**不模拟点击**）：捕获阶段监听 pointerdown/touchstart，
 		//   若指令菜单正开着、且按下的目标落在**输入框编辑区**（[data-composer-input]
 		//   或 .uV2eYG_grow）内 → 直接调官方 controller.dismiss()。
