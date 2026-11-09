@@ -223,7 +223,7 @@ jobs:
       - name: UI 契约门禁（哈希类名不许增加 / 不许死引用）
         run: |
           node tools/ui-contract/audit.mjs --dead
-          node tools/ui-contract/audit.mjs --max 57
+          node tools/ui-contract/audit.mjs --max 54
 
       - name: 编译门禁（engine 包，不需要资产）
         run: KTCACHE="$HOME/.kt" bash tools/verify-engine.sh

@@ -144,7 +144,7 @@ window.__ModuleLoader__.load({
      · 左上角自建汉堡按钮触发；遮罩点击关闭；点会话行/新建会话自动收起
      · 官方 header（标题/模式/⋯ 菜单/右侧栏按钮）与 对话/轨迹 tabs 原样保留
    开合状态仍由官方 .hHd-Xa_toggle 驱动（不碰 React state）。 */
-[data-mobile] .pI_x6G_frame {
+[data-mobile] [data-dsh-frame] {
   grid-template-columns: 0px minmax(0, 1fr) 0px !important;
 }
 /* ⚠️ 侧栏一旦 position:fixed 就脱离网格流，其后的正文列会自动落进第 1 条
@@ -612,7 +612,7 @@ window.__ModuleLoader__.load({
    ⚠️ .JObwrW_* 与 .uV2eYG_* 是官方构建期哈希类名（分别来自
       ui-conversation 的 ContextMeter / InputBar），官方升级可能变；
       失效的后果只是「回到官方间距」，不影响功能。 */
-[data-mobile] .uV2eYG_dock {
+[data-mobile] [data-composer-dock] {
   gap: 8px !important;
 }
 [data-mobile] .JObwrW_trigger {
@@ -634,7 +634,7 @@ window.__ModuleLoader__.load({
      ② **JS 层**（更隐蔽）：本文件里那套「文案放不下就自动降档」的机制
         （"processStatsLine" / "mpStatsFits"）**从上线起就没生效过** ——
         它找的是 "[data-composer-stats] bOPqQW_root" 和 ".bOPqQW_label"，
-        而官方现在的结构是 ".uV2eYG_dock > span[data-composer-stat]"，
+        而官方现在的结构是 "[data-composer-dock] > span[data-composer-stat]"，
         三个旧选择器**全部查不到**（真机实测：root null、label 0 个）。
         所以降档一次都没跑过，长文案原样铺在屏幕上。
 
@@ -648,12 +648,12 @@ window.__ModuleLoader__.load({
 
    ⚠️ "uV2eYG_*" / "JObwrW_*" 是官方构建期哈希类名，官方升级可能变；
       "data-composer-stat" 是语义属性，比哈希稳，所以 JS 侧优先用它。 */
-[data-mobile] .uV2eYG_dock [data-composer-stat] {
+[data-mobile] [data-composer-dock] [data-composer-stat] {
   white-space: nowrap !important;
   overflow: hidden !important;
   text-overflow: ellipsis !important;
 }
-[data-mobile] .uV2eYG_dock {
+[data-mobile] [data-composer-dock] {
   flex-wrap: nowrap !important;
 }
 
@@ -725,7 +725,7 @@ window.__ModuleLoader__.load({
      · 实测修复后 root.scrollWidth 550 → **360**，bodyX 恒 0。
 
    ⚠️ 不用 overflow: hidden（官方已经是了，正是它留下了程序化滚动的口子）。 */
-[data-mobile] .wSkVaW_body {
+[data-mobile] [data-conversation-content] {
   overflow-x: clip !important;
 }
 
@@ -1497,7 +1497,7 @@ window.__ModuleLoader__.load({
 		 * ⚠️⚠️ **修复 65：旧判据在官方换 DOM 之后恒为 true，降档从未触发。**
 		 *
 		 * 旧实现："root.scrollWidth > root.clientWidth"。
-		 * 但现在的根节点 ".uV2eYG_dock" 是 "flex" + **宽度随内容收缩**的
+		 * 但现在的根节点 "[data-composer-dock]" 是 "flex" + **宽度随内容收缩**的
 		 * （内容短时 229px、长时 326px），"scrollWidth" 与 "clientWidth"
 		 * **永远相等** ⇒ 判据恒 false ⇒ 一档都不降。
 		 *
@@ -1573,7 +1573,7 @@ window.__ModuleLoader__.load({
 			// 右边上下文环「12%」整个跑到 x=343（视口只有 360）之外。
 			//
 			// 新版结构（实测）：
-			//   `.uV2eYG_dock`（flex，justify-content:center，宽 326）
+			//   `[data-composer-dock]`（flex，justify-content:center，宽 326）
 			//     ├─ span[data-composer-stat="activity"] > button.bOPqQW_pill
 			//     └─ span[data-composer-stat="usage"]    > button.bOPqQW_pill
 			//   ⭐ 药丸类名 `bOPqQW_*` 还在，只是**根节点**从 `bOPqQW_root`
@@ -1583,7 +1583,7 @@ window.__ModuleLoader__.load({
 			// 所以这里改成**按 `data-composer-stat` 属性找**（语义属性比哈希类名稳，
 			// 官方改样式不会动它），并保留旧选择器作兜底 —— 万一哪天又切回去。
 			const root =
-				document.querySelector(".uV2eYG_dock") ||
+				document.querySelector("[data-composer-dock]") ||
 				document.querySelector("[data-composer-stats] bOPqQW_root") ||
 				document.querySelector("bOPqQW_root");
 			if (!root) return;
