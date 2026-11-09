@@ -1,0 +1,180 @@
+package com.dsh.android.runtime
+
+import android.content.Context
+import android.system.Os
+import android.system.OsConstants
+import android.util.Log
+import java.io.BufferedReader
+import java.io.File
+import java.io.InputStreamReader
+import java.net.HttpURLConnection
+import java.net.ServerSocket
+import java.net.URL
+import java.util.Collections
+
+/**
+ * PRoot/glibc 启动器：按 manifest 模板拼 argv、抓 token、按约定停进程。
+ *
+ * 约定都来自 manifest：
+ *  · {NATIVE_LIB_DIR} / {ROOTFS} / {TMP} / {PORT} 由这里替换；
+ *  · {GUEST_ENV} 是独立元素，展开成 0..N 个 KEY=VALUE；
+ *  · 绑定目录插在 /usr/bin/env 之前；
+ *  · 停止 = SIGTERM 给 pidfile 里的 node，兜底 SIGQUIT 给 proot。
+ */
+class ProotHost(
+    private val context: Context,
+    private val manifest: RuntimeManifest,
+    private val rootfs: File = File(context.filesDir, "runtime/rootfs"),
+    private val nativeLibDir: String = context.applicationInfo.nativeLibraryDir,
+    private val tmpDir: File = File(context.cacheDir, "proot-tmp"),
+    private val dshHome: File = File(context.filesDir, "home/.dsh"),
+) {
+    private var process: Process? = null
+    private var pump: Thread? = null
+
+    @Volatile
+    private var tokenUrl: String? = null
+
+    private val lastLines: MutableList<String> = Collections.synchronizedList(ArrayList())
+
+    val pid: Int get() = process?.pid() ?: -1
+
+    fun start(extraEnv: Map<String, String>): Process {
+        require(rootfs.isDirectory) { "rootfs 不存在：$rootfs" }
+        require(File(rootfs, "usr/bin/node").isFile) { "rootfs 缺 node" }
+        tmpDir.mkdirs()
+        dshHome.mkdirs()
+
+        val port = ServerSocket(0).use { it.localPort }
+        val vars = mapOf(
+            "{NATIVE_LIB_DIR}" to nativeLibDir,
+            "{ROOTFS}" to rootfs.canonicalPath,
+            "{TMP}" to tmpDir.absolutePath,
+            "{PORT}" to port.toString(),
+        )
+        fun expand(s: String) = vars.entries.fold(s) { acc, (k, v) -> acc.replace(k, v) }
+
+        val argv = ArrayList<String>()
+        var bindsPlaced = false
+        for (raw in manifest.launchArgv) {
+            val arg = expand(raw)
+            when {
+                !bindsPlaced && arg == "/usr/bin/env" -> {
+                    argv += "-b"
+                    argv += dshHome.canonicalPath + ":" + dshHome.canonicalPath
+                    argv += arg
+                    bindsPlaced = true
+                }
+                arg == "{GUEST_ENV}" -> extraEnv.forEach { (k, v) -> argv += "$k=$v" }
+                else -> argv += arg
+            }
+        }
+        require(bindsPlaced) { "manifest 里没有 /usr/bin/env 锚点" }
+
+        val pb = ProcessBuilder(argv).directory(context.filesDir)
+        pb.environment().apply {
+            clear()
+            put("PATH", "/system/bin:/system/xbin")
+            put("HOME", context.filesDir.absolutePath)
+            put("TMPDIR", tmpDir.absolutePath)
+            put("ANDROID_ROOT", System.getenv("ANDROID_ROOT") ?: "/system")
+            put("ANDROID_DATA", System.getenv("ANDROID_DATA") ?: "/data")
+            manifest.launchEnv.forEach { (k, v) -> put(k, expand(v)) }
+        }
+
+        Log.i(TAG, "launch: " + argv.joinToString(" "))
+        val p = pb.start()
+        process = p
+        pump = Thread({ drain(p) }, "proot-pump").apply {
+            isDaemon = true
+            start()
+        }
+        return p
+    }
+
+    private fun drain(p: Process) {
+        try {
+            BufferedReader(InputStreamReader(p.inputStream)).use { r ->
+                r.lineSequence().forEach { line ->
+                    synchronized(lastLines) {
+                        lastLines.add(line)
+                        if (lastLines.size > 200) lastLines.removeAt(0)
+                    }
+                    val m = manifest.tokenRegex.find(line)
+                    if (m != null) {
+                        tokenUrl = m.groupValues[1] + "?token=" + m.groupValues[2]
+                        Log.i(TAG, "token: " + tokenUrl)
+                    }
+                    Log.i(TAG, "[web] " + line)
+                }
+            }
+        } catch (t: Throwable) {
+            Log.w(TAG, "stdout 读取结束: " + t.message)
+        }
+    }
+
+    fun awaitToken(timeoutMs: Long): String? {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < deadline) {
+            tokenUrl?.let { return it }
+            if (process?.isAlive == false) return null
+            Thread.sleep(100)
+        }
+        return tokenUrl
+    }
+
+    /** 不带 cookie 请求根路径；服务活着时按 manifest 约定返回 401。 */
+    fun health(timeoutMs: Int = 3000): Int {
+        val url = tokenUrl?.substringBefore("?") ?: return -1
+        return try {
+            val c = URL(url).openConnection() as HttpURLConnection
+            c.connectTimeout = timeoutMs
+            c.readTimeout = timeoutMs
+            c.requestMethod = "GET"
+            c.instanceFollowRedirects = false
+            c.responseCode
+        } catch (t: Throwable) {
+            Log.w(TAG, "health 失败: " + t.message)
+            -1
+        }
+    }
+
+    fun recentLines(n: Int = 20): List<String> = synchronized(lastLines) {
+        lastLines.takeLast(n)
+    }
+
+    fun stop(): Boolean {
+        val pidFile = File(
+            manifest.stopPidFile
+                .replace("{ROOTFS}", rootfs.canonicalPath)
+                .replace("{TMP}", tmpDir.absolutePath)
+        )
+        val nodePid = runCatching { pidFile.readText().trim().toInt() }.getOrNull()
+        if (nodePid != null && nodePid > 0) {
+            runCatching { Os.kill(nodePid, OsConstants.SIGTERM) }
+                .onFailure { Log.w(TAG, "SIGTERM " + nodePid + " 失败: " + it.message) }
+            val deadline = System.currentTimeMillis() + 5000
+            while (System.currentTimeMillis() < deadline && File("/proc/" + nodePid).exists()) {
+                Thread.sleep(100)
+            }
+        }
+        val p = process ?: return true
+        if (!p.isAlive) return true
+        runCatching { Os.kill(p.pid(), OsConstants.SIGQUIT) }
+        if (!p.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)) {
+            Log.w(TAG, "SIGQUIT 后仍存活，destroyForcibly")
+            p.destroyForcibly()
+            p.waitFor(3, java.util.concurrent.TimeUnit.SECONDS)
+        }
+        pump?.interrupt()
+        process = null
+        runCatching { pidFile.delete() }
+        return !p.isAlive
+    }
+
+    fun isAlive(): Boolean = process?.isAlive == true
+
+    companion object {
+        const val TAG = "ProotHost"
+    }
+}
