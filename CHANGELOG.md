@@ -17,6 +17,29 @@
 
 ---
 
+## [0.4.3] — 2026-11-09
+vc=49
+
+### 变更
+
+- 引擎 `@deepseek-ai/dsh` **0.2.2-alpha.2 → 0.2.2-rc.1**（`0.2.2-rc.1-1`）
+- 首帧兜底日志降为 `[I]`：阈值 1.5 s 不变，本机内核常走兜底，属正常慢帧
+- 救援判据修正：只认「超时兜底 + 页面仍停在官方启动页」，不再把 `plugin-load-failed` 诊断当判据
+- `engine.staging-<stamp>-<pid>` 唯一化 + 过期残留清扫（并发安装不再互相覆盖）
+- 日志异步档增加 1.5 s 时间兜底 flush，`engine.log` / `web.log` 不再整段丢失
+- 解包目录替换三层退路（硬删复查 → 挪开旧目录 → 逐文件复制）
+- mobile-ui `1.1.0-176`：座位只在会话视图退场；左按钮并入 header 布局体系
+- 版本号单一来源：`tools/app-version.txt` + `tools/mobile-ui-version.txt`
+- CHANGELOG 模板化：`docs/changelog/<versionName>.md`
+- `verify-engine-upgrade.sh --tools` 自举 helpers，换机不再依赖 `/data/local/tmp`
+
+### 门禁
+
+- 引擎 0.2.2-rc.1 · 开发环境 nodejs 2/2 · 会话索引 2/4 · 补丁标记 5/5 · 工具 bubble/ui/logs/statusbar/browser PASS · root SKIP
+- 真机：Xiaomi 25104RADAC / Android 16 / arm64-v8a
+
+---
+
 ## [0.2.2-rc1] — 2026-11-07
 vc=47
 ### 变更
