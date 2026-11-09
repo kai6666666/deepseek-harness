@@ -11,7 +11,7 @@
 ## 〇、先给结论
 
 1. **采用单一路线**：APK 内只保留 PRoot + Ubuntu 24.04(glibc) 运行时，删除 Termux(bionic) 运行时与 `node-runtime.bin`。没有 `HostMode` 开关，没有「重生态模式」按钮，没有两套启动代码。
-2. **代价明码标价**：引擎启动段 +80%（dsh-Go 同机实测 1,072 ms → 1,925 ms）。**存储不增反降**：现网实测 `files/engine` 586 MB + `files/termux` 477 MB ≈ 1.06 GB；新方案 rootfs 实测 223 MB（Ubuntu base + glibc node）+ engine 586 MB ≈ **809 MB，净省约 250 MB**。APK 侧：删除 `node-runtime.bin` 30.6 MB，加入 `rootfs.tar.xz`（估 55–65 MB），**净增约 25–35 MB**。用 **boot-cache（-12~14%）+ 点开即拉起 + 常驻预热** 抵消启动开销。
+2. **代价明码标价**：引擎启动段 +80%（dsh-Go 同机实测 1,072 ms → 1,925 ms）。**体积已实测**：`rootfs` 解包 **998 MB**（Ubuntu base + node + dsh 0.2.2-rc.1），压缩 **124 MB**；现网 `files/engine` 586 MB + `files/termux` 477 MB = 1.06 GB → 新方案约 **1.0 GB，净省约 65 MB**；APK 删 `node-runtime.bin` 30.6 MB、加 rootfs 124 MB，**净增约 93 MB**（182 → 约 275 MB，可用 P6 的资产分离消掉）。用 **boot-cache（-12~14%）+ 点开即拉起 + 常驻预热** 抵消启动开销。
 3. **回滚只到版本级**：出问题 = 装回上一个 APK（同签名、`versionCode` 递增），不在 App 内做运行时切换。这样代码里永远只有一条路径，验收只有一套判据。
 4. **补丁体制换血**：121 个 diff + 双哈希 pin 的做法照搬，但先做减法——本工程 10 个补丁里预计 **4 个是纯 bionic 适配，切 glibc 后直接删除**，剩 6 个进构建期 diff。
 
@@ -268,7 +268,25 @@ node        v24.22.1（glibc 官方 tarball，未改一个字节）
 2. **`dpkg-deb -x` 的目标目录要先 `mkdir -p`**，否则报 `failed to create directory`。
 3. Ubuntu base **自带** `libstdc++.so.6` 与 `libgcc_s.so.1`，node 直接可跑，不用额外补库。
 
-### P1 · 运行时构建管线（2 周）
+### P1 · 运行时构建管线（✅ 2026-11-09 落地，commit `331addb5`）
+
+交付：`tools/runtime/build-runtime.sh`（10,406 B）、`tools/runtime/extract.py`（2,234 B）、`tools/runtime/README.md`（2,649 B）。
+
+实测结果：
+
+```text
+rootfs 解包       998 MB
+rootfs tar.xz     124 MB   sha256 a9593add86df2fde52dc9ba8306fdd0a1f8e8de1e30b6b0a318c58572d576231
+jniLibs           libproot.so 264,137 / loader 18,136 / libtalloc.so 33,592 / libandroid-shmem.so 14,432
+设备侧            node -v → v24.22.1 ；dsh --version → 0.2.2-rc.1
+可复现            连续两次构建 sha256 完全一致
+```
+
+两个新坑（已写进 README）：①proot 的 `--link2symlink` 会把 `tar -x` 的硬链接改写成 `.l2s.*` 符号链，打包时炸 `Too many levels of symbolic links` → 改用 `extract.py` 逐条解、硬链接复制成独立文件；②node 官方 tarball 带 85 MB 头文件/文档，运行时用不到，已在脚本里删掉。
+
+**门禁 P1：✅ 通过**（可复现、node/dsh 版本正确、四个 so 就位）。
+
+原始任务清单（保留作对照）：
 
 把 `build-runtime.sh` 的思路移植成我们自己的 `tools/runtime/build-runtime.sh`：
 
