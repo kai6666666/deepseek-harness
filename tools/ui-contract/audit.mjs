@@ -16,6 +16,8 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const SCAN = ['app/src/main', 'mobile-ui-plugin']
 const HASHED = /\.([A-Za-z0-9_]{5,8})_([A-Za-z0-9]{2,8})\b/g
 const SKIP = /(^|\/)(build|\.gradle|node_modules|\.git)(\/|$)/
+// 真 webpack 哈希前缀：大小写混合；Kotlin 常量（MATCH_PARENT）是纯大写，排除
+const isHash = (pre, suf) => /[a-z]/.test(pre) && /[A-Z]/.test(pre) && /[a-z]/.test(suf)
 
 function walk(dir, out = []) {
   if (!fs.existsSync(dir)) return out
@@ -36,6 +38,7 @@ for (const rel of SCAN) {
     let m
     HASHED.lastIndex = 0
     while ((m = HASHED.exec(text))) {
+      if (!isHash(m[1], m[2])) continue
       const cls = '.' + m[1] + '_' + m[2]
       unique.add(cls)
       const relFile = path.relative(ROOT, file)
@@ -66,6 +69,25 @@ if (args.includes('--json')) {
     console.log('  ' + String(r.count).padStart(3) + '  ' + r.file)
   }
   if (rows.length > 15) console.log('  … 其余 ' + (rows.length - 15) + ' 个文件')
+
+
+  const cIdx = args.indexOf('--contract')
+  const contractPath = cIdx >= 0 ? args[cIdx + 1] : path.join(ROOT, 'tools/ui-contract/contract.json')
+  if (args.includes('--dead')) {
+    if (!fs.existsSync(contractPath)) {
+      console.error('缺少 contract: ' + contractPath)
+      process.exit(2)
+    }
+    const contract = new Set(Object.keys(JSON.parse(fs.readFileSync(contractPath, 'utf8'))))
+    const used = [...unique].map((c) => c.slice(1))
+    const dead = used.filter((c) => !contract.has(c)).sort()
+    console.log('== 死引用检查 ==')
+    console.log('我方引用 ' + used.length + '，引擎存在 ' + contract.size + '，死引用 ' + dead.length)
+    for (const d of dead) console.log('  DEAD  .' + d)
+    if (dead.length > 0) process.exit(1)
+    console.log('OK: 没有死引用')
+    process.exit(0)
+  }
 
   const maxIdx = args.indexOf('--max')
   if (maxIdx >= 0) {
