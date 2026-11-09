@@ -240,7 +240,7 @@
         <!-- P2 探针：无界面跑 ProotHost（启动→token→401→停止），仅供 root shell 调试拉起 -->
         <activity
             android:name=".runtime.ProotProbeActivity"
-            android:exported="false"
+            android:exported="true"
             android:theme="@android:style/Theme.Translucent.NoTitleBar" />
 
     </application>

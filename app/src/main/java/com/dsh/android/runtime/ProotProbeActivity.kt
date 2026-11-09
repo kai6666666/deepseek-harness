@@ -15,6 +15,11 @@ import java.io.File
 class ProotProbeActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // 只有显式放了 marker 才跑：既能让 shell 拉起，又不会误触发
+        if (!File(filesDir, "proot-probe.enable").isFile) {
+            finish()
+            return
+        }
         Thread({ runProbe() }, "proot-probe").start()
     }
 
