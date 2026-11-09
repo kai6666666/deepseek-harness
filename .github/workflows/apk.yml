@@ -223,19 +223,27 @@ jobs:
       - name: 编译门禁（engine 包，不需要资产）
         run: KTCACHE="$HOME/.kt" bash tools/verify-engine.sh
 
-      - name: 版本戳 0.4.3-debug（vc=48）
+      - name: 版本戳（读 tools/app-version.txt 与模板）
         run: |
-          sed -i 's/versionCode = 47/versionCode = 48/' app/build.gradle.kts
-          sed -i 's/versionName = "0.2.2-rc1"/versionName = "0.4.3-debug"/' app/build.gradle.kts
-          # CHANGELOG 的 0.4.3-debug 小节来自 docs/changelog/0.4.3-debug.md（模板文件）。
-          # 原来是一整段 python -c 内联字符串：改一个字都要动 workflow，而且仓库顶部
-          # 的 rc1/vc47 与 CI 注入的 vc48 长期并存、无法 review。
-          if grep -q '^## \[0.4.3-debug\]' CHANGELOG.md; then
-            echo 'CHANGELOG 已含 0.4.3-debug 小节，跳过注入'
-          else
-            { cat docs/changelog/0.4.3-debug.md; cat CHANGELOG.md; } > CHANGELOG.new
+          set -e
+          V_NAME=$(grep '^versionName=' tools/app-version.txt | cut -d= -f2 | tr -d ' \r\n')
+          V_CODE=$(grep '^versionCode=' tools/app-version.txt | cut -d= -f2 | tr -d ' \r\n')
+          echo "Target Version: versionName=$V_NAME, versionCode=$V_CODE"
+          [ -n "$V_NAME" ] && [ -n "$V_CODE" ] || { echo "::error::tools/app-version.txt 配置无效"; exit 1; }
+
+          # 动态匹配任意旧值，写入新版本号
+          sed -i -E "s/versionCode = [0-9]+/versionCode = $V_CODE/" app/build.gradle.kts
+          sed -i -E "s/versionName = \"[^\"]+\"/versionName = \"$V_NAME\"/" app/build.gradle.kts
+
+          CL_FILE="docs/changelog/${V_NAME}.md"
+          if grep -q "^## \[${V_NAME}\]" CHANGELOG.md; then
+            echo "CHANGELOG 已含 $V_NAME 小节，跳过注入"
+          elif [ -f "$CL_FILE" ]; then
+            { cat "$CL_FILE"; cat CHANGELOG.md; } > CHANGELOG.new
             mv CHANGELOG.new CHANGELOG.md
-            echo 'CHANGELOG 已注入 0.4.3-debug 小节（模板：docs/changelog/0.4.3-debug.md）'
+            echo "CHANGELOG 已注入 $V_NAME 小节（模板：$CL_FILE）"
+          else
+            echo "::warning::未找到 $CL_FILE，跳过 CHANGELOG 注入"
           fi
           head -4 CHANGELOG.md
           grep -n 'versionCode = \|versionName = ' app/build.gradle.kts
