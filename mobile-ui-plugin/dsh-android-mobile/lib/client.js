@@ -152,7 +152,7 @@ window.__ModuleLoader__.load({
 [data-mobile] [data-pane=conversation] {
   grid-column: 2 !important;
 }
-[data-mobile] .pI_x6G_rightbarCol {
+[data-mobile] [data-rightbar-col] {
   grid-column: 3 !important;
 }
 /* ⚠️ 抽屉用 left 做动画，绝不用 transform：本插件/官方的浮层大量使用
@@ -974,11 +974,11 @@ window.__ModuleLoader__.load({
    同样处理了另外两处同色系的次级文字（都从 ~3.5 提到 4.65）：
      · 代码块左上角的「代码块」标签（._language_1pq26_30）
      · 标题栏下方「快准狠模式（通用）」（.SVAs4q_label） */
-[data-mobile] .uV2eYG_placeholder {
+[data-mobile] [data-composer-placeholder] {
   color: rgb(112, 117, 122) !important;
 }
-[data-mobile] body[data-ds-dark-theme] .uV2eYG_placeholder,
-[data-mobile] [data-ds-dark-theme] .uV2eYG_placeholder {
+[data-mobile] body[data-ds-dark-theme] [data-composer-placeholder],
+[data-mobile] [data-ds-dark-theme] [data-composer-placeholder] {
   color: rgb(165, 170, 176) !important;
 }
 [data-mobile] ._language_1pq26_30,
@@ -1074,18 +1074,18 @@ window.__ModuleLoader__.load({
    移动端没有 hover 导致要先点一下会话行才出现。触摸设备上改为
    始终显示，并像官方 hover 那样隐藏时间戳腾出空间。 */
 [data-mobile] .YDXeBa_sessionRow .YDXeBa_rowActions,
-[data-mobile] .YDXeBa_projectRow .YDXeBa_rowActions {
+[data-mobile] [data-dsh-responsive-part=sidebar-entry] .YDXeBa_rowActions {
   display: inline-flex !important;
 }
 [data-mobile] .YDXeBa_sessionRow .YDXeBa_time,
-[data-mobile] .YDXeBa_projectRow .YDXeBa_time {
+[data-mobile] [data-dsh-responsive-part=sidebar-entry] .YDXeBa_time {
   display: none !important;
 }
 
 /* 9c. 移动端消灭"粘住的 hover"（触摸端没有鼠标移开，
    手指点一下之后 :hover 会一直保留到点别处，看起来像鼠标悬停没走开）。
    官方把下面这些视觉反馈挂在 :hover 上，触摸端会留下残留：
-     - .YDXeBa_projectRow / .YDXeBa_sessionRow   行底色
+     - [data-dsh-responsive-part=sidebar-entry] / .YDXeBa_sessionRow   行底色
      - 行首图标：hover 时"文件夹"变"▸ 箭头"
      - 抽屉里各种图标按钮的圆形底色
    处理原则：把 :hover 效果归零到各自的基准值，按压反馈改由 JS 打
@@ -1093,7 +1093,7 @@ window.__ModuleLoader__.load({
    注意保留两个真实状态：会话行的"当前选中" .YDXeBa_selected
    与 ⋮ 菜单打开态 .YDXeBa_menuOpen（都不是 hover）。
    设置 dialog 子树（VOzbGW_*）一律不碰，避免把 dialog 推出屏幕。 */
-[data-mobile] .YDXeBa_projectRow:hover,
+[data-mobile] [data-dsh-responsive-part=sidebar-entry]:hover,
 [data-mobile] .YDXeBa_sessionRow:hover:not(.YDXeBa_selected),
 [data-mobile] .YDXeBa_searchResultRow:hover:not(.YDXeBa_selected),
 [data-mobile] [data-mobile] .bhn1Oq_iconButton:hover,
@@ -1101,10 +1101,10 @@ window.__ModuleLoader__.load({
 [data-mobile] .hHd-Xa_iconButton:hover {
   background: transparent !important;
 }
-[data-mobile] .YDXeBa_projectRow:hover .YDXeBa_chevron {
+[data-mobile] [data-dsh-responsive-part=sidebar-entry]:hover .YDXeBa_chevron {
   display: none !important;
 }
-[data-mobile] .YDXeBa_projectRow:hover .YDXeBa_folder {
+[data-mobile] [data-dsh-responsive-part=sidebar-entry]:hover .YDXeBa_folder {
   display: inline-flex !important;
 }
 [data-mobile] .YDXeBa_iconButton:hover {
@@ -1155,7 +1155,7 @@ window.__ModuleLoader__.load({
 
 /* 9d. 按压反馈（替代触摸端不可用的 hover）：
    JS 在 touchstart/pointerdown 时给按下的行加 .mp-press，抬手即移除。 */
-[data-mobile] .YDXeBa_projectRow.mp-press,
+[data-mobile] [data-dsh-responsive-part=sidebar-entry].mp-press,
 [data-mobile] .YDXeBa_sessionRow.mp-press,
 [data-mobile] .YDXeBa_searchResultRow.mp-press,
 [data-mobile] .bhn1Oq_iconButton.mp-press,
@@ -1695,7 +1695,7 @@ window.__ModuleLoader__.load({
 		// 看起来就像鼠标悬停没走开。这里改成：按下加 .mp-press，抬手/滑走即移除，
 		// 反馈只在按住的瞬间存在——更接近原生列表的手感。
 		const MP_PRESS_SELECTOR = [
-			'.YDXeBa_projectRow', '.YDXeBa_sessionRow', '.YDXeBa_searchResultRow',
+			'[data-dsh-responsive-part=sidebar-entry]', '.YDXeBa_sessionRow', '.YDXeBa_searchResultRow',
 			'.YDXeBa_iconButton', '.bhn1Oq_iconButton', '.bhn1Oq_searchButton',
 			'.hHd-Xa_iconButton', '.mp-nav-btn'
 		].join(',');
@@ -3049,7 +3049,7 @@ return false;
 				if (anchor) {
 					// ⚠️ 全屏态的右栏会从 rightbarCol 里搬出去（portal 成整屏），
 					//   所以不能只看 rightbarCol：再看 data-sidebar-right-guide 容器。
-					const rightCol = document.querySelector('.pI_x6G_rightbarCol, [class*="rightbarCol"]');
+					const rightCol = document.querySelector('[data-rightbar-col], [class*="rightbarCol"]');
 					const rightHost = anchor.closest(
 						'[data-sidebar-right-guide], [class*="rightbarCol"], [class*="sidebarRight"], [data-sidebar-right]'
 					);
