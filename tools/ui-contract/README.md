@@ -50,3 +50,6 @@ node tools/ui-contract/extract.mjs --engine <rootfs>/opt/dsh --out tools/ui-cont
 - `extract.mjs`：从官方 dist 生成候选映射（class 出现位置 + 相邻属性），人工确认后写入 contract；
 - 按文件迁移，从 `client.js`（60 个，最多）开始；每迁一个文件，把 `--max` 下调；
 - CI 加 `audit --max <当前基线>`，任何新增立即红。
+
+## 2026-11-10 教训
+- 选择器替换若写进双引号字符串（`querySelector("[data-pane="x"]")`）会直接语法错误；改用无引号属性值 `[data-pane=x]`，并靠 `node --check` 兜底。

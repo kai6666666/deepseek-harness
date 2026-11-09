@@ -220,6 +220,12 @@ jobs:
           bash ./gradlew --version --console=plain | sed -n '1,12p'
           echo "ASSETS_TAG=${ASSETS_TAG:-<none>}"
 
+      - name: JS 语法门禁（插件前端必须能被解析）
+        run: |
+          node --check mobile-ui-plugin/dsh-android-mobile/lib/client.js
+          node --check tools/ui-contract/audit.mjs
+          node --check tools/ui-contract/extract.mjs
+
       - name: UI 契约门禁（哈希类名不许增加 / 不许死引用）
         run: |
           node tools/ui-contract/audit.mjs --dead
