@@ -1,10 +1,10 @@
 {
-  "unique": 159,
-  "files": 43,
+  "unique": 60,
+  "files": 4,
   "rows": [
     {
       "file": "mobile-ui-plugin/dsh-android-mobile/lib/client.js",
-      "count": 60,
+      "count": 59,
       "classes": [
         ".JObwrW_trigger",
         ".Nqubda_panel",
@@ -33,7 +33,6 @@
         ".bOPqQW_anchor",
         ".bOPqQW_label",
         ".bOPqQW_pill",
-        ".bOPqQW_root",
         ".bVCLcG_desc",
         ".hWmORq_root",
         ".lXshSW_root",
@@ -69,256 +68,22 @@
       ]
     },
     {
-      "file": "app/src/main/java/com/dsh/android/FloatingBubble.kt",
-      "count": 28,
-      "classes": [
-        ".ACTION_CANCEL",
-        ".ACTION_DOWN",
-        ".ACTION_MOVE",
-        ".ACTION_UP",
-        ".AVATAR_FILE",
-        ".AVATAR_NONE",
-        ".DEFAULT_ACTION",
-        ".FOCUS_DOWN",
-        ".KEYCODE_ENTER",
-        ".LENGTH_SHORT",
-        ".MATCH_PARENT",
-        ".MAX_EDGE_WIDTH",
-        ".MIN_EDGE_WIDTH",
-        ".POSITIVE_INFINITY",
-        ".SHAPE_CIRCLE",
-        ".SHAPE_PATH",
-        ".SHAPE_SQUARE",
-        ".SQUASH_MS",
-        ".SQ_CLICK_DEPTH",
-        ".STATE_AUTO",
-        ".STATE_EXPANDED",
-        ".STATE_HIDDEN",
-        ".VERSION_CODES",
-        ".WINDOW_SERVICE",
-        ".bubble_avatar",
-        ".bubble_msg",
-        ".bubble_status",
-        ".bubble_window"
-      ]
-    },
-    {
       "file": "app/src/main/java/com/dsh/android/EngineManager.kt",
-      "count": 19,
+      "count": 5,
       "classes": [
-        ".DSH_HOME_REL",
-        ".GROUP_EXECUTE",
-        ".GROUP_READ",
-        ".GROUP_WRITE",
-        ".OTHERS_EXECUTE",
-        ".OTHERS_READ",
-        ".OTHERS_WRITE",
-        ".OWNER_EXECUTE",
-        ".OWNER_READ",
-        ".OWNER_WRITE",
-        ".STATE_FILE",
         ".T1PP_q_desc",
         "._2XZxNq_desc",
-        ".agnes_mm_version",
         ".bVCLcG_desc",
-        ".image_tokens",
-        ".market_version",
         ".oY77xG_desc",
         ".wSkVaW_root"
       ]
     },
     {
-      "file": "app/src/main/java/com/dsh/android/AdbPairingNotifier.kt",
-      "count": 15,
-      "classes": [
-        ".ACTION_CANCEL",
-        ".ACTION_REPLY",
-        ".EXTRA_PORT",
-        ".EXTRA_REPLY",
-        ".PAIRING_CANCEL",
-        ".PAIRING_REPLY",
-        ".PRIORITY_HIGH",
-        ".VERSION_CODES",
-        ".pairing_ok",
-        ".pairing_reply",
-        ".pairing_stop",
-        ".pairing_timeout",
-        ".pairing_title",
-        ".pairing_waiting",
-        ".pairing_working"
-      ]
-    },
-    {
       "file": "app/src/main/java/com/dsh/android/MainActivity.kt",
-      "count": 12,
+      "count": 2,
       "classes": [
-        ".ACTION_VIEW",
-        ".CATEGORY_OPENABLE",
-        ".LENGTH_LONG",
-        ".LENGTH_SHORT",
-        ".MANAGER_PACKAGE",
-        ".MATCH_PARENT",
-        ".POWER_SERVICE",
-        ".RECORD_AUDIO",
-        ".RESULT_OK",
-        ".VERSION_CODES",
         ".uV2eYG_input",
         ".uV2eYG_primary"
-      ]
-    },
-    {
-      "file": "app/src/main/java/com/dsh/android/backup/BackupDialog.kt",
-      "count": 7,
-      "classes": [
-        ".ACTION_CANCEL",
-        ".ACTION_DOWN",
-        ".ACTION_UP",
-        ".MATCH_PARENT",
-        ".backup_cancel",
-        ".backup_working",
-        ".dialog_backup"
-      ]
-    },
-    {
-      "file": "app/src/main/java/com/dsh/android/log/EnvironmentSnapshot.kt",
-      "count": 6,
-      "classes": [
-        ".ACTIVITY_SERVICE",
-        ".POWER_SERVICE",
-        ".RECORD_AUDIO",
-        ".SECURITY_PATCH",
-        ".VERSION_CODES",
-        ".WINDOW_SERVICE"
-      ]
-    },
-    {
-      "file": "app/src/main/java/com/dsh/android/browser/AiBrowserView.kt",
-      "count": 5,
-      "classes": [
-        ".CENTER_VERTICAL",
-        ".DOWNLOAD_SERVICE",
-        ".IGNORE_CASE",
-        ".LENGTH_SHORT",
-        ".MATCH_PARENT"
-      ]
-    },
-    {
-      "file": "app/src/main/java/com/dsh/android/termux/TermuxBootstrap.kt",
-      "count": 5,
-      "classes": [
-        ".ATOMIC_MOVE",
-        ".KEY_APT_WRITTEN",
-        ".PROBE_CMD",
-        ".REPLACE_EXISTING",
-        ".STATE_FILE"
-      ]
-    },
-    {
-      "file": "app/src/main/java/com/dsh/android/EngineService.kt",
-      "count": 3,
-      "classes": [
-        ".POWER_SERVICE",
-        ".PRIORITY_LOW",
-        ".VERSION_CODES"
-      ]
-    },
-    {
-      "file": "app/src/main/java/com/dsh/android/LogViewerActivity.kt",
-      "count": 3,
-      "classes": [
-        ".LENGTH_LONG",
-        ".item_log_line",
-        ".log_chip_bg"
-      ]
-    },
-    {
-      "file": "app/src/main/java/com/dsh/android/engine/EngineHosts.kt",
-      "count": 3,
-      "classes": [
-        ".GLIBC_PREBUILT",
-        ".PROOT_GLIBC",
-        ".TERMUX_BIONIC"
-      ]
-    },
-    {
-      "file": "app/src/main/java/com/dsh/android/ui/settings/HostSettingsSection.kt",
-      "count": 3,
-      "classes": [
-        ".MATCH_PARENT",
-        ".PROOT_GLIBC",
-        ".TERMUX_BIONIC"
-      ]
-    },
-    {
-      "file": "app/src/main/assets/dsh-android-shell.mjs",
-      "count": 2,
-      "classes": [
-        ".DSH_ADB_HOME",
-        ".RSA_NO_PADDING"
-      ]
-    },
-    {
-      "file": "app/src/main/java/com/dsh/android/BalanceBadgeView.kt",
-      "count": 2,
-      "classes": [
-        ".ANCHOR_ABOVE",
-        ".ANCHOR_BELOW"
-      ]
-    },
-    {
-      "file": "app/src/main/java/com/dsh/android/BubbleAppearance.kt",
-      "count": 2,
-      "classes": [
-        ".DEFAULT_ACTION",
-        ".bubble_avatar"
-      ]
-    },
-    {
-      "file": "app/src/main/java/com/dsh/android/BubbleVideoLayer.kt",
-      "count": 2,
-      "classes": [
-        ".LOAD_NO_CACHE",
-        ".MATCH_PARENT"
-      ]
-    },
-    {
-      "file": "app/src/main/java/com/dsh/android/engine/EngineBootGate.kt",
-      "count": 2,
-      "classes": [
-        ".PROOT_GLIBC",
-        ".TERMUX_BIONIC"
-      ]
-    },
-    {
-      "file": "app/src/main/java/com/dsh/android/log/BootState.kt",
-      "count": 2,
-      "classes": [
-        ".VERSION_CODE",
-        ".VERSION_NAME"
-      ]
-    },
-    {
-      "file": "app/src/main/java/com/dsh/android/termux/util/AtomicTextFile.kt",
-      "count": 2,
-      "classes": [
-        ".ATOMIC_MOVE",
-        ".REPLACE_EXISTING"
-      ]
-    },
-    {
-      "file": "mobile-ui-plugin/dsh-android-shell/lib/index.js",
-      "count": 2,
-      "classes": [
-        ".DSH_ADB_HOME",
-        ".DSH_PRIV_RUNNER"
-      ]
-    },
-    {
-      "file": "mobile-ui-plugin/dsh-android-uiagent/lib/index.js",
-      "count": 2,
-      "classes": [
-        ".LOCAL_ACTIONS",
-        ".PROBE_ACTIONS"
       ]
     },
     {
@@ -326,146 +91,6 @@
       "count": 1,
       "classes": [
         ".VOzbGW_overlay"
-      ]
-    },
-    {
-      "file": "app/src/main/java/com/dsh/android/BalanceSnapshot.kt",
-      "count": 1,
-      "classes": [
-        ".TEMPLATE_TOKENS"
-      ]
-    },
-    {
-      "file": "app/src/main/java/com/dsh/android/BubbleFrames.kt",
-      "count": 1,
-      "classes": [
-        ".AVATAR_FILE"
-      ]
-    },
-    {
-      "file": "app/src/main/java/com/dsh/android/BubbleShapeDrawable.kt",
-      "count": 1,
-      "classes": [
-        ".VERSION_CODES"
-      ]
-    },
-    {
-      "file": "app/src/main/java/com/dsh/android/BubbleVideos.kt",
-      "count": 1,
-      "classes": [
-        ".DEFAULT_ACTION"
-      ]
-    },
-    {
-      "file": "app/src/main/java/com/dsh/android/DshApplication.kt",
-      "count": 1,
-      "classes": [
-        ".VERSION_CODES"
-      ]
-    },
-    {
-      "file": "app/src/main/java/com/dsh/android/RescueCommandBridge.kt",
-      "count": 1,
-      "classes": [
-        ".PROFILE_WEB"
-      ]
-    },
-    {
-      "file": "app/src/main/java/com/dsh/android/ShakeDetector.kt",
-      "count": 1,
-      "classes": [
-        ".SENSOR_SERVICE"
-      ]
-    },
-    {
-      "file": "app/src/main/java/com/dsh/android/SystemBarCommandBridge.kt",
-      "count": 1,
-      "classes": [
-        ".STATE_FILE"
-      ]
-    },
-    {
-      "file": "app/src/main/java/com/dsh/android/backup/UserDataExporter.kt",
-      "count": 1,
-      "classes": [
-        ".DSH_HOME_REL"
-      ]
-    },
-    {
-      "file": "app/src/main/java/com/dsh/android/backup/UserDataImporter.kt",
-      "count": 1,
-      "classes": [
-        ".DSH_HOME_REL"
-      ]
-    },
-    {
-      "file": "app/src/main/java/com/dsh/android/engine/AndroidOpenWith.kt",
-      "count": 1,
-      "classes": [
-        ".ACTION_VIEW"
-      ]
-    },
-    {
-      "file": "app/src/main/java/com/dsh/android/engine/McpWiring.kt",
-      "count": 1,
-      "classes": [
-        ".VERSION_CODES"
-      ]
-    },
-    {
-      "file": "app/src/main/java/com/dsh/android/engine/ProotGlbcHost.kt",
-      "count": 1,
-      "classes": [
-        ".GLIBC_PREBUILT"
-      ]
-    },
-    {
-      "file": "app/src/main/java/com/dsh/android/log/DiagnosticBundle.kt",
-      "count": 1,
-      "classes": [
-        ".ENGINE_LOG"
-      ]
-    },
-    {
-      "file": "app/src/main/java/com/dsh/android/log/LogUploader.kt",
-      "count": 1,
-      "classes": [
-        ".SCHEMA_VERSION"
-      ]
-    },
-    {
-      "file": "mobile-ui-plugin/dsh-android-bubble/lib/index.js",
-      "count": 1,
-      "classes": [
-        ".MAX_POOL_ACTIONS"
-      ]
-    },
-    {
-      "file": "mobile-ui-plugin/dsh-android-logs/lib/index.js",
-      "count": 1,
-      "classes": [
-        ".STATE_FILE"
-      ]
-    },
-    {
-      "file": "mobile-ui-plugin/dsh-android-mobile/lib/index.js",
-      "count": 1,
-      "classes": [
-        ".DSH_PRIV_RUNNER"
-      ]
-    },
-    {
-      "file": "mobile-ui-plugin/dsh-android-root/lib/index.js",
-      "count": 1,
-      "classes": [
-        ".DSH_ROOT_RUNNER"
-      ]
-    },
-    {
-      "file": "mobile-ui-plugin/dsh-android-statusbar/lib/index.js",
-      "count": 1,
-      "classes": [
-        ".INT_LIST_FIELDS"
       ]
     }
   ]

@@ -15,11 +15,14 @@
 node tools/ui-contract/audit.mjs                 # 人读
 node tools/ui-contract/audit.mjs --json          # 机器读
 node tools/ui-contract/audit.mjs --write-baseline
-node tools/ui-contract/audit.mjs --max 159       # 超过即 exit 1
+node tools/ui-contract/audit.mjs --max 60        # 超过即 exit 1
+node tools/ui-contract/audit.mjs --dead           # 我方引用 − contract，任何差值即 exit 1
 ```
 
-当前基线：**159 个唯一类名 / 43 个文件**（`baseline.json`）。门禁先锁在 159：
-**只许减，不许增**。
+当前基线：**60 个唯一类名 / 4 个文件**（`baseline.json`），`--dead` 为 **0**。
+
+> 早先的 159 是误报：正则把 Kotlin 常量（`MATCH_PARENT`、`VERSION_CODES`）也算成了
+> webpack 哈希。加上「前缀必须大小写混合」的过滤后，真实债务是 60。
 
 ## 迁移方向（三级选择器）
 

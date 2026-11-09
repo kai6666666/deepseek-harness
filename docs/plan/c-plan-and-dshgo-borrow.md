@@ -398,10 +398,12 @@ node:sqlite                                  sqlite    ✅
 **已完成：UI 契约审计基线**
 
 - `tools/ui-contract/audit.mjs`：统计哈希类名唯一数 / 分布，支持 `--json` / `--write-baseline` / `--max`
-- 基线：**159 个唯一类名 / 43 个文件**（`baseline.json`），门禁先锁 159（只许减）
+- 基线：**60 个唯一类名 / 4 个文件**（`baseline.json`），门禁锁 60；`--dead` = 0
 - `tools/ui-contract/README.md`：三级选择器（`data-*` → ARIA → contract）与迁移顺序
 
-验证：`--max 159` 通过、`--max 158` 返回 1。
+验证：`--max 60` 通过、`--max 59` 返回 1；`--dead` rc=0。
+
+> 早期 159 是正则误报（Kotlin 常量被当成哈希类名）；过滤「前缀大小写混合」后真实债务 60。
 
 **已完成：contract 抽取**
 

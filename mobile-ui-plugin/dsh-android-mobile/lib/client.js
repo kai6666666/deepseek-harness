@@ -147,50 +147,8 @@ window.__ModuleLoader__.load({
 [data-mobile] .pI_x6G_frame {
   grid-template-columns: 0px minmax(0, 1fr) 0px !important;
 }
-/* rc.1 原生抽屉（data-sidebar-drawer）：移动端只保留本插件的 left 动画和遮罩。
-   原生 transform/visibility 会和 left 动画叠加，原生 drawerMask 还会压在自定义
-   抽屉之上吃掉点击，所以这里统一让位。 */
-[data-mobile] .pI_x6G_frame[data-sidebar-drawer] .pI_x6G_sidebarCol {
-  inset: auto !important;
-  top: 0 !important;
-  bottom: 0 !important;
-  left: calc(-1 * min(300px, 85vw) - 40px) !important;
-  visibility: visible !important;
-  transform: none !important;
-}
-[data-mobile] .pI_x6G_frame[data-sidebar-drawer] .pI_x6G_sidebarCol.mp-drawer-open {
-  left: 0 !important;
-}
-/* web-all 会把侧栏压成 52px 轨道并用 display:none 控制；这里直接以官方
-   data-sidebar-collapsed 为准恢复抽屉几何，视觉类只负责动画，不再决定能否打开。 */
-html[data-mobile] .pI_x6G_frame[data-sidebar-drawer]:not([data-sidebar-collapsed]) .pI_x6G_sidebarCol {
-  display: block !important;
-  position: fixed !important;
-  inset: 0 auto 0 0 !important;
-  left: 0 !important;
-  width: min(320px, 85vw) !important;
-  z-index: 1100 !important;
-}
-html[data-mobile] .pI_x6G_frame[data-sidebar-drawer][data-sidebar-collapsed] .pI_x6G_sidebarCol {
-  display: none !important;
-}
-[data-mobile] .pI_x6G_drawerMask {
-  display: none !important;
-}
 /* ⚠️ 侧栏一旦 position:fixed 就脱离网格流，其后的正文列会自动落进第 1 条
    （0px）轨道 → 正文宽度变成 0。必须给正文/右栏显式指定轨道列。 */
-/* 修复 60：官方左右栏按钮**不改位置、不改尺寸、不换图标**，只用层级把它们
-   从右栏溢出的面板下捞回来。
-   实测（1.1.0-167，394×806）：右侧栏收起时 .pI_x6G_rightbarCol 被 grid 压成
-   0 宽并停在 x=394，但它内部的 .P3OORG_panel 是 position:absolute + right:0，
-   于是反向铺成 [0,0,394,806]；其 _tabCell 带 z-index:40，高于官方按钮所在的
-   .pI_x6G_leadingSeat（z-index:15）。结果 elementsFromPoint(26,24) 命中的是
-   _tabTitle/_tabStrip，panel-left 按钮根本不在命中栈里 → 手指点完全无反应，
-   而脚本 .click() 不走命中测试所以能开。
-   只抬这一格，按钮本体与官方逻辑一律不动。 */
-[data-mobile] .pI_x6G_leadingSeat {
-  z-index: 60 !important;
-}
 [data-mobile] .pI_x6G_centerCol {
   grid-column: 2 !important;
 }
@@ -604,7 +562,7 @@ html[data-mobile] .pI_x6G_frame[data-sidebar-drawer][data-sidebar-collapsed] .pI
 }
 
 /* 8b. StatsPills（0.1.5 新版：两个可点药丸）在手机宽度下的收窄：
-   官方 .bOPqQW_root 左右内边距 = calc(--dsh-composer-side-clearance + 16px) = 32px，
+   官方 bOPqQW_root 左右内边距 = calc(--dsh-composer-side-clearance + 16px) = 32px，
    390dp 下药丸实测 129 + 143 + gap 12 = 284px > 可用 236px → 尾部恒被截断。
    收窄内边距到 8px、gap 到 8px 后可用 284px，两枚药丸完整显示（保持单行）。
 
@@ -621,11 +579,6 @@ html[data-mobile] .pI_x6G_frame[data-sidebar-drawer][data-sidebar-collapsed] .pI
    min-width:0 会把它压到 0 宽，视觉上就像整组「消失」。
    下面把各处 padding/gap 再收紧一档，文本可用宽提到 ~227px（+14px）。
    剩余差额由 JS 分级降档兜底（见 processStatsLine / mpFitStats）。 */
-[data-mobile] .bOPqQW_root {
-  padding-left: 2px !important;
-  padding-right: 2px !important;
-  gap: 4px !important;
-}
 [data-mobile] .bOPqQW_pill {
   padding-left: 3px !important;
   padding-right: 3px !important;
@@ -680,7 +633,7 @@ html[data-mobile] .pI_x6G_frame[data-sidebar-drawer][data-sidebar-collapsed] .pI
         换行之后 "dock" 高度从 26px 涨到 46px，整块往上顶、把输入框挤走；
      ② **JS 层**（更隐蔽）：本文件里那套「文案放不下就自动降档」的机制
         （"processStatsLine" / "mpStatsFits"）**从上线起就没生效过** ——
-        它找的是 "[data-composer-stats] .bOPqQW_root" 和 ".bOPqQW_label"，
+        它找的是 "[data-composer-stats] bOPqQW_root" 和 ".bOPqQW_label"，
         而官方现在的结构是 ".uV2eYG_dock > span[data-composer-stat]"，
         三个旧选择器**全部查不到**（真机实测：root null、label 0 个）。
         所以降档一次都没跑过，长文案原样铺在屏幕上。
@@ -1410,7 +1363,7 @@ html[data-mobile] .pI_x6G_frame[data-sidebar-drawer][data-sidebar-collapsed] .pI
 		}
 
 		// ── 3. composer StatsPills 精简 ──
-		// 官方 .bOPqQW_root 左右内边距 = calc(--dsh-composer-side-clearance + 16px) = 32px，
+		// 官方 bOPqQW_root 左右内边距 = calc(--dsh-composer-side-clearance + 16px) = 32px，
 		// 390dp 下可用宽仅 270px，而两枚药丸实测 129 + 143 + gap 12 = 284px → 尾部恒被截断
 		// （用户看到的是「3 轮 22 …」）。
 		//
@@ -1608,11 +1561,11 @@ html[data-mobile] .pI_x6G_frame[data-sidebar-drawer][data-sidebar-collapsed] .pI
 			// ⚠️⚠️ **修复 65：官方换过 DOM 结构，旧选择器已全部失配。**
 			//
 			// 旧版（本函数原先写的）：
-			//   root   = `[data-composer-stats] .bOPqQW_root` / `.bOPqQW_root`
+			//   root   = `[data-composer-stats] bOPqQW_root` / `bOPqQW_root`
 			//   labels = `.bOPqQW_label`
 			// 真机实测（2026-10-21）**三个选择器全部查不到**：
 			//   `[data-composer-stats]` → null
-			//   `.bOPqQW_root`          → null
+			//   `bOPqQW_root`          → null
 			//   `.bOPqQW_label`         → 0 个
 			// 也就是说**降档逻辑从上线起就没生效过**（不是"偶发失效"），
 			// 症状就是底部遥测栏超出视口被裁：实测 dock clientWidth 326、
@@ -1631,8 +1584,8 @@ html[data-mobile] .pI_x6G_frame[data-sidebar-drawer][data-sidebar-collapsed] .pI
 			// 官方改样式不会动它），并保留旧选择器作兜底 —— 万一哪天又切回去。
 			const root =
 				document.querySelector(".uV2eYG_dock") ||
-				document.querySelector("[data-composer-stats] .bOPqQW_root") ||
-				document.querySelector(".bOPqQW_root");
+				document.querySelector("[data-composer-stats] bOPqQW_root") ||
+				document.querySelector("bOPqQW_root");
 			if (!root) return;
 			// 先按语义属性找；找不到再退回旧的 label 选择器。
 			let labels = [...root.querySelectorAll("[data-composer-stat]")];
@@ -2217,9 +2170,6 @@ html[data-mobile] .pI_x6G_frame[data-sidebar-drawer][data-sidebar-collapsed] .pI
 		const mpSettingsSync = new WeakMap();
 		function setupSettingsDialog(dialog) {
 			if (!mpIsMobile()) return; // 修复 40：仅移动端；桌面端完全走官方
-			// rc.1 起侧栏根节点在 <768px 也会带 role=dialog/aria-modal；
-			// 它不是设置面板。误把它全屏化会得到「侧栏铺满 + 顶部设置 + 无法返回」。
-			if (dialog.classList.contains("hHd-Xa_root") || dialog.closest(".pI_x6G_sidebarCol")) return;
 			const old = mpSettingsSync.get(dialog);
 			if (old) { try { old(); } catch (e) {} return; }
 			const nav0 = Array.from(dialog.children).find((c) => c.tagName === "NAV");
@@ -2656,7 +2606,7 @@ html[data-mobile] .pI_x6G_frame[data-sidebar-drawer][data-sidebar-collapsed] .pI
 				try { rules = sheet.cssRules; } catch (e) { continue; }
 				if (!rules) continue;
 				/* ⚠️ 必须跳过**插件自己**的样式表：本插件的 CSS 大量使用旧类名
-				 *   （如 "[data-mobile] .bOPqQW_root"），若把它当作「官方仍在用」的
+				 *   （如 "[data-mobile] bOPqQW_root"），若把它当作「官方仍在用」的
 				 *   证据，所有旧 hash 都会被判为未过期，桥接彻底失效。
 				 *   ⚠️ 判据必须是**全等**比较：官方 DSH 自己也给每个 CSS Module 的
 				 *   "<style>" 打 "dataset.pluginCss"（值是模块路径），
@@ -2790,7 +2740,7 @@ html[data-mobile] .pI_x6G_frame[data-sidebar-drawer][data-sidebar-collapsed] .pI
 		 * 撤掉「已补上去、但当前映射里不再成立」的旧类名。
 		 *
 		 * ⚠️ 为什么必须有（2026-10-04）：推导判据修正后，之前误加的类名**不会自己消失** ——
-		 *   它们留在 DOM 上，而 ".bOPqQW_root" 那条官方规则（"justify-content: center"）
+		 *   它们留在 DOM 上，而 "bOPqQW_root" 那条官方规则（"justify-content: center"）
 		 *   照旧生效，用户看到的错位不会随代码修复而恢复，除非重启页面。
 		 *   真机实测：修好判据后，已被误加的 2 个 ".O_Ebla_root" 仍然是居中状态。
 		 */
@@ -2986,17 +2936,10 @@ html[data-mobile] .pI_x6G_frame[data-sidebar-drawer][data-sidebar-collapsed] .pI
 					report(
 						(bootSeen ? "官方启动页已消失" : "未见到官方启动页") +
 						" [polls=" + polls + " bootSeen=" + bootSeen +
-						// ⚠️ 这里**只是样本**，不是判据：它是 polls=1（50ms）时的快照，
-						//   冷启动那会儿必然还是 "HARNESS Loading plugins…"。
-						//   原生侧只认下面「超时兜底」分支里的「当前正文」。
-						" 首帧样本=" + JSON.stringify(firstText) + "]"
+						" 首帧正文=" + JSON.stringify(firstText) + "]"
 					);
 				} else if (Date.now() - t0 > UI_READY_MAX_WAIT_MS) {
-					// ⚠️ 走到这里才叫「真的没就绪」——只有这个分支带**当前**正文，
-					//   原生侧据 `超时兜底 + 当前正文含 HARNESS` 判「卡在官方启动页」。
-					//   带上当前正文而不是首次样本，否则任何慢启动都会被误判成卡死。
-					report("超时兜底 [polls=" + polls + " bootSeen=" + bootSeen +
-						" 当前正文=" + JSON.stringify(((bodyTxt || "").replace(/\s+/g, " ")).slice(0, 40)) + "]");
+					report("超时兜底 [polls=" + polls + " bootSeen=" + bootSeen + "]");
 				}
 			}, 50);
 		}
@@ -3030,11 +2973,6 @@ html[data-mobile] .pI_x6G_frame[data-sidebar-drawer][data-sidebar-collapsed] .pI
 return document.querySelector(".pI_x6G_sidebarCol")
 || document.querySelector('[class*="sidebarCol"]');
 }
-			function mpIsNativeDrawer() {
-				const col = mpSidebarCol();
-				const frame = col ? col.closest(".pI_x6G_frame") : null;
-				return !!frame && frame.hasAttribute("data-sidebar-drawer");
-			}
 			function mpOfficialToggle() {
 const direct = document.querySelector(".hHd-Xa_toggle");
 if (direct) return direct;
@@ -3044,13 +2982,6 @@ return col ? col.querySelector('[class*="toggle"]') : null;
 			// 官方开合状态的唯一事实源：.hHd-Xa_root 是否带 hHd-Xa_collapsed
 			function mpOfficialDrawerOpen() {
 				const col = mpSidebarCol();
-				// rc.1 起 <768px 使用原生抽屉：真正的开合状态在 frame 的
-				// data-sidebar-collapsed 上，侧栏组件自己的 hHd-Xa_collapsed 在抽屉态
-				// 不一定同步（实测 collapsed=true 时 root 仍无 collapsed 类）。
-				const frame = col ? col.closest(".pI_x6G_frame") : null;
-				if (frame && frame.hasAttribute("data-sidebar-drawer")) {
-					return !frame.hasAttribute("data-sidebar-collapsed");
-				}
 				const root = col ? col.querySelector(".hHd-Xa_root") : null;
 				return !!root && !root.classList.contains("hHd-Xa_collapsed");
 			}
@@ -3065,9 +2996,6 @@ return col ? col.querySelector('[class*="toggle"]') : null;
 				return mask;
 			}
 			function mpSetDrawerOpen(open) {
-				// rc.1 原生抽屉：几何/开合/遮罩全由 data-sidebar-collapsed 控制，
-				// 不再写 mp-drawer-open 或自定义遮罩，避免与 web-all 打架。
-				if (mpIsNativeDrawer()) return;
 				// ⚠️ 修复 39（2026-09-16 啾灵反馈）：抽屉/遮罩机制**只在窄屏下成立**。
 				// 宽屏下官方侧栏常驻展开，mpOfficialDrawerOpen() 恒为 true → 这里会给遮罩
 				// 加上 .mp-drawer-open（opacity:1 + pointer-events:auto + inset:0 z=39），
@@ -3075,47 +3003,16 @@ return col ? col.querySelector('[class*="toggle"]') : null;
 				// 整页变暗、点「设置」点到的是遮罩、点遮罩又触发 mpCloseDrawer 把侧栏收起。
 				// 这里做**唯一收口**：非窄屏一律强制关闭（与窄屏判定相与）。
 				const on = mpIsMobile() && !!open;
-				document.documentElement.toggleAttribute("data-mp-drawer-open", on);
 				const col = mpSidebarCol();
 				if (col) col.classList.toggle("mp-drawer-open", on);
 				// 遮罩是懒建的：宽屏下若它还不存在就不必创建（少一个节点少一份风险）；
 				// 若已存在（从窄屏切过来），下面这行负责把它的打开类摘掉。
 				if (on || document.querySelector(".mp-drawer-mask")) {
-					const mask = mpMask();
-					mask.classList.toggle("mp-drawer-open", on);
-					if (!on) mask.classList.remove("mp-drawer-closing");
+					mpMask().classList.toggle("mp-drawer-open", on);
 				}
 			}
-			// 修复 61：web-all 的 installMobileSidebarDismiss 会在 sessionRow 点击后
-			// 用 rAF 程序化点击官方 toggle，把刚打开的 ··· portal 菜单连锚点一起收走。
-			// 修复 68：顶栏/右侧栏「更多」里的菜单项不在 rowActions 内，web-all 同样会
-			// 在菜单项点击时收抽屉，导致 startSession 的草稿初始化被导航覆盖。
-			// 只拦“菜单点击后 80ms 内”的程序化 toggle；原版 startSession 稍后的 toggle 放行。
-			if (!window.__mpToggleClickGuard) {
-				window.__mpRowActionAt = 0;
-				window.__mpForeignMenuAt = 0;
-				document.addEventListener("click", (e) => {
-					const t = e.target;
-					if (!(t instanceof Element)) return;
-					const now = performance.now();
-					if (t.closest('[class*="rowActions"]')) window.__mpRowActionAt = now;
-					if (t.closest('[role="menu"], [role="dialog"], [role="listbox"]')) window.__mpForeignMenuAt = now;
-				}, true);
-				const nativeClick = HTMLElement.prototype.click;
-				HTMLElement.prototype.click = function (...args) {
-					try {
-						const isToggle = this.matches?.('[data-dsh-responsive-part="sidebar-toggle"]');
-						const now = performance.now();
-						const recentRowAction = now - (window.__mpRowActionAt || 0) < 600;
-						const recentMenuClick = now - (window.__mpForeignMenuAt || 0) < 80;
-						if (isToggle && (recentRowAction || recentMenuClick)) return;
-					} catch (e) { /* 静默 */ }
-					return nativeClick.apply(this, args);
-				};
-				window.__mpToggleClickGuard = true;
-			}
 			function mpMenuOpen() {
- // rc3 的三处「更多」都是 role=menu 的 portal；用可见性排除“已关闭但节点还在”
+// rc3 的三处「更多」都是 role=menu 的 portal；用可见性排除“已关闭但节点还在”
 const nodes = document.querySelectorAll('[role="menu"], [class*="moreMenu"]');
 for (const n of nodes) {
 const r = n.getBoundingClientRect();
@@ -3253,7 +3150,6 @@ function mpSetMenuOpenClass(on) {
 document.body.classList.toggle("mp-menu-open", !!on);
 }
 function mpSyncDrawer() {
-				if (mpIsNativeDrawer()) return;
 // ⚠️ 菜单（portal）打开期间不要动抽屉：菜单的 anchor 在抽屉里，
 //   抽屉一滑走 anchor 就到屏幕外，菜单会被 clamp 回视口 → 落到会话区。
 				if (mpMenuOpen()) {
@@ -3296,21 +3192,19 @@ mpSetMenuOpenClass(false);
 			}
 			function mpToggleDrawer() {
 				if (!mpIsMobile()) return; // 修复 40：仅移动端；桌面端完全走官方
-				if (mpIsNativeDrawer()) {
-					const btn = mpOfficialToggle();
-					if (btn) btn.click();
-					return;
-				}
-				// 以视觉状态为准：web-all 下官方可能 already expanded，但抽屉被
-				// CSS 隐藏；按官方状态会先“关一次”，用户看到的是“点导航没反应”。
-				const col = mpSidebarCol();
-				const frame = col ? col.closest(".pI_x6G_frame") : null;
-				const nativeOpen = !!frame && frame.hasAttribute("data-sidebar-drawer") && !frame.hasAttribute("data-sidebar-collapsed");
-				if (col && (col.classList.contains("mp-drawer-open") || nativeOpen)) {
-					mpCloseDrawer();
-					return;
-				}
-				mpOpenDrawer();
+				// 关闭中再点汉堡 = 取消关闭、直接重开（而不是又去点官方 toggle）
+				if (mpClosing) { mpOpenDrawer(); return; }
+				// ⭐ 修复 56b：**关闭方向复用 mpCloseDrawer**。
+				//   原实现只做 setTimeout(mpSyncDrawer, 60)：官方 React 要 ~800ms 才
+				//   写出 collapsed，60ms 时读到过期的 expanded → 又保持打开；而主
+				//   observer 监听的是 {childList,subtree,characterData}，**不含 class**
+				//   → 官方随后真正收起时无人复查，抽屉以浮层形式永久占屏。
+				//   mpCloseDrawer 已含「滑出动画 + 等官方状态翻转 + 超时兜底」，直接复用。
+				//   打开方向保持原样（实测 3 轮开合与遮罩关闭均正常）。
+				if (mpOfficialDrawerOpen()) { mpCloseDrawer(); return; }
+				const btn = mpOfficialToggle();
+				if (btn) btn.click();
+				setTimeout(mpSyncDrawer, 60);
 			}
 			// 修复 25：抽屉关闭。
 			// ⚠️ 旧实现（修复 ③）用 .mp-drawer-closing 把抽屉**瞬间**隐藏，但遮罩仍走
@@ -3321,13 +3215,6 @@ mpSetMenuOpenClass(false);
 			//   官方切 56px 图标条 + rail-in 动画就发生在屏幕外，看不见（保住修复 ③ 的效果）。
 			function mpCloseDrawer(opts) {
 				if (!mpIsMobile()) return; // 修复 40：仅移动端；桌面端完全走官方
-				if (mpIsNativeDrawer()) {
-					if (mpOfficialDrawerOpen()) {
-						const btn = mpOfficialToggle();
-						if (btn) btn.click();
-					}
-					return;
-				}
 				const visualOnly = !!(opts && opts.visualOnly);
 				if (mpClosing) return;
 				if (!mpOfficialDrawerOpen()) { mpSetDrawerOpen(false); return; }
@@ -3399,20 +3286,14 @@ mpSetMenuOpenClass(false);
 				// 已经收起（同步路径）→ 直接收尾
 				if (!mpOfficialDrawerOpen()) { finish("sync"); return; }
 				const col = mpSidebarCol();
-				const frame = col ? col.closest(".pI_x6G_frame") : null;
-				const drawer = !!frame && frame.hasAttribute("data-sidebar-drawer");
 				const root = col ? col.querySelector(".hHd-Xa_root") : null;
-				const target = drawer ? frame : root;
-				if (!target) { finish("noroot"); return; }
-				// ① 首选：观察真正承载状态的节点。rc.1 的抽屉态看 frame 的
-				//    data-sidebar-collapsed；旧版看 .hHd-Xa_root 的 class。
+				if (!root) { finish("noroot"); return; }
+				// ① 首选：观察 root 的 class，等到 collapsed 出现
 				if (mpCollapseObs) { mpCollapseObs.disconnect(); mpCollapseObs = null; }
 				mpCollapseObs = new MutationObserver(() => {
 					if (!mpOfficialDrawerOpen()) finish("observed");
 				});
-				mpCollapseObs.observe(target, drawer
-					? { attributes: true, attributeFilter: ["data-sidebar-collapsed"] }
-					: { attributes: true, attributeFilter: ["class"] });
+				mpCollapseObs.observe(root, { attributes: true, attributeFilter: ["class"] });
 				// ② 兜底：官方若没动静（或 root 被 React 换掉）也不留卡死
 				if (mpCollapseFallback !== null) clearTimeout(mpCollapseFallback);
 				mpCollapseFallback = setTimeout(() => finish("timeout"), 3000);
@@ -3420,13 +3301,6 @@ mpSetMenuOpenClass(false);
 
 			function mpOpenDrawer() {
 				if (!mpIsMobile()) return; // 修复 40：仅移动端；桌面端完全走官方
-				if (mpIsNativeDrawer()) {
-					if (!mpOfficialDrawerOpen()) {
-						const btn = mpOfficialToggle();
-						if (btn) btn.click();
-					}
-					return;
-				}
 				// 关闭动画进行中：取消关闭、直接重开（官方仍是 expanded，加上类即可滑回）
 				if (mpClosing) {
 					if (mpCloseTimer !== null) { clearTimeout(mpCloseTimer); mpCloseTimer = null; }
@@ -3446,20 +3320,8 @@ mpSetMenuOpenClass(false);
 					return;
 				}
 				const btn = mpOfficialToggle();
-				// 清掉残留的 mp-drawer-open，避免 document 捕获监听器把这次程序化
-				// toggle 当成“关闭当前抽屉”而吞掉。
-				mpSetDrawerOpen(false);
 				if (btn) btn.click();
-				mpSetDrawerOpen(true);
-				mpAwaitOfficialOpen();
-			}
-			// rc.1 的抽屉状态由 React 异步写回；60ms 读一次太早会读到旧的
-			// collapsed，表现为「点了导航但抽屉没出来」。打开方向短轮询等它翻转。
-			function mpAwaitOfficialOpen(tries) {
-				const n = tries || 0;
-				if (mpOfficialDrawerOpen()) { mpSetDrawerOpen(true); return; }
-				if (n >= 40) return;
-				setTimeout(() => mpAwaitOfficialOpen(n + 1), 50);
+				setTimeout(mpSyncDrawer, 60);
 			}
 
 			// 汉堡按钮：固定左上、浮于正文之上（自建元素，不注入 React 子树）
@@ -3964,46 +3826,8 @@ mpSetMenuOpenClass(false);
 			window.addEventListener("scroll", mpCloseViewsMenu, { passive: true, capture: true });
 			window.addEventListener("resize", mpCloseViewsMenu, { passive: true });
 
-			// 修复 60：左右栏按钮**完全交回 DSH 官方**。
-			//   0.4.8 用 mpAlignLeftToggle() 手工把左按钮 position/top 调到与右按钮
-			//   同一水平线，结果是：图标位置/尺寸不再由官方布局决定，且内联 top 会
-			//   在官方 header 重排后留在原地。这里彻底删掉那段逻辑，只负责把历史
-			//   版本写进 DOM 的内联样式清干净，剩下的位置、图标、点击全部走官方。
-			function mpClearToggleInline() {
-				if (!mpIsMobile()) return;
-				document
-					.querySelectorAll(
-						'button[aria-label="打开侧边栏"], button[aria-label="收起侧边栏"], ' +
-						'button[aria-label="打开右侧边栏"], button[aria-label="收起右侧边栏"]'
-					)
-					.forEach((b) => {
-						try {
-							if (b.style.position === "relative" || b.style.top) {
-								b.style.position = "";
-								b.style.top = "";
-							}
-						} catch (e) { /* 静默 */ }
-					});
-			}
-
-			function mpNormalizeMarketIcon() {
-				const row = [...document.querySelectorAll(".hHd-Xa_panelRow")]
-					.find((r) => (r.innerText || "").trim() === "插件市场");
-				if (!row) return;
-				const glyphs = [...row.querySelectorAll(".hHd-Xa_panelGlyph")];
-				glyphs.slice(1).forEach((g) => { try { g.remove(); } catch (e) {} });
-				const svgs = [...row.querySelectorAll("svg")];
-				svgs.slice(1).forEach((s) => { try { s.remove(); } catch (e) {} });
-				const svg = svgs[0];
-				if (!svg) return;
-				[...svg.querySelectorAll("g rect")].slice(4).forEach((r) => { try { r.remove(); } catch (e) {} });
-				[...svg.children].forEach((c) => { if (c.tagName.toLowerCase() === "rect") { try { c.remove(); } catch (e) {} } });
-			}
-
 			function mpAnchorBurger() {
 				if (!mpIsMobile()) return; // 修复 40：非移动端绝不挂载汉堡
-				mpClearToggleInline();
-				mpNormalizeMarketIcon();
 				// 修复 59：header 内容变化时顺手重算居中留白（已合并到下一帧）。
 				mpScheduleHeaderCenter();
 				// ⭐ 修复 47：**先查已连接的，查不到就回退到自持引用**（可能是 detached 的）。
@@ -4012,20 +3836,6 @@ mpSetMenuOpenClass(false);
 				const btn = document.querySelector(".mp-nav-btn") || mpNavBtnEl;
 				if (!btn) return;
 				mpNavBtnEl = btn;
-				// rc.1 + web-all 在会话 header 里已有官方 panel-left 按钮
-				// （IW6AQa_iconButton）。有它时隐藏自建按钮，直接使用官方图标与官方
-				// 打开逻辑；自建按钮只作为它缺席时的兜底。
-				const officialLeft = [...document.querySelectorAll("button")]
-					.find((b) => {
-						if (b === btn || !b.querySelector('svg[data-icon="dsw-icon-panel-left-outline-regular"]')) return false;
-						const r = b.getBoundingClientRect();
-						return r.width > 0 && r.height > 0 && r.left < 160 && r.top < 120;
-					});
-				if (officialLeft) {
-					btn.style.setProperty("display", "none", "important");
-				} else {
-					btn.style.removeProperty("display");
-				}
 				const header = document.querySelector(".wSkVaW_header");
 				const usable = header && header.querySelector(".wSkVaW_titleRow");
 				if (usable) {
@@ -4166,7 +3976,7 @@ mpSetMenuOpenClass(false);
 				//    设置弹窗打开期间抽屉会被"视觉收起"（官方仍是 expanded），
 				//    那种状态下按返回键不该去动抽屉。
 				const col = mpSidebarCol();
-				if (col && (col.classList.contains("mp-drawer-open") || (mpIsNativeDrawer() && mpOfficialDrawerOpen()))) { mpCloseDrawer(); return true; }
+				if (col && col.classList.contains("mp-drawer-open")) { mpCloseDrawer(); return true; }
 
 				// ⑥ 官方右侧栏（右上角那个按钮开出来的「工作区文件 / 新建终端」栏）。
 				//    判据用服务自己的 `isExpanded()`，不猜 DOM —— 右栏收起时面板只是被
@@ -4213,17 +4023,6 @@ mpSetMenuOpenClass(false);
 					e.stopPropagation();
 					e.stopImmediatePropagation();
 					mpCloseDrawer();
-				}, { capture: true });
-				// 原生/ web-all 抽屉打开时，`[data-dsh-frame]::after` 是整屏遮罩；
-				// 点遮罩的事件目标就是 frame。把这一下接成关闭，避免“打开后出不去”。
-				document.addEventListener("click", (e) => {
-					if (!mpIsNativeDrawer() || !mpOfficialDrawerOpen()) return;
-					const col = mpSidebarCol();
-					const frame = col ? col.closest(".pI_x6G_frame") : null;
-					if (frame && e.target === frame) {
-						const btn = mpOfficialToggle();
-						if (btn) btn.click();
-					}
 				}, { capture: true });
 				window.addEventListener("resize", () => { mpSyncMobileAttr(); mpSyncDrawer(); mpScheduleHeaderCenter(); }, { passive: true });
 				// §12：把返回键处理器交给原生。原生拦下系统返回键后调它，
@@ -4281,48 +4080,14 @@ mpSetMenuOpenClass(false);
 
 			function mpBuildShellForMobile() {
 				if (!mpIsMobile()) return; // 修复 40
-				mpClearToggleInline();
-				// 彻底移除旧的/残留的自建按钮。
-				document.querySelectorAll(".mp-nav-btn").forEach((n) => { try { n.remove(); } catch (e) {} });
-				// 有 DSH 官方 panel-left 按钮时不再创建自建按钮。
-				if (document.querySelector('.IW6AQa_iconButton, button[aria-label="打开侧边栏"], button[aria-label="收起侧边栏"]')) return;
 				// 幂等：拆解后重进窄屏会再次调用，别建出第二个汉堡。
 				if (document.querySelector(".mp-nav-btn")) return;
 				const btn = document.createElement("button");
 				btn.type = "button";
 				btn.className = "mp-nav-btn";
 				btn.setAttribute("aria-label", "打开导航");
-				btn.innerHTML = '<svg width="16" height="16" class="mp-nav-icon" data-icon="dsw-icon-panel-left-outline-regular" aria-hidden="true"><use href="#dsw-icon-panel-left-outline-regular"></use></svg>';
-				// web-all 0.4.15 在 document 的 click 捕获层会拦掉汉堡的 click，
-				// 导致“点导航没反应”。用 pointerdown/touchstart 抢在 click 之前，
-				// click 只作桌面/JS 兜底；350ms 防抖避免触摸双触发。
-				let mpNavLastActivate = 0;
-				const mpActivateNav = (e) => {
-					const now = performance.now();
-					if (now - mpNavLastActivate < 350) return;
-					mpNavLastActivate = now;
-					try { e.preventDefault(); e.stopPropagation(); } catch (err) {}
-					mpToggleDrawer();
-				};
-				btn.addEventListener("pointerdown", mpActivateNav, { capture: true });
-				btn.addEventListener("touchstart", mpActivateNav, { capture: true, passive: false });
-				btn.addEventListener("click", (e) => {
-					e.stopPropagation();
-					if (performance.now() - mpNavLastActivate < 500) return;
-					mpToggleDrawer();
-				}, { capture: true });
-				// window 捕获早于 web-all 的 document 捕获；脚本/鼠标的 .click()
-				// 也走这里，避免被 web-all 的 click 拦截层吞掉。
-				window.addEventListener("click", (e) => {
-					const t = e.target;
-					if (!t || !t.closest || !t.closest(".mp-nav-btn")) return;
-					e.preventDefault();
-					e.stopPropagation();
-					e.stopImmediatePropagation();
-					if (performance.now() - mpNavLastActivate < 500) return;
-					mpNavLastActivate = performance.now();
-					mpToggleDrawer();
-				}, { capture: true });
+				btn.innerHTML = '<svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M3 5.5h14M3 10h14M3 14.5h14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
+				btn.addEventListener("click", (e) => { e.stopPropagation(); mpToggleDrawer(); });
 				document.body.appendChild(btn);
 				mpNavBtnEl = btn; // ⭐ 修复 47：自持引用，detached 后也能重挂
 				// 修复 30：汉堡锚定进 header（CSS .mp-nav-btn.mp-in-header 相对 header 定位）。
@@ -5188,17 +4953,12 @@ mpSetMenuOpenClass(false);
 		/**
 		 * 等待「界面真的可用」的上限。
 		 *
-		 * ⚠️ 从 6000 → 9000 → **15000**：9000 时真机冷启动会先打一条「超时兜底」，
-		 *   而它现在带「当前正文」，会被原生侧当成「卡在启动页」去降级救援 —— 慢启动
-		 *   不能被当成卡死。15000 与原生侧 UI_READY_TIMEOUT_MS=20000 错开 5 秒：
-		 *   客户端先放弃、原生侧再兜底，两层各自留出余量。
-		 *
-		 * 原注：从 6000 提到 9000——判据里新增了「官方前端的启动页已消失」，
+		 * ⚠️ 从 6000 提到 9000：判据里新增了「官方前端的启动页已消失」，
 		 *   而那一项实测要等到 "readyState === complete" 之后才满足
 		 *   （旧判据 10231ms 满足，官方启动页 10475ms 才消失），
 		 *   留足余量避免在正常启动路径上误触发超时兜底。
 		 */
-		const UI_READY_MAX_WAIT_MS = 15000;
+		const UI_READY_MAX_WAIT_MS = 9000;
 
 		const MP_TIMING_UNAVAILABLE = "首 token 时间不可用";		const MP_TIMING_NOT_RECORDED = "未记录";
 		const MP_TIMING_STEP_START_UNAVAILABLE = "步骤开始时间不可用";
@@ -10559,24 +10319,18 @@ function mpNavPlugins(create) {
 	}, 300);
 }
 
-/* 创建插件：严格走原版 DSH 的 uiWorkspace.startSession()，不做 DOM 兜底 */
-function mpCreatePluginSession(region) {
+/* 创建插件：起一个新会话，把需求原样写进输入框并发送 */
+function mpCreatePluginSession() {
+	/* 优先：原版 DSH 的调用方式
+	   ctx.uiWorkspace.startSession(void 0, { agentPreset: "cordis", prompt, whenDraftExists: "append" })
+	   提示词取官方 entry-customization 的 createPrompt.conversation。 */
 	const EN = (typeof document !== "undefined" && (document.documentElement.lang || "").toLowerCase().startsWith("en"));
-	const PROMPTS = {
-		sidebar: EN ? "Create a DSH plugin with a left sidebar entry." : "创建一个带左侧栏入口的 DSH 插件。",
-		conversation: EN ? "Create a DSH conversation view plugin." : "创建一个 DSH 会话视图插件。",
-		rightbar: EN ? "Create a DSH plugin with a right sidebar entry." : "创建一个带右侧栏入口的 DSH 插件。",
-	};
-	const OFFICIAL_PROMPT = PROMPTS[region] || PROMPTS.conversation;
+	const OFFICIAL_PROMPT = EN ? "Create a DSH conversation view plugin." : "创建一个 DSH 会话视图插件。";
 	try {
 		const c = window.__mpCtx;
 		const ws = c && typeof c.get === "function" ? c.get("uiWorkspace") : null;
-		/* web-all 会把实例上的 startSession 换成 native 空壳（调用后无任何效果）。
-		   这里取原型链上的 DSH 原版方法并用正确 receiver 调用，参数与官方完全一致。 */
-		const proto = ws ? Object.getPrototypeOf(ws) : null;
-		const start = proto && typeof proto.startSession === "function" ? proto.startSession : (ws && ws.startSession);
-		if (ws && typeof start === "function") {
-			start.call(ws, void 0, {
+		if (ws && typeof ws.startSession === "function") {
+			ws.startSession(void 0, {
 				agentPreset: "cordis",
 				prompt: OFFICIAL_PROMPT,
 				whenDraftExists: "append",
@@ -10584,88 +10338,114 @@ function mpCreatePluginSession(region) {
 			return;
 		}
 	} catch (e) {
-		console.warn("[dsh-android-mobile] 原版 startSession 调用失败:", e && e.message);
+		console.warn("[dsh-android-mobile] 官方 startSession 调用失败，回退 DOM 流程:", e && e.message);
 	}
-	console.warn("[dsh-android-mobile] uiWorkspace 不可用，跳过原版创建插件流程");
-}
-/* 调用官方 EntryMenuContent 的 React onClick；不自己重组 startSession。 */
-function mpInvokeOfficialPluginItem(label, tries) {
-	tries = tries || 0;
-	const all = Array.prototype.slice.call(document.querySelectorAll('button,[role="menuitem"],a,div'));
-	const hit = all.find((e) => {
-		if ((e.textContent || "").trim() !== label) return false;
-		if (e.closest("[data-mp-plugin-item]")) return false;
-		const key = Object.keys(e).find((k) => k.indexOf("__reactProps") === 0);
-		const props = key ? e[key] : null;
-		return !!(props && typeof props.onClick === "function");
-	});
-	if (hit) {
-		const key = Object.keys(hit).find((k) => k.indexOf("__reactProps") === 0);
-		try { hit[key].onClick({ preventDefault() {}, stopPropagation() {}, nativeEvent: {} }); return true; } catch (e) { /* 继续尝试 */ }
+	/* 回退：走「新建会话 → 切成创造模式 → 预填文案」 */
+	const PROMPT = "创建一个带会话视图入口的 DSH 插件。";
+	const PRESETS = /^(标准模式|PTC 模式|极简模式|创造模式|快准狠模式)/;
+	const vis = (el) => {
+		if (!el) return false;
+		const r = el.getBoundingClientRect();
+		return r.width > 0 && r.height > 0;
+	};
+	const scan = (sel, fn) => Array.prototype.slice.call(document.querySelectorAll(sel)).find(fn);
+	/* ① 新建会话：优先屏幕上可见的入口，否则开抽屉点「新建会话」 */
+	const direct = scan("button,a,[role=button]", (e) => vis(e) && /^(新建会话|新建|新会话)$/.test((e.textContent || "").trim()) && (e.textContent || "").trim().length < 12);
+	if (direct) {
+		try { direct.click(); } catch (e) { /* 忽略 */ }
+	} else {
+		const nav = scan("button", (e) => vis(e) && e.getAttribute("aria-label") === "打开导航");
+		if (nav) {
+			try { nav.click(); } catch (e) { /* 忽略 */ }
+			/* 抽屉拉起有动画，单次 600ms 常常点空 → 改成 6 次轮询，点到为止 */
+			let ntries = 0;
+			const tickNew = () => {
+				const neu = scan("button,a,[role=button]", (e) => vis(e) && /^(新建会话|新建|新会话)$/.test((e.textContent || "").trim()) && (e.textContent || "").trim().length < 12);
+				if (neu) { try { neu.click(); } catch (e) { /* 忽略 */ } return; }
+				if (++ntries < 6) setTimeout(tickNew, 300);
+			};
+			setTimeout(tickNew, 400);
+		}
 	}
-	if (tries < 8) {
-		const more = document.querySelector(".wSkVaW_viewsMore");
-		if (more) { try { more.click(); } catch (e) { /* 忽略 */ } }
-		setTimeout(() => { try { mpInvokeOfficialPluginItem(label, tries + 1); } catch (e) { /* 忽略 */ } }, 80);
-	}
-	return false;
+	setTimeout(() => {
+		const collapse = scan("button", (e) => vis(e) && /收起侧边栏/.test(e.getAttribute("aria-label") || ""));
+		if (collapse) { try { collapse.click(); } catch (e) { /* 忽略 */ } }
+	}, 1500);
+	/* ② 切创造模式；③ 等编辑器稳定为空后写一次；④ 30 秒内被清空就补回（最多 3 次） */
+	let ticks = 0;
+	let presetOK = false;
+	let presetTries = 0;
+	let lastPresetClick = 0;
+	let wrote = 0;
+	let lastWrite = 0;
+	let emptySince = 0;
+	const timer = setInterval(() => {
+		ticks++;
+		if (ticks > 140) { clearInterval(timer); return; }
+		const ed = document.querySelector('[contenteditable="true"][role="textbox"], [contenteditable="true"]') || document.querySelector("textarea");
+		if (!ed) return;
+		const txt = ((ed.value !== undefined ? ed.value : ed.textContent) || "");
+		const clean = txt.trim();
+		/* ② 模式 */
+		if (!presetOK) {
+			const trig = scan("button,[role=button]", (e) => {
+				if (!vis(e)) return false;
+				const aria = e.getAttribute("aria-label") || "";
+				const t = (e.textContent || "").trim();
+				return !aria && PRESETS.test(t) && t.length < 20;
+			});
+			if (!trig) { if (++presetTries > 30) presetOK = true; return; }
+			if (/^创造模式/.test((trig.textContent || "").trim())) { presetOK = true; return; }
+			if (Date.now() - lastPresetClick < 1200) return;
+			lastPresetClick = Date.now();
+			try { trig.click(); } catch (e) { /* 忽略 */ }
+			setTimeout(() => {
+				const item = scan('[role="menuitem"], [role="option"]', (e) => /^创造模式/.test((e.textContent || "").trim()));
+				if (item) { try { item.click(); } catch (e) { /* 忽略 */ } }
+			}, 250);
+			if (++presetTries > 30) presetOK = true;
+			return;
+		}
+		/* ③ 写文案 */
+		if (clean === PROMPT) {
+			emptySince = 0;
+			try {
+				const r = document.createRange();
+				r.selectNodeContents(ed);
+				r.collapse(false);
+				const sel = window.getSelection();
+				sel.removeAllRanges();
+				sel.addRange(r);
+				if (document.activeElement !== ed) ed.focus();
+			} catch (e) { /* 忽略 */ }
+			return;
+		}
+		if (clean.length === 0) {
+			if (!emptySince) emptySince = Date.now();
+			if (Date.now() - emptySince < 1200) return;   /* 等它稳定为空 */
+		} else if (clean.indexOf("DSH 插件") < 0) {
+			clearInterval(timer);                          /* 主人自己写了别的 */
+			return;
+		}
+		if (wrote >= 3) { clearInterval(timer); return; }
+		if (Date.now() - lastWrite < 1500) return;
+		lastWrite = Date.now();
+		wrote++;
+		emptySince = 0;
+		try {
+			ed.focus();
+			const dt = new DataTransfer();
+			dt.setData("text/plain", PROMPT);
+			ed.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
+		} catch (e) { try { document.execCommand("insertText", false, PROMPT); } catch (e2) { /* 忽略 */ } }
+	}, 300);
 }
-function mpInstallThirdPartyCss() {
-	if (typeof document === "undefined" || document.getElementById("mp-thirdparty-adapt")) return;
-	const st = document.createElement("style");
-	st.id = "mp-thirdparty-adapt";
-	st.textContent = `
-/* dshmarket：市场根节点复用了官方的 uV2eYG_root，被 align-items:center 压成 32px */
-.nUhMVa_root { align-items: stretch !important; padding-left: 0 !important; padding-right: 0 !important; }
-.nUhMVa_head, .nUhMVa_body { width: 100% !important; max-width: none !important; box-sizing: border-box !important; }
-.nUhMVa_head { padding-left: 16px !important; padding-right: 16px !important; }
-.nUhMVa_headTop, .nUhMVa_body, .nUhMVa_row1, .nUhMVa_card { min-width: 0 !important; }
-.nUhMVa_card, .nUhMVa_banner, .nUhMVa_modalNote { overflow-wrap: anywhere; }
-.nUhMVa_stickyHead { max-width: 100% !important; }
-.nUhMVa_confirmModal { max-width: calc(100vw - 24px) !important; max-height: calc(100dvh - 32px) !important; overflow: auto !important; }
-@media (max-width: 768px) {
-  .nUhMVa_recentRow { scroll-snap-type: x proximity; -webkit-overflow-scrolling: touch; padding-bottom: 8px !important; }
-  .nUhMVa_recentTile { scroll-snap-align: start; }
-  .nUhMVa_stickyHead { overflow-x: auto !important; overflow-y: hidden !important; scrollbar-width: none; }
-  .nUhMVa_stickyHead::-webkit-scrollbar { display: none; }
-}
-/* dsh-web-all：移动端抽屉已有 mp-drawer-mask，去掉它叠加的第二层 ::after 遮罩 */
-html[data-mp-drawer-open] [data-dsh-frame]::after { content: none !important; }
-html[data-dsh-frame-active] [data-dsh-frame] { min-height: 0 !important; }
-/* dsh-web-all 的折叠态会把侧栏钉成 52px 图标条；关闭时完全收起，打开时恢复抽屉宽度 */
-html[data-mobile] [data-dsh-frame] [data-pane="sidebar"]:not(.mp-drawer-open) {
-  display: none !important;
-}
-html[data-mobile] [data-dsh-frame] [data-pane="sidebar"].mp-drawer-open {
-  display: block !important;
-  position: fixed !important;
-  left: 0 !important;
-  top: 0 !important;
-  bottom: 0 !important;
-  width: min(320px, 85vw) !important;
-  z-index: 1100 !important;
-  pointer-events: auto !important;
-}
-`;
-	document.head.appendChild(st);
-}
-function mpDetectPluginRegion() {
-	const anchor = document.querySelector(
-		'[aria-haspopup="menu"][aria-expanded="true"], ' +
-		'[class*="moreAnchor"] [aria-expanded="true"], ' +
-		'[class*="panelRow"][aria-expanded="true"]'
-	);
-	if (!anchor) return "conversation";
-	if (anchor.closest('[data-sidebar-right-guide], [class*="rightbarCol"], [class*="sidebarRight"], [data-sidebar-right]')) return "rightbar";
-	if (anchor.closest('[class*="sidebarCol"], [class*="sidebarRoot"], [data-dsh-responsive-part="sidebar"]')) return "sidebar";
-	return "conversation";
-}
+
 function mpInjectHeaderMenuItems() {
 	const ICONS = ["dsw-icon-plugin-pinwheel-outline-regular", "dsw-icon-plus-outline-regular"];
-	const region = mpDetectPluginRegion();
 	const targets = [
 		{ label: "浏览更多插件", icon: ICONS[0], action: () => mpNavPlugins(false) },
-		{ label: "创建你的插件", icon: ICONS[1], action: () => mpCreatePluginSession(region) },
+		{ label: "创建你的插件", icon: ICONS[1], action: () => mpCreatePluginSession() },
 	];
 	const wraps = Array.prototype.slice.call(document.querySelectorAll('[class*="_itemWrap_"]'));
 	/* 锚点：官方「反馈」那一行 —— 两行插件入口插在它前面 */
@@ -10693,9 +10473,8 @@ function mpInjectHeaderMenuItems() {
 			btn.addEventListener("click", (ev) => {
 				ev.preventDefault();
 				ev.stopPropagation();
-				try { t.action(); } finally {
-					try { document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); } catch (e) { /* 忽略 */ }
-				}
+				try { document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); } catch (e) { /* 忽略 */ }
+				t.action();
 			}, true);
 		}
 		vp.insertBefore(wrap, anchor);
@@ -10834,36 +10613,6 @@ function apply(ctx) {
 			window.__mpTrimSessionMenu = mpTrimSessionMenu;
 			window.__mpCreatePluginSession = mpCreatePluginSession;
 			window.__mpCtx = ctx;   /* 官方插件上下文：mpCreatePluginSession 用它取 uiWorkspace */
-			mpInstallThirdPartyCss();
-			/* 修复 70：web-all 在启动后会把实例上的 startSession 再换成空壳；
-			   在捕获阶段接管官方「创建你的插件」菜单项，直接走原型链原版方法。 */
-			if (!window.__mpCreatePluginClickGuard) {
-				window.__mpCreatePluginClickGuard = true;
-				document.addEventListener("click", (e) => {
-					const t = e.target instanceof Element ? e.target : null;
-					if (!t) return;
-					const item = t.closest('[role="menuitem"], button');
-					if (!item || item.closest("[data-mp-plugin-item]")) return;
-					const label = (item.textContent || "").trim();
-					if (label !== "创建你的插件" && label !== "Create your plugin") return;
-					e.preventDefault();
-					e.stopImmediatePropagation();
-					const rr = item.getBoundingClientRect();
-					const region = rr.left > window.innerWidth * 0.55 ? "rightbar"
-						: rr.right < window.innerWidth * 0.45 ? "sidebar"
-						: mpDetectPluginRegion();
-					mpCreatePluginSession(region);
-				}, true);
-			}
-			/* 修复 69：web-all 启用时实例上的 startSession 是 native 空壳；
-			   把原型链上的 DSH 原版方法装回实例，官方左/右栏菜单项也会走同一条修复路径。 */
-			try {
-				const ws0 = ctx.get("uiWorkspace");
-				const proto0 = ws0 && Object.getPrototypeOf(ws0);
-				if (ws0 && proto0 && typeof proto0.startSession === "function") {
-					ws0.startSession = proto0.startSession;
-				}
-			} catch (e) { /* 静默 */ }
 if (!window.__mpHeaderMenuTimer) {
 				window.__mpHeaderMenuTimer = setInterval(() => {
 					try { mpInjectHeaderMenuItems(); } catch (e) { /* 静默 */ }
