@@ -70,6 +70,22 @@ PATCHES = [
         "rel": "node_modules/@deepseek-ai/dsh-llm/lib/index.js",
         "pairs": [("LLM_TOOLID_GUARD", "LLM_TOOLID_ANCHOR")],
     },
+    {
+        "name": "attachment-durability",
+        "rel": "node_modules/@deepseek-ai/dsh-attachment-local/lib/index.js",
+        "pairs": [("ATTACH_SYNC_GUARD", "ATTACH_SYNC_ANCHOR")],
+    },
+    {
+        "name": "fail-loud-exit",
+        "rel": "node_modules/@deepseek-ai/dsh-app-boot/lib/index.js",
+        "pairs": [("FAIL_LOUD_EXIT_GUARD", "FAIL_LOUD_ANDROID_ANCHOR")],
+        "all": True,
+    },
+    {
+        "name": "image-media-type",
+        "rel": "node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js",
+        "pairs": [("IMG_TYPE_GUARD", "IMG_TYPE_ANCHOR")],
+    },
 ]
 
 
@@ -100,12 +116,14 @@ def main() -> int:
             guard, anchor = consts[g], consts[a]
             if after.count(anchor) > 0:
                 continue
-            if after.count(guard) != 1:
-                print(f"[FAIL] {spec['name']}: guard {g} 命中 {after.count(guard)} 次（要 1）")
+            n = after.count(guard)
+            want_all = spec.get("all", False)
+            if n < 1 or (not want_all and n != 1):
+                print(f"[FAIL] {spec['name']}: guard {g} 命中 {n} 次")
                 failures += 1
                 ok = False
                 break
-            after = after.replace(guard, anchor, 1)
+            after = after.replace(guard, anchor) if want_all else after.replace(guard, anchor, 1)
         if not ok:
             continue
         if after == before:

@@ -1,10 +1,34 @@
 {
   "patches": {
+    "attachment-durability.diff": {
+      "0.2.2-rc.1": {
+        "node_modules/@deepseek-ai/dsh-attachment-local/lib/index.js": {
+          "after": "837bfeb52b63107c93ff3a0e9486f8681a13d91eced243e3f3590fc2a23fa875",
+          "before": "ff717f87226b59d6224aff67796b43d5fd72b98d0e74fa91a952affaf3285f9d"
+        }
+      }
+    },
     "deepseek-tool-order.diff": {
       "0.2.2-rc.1": {
         "node_modules/@deepseek-ai/dsh-llm-deepseek/lib/index.js": {
           "after": "51f066bd571916cdd696445a329175f8d0827c82c1ad7c3867a7905d701951b4",
           "before": "955dc7bc7ca6c857ff4a7e373b87c143b96a4c43fc80325b67dc0982600dcc75"
+        }
+      }
+    },
+    "fail-loud-exit.diff": {
+      "0.2.2-rc.1": {
+        "node_modules/@deepseek-ai/dsh-app-boot/lib/index.js": {
+          "after": "03b8440f567db86a12786585310bf23dd5a7bebb69f66f907ea1bd43c5fb3e9f",
+          "before": "346f832224737cd9ab1b5e37d111ae232fdd78b5ab892fa3179c112baf6f0a22"
+        }
+      }
+    },
+    "image-media-type.diff": {
+      "0.2.2-rc.1": {
+        "node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js": {
+          "after": "3c7838858c6cfce1f4a767cbe64138ac0b94e71de3f34c4a16c1169ef871ce2a",
+          "before": "9a37949cc76603ea3a965ce4d0d6ca65885de4a9808345c38748e595ac396378"
         }
       }
     },

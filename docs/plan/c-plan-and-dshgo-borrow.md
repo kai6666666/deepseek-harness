@@ -376,13 +376,13 @@ node:sqlite                                  sqlite    ✅
 - [ ] 沙箱边界复验（C 方案文档的四组）：readonly 写 `/tmp` 拒绝、workspace-write 内成功、ws 外拒绝、`mkdirat` 逃逸拒绝、`/dev/null` 可写、python `open` 内外行为、`sed -i` 拒绝
 - **门禁 P3**：`tools/verify-c.sh` 四组全绿（平台翻面 / 官方预编译 / 沙箱边界 / 端到端）
 
-### P4 · 补丁工程化 + UI 契约（🟡 P4b 首批 3/6 已落地，P4a/P4c 待做）
+### P4 · 补丁工程化 + UI 契约（🟢 补丁 6/6 已迁构建期；剩 bionic 删除与 UI 迁移）
 
-**已完成：构建期 diff + 双哈希 pin（3 个补丁）**
+**已完成：构建期 diff + 双哈希 pin（6 个补丁）**
 
 - `tools/runtime/make-patches.py`：从 `EngineManager.kt` 常量自动生成 `.diff` + `pins.json`（before/after 双 sha）
 - `tools/runtime/apply-patches.py`：三态应用器（already / apply / mismatch→exit 1）
-- `runtime/patches/`：`deepseek-tool-order.diff`、`pi-ai-tool-call-id.diff`、`llm-tool-call-id-fallback.diff` + `pins.json`
+- `runtime/patches/`：六个 diff —— `deepseek-tool-order`、`pi-ai-tool-call-id`、`llm-tool-call-id-fallback`、`attachment-durability`、`fail-loud-exit`、`image-media-type` + `pins.json`
 - `build-runtime.sh` 在 npm 安装后自动应用，任一 mismatch 即构建失败
 
 验证：
@@ -411,7 +411,7 @@ node:sqlite                                  sqlite    ✅
 - 覆盖度：我方 `client.js` 的 60 个引用里 **59** 个能在 contract 中找到
 - **首个死选择器**：`bOPqQW_root` 在引擎里已不存在（只剩 `_anchor/_pill/_label/_sep`）——静默失效，已记录，`--dead` 检查待做
 
-**待做（P4 剩余）**：①4 个 bionic 补丁的删除**推迟到 P5 接线后**——它们要端到端跑一遍 flock/终端/进程/图片才能确认可删，盲删会把故障留到真机；②另外 3 个内联补丁迁 diff；③contract 抽取与逐文件迁移。
+**剩余**：①4 个 bionic 补丁删除（推迟到 P5 回归）；②`patchFailLoudExit` 的第 2 步（`profile-boot-<hash>.js`，文件名随构建变）仍留运行期；③`client.js` 59 个哈希引用逐条迁 `data-*`/contract。
 
 原始任务清单（保留作对照）：
 

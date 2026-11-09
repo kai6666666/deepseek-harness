@@ -1,0 +1,16 @@
+--- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
++++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
+@@ -5138,7 +5138,12 @@
+ 		* @returns whether the file is an accepted raster image.
+ 		*/
+ 		function isImageMediaType(value) {
+-			return value === "image/png" || value === "image/jpeg" || value === "image/webp" || value === "image/gif";
++			if (typeof value !== "string") return false;
++			/* DSH Android: 放宽到任何 image/ 前缀。原版只认 4 个精确值，
++			   而 image/jpg、image/heic、image/avif、image/bmp 以及剪贴板粘贴
++			   的空 type 都会被误拒，用户看到的是「仅支持 PNG、JPG、WebP、GIF」。
++			   真正的解码能力由下游 sharp 判断，那里报错更准确。 */
++			return value.startsWith("image/");
+ 		}
+ 		function revokePreview(url) {
+ 			if (url.startsWith("blob:")) URL.revokeObjectURL(url);

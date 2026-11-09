@@ -186,7 +186,7 @@ log "tar + xz（SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH）"
     -cf - . ) | xz -6e -T0 > "$ASSET_DIR/rootfs-$ABI.tar.xz"
 
 # ---------- 5. manifest ----------
-INPUTS=$( { cat "$0"; sha256sum "$PROOT_DEB" "$TALLOC_DEB" "$SHMEM_DEB" "$NODE_TAR" "$UBUNTU_TAR"; } | sha256sum | cut -c1-12 )
+INPUTS=$( { cat "$0"; sha256sum "$PROOT_DEB" "$TALLOC_DEB" "$SHMEM_DEB" "$NODE_TAR" "$UBUNTU_TAR"; find "$REPO_ROOT/runtime/patches" -type f -print0 | sort -z | xargs -0 sha256sum; } | sha256sum | cut -c1-12 )
 RUNTIME_VERSION="r1-dsh${DSH_VERSION}-node${NODE_VERSION}-ubuntu${UBUNTU_VERSION}-${INPUTS}"
 
 ROOTFS_SHA=$(sha256sum "$ASSET_DIR/rootfs-$ABI.tar.xz" | cut -d' ' -f1)
