@@ -3541,7 +3541,7 @@ mpSetMenuOpenClass(false);
 			var mpInlineBar = null;
 			var mpInlineSig = "";
 			function mpOfficialTabs() {
-				return Array.prototype.slice.call(document.querySelectorAll(".wSkVaW_tabs .wSkVaW_tab"));
+				return Array.prototype.slice.call(document.querySelectorAll(".wSkVaW_tabs [role=tab]"));
 			}
 			function mpBuildInlineBar() {
 				/* 修复 30d：改为官方 tabs 直出，镜像条彻底停用 */
@@ -3688,7 +3688,7 @@ mpSetMenuOpenClass(false);
 					d.style.cssText = "position:fixed;left:4px;top:120px;z-index:99999;background:#c00;color:#fff;font:10px/1.25 monospace;padding:3px 5px;border-radius:4px;max-width:96vw;white-space:pre-wrap;";
 					document.body.appendChild(d);
 				}
-				const tabs = [...document.querySelectorAll(".wSkVaW_tab")];
+				const tabs = [...document.querySelectorAll("[role=tab]")];
 				const bar = document.querySelector(".mp-inline-views");
 				const badge = document.querySelector("header[data-window-drag]Actions > *");
 				const br = badge ? badge.getBoundingClientRect() : null;
@@ -3716,7 +3716,7 @@ mpSetMenuOpenClass(false);
 
 			   这里补一个同款按钮 + 同款菜单：
 			     · 只在官方 ⋯ 不存在时注入，官方出现就自动让位（不会两个⋯）
-			     · 菜单项直接读当前所有 .wSkVaW_tab，点哪项就点对应 tab
+			     · 菜单项直接读当前所有 [role=tab]，点哪项就点对应 tab
 			     · 额外提供「会话层级」（若页面上存在对应控件）
 			   纯 DOM 层，不碰 React 子树；官方重渲染把按钮摘掉后，
 			   下一帧 mpScheduleHeaderCenter 会重新挂回去（同修复 47 的自持引用思路）。 */
@@ -3730,7 +3730,7 @@ mpSetMenuOpenClass(false);
 
 			function mpToggleViewsMenu() {
 				if (mpViewsMenuEl) { mpCloseViewsMenu(); return; }
-				const tabs = Array.prototype.slice.call(document.querySelectorAll("[data-mobile] .wSkVaW_tab"));
+				const tabs = Array.prototype.slice.call(document.querySelectorAll("[data-mobile] [role=tab]"));
 				if (!tabs.length) return;
 				const menu = document.createElement("div");
 				menu.className = "mp-views-menu";
@@ -4170,7 +4170,7 @@ mpSetMenuOpenClass(false);
 			//   幂等键用 data-mp-item="view-switch"，标签随状态重写（同一项切换，不堆两项）。
 			function mpInjectTraceItem(list) {
 				if (!mpIsMobile()) return; // 修复 40：仅移动端；桌面端完全走官方
-				const tabs = [...document.querySelectorAll(".wSkVaW_tab")];
+				const tabs = [...document.querySelectorAll("[role=tab]")];
 				if (!tabs.length) return;
 				const isActive = (t) => (t.className || "").toString().includes("tabActive") || t.getAttribute("aria-selected") === "true";
 				const active = tabs.find(isActive);
@@ -4200,7 +4200,7 @@ mpSetMenuOpenClass(false);
 				};
 				mpInjectMenuItem(list, "view-switch", targetLabel, iconFor(targetLabel), () => {
 					// 点击瞬间按当前激活 tab 重新算目标（不用闭包里的旧值）
-					const now = [...document.querySelectorAll(".wSkVaW_tab")];
+					const now = [...document.querySelectorAll("[role=tab]")];
 					const act = now.find(isActive);
 					const next = !!act && (act.textContent || "").trim() === "轨迹" ? "对话" : "轨迹";
 					const tab = now.find((x) => (x.textContent || "").trim() === next);
@@ -10214,7 +10214,7 @@ function mpViewsMoreActions(props) {
 	// 直接读 DOM 里的 tab 兜底，保证菜单永远有内容。
 	let list = entries.map((it) => ({ id: it.id, label: it.label, active: !!it.active, el: null }));
 	if (!list.length) {
-		const els = Array.prototype.slice.call(document.querySelectorAll("[data-mobile] .wSkVaW_tab"));
+		const els = Array.prototype.slice.call(document.querySelectorAll("[data-mobile] [role=tab]"));
 		list = els.map((el, i) => ({
 			id: "dom-" + i,
 			label: (el.textContent || "").trim(),
