@@ -1,10 +1,10 @@
 {
-  "unique": 74,
+  "unique": 72,
   "files": 4,
   "rows": [
     {
       "file": "mobile-ui-plugin/dsh-android-mobile/lib/client.js",
-      "count": 68,
+      "count": 66,
       "classes": [
         ".JObwrW_trigger",
         ".Nqubda_panel",
@@ -62,8 +62,6 @@
         ".wSkVaW_crumbCurrent",
         ".wSkVaW_crumbSeg",
         ".wSkVaW_crumbs",
-        ".wSkVaW_header",
-        ".wSkVaW_headerCorner",
         ".wSkVaW_root",
         ".wSkVaW_scrollBody",
         ".wSkVaW_tab",

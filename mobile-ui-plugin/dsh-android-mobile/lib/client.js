@@ -97,20 +97,20 @@ window.__ModuleLoader__.load({
   min-width: 0;
   overflow: hidden;
 }
-[data-mobile] .wSkVaW_headerActions {
+[data-mobile] header[data-window-drag]Actions {
   flex-wrap: wrap;
   row-gap: 4px;
   flex: 1 1 auto !important;
   min-width: 0 !important;
   width: 100% !important;
 }
-[data-mobile] .wSkVaW_headerUtilities {
+[data-mobile] header[data-window-drag]Utilities {
   margin-left: 0 !important;
 }
 [data-mobile] .wSkVaW_titleRow {
   gap: 2px 4px;
 }
-[data-mobile] .wSkVaW_headerUtilities {
+[data-mobile] header[data-window-drag]Utilities {
   margin-left: 0 !important;
 }
 
@@ -241,7 +241,7 @@ window.__ModuleLoader__.load({
   background: var(--dsw-alias-interactive-bg-hover, rgba(127, 127, 127, .15));
 }
 /* 官方 header 给汉堡让出左侧空间（标题不再被压住） */
-[data-mobile] .wSkVaW_header {
+[data-mobile] header[data-window-drag] {
   padding-left: 52px !important;
 }
 
@@ -251,7 +251,7 @@ window.__ModuleLoader__.load({
    ② 标题居中，模式徽章（创造模式等）显示在标题下方
    ③ 汉堡 / ⋯ / 右侧栏按钮绝对定位于 header 两角
    实测 header 高度 85px → 55px。⚠️ 官方 min-height:76px 写死，必须覆盖。 */
-[data-mobile] .wSkVaW_header {
+[data-mobile] header[data-window-drag] {
   position: relative !important;
   /* ⭐ 修复 30b：header 必须 self-elevate。修复 30 的 position:relative 让 header
      变成层叠上下文，而消息流容器在 DOM 里排在 header 之后（同层级后画者胜）→
@@ -295,9 +295,9 @@ window.__ModuleLoader__.load({
      · 用 min-height 而非 height：标题换行、大字号或横屏时仍能自然变高，
        不会把内容裁掉（配合上面的 height:auto）。
      · 本条必须排在修复 30 的 min-height:0 之后：同为
-       [data-mobile] .wSkVaW_header + !important，靠书写顺序取胜。
+       [data-mobile] header[data-window-drag] + !important，靠书写顺序取胜。
      · 想调比例只动 JS 里的 MP_HDR_SCALE（1.25 = +25%），不要回来写死像素。 */
-[data-mobile] .wSkVaW_header {
+[data-mobile] header[data-window-drag] {
   min-height: var(--mp-hdr-h, 0px) !important;
 }
 
@@ -324,8 +324,8 @@ window.__ModuleLoader__.load({
    ⚠️ SVAs4q_label 是构建期哈希类名，官方升级可能变；所以同时给一条
       结构性兜底（headerActions 里带 title 的 span）。同槽位的其他条目
       （subagent-catalog / job-list）都是按钮，不会被这条误伤。 */
-[data-mobile] .wSkVaW_headerActions .SVAs4q_label,
-[data-mobile] .wSkVaW_headerActions span[title] {
+[data-mobile] header[data-window-drag]Actions .SVAs4q_label,
+[data-mobile] header[data-window-drag]Actions span[title] {
   display: inline-flex !important;
 }
 /* 修复 30f：回退到插件的原样 —— tabs 整排不显示，视图 ⋯ 不显示，
@@ -493,7 +493,7 @@ window.__ModuleLoader__.load({
   text-overflow: ellipsis !important;
   white-space: nowrap !important;
 }
-[data-mobile] .wSkVaW_headerActions {
+[data-mobile] header[data-window-drag]Actions {
   flex-wrap: nowrap !important;
   width: auto !important;
   flex: 0 0 auto !important;
@@ -518,7 +518,7 @@ window.__ModuleLoader__.load({
   transform: translateY(-50%) !important;
 }
 /* 修复 57：回到 flex 流内（原先 absolute + right:44px 是重叠的根因）。 */
-[data-mobile] .wSkVaW_headerUtilities {
+[data-mobile] header[data-window-drag]Utilities {
   position: static !important;
   right: auto !important;
   left: auto !important;
@@ -527,7 +527,7 @@ window.__ModuleLoader__.load({
   margin-left: 0 !important;
   flex: 0 0 auto !important;
 }
-[data-mobile] .wSkVaW_headerCorner {
+[data-mobile] header[data-window-drag]Corner {
   position: static !important;
   right: auto !important;
   left: auto !important;
@@ -557,7 +557,7 @@ window.__ModuleLoader__.load({
    识别方式：用官方稳定属性 [data-open-target]（值是 directory/file），
      不依赖会随发布变化的 CSSModule hash，也不用 :has()（旧内核可能不支持）。
    桌面端：无 data-mobile → 规则不命中，按钮与布局完全不变。 */
-[data-mobile] .wSkVaW_headerUtilities [data-open-target] {
+[data-mobile] header[data-window-drag]Utilities [data-open-target] {
   display: none !important;
 }
 
@@ -1286,7 +1286,7 @@ window.__ModuleLoader__.load({
      标题 y 150..215，重叠约 65px）。
 
    根因（官方布局 + 本插件的挂载策略共同导致，不是单方面的锅）：
-     ① 「.wSkVaW_header」（含 ⋯ 那一行顶栏）属于 **conversation 插件**，
+     ① 「header[data-window-drag]」（含 ⋯ 那一行顶栏）属于 **conversation 插件**，
         切到 main panel 时 conversation 整体卸载 → 顶栏连同一整行都没了；
      ② 本插件的汉堡由 mpAnchorBurger() 挂载：有顶栏时进 header（absolute），
         **没有顶栏时回落到 document.body（fixed 左上角浮层）** —— 这一步本身
@@ -3356,7 +3356,7 @@ mpSetMenuOpenClass(false);
 					if (root.style.getPropertyValue("--mp-hdr-padl")) root.style.removeProperty("--mp-hdr-padl");
 					return;
 				}
-				const header = document.querySelector(".wSkVaW_header");
+				const header = document.querySelector("header[data-window-drag]");
 				const row = header && header.querySelector(".wSkVaW_titleRow");
 				const cluster = row && row.querySelector(".wSkVaW_titleCluster");
 				if (!header || !row || !cluster) return;
@@ -3405,7 +3405,7 @@ mpSetMenuOpenClass(false);
 					mpHdrKey = "";
 					return;
 				}
-				const header = document.querySelector(".wSkVaW_header");
+				const header = document.querySelector("header[data-window-drag]");
 				const row = header && header.querySelector(".wSkVaW_titleRow");
 				// 官方 header 是空壳（Hero 页 / 尚未渲染）时不动，免得把 0 当基线
 				if (!header || !row) return;
@@ -3548,7 +3548,7 @@ mpSetMenuOpenClass(false);
 				return;
 				const root = document.documentElement;
 				if (!root.hasAttribute("data-mobile")) return;
-				const header = document.querySelector(".wSkVaW_header");
+				const header = document.querySelector("header[data-window-drag]");
 				if (!header) return;
 				/* ★ 挂 body + position:fixed：React 重渲染 header 时不会把它摘掉，
 				   也就没有「搬进去被裁、被重置」这一整类问题。位置由下面实时算。 */
@@ -3614,7 +3614,7 @@ mpSetMenuOpenClass(false);
 				/* 摆位：贴在「标准模式」徽章右侧、同一条水平线 */
 				try {
 					const hr = header.getBoundingClientRect();
-					const badge = header.querySelector(".wSkVaW_headerActions > *");
+					const badge = header.querySelector("header[data-window-drag]Actions > *");
 					let br = badge ? badge.getBoundingClientRect() : null;
 					if (br && (br.width < 1 || br.height < 1)) br = null;
 					const bw = bar.getBoundingClientRect().width || 120;
@@ -3690,10 +3690,10 @@ mpSetMenuOpenClass(false);
 				}
 				const tabs = [...document.querySelectorAll(".wSkVaW_tab")];
 				const bar = document.querySelector(".mp-inline-views");
-				const badge = document.querySelector(".wSkVaW_headerActions > *");
+				const badge = document.querySelector("header[data-window-drag]Actions > *");
 				const br = badge ? badge.getBoundingClientRect() : null;
 				const rr = bar ? bar.getBoundingClientRect() : null;
-				const hr = document.querySelector(".wSkVaW_header");
+				const hr = document.querySelector("header[data-window-drag]");
 				const hrr = hr ? hr.getBoundingClientRect() : null;
 				d.textContent = "tabsN=" + tabs.length + " txt=" + tabs.map(t => t.textContent.trim()).join(",")
 					+ "\nbar=" + (bar ? "y" : "n") + (rr ? " " + Math.round(rr.left) + "," + Math.round(rr.top) + " " + Math.round(rr.width) + "x" + Math.round(rr.height) : "")
@@ -3777,7 +3777,7 @@ mpSetMenuOpenClass(false);
 
 			function mpEnsureViewsMore() {
 				if (!mpIsMobile()) return;
-				const tabsRow = document.querySelector(".wSkVaW_header .wSkVaW_tabs") || document.querySelector(".wSkVaW_tabs");
+				const tabsRow = document.querySelector("header[data-window-drag] .wSkVaW_tabs") || document.querySelector(".wSkVaW_tabs");
 				if (!tabsRow) { return; }
 				// 官方 ⋯ 在（profile 有 entry actions）→ 我们的让位
 				const official = tabsRow.querySelector(".wSkVaW_viewsMore:not(.mp-views-more)");
@@ -3836,7 +3836,7 @@ mpSetMenuOpenClass(false);
 				const btn = document.querySelector(".mp-nav-btn") || mpNavBtnEl;
 				if (!btn) return;
 				mpNavBtnEl = btn;
-				const header = document.querySelector(".wSkVaW_header");
+				const header = document.querySelector("header[data-window-drag]");
 				const usable = header && header.querySelector(".wSkVaW_titleRow");
 				if (usable) {
 					if (btn.isConnected && btn.parentElement === header) return;
@@ -4243,7 +4243,7 @@ mpSetMenuOpenClass(false);
 				if (!mpIsMobile()) return;
 				mpBindMoreButton();
 				mpEnableTitleTap();
-				const header = document.querySelector(".wSkVaW_header");
+				const header = document.querySelector("header[data-window-drag]");
 				if (!header || header.dataset.mpRenameBound) return;
 				header.dataset.mpRenameBound = "1";
 				header.addEventListener("click", (e) => {
@@ -10528,7 +10528,7 @@ function apply(ctx) {
 					try {
 						document.querySelectorAll(".mp-inline-views").forEach((n) => n.remove());
 						if (!document.documentElement.hasAttribute("data-mobile")) return;
-						const header = document.querySelector(".wSkVaW_header");
+						const header = document.querySelector("header[data-window-drag]");
 						const row = document.querySelector(".wSkVaW_tabs");
 						if (!header || !row) return;
 						/* React 可能把 display 改回 none / 宽度改窄，每 tick 守一次 */
