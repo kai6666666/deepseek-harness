@@ -97,20 +97,20 @@ window.__ModuleLoader__.load({
   min-width: 0;
   overflow: hidden;
 }
-[data-mobile] header[data-window-drag]Actions {
+[data-mobile] header[data-window-drag] [class*="headerActions"] {
   flex-wrap: wrap;
   row-gap: 4px;
   flex: 1 1 auto !important;
   min-width: 0 !important;
   width: 100% !important;
 }
-[data-mobile] header[data-window-drag]Utilities {
+[data-mobile] header[data-window-drag] [class*="headerUtilities"] {
   margin-left: 0 !important;
 }
 [data-mobile] [data-slot='conversation.session.header'] > div:first-child {
   gap: 2px 4px;
 }
-[data-mobile] header[data-window-drag]Utilities {
+[data-mobile] header[data-window-drag] [class*="headerUtilities"] {
   margin-left: 0 !important;
 }
 
@@ -311,8 +311,8 @@ window.__ModuleLoader__.load({
    ⚠️ SVAs4q_label 是构建期哈希类名，官方升级可能变；所以同时给一条
       结构性兜底（headerActions 里带 title 的 span）。同槽位的其他条目
       （subagent-catalog / job-list）都是按钮，不会被这条误伤。 */
-[data-mobile] header[data-window-drag]Actions .SVAs4q_label,
-[data-mobile] header[data-window-drag]Actions span[title] {
+[data-mobile] header[data-window-drag] [class*="headerActions"] .SVAs4q_label,
+[data-mobile] header[data-window-drag] [class*="headerActions"] span[title] {
   display: inline-flex !important;
 }
 /* 修复 30f：回退到插件的原样 —— tabs 整排不显示，视图 ⋯ 不显示，
@@ -480,7 +480,7 @@ window.__ModuleLoader__.load({
   text-overflow: ellipsis !important;
   white-space: nowrap !important;
 }
-[data-mobile] header[data-window-drag]Actions {
+[data-mobile] header[data-window-drag] [class*="headerActions"] {
   flex-wrap: nowrap !important;
   width: auto !important;
   flex: 0 0 auto !important;
@@ -505,7 +505,7 @@ window.__ModuleLoader__.load({
   transform: translateY(-50%) !important;
 }
 /* 修复 57：回到 flex 流内（原先 absolute + right:44px 是重叠的根因）。 */
-[data-mobile] header[data-window-drag]Utilities {
+[data-mobile] header[data-window-drag] [class*="headerUtilities"] {
   position: static !important;
   right: auto !important;
   left: auto !important;
@@ -514,7 +514,7 @@ window.__ModuleLoader__.load({
   margin-left: 0 !important;
   flex: 0 0 auto !important;
 }
-[data-mobile] header[data-window-drag]Corner {
+[data-mobile] header[data-window-drag] [class*="headerCorner"] {
   position: static !important;
   right: auto !important;
   left: auto !important;
@@ -544,7 +544,7 @@ window.__ModuleLoader__.load({
    识别方式：用官方稳定属性 [data-open-target]（值是 directory/file），
      不依赖会随发布变化的 CSSModule hash，也不用 :has()（旧内核可能不支持）。
    桌面端：无 data-mobile → 规则不命中，按钮与布局完全不变。 */
-[data-mobile] header[data-window-drag]Utilities [data-open-target] {
+[data-mobile] header[data-window-drag] [class*="headerUtilities"] [data-open-target] {
   display: none !important;
 }
 
@@ -2168,7 +2168,7 @@ window.__ModuleLoader__.load({
 			});
 			const sysTop = getComputedStyle(document.documentElement).getPropertyValue("--dsh-android-system-top").trim() || "0px";
 			const BAR_H = 48;
-			const barPad = `calc(${BAR_H}px + ${sysTop})`;
+			const barPad = sysTop || "0px"; // 修复 81：自建返回条已删，不再预留 48px
 			const bodyBg = getComputedStyle(document.body).backgroundColor || "#fff";
 			// 面板改成一列：官方默认 flex-flow: row wrap，会把返回条挤成 60px 窄条，
 			// 也会让内容区只剩 26px 高（实测 y=780 h=26）。
@@ -2188,31 +2188,10 @@ window.__ModuleLoader__.load({
 				overlay.style.alignItems = "stretch";
 			}
 			// 顶栏：固定吸顶，标题左对齐（返回键 + 页面名，只有一层）
-			const bar = document.createElement("div");
-			bar.className = "mp-back-bar";
-			bar.innerHTML = '<button type="button" class="mp-back-circle" aria-label="返回">‹</button>'
-				+ '<span class="mp-title">设置</span>';
-			Object.assign(bar.style, {
-				position: "absolute", top: "0", left: "0", right: "0", zIndex: "30",
-				display: "flex", alignItems: "center", gap: "8px",
-				height: `calc(${BAR_H}px + ${sysTop})`, padding: `${sysTop} 12px 0 12px`,
-				boxSizing: "border-box", background: bodyBg,
-				borderBottom: "1px solid rgba(128,128,128,.16)",
-			});
-			const backBtn = bar.querySelector(".mp-back-circle");
-			Object.assign(backBtn.style, {
-				width: "34px", height: "34px", borderRadius: "50%", background: "transparent",
-				border: "none", cursor: "pointer", display: "inline-flex", alignItems: "center",
-				justifyContent: "center", fontSize: "22px", lineHeight: "1",
-				color: "var(--dsw-alias-label-primary, #222)", flex: "0 0 auto", padding: "0",
-			});
-			const titleSpan = bar.querySelector(".mp-title");
-			Object.assign(titleSpan.style, {
-				flex: "1 1 auto", minWidth: "0", fontSize: "17px", fontWeight: "600",
-				color: "var(--dsw-alias-label-primary, #222)", whiteSpace: "nowrap",
-				overflow: "hidden", textOverflow: "ellipsis",
-			});
-			dialog.insertBefore(bar, dialog.firstChild);
+			// 修复 81：设置页自带走返回条，这里只保留一个**游离**的标题节点供下方复用，
+			//   不再向 dialog 插入任何 bar（否则它会跟着 dialog 一起被塞进侧栏，
+			//   表现为侧栏顶部多出「‹ 设置」并挤压品牌行）。
+			const titleSpan = document.createElement("span");
 			const closeDialog = () => {
 				const mask = dialog.parentElement?.querySelector(".VOzbGW_mask");
 				if (mask) mask.click();
@@ -2273,7 +2252,7 @@ window.__ModuleLoader__.load({
 					b.style.textAlign = "left";
 					b.style.background = "transparent";
 				});
-				if (firstName) titleSpan.textContent = firstName;
+				if (firstName && titleSpan) titleSpan.textContent = firstName;
 			};
 			const sync = () => {
 				const nav = Array.from(dialog.children).find((c) => c.tagName === "NAV") || dialog.querySelector("nav");
@@ -3626,7 +3605,7 @@ mpWantedOpen = true;
 				/* 摆位：贴在「标准模式」徽章右侧、同一条水平线 */
 				try {
 					const hr = header.getBoundingClientRect();
-					const badge = header.querySelector("header[data-window-drag]Actions > *");
+					const badge = header.querySelector('header[data-window-drag] [class*="headerActions"] > *');
 					let br = badge ? badge.getBoundingClientRect() : null;
 					if (br && (br.width < 1 || br.height < 1)) br = null;
 					const bw = bar.getBoundingClientRect().width || 120;
@@ -3702,7 +3681,7 @@ mpWantedOpen = true;
 				}
 				const tabs = [...document.querySelectorAll("[role=tab]")];
 				const bar = document.querySelector(".mp-inline-views");
-				const badge = document.querySelector("header[data-window-drag]Actions > *");
+				const badge = document.querySelector('header[data-window-drag] [class*="headerActions"] > *');
 				const br = badge ? badge.getBoundingClientRect() : null;
 				const rr = bar ? bar.getBoundingClientRect() : null;
 				const hr = document.querySelector("header[data-window-drag]");
