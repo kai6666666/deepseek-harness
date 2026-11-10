@@ -1073,11 +1073,11 @@ window.__ModuleLoader__.load({
    官方样式仅 hover 或 menuOpen 时显示 rowActions，桌面靠鼠标悬停，
    移动端没有 hover 导致要先点一下会话行才出现。触摸设备上改为
    始终显示，并像官方 hover 那样隐藏时间戳腾出空间。 */
-[data-mobile] .YDXeBa_sessionRow .YDXeBa_rowActions,
+[data-mobile] [data-row-key^=session] .YDXeBa_rowActions,
 [data-mobile] [data-dsh-responsive-part=sidebar-entry] .YDXeBa_rowActions {
   display: inline-flex !important;
 }
-[data-mobile] .YDXeBa_sessionRow .YDXeBa_time,
+[data-mobile] [data-row-key^=session] .YDXeBa_time,
 [data-mobile] [data-dsh-responsive-part=sidebar-entry] .YDXeBa_time {
   display: none !important;
 }
@@ -1085,17 +1085,17 @@ window.__ModuleLoader__.load({
 /* 9c. 移动端消灭"粘住的 hover"（触摸端没有鼠标移开，
    手指点一下之后 :hover 会一直保留到点别处，看起来像鼠标悬停没走开）。
    官方把下面这些视觉反馈挂在 :hover 上，触摸端会留下残留：
-     - [data-dsh-responsive-part=sidebar-entry] / .YDXeBa_sessionRow   行底色
+     - [data-dsh-responsive-part=sidebar-entry] / [data-row-key^=session]   行底色
      - 行首图标：hover 时"文件夹"变"▸ 箭头"
      - 抽屉里各种图标按钮的圆形底色
    处理原则：把 :hover 效果归零到各自的基准值，按压反馈改由 JS 打
    .mp-press 类实现（触摸端 :active 不可靠，实测按住时并不匹配）。
-   注意保留两个真实状态：会话行的"当前选中" .YDXeBa_selected
+   注意保留两个真实状态：会话行的"当前选中" [data-row-key^=session][aria-selected=true]
    与 ⋮ 菜单打开态 .YDXeBa_menuOpen（都不是 hover）。
    设置 dialog 子树（VOzbGW_*）一律不碰，避免把 dialog 推出屏幕。 */
 [data-mobile] [data-dsh-responsive-part=sidebar-entry]:hover,
-[data-mobile] .YDXeBa_sessionRow:hover:not(.YDXeBa_selected),
-[data-mobile] .YDXeBa_searchResultRow:hover:not(.YDXeBa_selected),
+[data-mobile] [data-row-key^=session]:hover:not([data-row-key^=session][aria-selected=true]),
+[data-mobile] .YDXeBa_searchResultRow:hover:not([data-row-key^=session][aria-selected=true]),
 [data-mobile] [data-mobile] .bhn1Oq_iconButton:hover,
 [data-mobile] .bhn1Oq_searchButton:hover,
 [data-mobile] .hHd-Xa_iconButton:hover {
@@ -1156,7 +1156,7 @@ window.__ModuleLoader__.load({
 /* 9d. 按压反馈（替代触摸端不可用的 hover）：
    JS 在 touchstart/pointerdown 时给按下的行加 .mp-press，抬手即移除。 */
 [data-mobile] [data-dsh-responsive-part=sidebar-entry].mp-press,
-[data-mobile] .YDXeBa_sessionRow.mp-press,
+[data-mobile] [data-row-key^=session].mp-press,
 [data-mobile] .YDXeBa_searchResultRow.mp-press,
 [data-mobile] .bhn1Oq_iconButton.mp-press,
 [data-mobile] .bhn1Oq_searchButton.mp-press,
@@ -1648,7 +1648,7 @@ window.__ModuleLoader__.load({
 			// 仅移动端抽屉场景
 			if (!mpIsMobile()) return; // 修复 40：与 CSS 作用域同源
 			// 点击会话条主体（非 ⋮ 操作按钮）时选中并收抽屉
-			const row = e.target.closest('.YDXeBa_sessionRow');
+			const row = e.target.closest('[data-row-key^=session]');
 			if (!row) return;
 			if (e.target.closest('.YDXeBa_rowActions')) return;
 			closeDrawerAfterClick();
@@ -1695,7 +1695,7 @@ window.__ModuleLoader__.load({
 		// 看起来就像鼠标悬停没走开。这里改成：按下加 .mp-press，抬手/滑走即移除，
 		// 反馈只在按住的瞬间存在——更接近原生列表的手感。
 		const MP_PRESS_SELECTOR = [
-			'[data-dsh-responsive-part=sidebar-entry]', '.YDXeBa_sessionRow', '.YDXeBa_searchResultRow',
+			'[data-dsh-responsive-part=sidebar-entry]', '[data-row-key^=session]', '.YDXeBa_searchResultRow',
 			'.YDXeBa_iconButton', '.bhn1Oq_iconButton', '.bhn1Oq_searchButton',
 			'.hHd-Xa_iconButton', '.mp-nav-btn'
 		].join(',');
