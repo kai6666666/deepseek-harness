@@ -49,7 +49,7 @@ jobs:
     env:
       ASSETS_TAG: ${{ github.event.inputs.assets_release || vars.ASSETS_RELEASE }}
       STRICT_ASSETS: ${{ github.event.inputs.strict_assets || '0' }}
-      REL_TAG: v0.4.3
+      REL_TAG: v0.4.4-test
     steps:
       - uses: actions/checkout@v4
 
@@ -292,18 +292,18 @@ jobs:
           set -e
           APK=$(find app/build/outputs/apk/system/debug -name '*.apk' | head -1)
           [ -n "$APK" ] || { echo "::error::no apk found"; exit 1; }
-          NAME="dsh-android-0.4.3-arm64.apk"
+          NAME="dsh-android-0.4.4-test-arm64.apk"
           cp -f "$APK" "/tmp/$NAME"
           SHA=$(sha256sum "/tmp/$NAME" | cut -d' ' -f1)
           SIZE=$(stat -c%s "/tmp/$NAME")
           NODE=$(grep -oE 'NODE_EXECUTABLE_VERSION = "v[0-9.]+"' app/src/main/java/com/dsh/android/termux/TermuxBootstrap.kt | grep -oE 'v[0-9.]+' | head -1 || true)
           MUI=$(grep -oE 'MOBILE_UI_VERSION = "[0-9.]+-[0-9]+"' app/src/main/java/com/dsh/android/EngineManager.kt | grep -oE '[0-9.]+-[0-9]+' | head -1 || true)
           echo "APK=$APK -> /tmp/$NAME size=$SIZE sha256=$SHA node=${NODE:-?} mobile-ui=${MUI:-?}"
-          NOTES=$(printf 'engine @deepseek-ai/dsh@0.2.2-rc.1\n\n- versionName **0.4.3** / versionCode **49**\n- apk size `%s` bytes\n- sha256 `%s`\n- node runtime `%s` (constants aligned, wrapper included)\n- mobile-ui `%s` (seat scope + lead button in header + single icon + settings z=1200)\n- assets: engine.bin / node-runtime.bin / bootstrap-aarch64.zip\n' "$SIZE" "$SHA" "${NODE:-?}" "${MUI:-?}")
+          NOTES=$(printf 'engine @deepseek-ai/dsh@0.2.2-rc.1\n\n- versionName **0.4.4-test** / versionCode **50**\n- apk size `%s` bytes\n- sha256 `%s`\n- node runtime `%s` (constants aligned, wrapper included)\n- mobile-ui `%s` (seat scope + lead button in header + single icon + settings z=1200)\n- assets: engine.bin / node-runtime.bin / bootstrap-aarch64.zip\n' "$SIZE" "$SHA" "${NODE:-?}" "${MUI:-?}")
           if gh release view "$REL_TAG" >/dev/null 2>&1; then
             gh release edit "$REL_TAG" --notes "$NOTES" || true
           else
-            gh release create "$REL_TAG" --title "DSH Android 0.4.3（引擎 0.2.2-rc.1 / vc=49）" --notes "$NOTES"
+            gh release create "$REL_TAG" --title "DSH Android 0.4.4-test（PRoot 单运行时 / vc=50）" --notes "$NOTES"
           fi
           gh release upload "$REL_TAG" "/tmp/$NAME" --clobber
           echo '--- assets ---'
