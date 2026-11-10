@@ -53,3 +53,10 @@ node tools/ui-contract/extract.mjs --engine <rootfs>/opt/dsh --out tools/ui-cont
 
 ## 2026-11-10 教训
 - 选择器替换若写进双引号字符串（`querySelector("[data-pane="x"]")`）会直接语法错误；改用无引号属性值 `[data-pane=x]`，并靠 `node --check` 兜底。
+
+## 本地预检（推送前跑）
+```bash
+bash tools/ui-contract/verify-repo.sh main   # 下载仓库 tarball，按 CI 同样口径复算
+```
+作用：本地工作区可能缺文件（`drawer-fix-170.js`、`webview-polyfill.js` 的教训），
+预检用远端快照算一遍，避免「本地 72、CI 73」。

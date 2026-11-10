@@ -225,6 +225,8 @@ jobs:
           node --check mobile-ui-plugin/dsh-android-mobile/lib/client.js
           node --check tools/ui-contract/audit.mjs
           node --check tools/ui-contract/extract.mjs
+          node --check mobile-ui-plugin/dsh-android-mobile/lib/drawer-fix-170.js
+          node --check app/src/main/assets/webview-polyfill.js
 
       - name: UI 契约门禁（哈希类名不许增加 / 不许死引用）
         run: |
