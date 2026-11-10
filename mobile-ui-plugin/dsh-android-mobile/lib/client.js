@@ -3218,10 +3218,7 @@ mpSetMenuOpenClass(false);
 					mpModalClose = true;
 					const col0 = mpSidebarCol();
 					if (col0) col0.classList.remove("mp-drawer-open");
-					setTimeout(() => {
-							if (m2) m2.classList.remove("mp-drawer-closing");
-						mpClosing = false;
-					}, 220);
+					setTimeout(() => { mpClosing = false; }, 220);
 					return;
 				}
 				// ① 抽屉滑出 + 遮罩淡出：同时开始，一起走完 .22s
