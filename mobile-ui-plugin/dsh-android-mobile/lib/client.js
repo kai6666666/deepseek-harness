@@ -181,24 +181,13 @@ window.__ModuleLoader__.load({
   visibility: hidden !important;
   transition: none !important;
 }
-.mp-drawer-mask {
-  position: fixed;
-  inset: 0;
-  z-index: 39;
-  background: var(--dsw-alias-overlay-mask, rgba(0, 0, 0, .35));
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity .22s var(--ds-ease-in-out, ease);
-}
+
 /* ⚠️ 修复 39：打开态**必须**限定在 [data-mobile] 下。
    宽屏下 [data-pane=sidebar] 没有浮层化（仍是 static），若遮罩可点可见，
    就会盖住侧栏与整页 → 变暗、点不动、误关抽屉（啾灵 2026-09-16 反馈）。
    基类已是 opacity:0 + pointer-events:none，所以这里加上作用域 = 兜底：
    即便 .mp-drawer-open 被以任何方式误加，宽屏下也不会变暗、不会吃点击。 */
-[data-mobile] .mp-drawer-mask.mp-drawer-open {
-  opacity: 1;
-  pointer-events: auto;
-}
+[data-mobile] 
 /* 修复 25b：关闭时遮罩比抽屉（.22s）淡得更快，让对话区先亮起来，
    抵消"抽屉滑走露出未淡完遮罩"造成的短暂下沉（实测 -16 → 目标 <8）。 */
 /* rc3：左侧栏「更多」/ 会话「更多」/ 右栏「更多」都是 portal 到 body 的浮层。
@@ -211,9 +200,7 @@ window.__ModuleLoader__.load({
 [role="menuitem"] {
   z-index: 60;
 }
-.mp-drawer-mask.mp-drawer-closing {
-  transition: opacity .13s var(--ds-ease-in-out, ease) !important;
-}
+
 /* 汉堡按钮：固定左上，浮在正文之上（自建元素，不注入 React 子树） */
 .mp-nav-btn {
   /* ⚠️ 默认 display:none，仅 [data-mobile] 下显示（桌面端不受影响）。
@@ -2993,34 +2980,7 @@ return col ? col.querySelector('[class*="toggle"]') : null;
 				const root = col ? col.querySelector(".hHd-Xa_root") : null;
 				return !!root && !root.classList.contains("hHd-Xa_collapsed");
 			}
-			function mpMask() {
-				let mask = document.querySelector(".mp-drawer-mask");
-				if (!mask) {
-					mask = document.createElement("div");
-					mask.className = "mp-drawer-mask";
-					mask.addEventListener("click", mpCloseDrawer);
-					document.body.appendChild(mask);
-				}
-				return mask;
-			}
-			// 修复 78m：遮罩**常驻**，只被动跟随侧栏的 mp-drawer-open 类变化。
-			//   这样不依赖任何打开分支去“临场创建”，也不会因为官方 DOM 抖动而反复淡入淡出。
-			let mpMaskObs = null;
-			let mpMaskObsCol = null;
-			function mpEnsureMaskObserver() {
-				const col = mpSidebarCol();
-				if (!col) return;
-				if (mpMaskObs && mpMaskObsCol === col) return;
-				if (mpMaskObs) mpMaskObs.disconnect();
-				mpMaskObsCol = col;
-				mpMaskObs = new MutationObserver(() => {
-					const mask = mpMask();
-					mask.classList.toggle("mp-drawer-open", col.classList.contains("mp-drawer-open"));
-				});
-				mpMaskObs.observe(col, { attributes: true, attributeFilter: ["class"] });
-				const mask = mpMask();
-				mask.classList.toggle("mp-drawer-open", col.classList.contains("mp-drawer-open"));
-			}
+			// 修复 79：自建遮罩层已删除 —— 遮光由引擎 pI_x6G_drawerMask 负责（真机实测在位）。
 			function mpSetDrawerOpen(open) {
 				// ⚠️ 修复 39（2026-09-16 啾灵反馈）：抽屉/遮罩机制**只在窄屏下成立**。
 				// 宽屏下官方侧栏常驻展开，mpOfficialDrawerOpen() 恒为 true → 这里会给遮罩
@@ -3035,7 +2995,6 @@ return col ? col.querySelector('[class*="toggle"]') : null;
 				// 若已存在（从窄屏切过来），下面这行负责把它的打开类摘掉。
 				// 修复 78j：遮罩必须**先存在再切类**。之前“懒建”依赖 on 为真，
 				//   而节流/抖动恰好把它挡掉时，会出现“抽屉开了但没有遮罩”的半状态。
-				mpMask().classList.toggle("mp-drawer-open", on);
 			}
 			function mpMenuOpen() {
 // rc3 的三处「更多」都是 role=menu 的 portal；用可见性排除“已关闭但节点还在”
@@ -3169,14 +3128,11 @@ return false;
 				const anchor = document.querySelector('[aria-haspopup="menu"][aria-expanded="true"], [class*="moreAnchor"] [aria-expanded="true"]');
 				if (!anchor || !col.contains(anchor)) return;
 				col.classList.add("mp-drawer-open");
-				const mask = mpMask();
-				if (mask) { mask.classList.remove("mp-drawer-closing"); mask.classList.add("mp-drawer-open"); }
 			}
 function mpSetMenuOpenClass(on) {
 document.body.classList.toggle("mp-menu-open", !!on);
 }
 function mpSyncDrawer() {
-				mpEnsureMaskObserver();
 // ⚠️ 菜单（portal）打开期间不要动抽屉：菜单的 anchor 在抽屉里，
 //   抽屉一滑走 anchor 就到屏幕外，菜单会被 clamp 回视口 → 落到会话区。
 				if (mpMenuOpen()) {
@@ -3262,11 +3218,8 @@ mpSetMenuOpenClass(false);
 					mpModalClose = true;
 					const col0 = mpSidebarCol();
 					if (col0) col0.classList.remove("mp-drawer-open");
-					const mask0 = document.querySelector(".mp-drawer-mask");
-					if (mask0) { mask0.classList.remove("mp-drawer-open"); mask0.classList.add("mp-drawer-closing"); }
 					setTimeout(() => {
-						const m2 = document.querySelector(".mp-drawer-mask");
-						if (m2) m2.classList.remove("mp-drawer-closing");
+							if (m2) m2.classList.remove("mp-drawer-closing");
 						mpClosing = false;
 					}, 220);
 					return;
@@ -3274,8 +3227,6 @@ mpSetMenuOpenClass(false);
 				// ① 抽屉滑出 + 遮罩淡出：同时开始，一起走完 .22s
 				const col = mpSidebarCol();
 				if (col) col.classList.remove("mp-drawer-open");
-				const mask = document.querySelector(".mp-drawer-mask");
-				if (mask) { mask.classList.remove("mp-drawer-open"); mask.classList.add("mp-drawer-closing"); }
 				// ② 等抽屉完全滑出屏幕外，再让官方收起（图标条 morph 在屏幕外发生）
 				mpCloseTimer = setTimeout(() => {
 					mpCloseTimer = null;
@@ -3310,8 +3261,6 @@ mpSetMenuOpenClass(false);
 					done = true;
 					if (mpCollapseObs) { mpCollapseObs.disconnect(); mpCollapseObs = null; }
 					if (mpCollapseFallback !== null) { clearTimeout(mpCollapseFallback); mpCollapseFallback = null; }
-					const m2 = document.querySelector(".mp-drawer-mask");
-					if (m2) m2.classList.remove("mp-drawer-closing", "mp-drawer-open");
 					const c2 = mpSidebarCol();
 					if (c2) c2.classList.remove("mp-drawer-closing");
 					mpClosing = false;
@@ -3351,8 +3300,6 @@ mpWantedOpen = true;
 				if (mpIsMobile()) {
 					const colEarly = mpSidebarCol();
 					if (colEarly) colEarly.classList.add("mp-drawer-open");
-					mpMask().classList.remove("mp-drawer-closing");
-					mpMask().classList.add("mp-drawer-open");
 				}
 				if (!mpIsMobile()) return; // 修复 40：仅移动端；桌面端完全走官方
 				// 关闭动画进行中：取消关闭、直接重开（官方仍是 expanded，加上类即可滑回）
@@ -3361,8 +3308,6 @@ mpWantedOpen = true;
 					mpClosing = false;
 					const c = mpSidebarCol();
 					if (c) c.classList.remove("mp-drawer-closing");
-					const m = document.querySelector(".mp-drawer-mask");
-					if (m) m.classList.remove("mp-drawer-closing");
 					mpSetDrawerOpen(true);
 					return;
 				}
@@ -4097,8 +4042,8 @@ mpWantedOpen = true;
 				if (mpCollapseFallback !== null) { clearTimeout(mpCollapseFallback); mpCollapseFallback = null; }
 				mpClosing = false;
 				try {
-					// ① 自建节点：汉堡按钮 / 遮罩 / 设置页返回条 / 分组小标题
-					document.querySelectorAll(".mp-nav-btn, .mp-drawer-mask, .mp-back-bar, .mp-nav-group")
+					// ① 自建节点：汉堡按钮 / 设置页返回条 / 分组小标题
+					document.querySelectorAll(".mp-nav-btn, .mp-back-bar, .mp-nav-group")
 						.forEach((n) => { try { n.remove(); } catch (e) { /* 静默 */ } });
 					mpNavBtnEl = null; // ⭐ 修复 47：节点已移除，引用一并清空
 					// ⚠️ **不复位 mpShellBuilt**：监听器只该注册一次。
@@ -4151,7 +4096,6 @@ mpWantedOpen = true;
 				// ⚠️ 修复 31：**空会话页（Hero）官方 header 是空壳**（高度 0、无 titleRow），
 				//   锚进去 = 锚进一个 0 高度容器 → 汉堡被裁掉、新建对话后打不开侧边栏。
 				//   判据：header 有可见内容（titleRow 存在）才锚定；否则退回 body + fixed 定位。
-				mpMask();
 				mpAnchorBurger(); // 修复 40：首屏立即锚定（observer 只在 mutation 时触发）
 				// 修复 32：用户在抽屉内点**官方收起按钮**（.hHd-Xa_toggle）时，
 				//   官方会**立刻**把侧栏切到 56px 图标条形态（collapsed + railIn），
