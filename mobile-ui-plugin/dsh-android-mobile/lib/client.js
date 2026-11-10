@@ -2376,6 +2376,9 @@ window.__ModuleLoader__.load({
 			// 关闭动画进行中的闸（修复 25）：期间 mpSyncDrawer 不得把抽屉又拉回来；
 			// 关闭中再点汉堡 = 取消关闭、直接重开。
 			let mpClosing = false;
+// 修复 78g：遮罩状态变更节流，避免官方 DOM 抖动导致遮罩反复淡入淡出（忽明忽暗）。
+let mpVisualStamp = 0;
+let mpWantedOpen = false;
 			/** rc3 portal 菜单的来源：sidebar | other；以及“菜单项已点过”。 */
 			let mpMenuSource = null;
 			let mpMenuConsumed = false;
@@ -2968,9 +2971,14 @@ window.__ModuleLoader__.load({
 				}
 			}
 
-			function mpSidebarCol() {
-// 快路径是旧哈希；rc 换哈希后靠语义后缀兜底（CSS Module 的后半段是稳定的）
-return document.querySelector("[data-pane=sidebar]")
+				function mpSidebarCol() {
+// ⚠️ 修复 78：必须**限定在 frame 内**。
+//   只写 [data-pane=sidebar] 时，设置/导航弹窗（hHd-Xa）里同样带
+//   data-pane=sidebar 的节点会先命中；它的 .hHd-Xa_root 在弹窗开合过程中
+//   反复增删 hHd-Xa_collapsed，mpOfficialDrawerOpen() 于是忽真忽假，
+//   mpSetDrawerOpen 反复给遮罩加/去 mp-drawer-open → 会话页“忽明忽暗”。
+return document.querySelector("[data-dsh-frame] > [data-pane=sidebar]")
+|| document.querySelector("[data-pane=sidebar]")
 || document.querySelector('[class*="sidebarCol"]');
 }
 			function mpOfficialToggle() {
@@ -3007,9 +3015,9 @@ return col ? col.querySelector('[class*="toggle"]') : null;
 				if (col) col.classList.toggle("mp-drawer-open", on);
 				// 遮罩是懒建的：宽屏下若它还不存在就不必创建（少一个节点少一份风险）；
 				// 若已存在（从窄屏切过来），下面这行负责把它的打开类摘掉。
-				if (on || document.querySelector(".mp-drawer-mask")) {
-					mpMask().classList.toggle("mp-drawer-open", on);
-				}
+				// 修复 78j：遮罩必须**先存在再切类**。之前“懒建”依赖 on 为真，
+				//   而节流/抖动恰好把它挡掉时，会出现“抽屉开了但没有遮罩”的半状态。
+				mpMask().classList.toggle("mp-drawer-open", on);
 			}
 			function mpMenuOpen() {
 // rc3 的三处「更多」都是 role=menu 的 portal；用可见性排除“已关闭但节点还在”
@@ -3188,7 +3196,13 @@ mpSetMenuOpenClass(false);
 					if (btn) { btn.click(); mpSetDrawerOpen(false); return; }
 				}
 				mpModalClose = false;
-				mpSetDrawerOpen(mpOfficialDrawerOpen());
+				// 修复 78f：恢复“跟随官方状态”，但由 mpSetDrawerOpen 内部做 350ms 节流，
+				//   把 React 重渲染造成的瞬时 expanded/collapsed 抖动挡在外面。
+				const wantOpen = mpOfficialDrawerOpen();
+				const colNow = mpSidebarCol();
+				const visualOpen = !!colNow && colNow.classList.contains("mp-drawer-open");
+				if (wantOpen && mpWantedOpen) { mpWantedOpen = false; mpSetDrawerOpen(true); }
+				else if (!wantOpen && visualOpen) mpSetDrawerOpen(false);
 			}
 			function mpToggleDrawer() {
 				if (!mpIsMobile()) return; // 修复 40：仅移动端；桌面端完全走官方
@@ -3201,10 +3215,12 @@ mpSetMenuOpenClass(false);
 				//   → 官方随后真正收起时无人复查，抽屉以浮层形式永久占屏。
 				//   mpCloseDrawer 已含「滑出动画 + 等官方状态翻转 + 超时兜底」，直接复用。
 				//   打开方向保持原样（实测 3 轮开合与遮罩关闭均正常）。
-				if (mpOfficialDrawerOpen()) { mpCloseDrawer(); return; }
-				const btn = mpOfficialToggle();
-				if (btn) btn.click();
-				setTimeout(mpSyncDrawer, 60);
+				// 修复 78i：开合方向只看**视觉状态**，不看官方 expanded。
+				//   实测官方 .hHd-Xa_root 在窄屏常驻 expanded（图标条态），
+				//   若按官方状态判断，汉堡永远走“关闭”分支 → 点了没反应。
+				const colV = mpSidebarCol();
+				if (colV && colV.classList.contains("mp-drawer-open")) { mpCloseDrawer(); return; }
+				mpOpenDrawer();
 			}
 			// 修复 25：抽屉关闭。
 			// ⚠️ 旧实现（修复 ③）用 .mp-drawer-closing 把抽屉**瞬间**隐藏，但遮罩仍走
@@ -3214,6 +3230,7 @@ mpSetMenuOpenClass(false);
 			//   两者同时开始；等抽屉滑出屏幕（240ms）**之后**才点官方 toggle，
 			//   官方切 56px 图标条 + rail-in 动画就发生在屏幕外，看不见（保住修复 ③ 的效果）。
 			function mpCloseDrawer(opts) {
+				mpWantedOpen = false;
 				if (!mpIsMobile()) return; // 修复 40：仅移动端；桌面端完全走官方
 				const visualOnly = !!(opts && opts.visualOnly);
 				if (mpClosing) return;
@@ -3299,7 +3316,19 @@ mpSetMenuOpenClass(false);
 				mpCollapseFallback = setTimeout(() => finish("timeout"), 3000);
 			}
 
+			// 修复 78h：汉堡改为**事件委托**。React 重渲染会把 .mp-nav-btn 换掉，
+			// 直接绑在旧节点上的监听会随之失效（实测点了没反应）。委托挂在 document 上，
+			// 只认一次（e.__mpNav 去重），永远不依赖节点身份。
+			document.addEventListener("click", (e) => {
+				const t = e.target;
+				const b = t && t.closest ? t.closest(".mp-nav-btn") : null;
+				if (!b || e.__mpNav) return;
+				e.__mpNav = 1;
+				e.stopPropagation();
+				mpToggleDrawer();
+			}, true);
 			function mpOpenDrawer() {
+				mpWantedOpen = true;
 				if (!mpIsMobile()) return; // 修复 40：仅移动端；桌面端完全走官方
 				// 关闭动画进行中：取消关闭、直接重开（官方仍是 expanded，加上类即可滑回）
 				if (mpClosing) {
@@ -4087,7 +4116,7 @@ mpSetMenuOpenClass(false);
 				btn.className = "mp-nav-btn";
 				btn.setAttribute("aria-label", "打开导航");
 				btn.innerHTML = '<svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M3 5.5h14M3 10h14M3 14.5h14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
-				btn.addEventListener("click", (e) => { e.stopPropagation(); mpToggleDrawer(); });
+				btn.addEventListener("click", (e) => { if (e.__mpNav) return; e.__mpNav = 1; e.stopPropagation(); mpToggleDrawer(); });
 				document.body.appendChild(btn);
 				mpNavBtnEl = btn; // ⭐ 修复 47：自持引用，detached 后也能重挂
 				// 修复 30：汉堡锚定进 header（CSS .mp-nav-btn.mp-in-header 相对 header 定位）。
