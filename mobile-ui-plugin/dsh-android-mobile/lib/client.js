@@ -2988,6 +2988,15 @@ return col ? col.querySelector('[class*="toggle"]') : null;
 				// 而抽屉的浮层 CSS 只作用于 [data-mobile] → 遮罩压在正常布局的侧栏与整页之上：
 				// 整页变暗、点「设置」点到的是遮罩、点遮罩又触发 mpCloseDrawer 把侧栏收起。
 				// 这里做**唯一收口**：非窄屏一律强制关闭（与窄屏判定相与）。
+				// 修复 80b：官方仍 collapsed（52px rail）时直接加抽屉类，会“rail + 面板同时可见”
+				//   — 表现就是面板顶部多一个 🔍。打开必须先等官方 expanded。
+				const colW0 = (mpSidebarCol() || document.body).getBoundingClientRect().width;
+				if (open && mpIsMobile() && !mpOfficialDrawerOpen() && colW0 <= 120) {
+					const b = mpOfficialToggle();
+					if (b) b.click();
+					mpWaitOfficialExpanded(0);
+					return;
+				}
 				const on = mpIsMobile() && !!open;
 				const col = mpSidebarCol();
 				if (col) col.classList.toggle("mp-drawer-open", on);
@@ -2995,6 +3004,13 @@ return col ? col.querySelector('[class*="toggle"]') : null;
 				// 若已存在（从窄屏切过来），下面这行负责把它的打开类摘掉。
 				// 修复 78j：遮罩必须**先存在再切类**。之前“懒建”依赖 on 为真，
 				//   而节流/抖动恰好把它挡掉时，会出现“抽屉开了但没有遮罩”的半状态。
+			}
+			// 修复 80c：官方 toggle 改 React state，DOM 的 collapsed 要等一次渲染，
+			//   所以轮询到 expanded 再落抽屉类，避免半状态。
+			function mpWaitOfficialExpanded(tries) {
+				if (mpOfficialDrawerOpen()) { mpSetDrawerOpen(true); return; }
+				if (tries >= 12) return;
+				setTimeout(() => mpWaitOfficialExpanded(tries + 1), 150);
 			}
 			function mpMenuOpen() {
 // rc3 的三处「更多」都是 role=menu 的 portal；用可见性排除“已关闭但节点还在”
@@ -4002,12 +4018,27 @@ mpWantedOpen = true;
 			// → 用户把窗口缩窄就没人发现（宽→窄切换彻底失效）。
 			// ⚠️ mpShellBuilt 一旦置 true 就**永不复位**（拆解时也不复位）——
 			//   否则重新进入移动模式会重复注册监听器。
+			// 修复 80d（v2）：官方 toggle 成为唯一入口后，用**布局宽度**判断它是否展开：
+			//   collapsed rail ≈52px，expanded 面板 ≈320px。hHd-Xa_collapsed 类在部分
+			//   页面/时序下读不到，只看类会得出“永远收起”。轮询 700ms，成本可忽略。
+			let mpExpandTimer = null;
+			function mpWatchOfficialExpand() {
+				if (mpExpandTimer !== null) return;
+				mpExpandTimer = setInterval(() => {
+					if (!mpIsMobile()) return;
+					const c = mpSidebarCol();
+					if (!c) return;
+					const expanded = c.getBoundingClientRect().width > 120;
+					c.classList.toggle("mp-drawer-open", expanded);
+				}, 700);
+			}
 			function mpBuildShell() {
 				mpSyncMobileAttr();
 				if (mpShellBuilt) return;
 				mpShellBuilt = true;
 				// 修复 40：监听器移到这里（无条件装），回调内部各自判移动端。
 				new MutationObserver(mpAnchorBurger).observe(document.body, { childList: true, subtree: true });
+				mpWatchOfficialExpand();
 				document.addEventListener("click", (e) => {
 					const t = e.target;
 					if (!t || !t.closest) return;
@@ -4075,7 +4106,9 @@ mpWantedOpen = true;
 
 
 			function mpBuildShellForMobile() {
-				if (!mpIsMobile()) return; // 修复 40
+				if (!mpIsMobile()) return;
+				// 修复 80：官方已自带侧栏入口（hHd-Xa_toggle），自建汉堡 = 头部两个“三条杠”。
+				return; // 修复 40
 				// 幂等：拆解后重进窄屏会再次调用，别建出第二个汉堡。
 				if (document.querySelector(".mp-nav-btn")) return;
 				const btn = document.createElement("button");
