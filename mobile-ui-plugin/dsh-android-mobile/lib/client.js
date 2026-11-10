@@ -163,8 +163,8 @@ window.__ModuleLoader__.load({
   position: fixed !important;
   top: 0;
   bottom: 0;
-  left: calc(-1 * min(300px, 85vw) - 40px);
-  width: min(300px, 85vw) !important;
+  left: calc(-1 * min(320px, 88vw) - 40px);
+  width: min(320px, 88vw) !important; /* 修复 82：与官方 expanded 宽度对齐，避免内容被挤向一侧 */
   z-index: 40;
   transition: left .22s var(--ds-ease-in-out, ease);
   box-shadow: 0 0 30px rgba(0, 0, 0, .18);
@@ -2967,16 +2967,7 @@ return col ? col.querySelector('[class*="toggle"]') : null;
 				// 而抽屉的浮层 CSS 只作用于 [data-mobile] → 遮罩压在正常布局的侧栏与整页之上：
 				// 整页变暗、点「设置」点到的是遮罩、点遮罩又触发 mpCloseDrawer 把侧栏收起。
 				// 这里做**唯一收口**：非窄屏一律强制关闭（与窄屏判定相与）。
-				// 修复 80b：官方仍 collapsed（52px rail）时直接加抽屉类，会“rail + 面板同时可见”
-				//   — 表现就是面板顶部多一个 🔍。打开必须先等官方 expanded。
-				const colW0 = (mpSidebarCol() || document.body).getBoundingClientRect().width;
-				if (open && mpIsMobile() && !mpOfficialDrawerOpen() && colW0 <= 120) {
-					const b = mpOfficialToggle();
-					if (b) b.click();
-					mpWaitOfficialExpanded(0);
-					return;
-				}
-				const on = mpIsMobile() && !!open;
+				const on = mpIsMobile() && !!open && Date.now() < mpIntentUntil;
 				const col = mpSidebarCol();
 				if (col) col.classList.toggle("mp-drawer-open", on);
 				// 遮罩是懒建的：宽屏下若它还不存在就不必创建（少一个节点少一份风险）；
@@ -3997,18 +3988,57 @@ mpWantedOpen = true;
 			// → 用户把窗口缩窄就没人发现（宽→窄切换彻底失效）。
 			// ⚠️ mpShellBuilt 一旦置 true 就**永不复位**（拆解时也不复位）——
 			//   否则重新进入移动模式会重复注册监听器。
-			// 修复 80d（v2）：官方 toggle 成为唯一入口后，用**布局宽度**判断它是否展开：
-			//   collapsed rail ≈52px，expanded 面板 ≈320px。hHd-Xa_collapsed 类在部分
-			//   页面/时序下读不到，只看类会得出“永远收起”。轮询 700ms，成本可忽略。
+			// 修复 82：把“官方 expanded”与“用户想开抽屉”彻底拆开。
+			//   ① 只有用户点过侧栏入口后的 8 秒内，才允许把 expanded 映射成打开；
+			//   ② 检测到路由/地址变化 → 立即收掉抽屉，绝不在新界面自动弹出；
+			//   ③ 收起（官方 collapsed）任何时候都立刻同步，保证不留残影。
 			let mpExpandTimer = null;
+			let mpIntentUntil = 0;
+			let mpLastHref = location.href;
+			document.addEventListener("click", (e) => {
+				const t = e.target;
+				if (t && t.closest && t.closest('[class*="toggle"]')) {
+					mpIntentUntil = Date.now() + 8000;
+					const c0 = mpSidebarCol();
+					if (c0) c0.classList.toggle("mp-drawer-open", !c0.classList.contains("mp-drawer-open"));
+				}
+			}, true);
+			// 修复 82b：SPA 里点菜单/会话不会改 location.href，只能按“点了导航项”收抽屉。
+			//   只认明确的导航目标，避免点搜索框/更多菜单时被误收。
+			const MP_NAV_TEXT = ["新会话", "插件", "插件市场", "自动化任务", "任务看板", "智能体"];
+			document.addEventListener("click", (e) => {
+				const t = e.target;
+				if (!t || !t.closest) return;
+				const col = mpSidebarCol();
+				if (!col || !col.contains(t)) return;
+				if (t.closest('[class*="toggle"]')) return;
+				const nav = t.closest("[data-row-key]");
+				const btn = t.closest("button");
+				const btnText = btn ? (btn.innerText || "").trim() : "";
+				const isNav = !!nav || MP_NAV_TEXT.includes(btnText);
+				if (!isNav) return;
+				mpIntentUntil = 0;
+				setTimeout(() => {
+					const c = mpSidebarCol();
+					if (c) c.classList.remove("mp-drawer-open");
+				}, 420);
+			}, true);
 			function mpWatchOfficialExpand() {
 				if (mpExpandTimer !== null) return;
 				mpExpandTimer = setInterval(() => {
 					if (!mpIsMobile()) return;
 					const c = mpSidebarCol();
 					if (!c) return;
+					// 导航即收：地址一变，先摘抽屉再继续
+					if (location.href !== mpLastHref) {
+						mpLastHref = location.href;
+						mpIntentUntil = 0;
+						c.classList.remove("mp-drawer-open");
+						return;
+					}
 					const expanded = c.getBoundingClientRect().width > 120;
-					c.classList.toggle("mp-drawer-open", expanded);
+					if (!expanded) { c.classList.remove("mp-drawer-open"); return; }
+					// 修复 83：只收不开。开由“用户点 toggle”那一下直接落类。
 				}, 700);
 			}
 			function mpBuildShell() {
