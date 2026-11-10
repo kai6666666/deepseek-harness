@@ -87,7 +87,7 @@ window.__ModuleLoader__.load({
 /* 1. 会话头部：标题长时右侧 actions/utilities 溢出重叠（undo 快照徽章 vs session log 按钮）→ 换行。
    容器是 wSkVaW_headerActions（模式徽章+快照徽章+utilities 并排超出容器宽，flex nowrap 导致重叠）。
    让 headerActions 在 titleCluster 内收缩、换行，避免溢出与 headerUtilities 重叠。 */
-[data-mobile] .wSkVaW_titleRow {
+[data-mobile] [data-slot='conversation.session.header'] > div:first-child {
   flex-wrap: wrap;
   row-gap: 2px;
   align-items: flex-start;
@@ -107,7 +107,7 @@ window.__ModuleLoader__.load({
 [data-mobile] header[data-window-drag]Utilities {
   margin-left: 0 !important;
 }
-[data-mobile] .wSkVaW_titleRow {
+[data-mobile] [data-slot='conversation.session.header'] > div:first-child {
   gap: 2px 4px;
 }
 [data-mobile] header[data-window-drag]Utilities {
@@ -311,7 +311,7 @@ window.__ModuleLoader__.load({
        渲染为 <span class="SVAs4q_label" title="…">图标 + 预设名</span>；
      · 它自带的样式里有一条容器查询：
          @container (width<=540px){ .SVAs4q_label{ display:none } }
-       而官方 .wSkVaW_titleRow 设了 container-type:inline-size ——
+       而官方 [data-slot='conversation.session.header'] > div:first-child 设了 container-type:inline-size ——
        手机竖屏 titleRow 内联尺寸 ≈ 390 − 50(padL) − 12(padR) ≈ 328px，
        必然命中 ≤540px → 官方按「窄屏省略」把它隐藏。桌面端 titleRow
        宽 >540px，所以一直可见，这也解释了为什么只有手机缺。
@@ -330,7 +330,7 @@ window.__ModuleLoader__.load({
 }
 /* 修复 30f：回退到插件的原样 —— tabs 整排不显示，视图 ⋯ 不显示，
    徽章（标准模式）与 header 全部交回官方，不再做任何摆位/字号覆盖。 */
-[data-mobile] .wSkVaW_tabs {
+[data-mobile] [data-slot='conversation.session.header'] > div:nth-child(2) {
   position: absolute !important;
   left: -5000px !important;
   top: 0 !important;
@@ -449,7 +449,7 @@ window.__ModuleLoader__.load({
      短「你好」→ 不截断；长标题 → 省略号；重叠 0px；header 高度仍 65px；
      320px 极窄屏同样 0 重叠、无横向溢出。
      桌面端（1440/1024）逐项几何与改动前**完全一致**（data-mobile 未命中）。 */
-[data-mobile] .wSkVaW_titleRow {
+[data-mobile] [data-slot='conversation.session.header'] > div:first-child {
   display: flex !important;
   justify-content: center !important;
   width: 100% !important;
@@ -3357,7 +3357,7 @@ mpSetMenuOpenClass(false);
 					return;
 				}
 				const header = document.querySelector("header[data-window-drag]");
-				const row = header && header.querySelector(".wSkVaW_titleRow");
+				const row = header && header.querySelector("[data-slot='conversation.session.header'] > div:first-child");
 				const cluster = row && row.querySelector(".wSkVaW_titleCluster");
 				if (!header || !row || !cluster) return;
 				// 官方 header 是空壳（Hero 页 / 尚未渲染）时不动
@@ -3406,7 +3406,7 @@ mpSetMenuOpenClass(false);
 					return;
 				}
 				const header = document.querySelector("header[data-window-drag]");
-				const row = header && header.querySelector(".wSkVaW_titleRow");
+				const row = header && header.querySelector("[data-slot='conversation.session.header'] > div:first-child");
 				// 官方 header 是空壳（Hero 页 / 尚未渲染）时不动，免得把 0 当基线
 				if (!header || !row) return;
 				const cluster = row.querySelector(".wSkVaW_titleCluster") || row;
@@ -3541,7 +3541,7 @@ mpSetMenuOpenClass(false);
 			var mpInlineBar = null;
 			var mpInlineSig = "";
 			function mpOfficialTabs() {
-				return Array.prototype.slice.call(document.querySelectorAll(".wSkVaW_tabs [role=tab]"));
+				return Array.prototype.slice.call(document.querySelectorAll("[data-slot='conversation.session.header'] > div:nth-child(2) [role=tab]"));
 			}
 			function mpBuildInlineBar() {
 				/* 修复 30d：改为官方 tabs 直出，镜像条彻底停用 */
@@ -3777,7 +3777,7 @@ mpSetMenuOpenClass(false);
 
 			function mpEnsureViewsMore() {
 				if (!mpIsMobile()) return;
-				const tabsRow = document.querySelector("header[data-window-drag] .wSkVaW_tabs") || document.querySelector(".wSkVaW_tabs");
+				const tabsRow = document.querySelector("header[data-window-drag] [data-slot='conversation.session.header'] > div:nth-child(2)") || document.querySelector("[data-slot='conversation.session.header'] > div:nth-child(2)");
 				if (!tabsRow) { return; }
 				// 官方 ⋯ 在（profile 有 entry actions）→ 我们的让位
 				const official = tabsRow.querySelector(".wSkVaW_viewsMore:not(.mp-views-more)");
@@ -3837,7 +3837,7 @@ mpSetMenuOpenClass(false);
 				if (!btn) return;
 				mpNavBtnEl = btn;
 				const header = document.querySelector("header[data-window-drag]");
-				const usable = header && header.querySelector(".wSkVaW_titleRow");
+				const usable = header && header.querySelector("[data-slot='conversation.session.header'] > div:first-child");
 				if (usable) {
 					if (btn.isConnected && btn.parentElement === header) return;
 					header.appendChild(btn);
@@ -10529,7 +10529,7 @@ function apply(ctx) {
 						document.querySelectorAll(".mp-inline-views").forEach((n) => n.remove());
 						if (!document.documentElement.hasAttribute("data-mobile")) return;
 						const header = document.querySelector("header[data-window-drag]");
-						const row = document.querySelector(".wSkVaW_tabs");
+						const row = document.querySelector("[data-slot='conversation.session.header'] > div:nth-child(2)");
 						if (!header || !row) return;
 						/* React 可能把 display 改回 none / 宽度改窄，每 tick 守一次 */
 						if (row.style.display === "none") row.style.removeProperty("display");
