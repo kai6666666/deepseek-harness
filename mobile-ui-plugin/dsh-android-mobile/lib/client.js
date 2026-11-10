@@ -3003,6 +3003,24 @@ return col ? col.querySelector('[class*="toggle"]') : null;
 				}
 				return mask;
 			}
+			// 修复 78m：遮罩**常驻**，只被动跟随侧栏的 mp-drawer-open 类变化。
+			//   这样不依赖任何打开分支去“临场创建”，也不会因为官方 DOM 抖动而反复淡入淡出。
+			let mpMaskObs = null;
+			let mpMaskObsCol = null;
+			function mpEnsureMaskObserver() {
+				const col = mpSidebarCol();
+				if (!col) return;
+				if (mpMaskObs && mpMaskObsCol === col) return;
+				if (mpMaskObs) mpMaskObs.disconnect();
+				mpMaskObsCol = col;
+				mpMaskObs = new MutationObserver(() => {
+					const mask = mpMask();
+					mask.classList.toggle("mp-drawer-open", col.classList.contains("mp-drawer-open"));
+				});
+				mpMaskObs.observe(col, { attributes: true, attributeFilter: ["class"] });
+				const mask = mpMask();
+				mask.classList.toggle("mp-drawer-open", col.classList.contains("mp-drawer-open"));
+			}
 			function mpSetDrawerOpen(open) {
 				// ⚠️ 修复 39（2026-09-16 啾灵反馈）：抽屉/遮罩机制**只在窄屏下成立**。
 				// 宽屏下官方侧栏常驻展开，mpOfficialDrawerOpen() 恒为 true → 这里会给遮罩
@@ -3158,6 +3176,7 @@ function mpSetMenuOpenClass(on) {
 document.body.classList.toggle("mp-menu-open", !!on);
 }
 function mpSyncDrawer() {
+				mpEnsureMaskObserver();
 // ⚠️ 菜单（portal）打开期间不要动抽屉：菜单的 anchor 在抽屉里，
 //   抽屉一滑走 anchor 就到屏幕外，菜单会被 clamp 回视口 → 落到会话区。
 				if (mpMenuOpen()) {
