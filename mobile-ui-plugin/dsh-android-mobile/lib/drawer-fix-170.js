@@ -26,7 +26,7 @@
     + 'html[data-mobile] body > [class*="overlay"]:has([role="dialog"][aria-modal="true"]){'
     + 'pointer-events:auto !important;'
     + '}\n'
-    + 'html[data-mobile] .wSkVaW_header,html[data-mobile] header[class*="header"]{'
+    + 'html[data-mobile] header[data-window-drag],html[data-mobile] header[class*="header"]{'
     + 'padding-left:20px !important;'
     + '}\n'
     + 'html[data-mobile] [data-conversation-header-leading] button svg,'
