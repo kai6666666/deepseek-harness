@@ -3328,7 +3328,13 @@ mpSetMenuOpenClass(false);
 				mpToggleDrawer();
 			}, true);
 			function mpOpenDrawer() {
-				mpWantedOpen = true;
+mpWantedOpen = true;
+				if (mpIsMobile()) {
+					const colEarly = mpSidebarCol();
+					if (colEarly) colEarly.classList.add("mp-drawer-open");
+					mpMask().classList.remove("mp-drawer-closing");
+					mpMask().classList.add("mp-drawer-open");
+				}
 				if (!mpIsMobile()) return; // 修复 40：仅移动端；桌面端完全走官方
 				// 关闭动画进行中：取消关闭、直接重开（官方仍是 expanded，加上类即可滑回）
 				if (mpClosing) {

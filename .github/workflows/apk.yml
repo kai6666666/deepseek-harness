@@ -319,3 +319,5 @@ jobs:
             build/reports/**
           if-no-files-found: ignore
           retention-days: 7
+
+# ui-contract: 78 修复已验证，本行仅用于触发一次完整构建
