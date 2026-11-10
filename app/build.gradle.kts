@@ -32,7 +32,7 @@ android {
         // 全部包（node / bash / dpkg / python）都装在 filesDir 下的 $PREFIX 里，
         // 一升到 29 就会全线 Permission denied。Termux 官方 App 同样停在 28。
         targetSdk = 28
-        versionCode = 49
+        versionCode = 50
         // 后缀语义：`credperm` = 凭据文件权限修复（0.2.9 首发）；
         // `tooliso` = 工具插件注册失败的隔离（可选工具注册失败不再拖垮引擎启动）；
         // `rescue` = 坏插件不再让 App 打不开（四级降级阶梯 + AI 自助修复通道）。
@@ -262,7 +262,7 @@ android {
         //   ③ ⋯ 菜单里的「对话 / 轨迹」改为真开关：菜单不关闭即可连续来回切；
         //   ④ 悬浮气泡补 `showDetails / hideDetails` 中文词典，不再露出原始键名；
         //   ⑤ 开发环境分节补 10s 超时、错误态与重试，插件市场空态正常。
-        versionName = "0.4.3"
+        versionName = "0.4.4-test"
 
         // 只支持 arm64-v8a：内置的引擎资产与 Termux bootstrap 都是 arm64 架构
         ndk {
@@ -324,20 +324,6 @@ android {
      */
 
     signingConfigs {
-        // 固定 debug 签名：用仓库里的 tools/dsh-debug.keystore。
-        // 不固定的话，CI 每个 runner 都会生成新的 ~/.android/debug.keystore，
-        // 每轮包都撞 INSTALL_FAILED_UPDATE_INCOMPATIBLE，只能卸载重装，
-        // 而卸载会清掉 filesDir 下的 Termux 环境与 $DSH_HOME。
-        val repoDebugKs = rootProject.file("tools/dsh-debug.keystore")
-        if (repoDebugKs.exists()) {
-            getByName("debug") {
-                storeFile = repoDebugKs
-                storePassword = "android"
-                keyAlias = "androiddebugkey"
-                keyPassword = "android"
-            }
-        }
-
         // ⚠️ 这把钥匙是发行版的终身身份，与 debug 签名**互相独立**。
         // 一旦发出去就不能换：换签名 = 老用户撞 INSTALL_FAILED_UPDATE_INCOMPATIBLE，
         // 只能卸载重装，而卸载会清掉 filesDir 下的整个 Termux 环境与 $DSH_HOME。
