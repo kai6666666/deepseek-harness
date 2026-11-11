@@ -152,6 +152,10 @@ window.__ModuleLoader__.load({
   transition: left .22s var(--ds-ease-in-out, ease);
   box-shadow: 0 0 30px rgba(0, 0, 0, .18);
   box-sizing: border-box !important;
+  /* 修复 88：侧栏里的 workspace 行是 fixed/sticky，光把侧栏移出屏幕它还会浮在正文上。
+     overflow+contain 把整棵子树裁进侧栏盒子。 */
+  overflow: hidden !important;
+  contain: paint !important;
 }
 [data-mobile] [data-pane=sidebar].mp-drawer-open {
   left: 0;
@@ -169,12 +173,7 @@ window.__ModuleLoader__.load({
 [data-mobile] [data-pane=sidebar] [class*="hHd-Xa_root"] > * {
   min-width: 0 !important;
 }
-/* 修复 86：插件/市场页自带的 sticky pageBar，其 scrollport 顶边与 header 上缘重合，
-   滚动后会粘到 header 底下被完全盖住（表现为「已安装/发现/+ 看不见」）。
-   这里把 sticky top 推到 header 下缘，数值由 JS 写入 --mp-pagebar-top。 */
-[data-mobile] [data-pane=conversation] [class*="pageBar"] {
-  top: var(--mp-pagebar-top, 0px) !important;
-}
+/* 修复 88：不再给插件页的 pageBar 写 sticky top —— 用户要求标题随整页一起滚。 */
 /* 修复 87：引擎的 pI_x6G_drawerMask 是 z-index:70 + pointer-events:auto，
    它盖在整屏侧栏上 → 面板发暗、点任意位置等于点遮罩、抽屉被关回会话。
    窄屏侧栏已经整屏，遮罩没有存在意义，直接停用。 */
@@ -2192,6 +2191,9 @@ window.__ModuleLoader__.load({
 		// ── 7. 设置页两级化（全 inline style，不用 CSS 规则——见 CSS 区注释） ──
 		const mpSettingsSync = new WeakMap();
 		function setupSettingsDialog(dialog) {
+			// 修复 88：用户要求设置页回到官方布局（两栏 + 顶部 tab）。
+			//   这里直接不动 dialog，唯一保留的是系统返回键由 mpDialogBack/Escape 兜底。
+			if (mpIsMobile()) return;
 			if (!mpIsMobile()) return; // 修复 40：仅移动端；桌面端完全走官方
 			const old = mpSettingsSync.get(dialog);
 			if (old) { try { old(); } catch (e) {} return; }
@@ -3024,6 +3026,10 @@ return col ? col.querySelector('[class*="toggle"]') : null;
 				st.setProperty("box-sizing", "border-box", "important");
 				st.setProperty("transition", "left .22s var(--ds-ease-in-out, ease)", "important");
 				st.setProperty("box-shadow", open ? "0 0 30px rgba(0,0,0,.18)" : "none", "important");
+				// 修复 88：关掉后整棵子树不可见，避免 sidebar 里的 workspace/filter 浮层外溢。
+				st.setProperty("visibility", open ? "visible" : "hidden", "important");
+				st.setProperty("overflow", "hidden", "important");
+				st.setProperty("contain", "paint", "important");
 				col.querySelectorAll(":scope > *, [class*='hHd-Xa_root']").forEach((el) => {
 					el.style.setProperty("width", "100%", "important");
 					el.style.setProperty("min-width", "0", "important");
@@ -3546,7 +3552,7 @@ mpWantedOpen = true;
 					try { mpEnsureViewsMore(); } catch (e) { /* 静默：纯外观，绝不影响功能 */ }
 					// 修复 30c：tabs 内联到「标准模式」徽章右侧
 					try { mpLayoutTabsInline(); } catch (e) { /* 静默：纯外观，绝不影响功能 */ }
-					try { mpFixPageBars(); } catch (e) { /* 静默 */ }
+					/* 修复 88：pageBar 不再 sticky 化，调用已移除。 */
 				});
 			}
 
@@ -4139,15 +4145,16 @@ mpWantedOpen = true;
 				const isNav = !!nav || MP_NAV_TEXT.includes(btnText);
 				if (!isNav) return;
 				mpIntentUntil = 0;
+				// 修复 88b：把“想开”标志一起清掉，否则 sync 看到官方 expanded 又把我
+				// 们的类加回去 → 面板弹回。
+				mpWantedOpen = false;
+				// 修复 88：只做一次官方收起，不再 420/900 两次补点（那是连闪的根源）。
 				setTimeout(() => {
 					const c = mpSidebarCol();
 					if (c) c.classList.remove("mp-drawer-open");
 					mpApplySidebarGeom(false);
-					mpCollapseOfficialDrawer();
-				}, 420);
-				// 修复 87b：SPA 路由重渲染会丢掉 420ms 那次 toggle 的结果，900ms 再补一次
-				//   （helper 内部先判是否还 expanded，已收起时不会反向点开）。
-				setTimeout(() => { try { mpCollapseOfficialDrawer(); } catch (e) { /* 静默 */ } }, 900);
+					try { mpCollapseOfficialDrawer(); } catch (e) { /* 静默 */ }
+				}, 120);
 				// 修复 86：进非会话页时把页内滚动归零，避免沿用上次的位置停在半截。
 				if (MP_NAV_TEXT.includes(btnText)) setTimeout(() => {
 					const pb = document.querySelector("[data-pane=conversation] [class*='pageBody']");
