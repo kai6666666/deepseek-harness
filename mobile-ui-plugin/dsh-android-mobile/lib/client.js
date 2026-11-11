@@ -50,16 +50,14 @@ window.__ModuleLoader__.load({
 }
 
 /* 抽屉让出状态栏（官方侧栏顶部 logoRow 需要安全区） */
-[data-mobile] [data-pane=sidebar] {
-  padding-top: var(--dsh-android-system-top, 0px);
-}
+
 /* 内容列的顶部让位**不在 CSS 里做**（修复 58 的第一版就是死在这里，别再走回去）：
    ============================================================
    全面屏打开后内容列必须让出状态栏（窗口 content 由 [0,108] 变 [0,0]，
    状态栏直接压住汉堡与聊天页 header，实测汉堡 rect.top=3.75）。
 
    第一版在这里加了一条
-     [data-mobile] [data-pane=conversation] { padding-top: var(--dsh-android-system-top, 0px) }
+     
    结果**完全不生效**：同一个属性上已经有一条修复 66 加的
      [data-mobile] [data-pane=conversation] { padding-top: var(--mp-float-nav-h, 0px) !important }
    它带 !important，后加的规则压不过它（实测 getComputedStyle 仍是 0px）。
@@ -144,43 +142,25 @@ window.__ModuleLoader__.load({
      · 左上角自建汉堡按钮触发；遮罩点击关闭；点会话行/新建会话自动收起
      · 官方 header（标题/模式/⋯ 菜单/右侧栏按钮）与 对话/轨迹 tabs 原样保留
    开合状态仍由官方 .hHd-Xa_toggle 驱动（不碰 React state）。 */
-[data-mobile] [data-dsh-frame] {
-  grid-template-columns: 0px minmax(0, 1fr) 0px !important;
-}
+
 /* ⚠️ 侧栏一旦 position:fixed 就脱离网格流，其后的正文列会自动落进第 1 条
    （0px）轨道 → 正文宽度变成 0。必须给正文/右栏显式指定轨道列。 */
 [data-mobile] [data-pane=conversation] {
   grid-column: 2 !important;
 }
-[data-mobile] [data-rightbar-col] {
-  grid-column: 3 !important;
-}
+
 /* ⚠️ 抽屉用 left 做动画，绝不用 transform：本插件/官方的浮层大量使用
    position:fixed，而 fixed 元素若位于带 transform 的祖先内，会以该祖先为
    包含块 → 设置弹窗（fixed 100vw）会被裁进 300px 的抽屉里（实测踩到）。
    left 动画不产生包含块，浮层仍相对视口定位。 */
-[data-mobile] [data-pane=sidebar] {
-  position: fixed !important;
-  top: 0;
-  bottom: 0;
-  left: calc(-1 * min(320px, 88vw) - 40px);
-  width: min(320px, 88vw) !important; /* 修复 82：与官方 expanded 宽度对齐，避免内容被挤向一侧 */
-  z-index: 40;
-  transition: left .22s var(--ds-ease-in-out, ease);
-  box-shadow: 0 0 30px rgba(0, 0, 0, .18);
-}
-[data-mobile] [data-pane=sidebar].mp-drawer-open {
-  left: 0;
-}
+
+
 /* ⚠️ 修复 26 起**不再**给抽屉加 .mp-drawer-closing —— 规则保留作回滚安全网。
    为什么弃用：visibility **会继承给子元素**，而设置弹窗的 DOM 就在抽屉内部
    （实测 col.contains(dialog) === true）→ 弹窗被连坐隐藏 200ms，露出底层对话界面。
    且它本就是多余的：修复 25 后抽屉是"先滑出屏幕、再点官方 toggle"，
    官方 56px 图标条的 morph 发生在 left=-340 的屏幕外，本来就看不见。 */
-[data-mobile] [data-pane=sidebar].mp-drawer-closing {
-  visibility: hidden !important;
-  transition: none !important;
-}
+
 
 /* ⚠️ 修复 39：打开态**必须**限定在 [data-mobile] 下。
    宽屏下 [data-pane=sidebar] 没有浮层化（仍是 static），若遮罩可点可见，
