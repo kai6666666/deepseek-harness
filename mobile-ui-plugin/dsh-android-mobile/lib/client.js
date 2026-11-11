@@ -3296,6 +3296,15 @@ mpSetMenuOpenClass(false);
 			function mpCloseDrawer(opts) {
 				mpWantedOpen = false;
 				if (!mpIsMobile()) return; // 修复 40：仅移动端；桌面端完全走官方
+				// 修复 90：只做视觉收起。官方 toggle/状态/遮罩一概不碰 —— 这条链路上的
+				//   超时复位与 Escape 正是“自动弹回 + popover 卡死”的来源。
+				{ 
+					const col0 = mpSidebarCol();
+					if (col0) col0.classList.remove("mp-drawer-open");
+					mpApplySidebarGeom(false);
+					mpClosing = false;
+					return;
+				}
 				const visualOnly = !!(opts && opts.visualOnly);
 				if (mpClosing) return;
 				if (!mpOfficialDrawerOpen()) { mpSetDrawerOpen(false); return; }
@@ -4171,14 +4180,12 @@ mpWantedOpen = true;
 				// 修复 88b：把“想开”标志一起清掉，否则 sync 看到官方 expanded 又把我
 				// 们的类加回去 → 面板弹回。
 				mpWantedOpen = false;
-				// 修复 89：先关掉 body 级 popover（workspace 选择器/排序菜单），再收抽屉。
-				try { document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); } catch (e) { /* 静默 */ }
-				// 修复 88：只做一次官方收起，不再 420/900 两次补点（那是连闪的根源）。
+				// 修复 90：不再派发 Escape、也不再程序化点官方 toggle。
+				//   官方状态保持不动，我们只把自己的浮层收起来（mask 已 CSS 关闭）。
 				setTimeout(() => {
 					const c = mpSidebarCol();
 					if (c) c.classList.remove("mp-drawer-open");
 					mpApplySidebarGeom(false);
-					try { mpCollapseOfficialDrawer(); } catch (e) { /* 静默 */ }
 				}, 120);
 				// 修复 86：进非会话页时把页内滚动归零，避免沿用上次的位置停在半截。
 				if (MP_NAV_TEXT.includes(btnText)) setTimeout(() => {
@@ -10933,3 +10940,4 @@ if (!window.__mpHeaderMenuTimer) {
 		return module.exports;
 	}
 });
+
