@@ -174,7 +174,11 @@ window.__ModuleLoader__.load({
 [data-mobile] [data-pane=sidebar] [class*="hHd-Xa_root"] > * {
   min-width: 0 !important;
 }
-/* 修复 88：不再给插件页的 pageBar 写 sticky top —— 用户要求标题随整页一起滚。 */
+/* 修复 96：pageBar 自身是 sticky，改成 static，标题随整页滚动。 */
+[data-mobile] [data-pane=conversation] [class*="pageBar"] {
+  position: static !important;
+  top: auto !important;
+}
 /* 修复 87：引擎的 pI_x6G_drawerMask 是 z-index:70 + pointer-events:auto，
    它盖在整屏侧栏上 → 面板发暗、点任意位置等于点遮罩、抽屉被关回会话。
    窄屏侧栏已经整屏，遮罩没有存在意义，直接停用。 */
@@ -3338,9 +3342,15 @@ mpSetMenuOpenClass(false);
 					const c2 = mpSidebarCol();
 					if (c2) c2.classList.remove("mp-drawer-closing");
 					mpClosing = false;
-					// 以官方**当下真实状态**为准做最后一次同步（此时它必然已更新完）
-					mpSetDrawerOpen(mpOfficialDrawerOpen());
-					if (why === "timeout") console.warn("[mobile-polish] 官方侧栏收起超时，已强制复位抽屉状态");
+					if (why === "timeout") {
+						// 修复 96：超时不再按官方旧状态复位成开；只保证收起。
+						mpWantedOpen = false;
+						mpIntentUntil = 0;
+						mpSetDrawerOpen(false);
+						console.warn("[mobile-polish] 官方收起超时：保持收起");
+					} else {
+						mpSetDrawerOpen(mpOfficialDrawerOpen());
+					}
 				};
 				// 已经收起（同步路径）→ 直接收尾
 				if (!mpOfficialDrawerOpen()) { finish("sync"); return; }
