@@ -146,8 +146,8 @@ window.__ModuleLoader__.load({
   position: fixed !important;
   top: 0;
   bottom: 0;
-  left: calc(-1 * min(320px, 88vw) - 40px);
-  width: min(320px, 88vw) !important;
+  left: calc(-100vw - 40px);
+  width: 100vw !important;
   z-index: 40;
   transition: left .22s var(--ds-ease-in-out, ease);
   box-shadow: 0 0 30px rgba(0, 0, 0, .18);
@@ -168,6 +168,12 @@ window.__ModuleLoader__.load({
 }
 [data-mobile] [data-pane=sidebar] [class*="hHd-Xa_root"] > * {
   min-width: 0 !important;
+}
+/* 修复 86：插件/市场页自带的 sticky pageBar，其 scrollport 顶边与 header 上缘重合，
+   滚动后会粘到 header 底下被完全盖住（表现为「已安装/发现/+ 看不见」）。
+   这里把 sticky top 推到 header 下缘，数值由 JS 写入 --mp-pagebar-top。 */
+[data-mobile] [data-pane=conversation] [class*="pageBar"] {
+  top: var(--mp-pagebar-top, 0px) !important;
 }
 [data-mobile] .Nqubda_panel[data-mp-approval] {
   box-shadow: var(--dsw-shadow-lv3, 0 8px 30px rgba(0, 0, 0, .25)) !important;
@@ -2304,8 +2310,11 @@ window.__ModuleLoader__.load({
 					const t = dialog.dataset.mpTitle || "设置";
 					titleSpan.textContent = t;
 					nav.style.setProperty("display", "none", "important");
+					// 修复 86：插件市场自带整屏滚动，套我们的 padding/flex 会把内容推到底部。
+					const isMarket = /插件市场/.test(t) || !!options.querySelector("[data-dsh-market], [class*='pluginMarket'], [class*='marketRoot']");
 					options.style.setProperty("display", "block", "important");
-					options.style.setProperty("padding", `${barPad} 16px 28px`, "important");
+					options.style.setProperty("padding", isMarket ? "0" : `${barPad} 16px 28px`, "important");
+					if (isMarket) options.style.setProperty("overflow", "hidden", "important");
 					options.style.setProperty("box-sizing", "border-box", "important");
 					options.style.setProperty("width", "100%", "important");
 					options.style.setProperty("flex", "1 1 0%", "important");
@@ -2334,7 +2343,9 @@ window.__ModuleLoader__.load({
 					closeDialog();
 				}
 			};
-			backBtn.addEventListener("click", back);
+			// 修复 86b：修复 81 删掉自建返回条时，这一行忘了删 —— 每次打开设置都会抛
+			//   ReferenceError: backBtn is not defined，后面的 sync() 永远不执行。
+			//   返回键已由 mpDialogBack（系统返回键）接管，这里不再需要实体按钮监听。
 			mpDialogBack.set(dialog, back);
 			mpSettingsSync.set(dialog, sync);
 			sync();
@@ -2981,6 +2992,35 @@ return col ? col.querySelector('[class*="toggle"]') : null;
 				const root = col ? col.querySelector(".hHd-Xa_root") : null;
 				return !!root && !root.classList.contains("hHd-Xa_collapsed");
 			}
+			// 修复 86：页面切换后官方/插件会注入自己的 !important 规则（实测 computed
+			//   position=absolute、width=52/280，我们整套侧栏 CSS 被压掉），关掉的抽屉
+			//   就以 rail/面板形态留在流里 —— 表现为「自动弹回侧栏」。这里把几何全部
+			//   写成 inline + important（只有内联 important 能压内联/更高优先级的规则），
+			//   并把宽度改成整屏，右侧不再露出会话。
+			function mpApplySidebarGeom(open) {
+				const col = mpSidebarCol();
+				if (!col) return;
+				const st = col.style;
+				st.setProperty("position", "fixed", "important");
+				st.setProperty("top", "0", "important");
+				st.setProperty("bottom", "0", "important");
+				st.setProperty("height", "100%", "important");
+				st.setProperty("width", "100vw", "important");
+				st.setProperty("max-width", "100vw", "important");
+				st.setProperty("min-width", "0", "important");
+				st.setProperty("left", open ? "0px" : "calc(-100vw - 40px)", "important");
+				st.setProperty("z-index", "60", "important");
+				// 官方用 transform 平移 rail（实测 x=-52 但 left:0），不清掉会把整屏面板又推偏。
+				st.setProperty("transform", "none", "important");
+				st.setProperty("box-sizing", "border-box", "important");
+				st.setProperty("transition", "left .22s var(--ds-ease-in-out, ease)", "important");
+				st.setProperty("box-shadow", open ? "0 0 30px rgba(0,0,0,.18)" : "none", "important");
+				col.querySelectorAll(":scope > *, [class*='hHd-Xa_root']").forEach((el) => {
+					el.style.setProperty("width", "100%", "important");
+					el.style.setProperty("min-width", "0", "important");
+					el.style.setProperty("box-sizing", "border-box", "important");
+				});
+			}
 			// 修复 79：自建遮罩层已删除 —— 遮光由引擎 pI_x6G_drawerMask 负责（真机实测在位）。
 			function mpSetDrawerOpen(open) {
 				// ⚠️ 修复 39（2026-09-16 啾灵反馈）：抽屉/遮罩机制**只在窄屏下成立**。
@@ -2992,6 +3032,7 @@ return col ? col.querySelector('[class*="toggle"]') : null;
 				const on = mpIsMobile() && !!open && Date.now() < mpIntentUntil;
 				const col = mpSidebarCol();
 				if (col) col.classList.toggle("mp-drawer-open", on);
+				mpApplySidebarGeom(on);
 				// 遮罩是懒建的：宽屏下若它还不存在就不必创建（少一个节点少一份风险）；
 				// 若已存在（从窄屏切过来），下面这行负责把它的打开类摘掉。
 				// 修复 78j：遮罩必须**先存在再切类**。之前“懒建”依赖 on 为真，
@@ -3304,7 +3345,7 @@ mpSetMenuOpenClass(false);
 mpWantedOpen = true;
 				if (mpIsMobile()) {
 					const colEarly = mpSidebarCol();
-					if (colEarly) colEarly.classList.add("mp-drawer-open");
+					if (colEarly) { colEarly.classList.add("mp-drawer-open"); mpApplySidebarGeom(true); }
 				}
 				if (!mpIsMobile()) return; // 修复 40：仅移动端；桌面端完全走官方
 				// 关闭动画进行中：取消关闭、直接重开（官方仍是 expanded，加上类即可滑回）
@@ -3399,6 +3440,22 @@ mpWantedOpen = true;
 			   **不会**被拉伸，所以高度恒等于内容高度；取最大值可覆盖
 			   「模式徽章挂在 headerActions、快照徽章挂在 utilities」等
 			   徽章出现在簇外的情况。其余调用只花几次廉价读 + 比较。 */
+			// 修复 86：把页内 sticky bar 的 top 内联写死（官方 CSS 常带 !important）。
+			function mpFixPageBars() {
+				const hdr = document.querySelector("header[data-window-drag]");
+				const bars = document.querySelectorAll("[data-pane=conversation] [class*='pageBar']");
+				if (!hdr || !bars.length) return;
+				// sticky 的 top 相对滚动容器（pageBody）的上缘，header 覆盖的范围也要算进去。
+				// 插件页里 header 可能因标题/描述变高，所以每次实测，不用常量。
+				const body = document.querySelector("[data-pane=conversation] [class*='pageBody']");
+				const top = body ? body.getBoundingClientRect().top : 0;
+				// 只接受「正常顶部栏」高度；量到异常大值（插件页某些状态会把 header 撑高）宁可不动。
+				const hh = hdr.getBoundingClientRect().height;
+				const off = hh > 0 && hh < 160 ? Math.max(0, Math.round(hdr.getBoundingClientRect().bottom - top) + 2) : 0;
+				bars.forEach((b) => {
+					b.style.setProperty("top", off + "px", "important");
+				});
+			}
 			const MP_HDR_SCALE = 1.25;
 			var mpHdrKey = "";
 			function mpSyncHeaderHeight() {
@@ -3441,6 +3498,9 @@ mpWantedOpen = true;
 				/* tabs 现在 absolute 定位，不再撑高 header：natural 就是「标题行 + 徽章行」
 				   的自然高度，直接 ×1.25 即可（恢复修复 61 的原始语义）。 */
 				root.style.setProperty("--mp-hdr-h", Math.round(natural * MP_HDR_SCALE * 100) / 100 + "px");
+				// 修复 86：插件页 sticky pageBar 要粘在 header 下缘，而不是页面顶边。
+				const hh = header.getBoundingClientRect().height;
+				if (hh > 0) root.style.setProperty("--mp-pagebar-top", Math.round(hh + 2) + "px");
 			}
 
 			// 修复 59：把 mpSyncHeaderCenter 合并到下一帧执行。
@@ -3466,6 +3526,7 @@ mpWantedOpen = true;
 					try { mpEnsureViewsMore(); } catch (e) { /* 静默：纯外观，绝不影响功能 */ }
 					// 修复 30c：tabs 内联到「标准模式」徽章右侧
 					try { mpLayoutTabsInline(); } catch (e) { /* 静默：纯外观，绝不影响功能 */ }
+					try { mpFixPageBars(); } catch (e) { /* 静默 */ }
 				});
 			}
 
@@ -4019,10 +4080,18 @@ mpWantedOpen = true;
 			let mpLastHref = location.href;
 			document.addEventListener("click", (e) => {
 				const t = e.target;
+				if (!mpIsMobile()) return;
+				// 修复 86：插件页的开关/分段控件类名里也带 toggle，以前点一下就改抽屉状态。
+				if (t && t.closest && t.closest("[data-pane=conversation]")) return;
 				if (t && t.closest && t.closest('[class*="toggle"]')) {
 					mpIntentUntil = Date.now() + 8000;
 					const c0 = mpSidebarCol();
-					if (c0) c0.classList.toggle("mp-drawer-open", !c0.classList.contains("mp-drawer-open"));
+					if (c0) {
+						const next = !c0.classList.contains("mp-drawer-open");
+						c0.classList.toggle("mp-drawer-open", next);
+						// 修复 86b：必须同步内联几何，否则 open 类在、left 仍是 -100vw。
+						mpApplySidebarGeom(next);
+					}
 				}
 			}, true);
 			// 修复 82b：SPA 里点菜单/会话不会改 location.href，只能按“点了导航项”收抽屉。
@@ -4034,16 +4103,29 @@ mpWantedOpen = true;
 				const col = mpSidebarCol();
 				if (!col || !col.contains(t)) return;
 				if (t.closest('[class*="toggle"]')) return;
-				const nav = t.closest("[data-row-key]");
 				const btn = t.closest("button");
 				const btnText = btn ? (btn.innerText || "").trim() : "";
+				// 修复 86：会话行的「⋯」/更多菜单也在 [data-row-key] 内，以前会被当成导航
+				//   → 菜单刚打开抽屉就被收，界面跳回会话。
+				if (t.closest('[aria-haspopup], [role="menu"], [data-context-menu-trigger], [class*="rowActions"], [class*="moreAnchor"]')) return;
+				if (btn) {
+					const al = (btn.getAttribute("aria-label") || "") + " " + (btn.getAttribute("title") || "");
+					if (/更多|操作|菜单|more|menu/i.test(al)) return;
+				}
+				const nav = t.closest("[data-row-key]");
 				const isNav = !!nav || MP_NAV_TEXT.includes(btnText);
 				if (!isNav) return;
 				mpIntentUntil = 0;
 				setTimeout(() => {
 					const c = mpSidebarCol();
 					if (c) c.classList.remove("mp-drawer-open");
+					mpApplySidebarGeom(false);
 				}, 420);
+				// 修复 86：进非会话页时把页内滚动归零，避免沿用上次的位置停在半截。
+				if (MP_NAV_TEXT.includes(btnText)) setTimeout(() => {
+					const pb = document.querySelector("[data-pane=conversation] [class*='pageBody']");
+					if (pb) pb.scrollTop = 0;
+				}, 560);
 			}, true);
 			function mpWatchOfficialExpand() {
 				if (mpExpandTimer !== null) return;
