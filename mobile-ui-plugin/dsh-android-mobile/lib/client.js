@@ -175,6 +175,14 @@ window.__ModuleLoader__.load({
 [data-mobile] [data-pane=conversation] [class*="pageBar"] {
   top: var(--mp-pagebar-top, 0px) !important;
 }
+/* 修复 87：引擎的 pI_x6G_drawerMask 是 z-index:70 + pointer-events:auto，
+   它盖在整屏侧栏上 → 面板发暗、点任意位置等于点遮罩、抽屉被关回会话。
+   窄屏侧栏已经整屏，遮罩没有存在意义，直接停用。 */
+[data-mobile] [class*="drawerMask"] {
+  display: none !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
 [data-mobile] .Nqubda_panel[data-mp-approval] {
   box-shadow: var(--dsw-shadow-lv3, 0 8px 30px rgba(0, 0, 0, .25)) !important;
 }
@@ -3009,7 +3017,8 @@ return col ? col.querySelector('[class*="toggle"]') : null;
 				st.setProperty("max-width", "100vw", "important");
 				st.setProperty("min-width", "0", "important");
 				st.setProperty("left", open ? "0px" : "calc(-100vw - 40px)", "important");
-				st.setProperty("z-index", "60", "important");
+				// 引擎 .pI_x6G_drawerMask 是 z-index:70，侧栏必须压过它。
+				st.setProperty("z-index", "80", "important");
 				// 官方用 transform 平移 rail（实测 x=-52 但 left:0），不清掉会把整屏面板又推偏。
 				st.setProperty("transform", "none", "important");
 				st.setProperty("box-sizing", "border-box", "important");
@@ -3020,6 +3029,17 @@ return col ? col.querySelector('[class*="toggle"]') : null;
 					el.style.setProperty("min-width", "0", "important");
 					el.style.setProperty("box-sizing", "border-box", "important");
 				});
+			}
+			// 修复 87：导航收起时同步把官方状态翻成 collapsed。
+			//   只摘我们自己的类，官方 frame 仍是 data-sidebar-drawer:not(collapsed)
+			//   → 遮罩继续可见、1 秒后重渲染又把面板"弹回"。
+			function mpCollapseOfficialDrawer() {
+				if (!mpOfficialDrawerOpen()) return;
+				const btn = mpOfficialToggle();
+				if (!btn) return;
+				mpProgToggle = true;
+				try { btn.click(); } catch (e) { /* 静默 */ }
+				setTimeout(() => { mpProgToggle = false; }, 160);
 			}
 			// 修复 79：自建遮罩层已删除 —— 遮光由引擎 pI_x6G_drawerMask 负责（真机实测在位）。
 			function mpSetDrawerOpen(open) {
@@ -4077,8 +4097,11 @@ mpWantedOpen = true;
 			//   ③ 收起（官方 collapsed）任何时候都立刻同步，保证不留残影。
 			let mpExpandTimer = null;
 			let mpIntentUntil = 0;
+			// 修复 87：程序化点官方 toggle 时，别让下面两个委托监听把它当成用户点击。
+			var mpProgToggle = false;
 			let mpLastHref = location.href;
 			document.addEventListener("click", (e) => {
+				if (mpProgToggle) return;
 				const t = e.target;
 				if (!mpIsMobile()) return;
 				// 修复 86：插件页的开关/分段控件类名里也带 toggle，以前点一下就改抽屉状态。
@@ -4120,7 +4143,11 @@ mpWantedOpen = true;
 					const c = mpSidebarCol();
 					if (c) c.classList.remove("mp-drawer-open");
 					mpApplySidebarGeom(false);
+					mpCollapseOfficialDrawer();
 				}, 420);
+				// 修复 87b：SPA 路由重渲染会丢掉 420ms 那次 toggle 的结果，900ms 再补一次
+				//   （helper 内部先判是否还 expanded，已收起时不会反向点开）。
+				setTimeout(() => { try { mpCollapseOfficialDrawer(); } catch (e) { /* 静默 */ } }, 900);
 				// 修复 86：进非会话页时把页内滚动归零，避免沿用上次的位置停在半截。
 				if (MP_NAV_TEXT.includes(btnText)) setTimeout(() => {
 					const pb = document.querySelector("[data-pane=conversation] [class*='pageBody']");
@@ -4150,6 +4177,7 @@ mpWantedOpen = true;
 				new MutationObserver(mpAnchorBurger).observe(document.body, { childList: true, subtree: true });
 				mpWatchOfficialExpand();
 				document.addEventListener("click", (e) => {
+					if (mpProgToggle) return;
 					const t = e.target;
 					if (!t || !t.closest) return;
 					if (!t.closest(".hHd-Xa_toggle")) return;
