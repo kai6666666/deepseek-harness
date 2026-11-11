@@ -127,6 +127,48 @@ window.__ModuleLoader__.load({
    此处不再注入 CSS（同上，避免 media CSS 触发布局 bug）。 */
 
 /* 审批有内容时自动打开的遮罩提示：面板上缘阴影强化层级 */
+/* 修复 85：恢复“正文占满 + 侧栏浮层”，并把侧栏内层宽度对齐外层。
+   上一轮全删后，官方窄屏把正文排进侧栏轨道右侧的 240px 窄列：
+   插件/插件市场/任务看板整体右移被裁，会话视图挤在右半。
+   这次三件事分开做：轨道归零、正文钉第 2 轨、侧栏固定浮层，
+   再单独把内层根节点宽度拉到 100%，避免“外层 320 / 内层按 153 排版”。 */
+[data-mobile] [data-dsh-frame] {
+  grid-template-columns: 0px minmax(0, 1fr) 0px !important;
+}
+[data-mobile] [data-pane=conversation] {
+  grid-column: 2 !important;
+  min-width: 0 !important;
+}
+[data-mobile] [data-rightbar-col] {
+  grid-column: 3 !important;
+}
+[data-mobile] [data-pane=sidebar] {
+  position: fixed !important;
+  top: 0;
+  bottom: 0;
+  left: calc(-1 * min(320px, 88vw) - 40px);
+  width: min(320px, 88vw) !important;
+  z-index: 40;
+  transition: left .22s var(--ds-ease-in-out, ease);
+  box-shadow: 0 0 30px rgba(0, 0, 0, .18);
+  box-sizing: border-box !important;
+}
+[data-mobile] [data-pane=sidebar].mp-drawer-open {
+  left: 0;
+}
+[data-mobile] [data-pane=sidebar] > * {
+  width: 100% !important;
+  min-width: 0 !important;
+  box-sizing: border-box !important;
+}
+[data-mobile] [data-pane=sidebar] [class*="hHd-Xa_root"] {
+  width: 100% !important;
+  min-width: 0 !important;
+  box-sizing: border-box !important;
+}
+[data-mobile] [data-pane=sidebar] [class*="hHd-Xa_root"] > * {
+  min-width: 0 !important;
+}
 [data-mobile] .Nqubda_panel[data-mp-approval] {
   box-shadow: var(--dsw-shadow-lv3, 0 8px 30px rgba(0, 0, 0, .25)) !important;
 }
@@ -4009,16 +4051,13 @@ mpWantedOpen = true;
 					if (!mpIsMobile()) return;
 					const c = mpSidebarCol();
 					if (!c) return;
-					// 导航即收：地址一变，先摘抽屉再继续
+					// 修复 85b：侧栏改成固定宽度后，官方 expanded 判断不可靠；
+					//   这里只负责“导航即收”，开合由用户点 toggle 那一下决定。
 					if (location.href !== mpLastHref) {
 						mpLastHref = location.href;
 						mpIntentUntil = 0;
 						c.classList.remove("mp-drawer-open");
-						return;
 					}
-					const expanded = c.getBoundingClientRect().width > 120;
-					if (!expanded) { c.classList.remove("mp-drawer-open"); return; }
-					// 修复 83：只收不开。开由“用户点 toggle”那一下直接落类。
 				}, 700);
 			}
 			function mpBuildShell() {
