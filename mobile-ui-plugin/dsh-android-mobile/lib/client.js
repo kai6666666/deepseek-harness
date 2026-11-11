@@ -3017,7 +3017,7 @@ return col ? col.querySelector('[class*="toggle"]') : null;
 				st.setProperty("max-width", "100vw", "important");
 				st.setProperty("min-width", "0", "important");
 				st.setProperty("left", open ? "0px" : "calc(-100vw - 40px)", "important");
-				// 引擎 .pI_x6G_drawerMask 是 z-index:70，侧栏必须压过它。
+				// 引擎 pI_x6G_drawerMask 是 z-index:70，侧栏必须压过它。
 				st.setProperty("z-index", "80", "important");
 				// 官方用 transform 平移 rail（实测 x=-52 但 left:0），不清掉会把整屏面板又推偏。
 				st.setProperty("transform", "none", "important");
