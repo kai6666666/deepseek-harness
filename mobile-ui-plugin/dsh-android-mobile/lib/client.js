@@ -175,11 +175,6 @@ window.__ModuleLoader__.load({
   min-width: 0 !important;
 }
 /* 修复 88：不再给插件页的 pageBar 写 sticky top —— 用户要求标题随整页一起滚。 */
-/* 修复 89：pageBar 自己带 position:sticky，光删 top 它还会钉住 → 直接改 static。 */
-[data-mobile] [data-pane=conversation] [class*="pageBar"] {
-  position: static !important;
-  top: auto !important;
-}
 /* 修复 87：引擎的 pI_x6G_drawerMask 是 z-index:70 + pointer-events:auto，
    它盖在整屏侧栏上 → 面板发暗、点任意位置等于点遮罩、抽屉被关回会话。
    窄屏侧栏已经整屏，遮罩没有存在意义，直接停用。 */
@@ -3004,13 +2999,6 @@ return col ? col.querySelector('[class*="toggle"]') : null;
 }
 			// 官方开合状态的唯一事实源：.hHd-Xa_root 是否带 hHd-Xa_collapsed
 			function mpOfficialDrawerOpen() {
-				// 修复 89：root 的 hHd-Xa_collapsed 在抽屉收起后并不一定翻转，
-				//   旧判据会把“已经收起”读成“还开着” → 超时复位 → 自己弹回侧栏。
-				//   官方真正的事实源是 frame 的 data-sidebar-collapsed。
-				const frame = document.querySelector("[data-dsh-frame]");
-				if (frame && frame.hasAttribute("data-sidebar-drawer")) {
-					return !frame.hasAttribute("data-sidebar-collapsed");
-				}
 				const col = mpSidebarCol();
 				const root = col ? col.querySelector(".hHd-Xa_root") : null;
 				return !!root && !root.classList.contains("hHd-Xa_collapsed");
@@ -3296,15 +3284,6 @@ mpSetMenuOpenClass(false);
 			function mpCloseDrawer(opts) {
 				mpWantedOpen = false;
 				if (!mpIsMobile()) return; // 修复 40：仅移动端；桌面端完全走官方
-				// 修复 90：只做视觉收起。官方 toggle/状态/遮罩一概不碰 —— 这条链路上的
-				//   超时复位与 Escape 正是“自动弹回 + popover 卡死”的来源。
-				{ 
-					const col0 = mpSidebarCol();
-					if (col0) col0.classList.remove("mp-drawer-open");
-					mpApplySidebarGeom(false);
-					mpClosing = false;
-					return;
-				}
 				const visualOnly = !!(opts && opts.visualOnly);
 				if (mpClosing) return;
 				if (!mpOfficialDrawerOpen()) { mpSetDrawerOpen(false); return; }
@@ -3359,16 +3338,9 @@ mpSetMenuOpenClass(false);
 					const c2 = mpSidebarCol();
 					if (c2) c2.classList.remove("mp-drawer-closing");
 					mpClosing = false;
-					if (why === "timeout") {
-						// 修复 89：超时只保证“保持收起”，绝不再按官方旧状态把抽屉加回来。
-						mpWantedOpen = false;
-						mpIntentUntil = 0;
-						mpSetDrawerOpen(false);
-						console.warn("[mobile-polish] 官方收起超时：保持收起（不再复位成开）");
-					} else {
-						// 以官方**当下真实状态**为准做最后一次同步（此时它必然已更新完）
-						mpSetDrawerOpen(mpOfficialDrawerOpen());
-					}
+					// 以官方**当下真实状态**为准做最后一次同步（此时它必然已更新完）
+					mpSetDrawerOpen(mpOfficialDrawerOpen());
+					if (why === "timeout") console.warn("[mobile-polish] 官方侧栏收起超时，已强制复位抽屉状态");
 				};
 				// 已经收起（同步路径）→ 直接收尾
 				if (!mpOfficialDrawerOpen()) { finish("sync"); return; }
@@ -3380,9 +3352,7 @@ mpSetMenuOpenClass(false);
 				mpCollapseObs = new MutationObserver(() => {
 					if (!mpOfficialDrawerOpen()) finish("observed");
 				});
-				const frame89 = document.querySelector("[data-dsh-frame]");
-				if (frame89) mpCollapseObs.observe(frame89, { attributes: true, attributeFilter: ["data-sidebar-collapsed"] });
-				else mpCollapseObs.observe(root, { attributes: true, attributeFilter: ["class"] });
+				mpCollapseObs.observe(root, { attributes: true, attributeFilter: ["class"] });
 				// ② 兜底：官方若没动静（或 root 被 React 换掉）也不留卡死
 				if (mpCollapseFallback !== null) clearTimeout(mpCollapseFallback);
 				mpCollapseFallback = setTimeout(() => finish("timeout"), 3000);
@@ -4180,12 +4150,12 @@ mpWantedOpen = true;
 				// 修复 88b：把“想开”标志一起清掉，否则 sync 看到官方 expanded 又把我
 				// 们的类加回去 → 面板弹回。
 				mpWantedOpen = false;
-				// 修复 90：不再派发 Escape、也不再程序化点官方 toggle。
-				//   官方状态保持不动，我们只把自己的浮层收起来（mask 已 CSS 关闭）。
+				// 修复 88：只做一次官方收起，不再 420/900 两次补点（那是连闪的根源）。
 				setTimeout(() => {
 					const c = mpSidebarCol();
 					if (c) c.classList.remove("mp-drawer-open");
 					mpApplySidebarGeom(false);
+					try { mpCollapseOfficialDrawer(); } catch (e) { /* 静默 */ }
 				}, 120);
 				// 修复 86：进非会话页时把页内滚动归零，避免沿用上次的位置停在半截。
 				if (MP_NAV_TEXT.includes(btnText)) setTimeout(() => {
@@ -10940,4 +10910,3 @@ if (!window.__mpHeaderMenuTimer) {
 		return module.exports;
 	}
 });
-
