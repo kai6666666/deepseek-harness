@@ -155,7 +155,8 @@ window.__ModuleLoader__.load({
   /* 修复 88：侧栏里的 workspace 行是 fixed/sticky，光把侧栏移出屏幕它还会浮在正文上。
      overflow+contain 把整棵子树裁进侧栏盒子。 */
   overflow: hidden !important;
-  contain: paint !important;
+  /* 88c：不用 contain:paint（部分 WebView 会合成器卡住）；clip-path 同样能裁 fixed 子节点。 */
+  clip-path: inset(0) !important;
 }
 [data-mobile] [data-pane=sidebar].mp-drawer-open {
   left: 0;
@@ -3026,10 +3027,11 @@ return col ? col.querySelector('[class*="toggle"]') : null;
 				st.setProperty("box-sizing", "border-box", "important");
 				st.setProperty("transition", "left .22s var(--ds-ease-in-out, ease)", "important");
 				st.setProperty("box-shadow", open ? "0 0 30px rgba(0,0,0,.18)" : "none", "important");
-				// 修复 88：关掉后整棵子树不可见，避免 sidebar 里的 workspace/filter 浮层外溢。
-				st.setProperty("visibility", open ? "visible" : "hidden", "important");
+				// 修复 88c：不用 visibility:hidden / contain:paint（会导致 WebView 合成卡住、
+				//   点击无响应）。改为：关闭时 pointer-events:none + clip-path，把子树裁在盒子里。
+				st.setProperty("pointer-events", open ? "auto" : "none", "important");
+				st.setProperty("clip-path", "inset(0)", "important");
 				st.setProperty("overflow", "hidden", "important");
-				st.setProperty("contain", "paint", "important");
 				col.querySelectorAll(":scope > *, [class*='hHd-Xa_root']").forEach((el) => {
 					el.style.setProperty("width", "100%", "important");
 					el.style.setProperty("min-width", "0", "important");
