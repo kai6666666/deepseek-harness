@@ -42,8 +42,56 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # 运行时资产（PRoot rootfs）单独一个 job：产物与 APK 构建解耦，
+  # 失败时能一眼看出是「运行时坏」还是「APK 坏」。缓存只放下载物。
+  runtime:
+    name: runtime (arm64-v8a)
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 依赖（交叉编译器 + patchelf + xz）
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends patchelf xz-utils gcc-aarch64-linux-gnu libc6-dev-arm64-cross
+
+      - name: Node 24（构建机用）
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: 下载缓存
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/rt-cache
+          key: rt-cache-v1-ubuntu24.04.5-node24.22.1
+
+      - name: 组装 rootfs + manifest + jniLibs
+        env:
+          DSH_RT_WORK: ${{ runner.temp }}/rt-work
+          DSH_RT_CACHE: ${{ runner.temp }}/rt-cache
+          DSH_RT_OUT: ${{ github.workspace }}/_build/runtime/out
+          CC: aarch64-linux-gnu-gcc
+        run: bash tools/runtime/build-runtime.sh
+
+      - name: 硬断言
+        run: |
+          python3 tools/runtime/verify.py \
+            _build/runtime/out/arm64-v8a/assets/runtime/rootfs-arm64-v8a.tar.xz \
+            _build/runtime/out/arm64-v8a/assets/runtime/manifest.json \
+            _build/runtime/out/arm64-v8a/jniLibs/arm64-v8a
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: runtime-arm64-v8a
+          path: _build/runtime/out/**
+          retention-days: 1
+          if-no-files-found: error
+
   assemble:
     name: assembleSystemDebug
+    needs: runtime
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
@@ -78,46 +126,20 @@ jobs:
       - name: 修可执行位（仓库从 Android 文件系统提交，没带 +x）
         run: chmod +x gradlew tools/*.sh || true
 
-      - name: 铺构建资产
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: bash tools/ci-fetch-assets.sh
+      - name: 取运行时资产
+        uses: actions/download-artifact@v4
+        with:
+          name: runtime-arm64-v8a
+          path: _build/runtime/out
 
-      - name: 现场构建 engine.bin（无 Release 时）
-        if: env.ASSETS_TAG == ''
-        run: |
-          VER=0.2.2-rc.1 OUT="$GITHUB_WORKSPACE/app/src/main/assets/engine.bin" \
-            bash tools/build-engine-bin.sh
-
-      - name: 现场构建 node-runtime.bin（无 Release 时）
-        if: env.ASSETS_TAG == ''
-        run: |
-          OUT="$GITHUB_WORKSPACE/app/src/main/assets/node-runtime.bin" \
-            bash tools/build-node-runtime.sh
-
-      # node 入口包装：吃掉 --no-open（否则引擎不打印 URL，App 等不到就 kill）
-      # + 启动时补 /data/data/<pkg>/usr|home 符号链接（node 的 RUNPATH 指向它）
-      - name: node-runtime 包装（node 入口）
+      - name: 铺运行时资产（assets/runtime + jniLibs）
         run: |
           set -e
-          A=app/src/main/assets/node-runtime.bin
-          if [ ! -s "$A" ]; then echo '::warning title=node-wrap::no node-runtime.bin, skip'; exit 0; fi
-          bash tools/node-runtime-wrap.sh "$A"
-          unzip -l "$A" | grep -q 'bin/node.real' && echo 'OK bin/node.real'
-          unzip -p "$A" bin/node | grep -q '__DSH_NODE_WRAP__' && echo 'OK wrapper'
+          mkdir -p app/src/main/assets/runtime app/src/main/jniLibs/arm64-v8a
+          cp _build/runtime/out/arm64-v8a/assets/runtime/* app/src/main/assets/runtime/
+          cp _build/runtime/out/arm64-v8a/jniLibs/arm64-v8a/*.so app/src/main/jniLibs/arm64-v8a/
+          ls -lh app/src/main/assets/runtime app/src/main/jniLibs/arm64-v8a
 
-      - name: 现场取 Termux bootstrap（bootstrap-aarch64.zip）
-        run: |
-          OUT="$GITHUB_WORKSPACE/app/src/main/assets/bootstrap-aarch64.zip" \
-            bash tools/build-bootstrap.sh
-
-      - name: 现场构建原生产物 + pnpm
-        run: bash tools/build-native-assets.sh
-
-      # 补丁已迁到 app/src/main/assets/webview-polyfill.js（App 资产通道）。
-      # 版本号只认 tools/mobile-ui-version.txt —— 原先这里是写死的
-      #   sed -i 's/MOBILE_UI_VERSION = "1\.1\.0-169"/MOBILE_UI_VERSION = "1.1.0-175"/'
-      # 每改一次 mobile-ui 都得改这行数字，漏改就直接构建失败（173→174 时踩过）。
       - name: mobile-ui 版本戳（读 tools/mobile-ui-version.txt）
         run: |
           set -e
@@ -144,75 +166,6 @@ jobs:
           unzip -p "$Z" 'lib/client.js' > /tmp/cj.js
           if grep -q '__mpDrawerFix170' /tmp/cj.js; then echo '::error::client.js 仍含补丁（应已迁到 polyfill）'; exit 1; fi
           ls -l /tmp/cj.js "$Z"
-
-      - name: 现场编 node-pty 绑定
-        run: bash tools/build-node-pty.sh
-
-      - name: 现场构建 sharp / ripgrep / adb
-        run: bash tools/build-extra-native.sh
-
-      - name: 现场编 node-addon-system（flock 绑定）
-        if: env.ASSETS_TAG == ''
-        run: bash tools/build-node-addon-system.sh
-
-      - name: node-addon-require-builtin（插槽）
-        if: env.ASSETS_TAG == ''
-        run: bash tools/build-node-addon-require-builtin.sh
-
-      - name: 预装 acorn
-        run: npm i --no-save --no-audit --no-fund acorn@8
-
-      - name: 现场生成 webview-compat
-        if: env.ASSETS_TAG == ''
-        run: |
-          if [ -f tools/build-webview_compat.py ]; then
-            python3 tools/build-webview_compat.py --engine /tmp/dsh-engine-0.2.2-rc.1
-          else
-            echo "::notice::tools/build-webview_compat.py 不在仓库里，跳过"
-          fi
-
-      - name: 资产闸门（engine / node-runtime / bootstrap）
-        run: |
-          a=app/src/main/assets
-          miss=0
-          for f in engine.bin node-runtime.bin bootstrap-aarch64.zip; do
-            if [ -s "$a/$f" ]; then
-              echo "OK  $f $(du -h "$a/$f" | cut -f1)"
-            else
-              echo "::error::缺少关键资产 $f -- 这个包装到真机上引擎起不来"
-              miss=1
-            fi
-          done
-          exit $miss
-
-      - name: Node 运行时版本对齐
-        run: |
-          set -u
-          ASSET=app/src/main/assets/node-runtime.bin
-          KT=app/src/main/java/com/dsh/android/termux/TermuxBootstrap.kt
-          if [ ! -s "$ASSET" ]; then
-            echo "::warning title=node-align::no node-runtime.bin (assets from Release), skip"
-            exit 0
-          fi
-          rm -rf /tmp/nrx && mkdir -p /tmp/nrx
-          if ! unzip -o -q "$ASSET" bin/node.real -d /tmp/nrx; then
-            if ! unzip -o -q "$ASSET" bin/node -d /tmp/nrx; then
-              echo "::warning title=node-align::cannot unzip node, skip"
-              exit 0
-            fi
-          fi
-          NB=/tmp/nrx/bin/node.real
-          [ -f "$NB" ] || NB=/tmp/nrx/bin/node
-          REAL=$(strings -a "$NB" | grep -oE 'v26\.[0-9]+\.[0-9]+' | head -1 || true)
-          if [ -z "$REAL" ]; then
-            echo "::warning title=node-align::cannot read node version, skip"
-            exit 0
-          fi
-          echo "bundled node version: $REAL"
-          sed -i "s/private const val NODE_EXECUTABLE_VERSION = \"v[0-9.]*\"/private const val NODE_EXECUTABLE_VERSION = \"$REAL\"/" "$KT"
-          sed -i "s/private const val NODE_VERSION = \"[0-9.-]*\"/private const val NODE_VERSION = \"${REAL#v}-1\"/" "$KT"
-          grep -n 'NODE_EXECUTABLE_VERSION = \|NODE_VERSION = ' "$KT" | head -4
-          grep -q "NODE_EXECUTABLE_VERSION = \"$REAL\"" "$KT" || { echo "::error::node version constants not aligned"; exit 1; }
 
       - name: 工具链自检
         run: |
@@ -265,6 +218,13 @@ jobs:
       - name: 构建 APK
         run: bash ./gradlew :app:assembleSystemDebug --console=plain --stacktrace
 
+      - name: APK 资产断言（单运行时）
+        run: |
+          set -e
+          APK=$(ls app/build/outputs/apk/system/debug/*.apk | head -1)
+          echo "APK=$APK"
+          python3 tools/check-apk-assets.py "$APK"
+
       - name: 产物清单
         if: always()
         run: |
@@ -285,7 +245,9 @@ jobs:
           retention-days: 14
 
       - name: 发布到 Release（公开可下）
-        if: success()
+        # 只有 main 的构建能发布。PR 构建也曾走到这里，把 v0.4.4-test 的资产
+        # 覆盖成 PR 代码（2026-11-12 实际发生），所以这里同时挡 event 与 ref。
+        if: success() && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

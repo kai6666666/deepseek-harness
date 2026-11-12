@@ -369,8 +369,15 @@ android {
     // 于是运行期 openFd 按原名找不到。规避方式是资产名一律用中性后缀
     // （engine.bin / node-runtime.bin / bootstrap-aarch64.zip），不靠白名单。
 
-    // Node 改为 Termux 官方构建（随 assets 分发、解到 app 私有 $PREFIX），
-    // 不再往 jniLibs 塞可执行文件，因此无需 useLegacyPackaging / extractNativeLibs。
+    // proot 四件套以 jniLibs 分发（libproot.so / libproot-loader.so /
+    // libtalloc.so / libandroid-shmem.so）。系统只会把 lib*.so 解到
+    // nativeLibraryDir 并给可执行位，所以这里必须打开 useLegacyPackaging；
+    // 同时 manifests 里的 extractNativeLibs 由 AGP 按该开关生成。
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -399,6 +406,15 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-service:2.8.7")
     implementation("com.google.android.material:material:1.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+
+    // ── 运行时解包（PRoot rootfs）──────────────────────────────────────
+    // rootfs 是 tar.xz（约 124 MB -> 1.0 GB）。Android 没有 xz/tar 命令，rootfs 里
+    // 也还没有，所以只能自己解。选 commons-compress + xz 而不是抄 dsh-Go 的
+    // ParallelXZInputStream：后者是 AGPL 代码，本仓库是 MIT。
+    //   commons-compress  Apache-2.0
+    //   xz (tukaani)     public domain
+    implementation("org.apache.commons:commons-compress:1.27.1")
+    implementation("org.tukaani:xz:1.10")
 
     // ── Shizuku：uid 2000 特权通道的第二条来源 ──────────────────────────
     //

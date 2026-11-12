@@ -112,7 +112,8 @@ class DshApplication : Application() {
         // 只写日志、不弹窗 —— 没开它 App 照样能用，只是悬浮球不会避让键盘。
         runCatching { BubbleA11yService.logState(this) }
             .onFailure { DshLog.w(TAG, "检查键盘哨兵状态失败", it) }
-        bootstrapTermux()
+        // 0.5.0 单运行时：APK 里带 runtime/manifest.json 时不再解 Termux bootstrap。
+        if (!hasProotRuntime()) bootstrapTermux()
         // 崩溃后留下的待传诊断包，在这里补传（不阻塞启动，见该方法注释）。
         uploadPendingBundles()
     }
@@ -149,6 +150,12 @@ class DshApplication : Application() {
             }.onFailure { DshLog.w(TAG, "补传诊断包失败", it) }
         }
     }
+
+    /** APK 是否内置了 PRoot 运行时（assets/runtime/manifest.json）。 */
+    private fun hasProotRuntime(): Boolean = runCatching {
+        assets.open("runtime/manifest.json").close()
+        true
+    }.getOrDefault(false)
 
     private fun bootstrapTermux() {
         applicationScope.launch {
