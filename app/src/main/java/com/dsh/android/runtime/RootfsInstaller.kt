@@ -44,7 +44,11 @@ class RootfsInstaller(private val context: Context) {
      *
      * @throws IOException 空间不足、资产缺失、sha256 不符、解包失败
      */
-    fun ensure(manifest: RuntimeManifest, onProgress: (Progress) -> Unit = {}): File {
+    fun ensure(manifest: RuntimeManifest, onProgress: (Progress) -> Unit = {}): File =
+        synchronized(INSTALL_LOCK) { ensureLocked(manifest, onProgress) }
+
+    /** 已持有 INSTALL_LOCK 的安装实现；禁止外部直接调用。 */
+    private fun ensureLocked(manifest: RuntimeManifest, onProgress: (Progress) -> Unit): File {
         if (isInstalled(manifest)) {
             onProgress(Progress("ready", 1, 1, manifest.runtimeVersion))
             return rootfs
@@ -70,7 +74,8 @@ class RootfsInstaller(private val context: Context) {
 
         val staging = File(
             runtimeDir,
-            "rootfs.staging-" + manifest.runtimeVersion + "-" + android.os.Process.myPid()
+            "rootfs.staging-" + manifest.runtimeVersion + "-" + android.os.Process.myPid() +
+                "-" + System.nanoTime()
         )
         staging.deleteRecursively()
         if (!staging.mkdirs()) throw IOException("无法创建 staging：" + staging.absolutePath)
@@ -275,6 +280,9 @@ class RootfsInstaller(private val context: Context) {
         }
 
     private companion object {
+        /** 进程内安装单飞：探针 Activity 重建与引擎启动可能同时调 ensure。 */
+        val INSTALL_LOCK = Any()
+
         const val TAG = "RootfsInstaller"
 
         /** 解包后预算：Ubuntu base + node + pnpm + dsh 约 1.0 GB，留 30% 余量。 */
