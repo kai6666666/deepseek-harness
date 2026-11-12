@@ -7136,22 +7136,24 @@ class EngineManager private constructor(private val context: Context) {
         runCatching { ensureLogsTool() }
         runCatching { ensurePetBridge() }
 
+        // 注意：这些 writeXxxPatch() 都是幂等写文件，直接调用即可；
+        // bionic 路径里的同名局部 val 只在那条流程内可见。
         val overlays = listOfNotNull(
-            mobileUiPatch,
-            browserPanePatch,
-            agnesMmPatch,
-            marketPatch,
+            writeMobileUiPatch(),
+            writeBrowserPanePatch(),
+            writeAgnesMultimodalPatch(),
+            writeMarketPatch(),
             writeProotSandboxPatch(),
-            workspacePatch,
-            sessionSearchPatch,
-            pluginManagerPatch,
-            bubblePatch,
-            statusBarPatch,
-            petPatch,
-            uiToolPatch,
-            logsToolPatch,
-            browserToolPatch,
-            quarantinePatch,
+            writeWorkspacePatch(),
+            writeSessionSearchPatch(),
+            writePluginManagerPatch(),
+            writeBubbleToolPatch(),
+            writeStatusBarToolPatch(),
+            writePetBridgePatch(),
+            writeUiToolPatch(),
+            writeLogsToolPatch(),
+            writeBrowserToolPatch(),
+            writeQuarantinePatch(),
         )
 
         val host = ProotHost(context, manifest, dshHome = dshHome, workspace = workspaceDir)
