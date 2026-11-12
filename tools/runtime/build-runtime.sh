@@ -188,6 +188,22 @@ else
   log "跳过 C 层（缺 app/src/main/jni）"
 fi
 
+# ---------- 3.45 平台裁剪（只留 linux-arm64） ----------
+# npm 会把 node-pty 的全平台 prebuilds、win32/darwin 平台包一起装进来；
+# 它们不是 AArch64，进 APK 既浪费体积又会被 verify.py 拦下。
+if [ -d "$ROOTFS/opt/dsh/node_modules" ]; then
+  find "$ROOTFS/opt/dsh/node_modules" -type d -name prebuilds -print0 2>/dev/null |
+    while IFS= read -r -d '' d; do
+      find "$d" -mindepth 1 -maxdepth 1 -type d ! -name 'linux-arm64' -exec rm -rf {} + 2>/dev/null || true
+    done
+  find "$ROOTFS/opt/dsh/node_modules" -depth -type d \( -name '*win32*' -o -name '*darwin*' -o -name '*-linux-x64' -o -name '*-linux-x32' -o -name '*-android-*' \) \
+    -exec rm -rf {} + 2>/dev/null || true
+fi
+
+# 去 setuid/setgid：Ubuntu base 自带 chfn/chsh/passwd/su/mount 等 setuid 程序。
+# 它们落在 app 私有目录，setuid 本来就不生效；去掉位既能通过 verify，也少一个被误用的入口。
+find "$ROOTFS" -perm /6000 -exec chmod a-s {} + 2>/dev/null || true
+
 # ---------- 3.5 瘦身（默认开；DSH_RT_PRUNE=0 关闭） ----------
 if [ "${DSH_RT_PRUNE:-1}" = "1" ] && [ -d "$ROOTFS/opt/dsh/node_modules" ]; then
   log "prune: 删除 sourcemap / 测试 / 文档"

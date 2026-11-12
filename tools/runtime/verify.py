@@ -69,8 +69,9 @@ def norm(name):
 
 def check_manifest(manifest):
     argv = manifest.get("launch", {}).get("argv", [])
+    joined = " ".join(argv)
     for needle in ("--rootfs={ROOTFS}", "/usr/bin/env", "{GUEST_ENV}", "{PORT}"):
-        if needle not in argv:
+        if needle not in joined:
             bad("launch.argv 缺 " + needle)
         else:
             ok("launch.argv 含 " + needle)
