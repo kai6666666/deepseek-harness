@@ -4,6 +4,13 @@ name: 构建 APK（x86_64 模拟器）
 # 发布永远只发 arm64；这个 workflow 不碰 Release。
 on:
   workflow_dispatch:
+  # workflow_dispatch 的 API 只认默认分支上的文件；分支验证期先用 PR 触发。
+  pull_request:
+    paths:
+      - 'app/**'
+      - 'tools/runtime/**'
+      - 'tools/check-apk-assets.py'
+      - '.github/workflows/apk-x64.yml'
 
 permissions:
   contents: read
