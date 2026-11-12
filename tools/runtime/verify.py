@@ -82,8 +82,8 @@ def check_manifest(manifest):
         bad("runtimeVersion 为空")
     else:
         ok("runtimeVersion=" + manifest["runtimeVersion"])
-    if manifest.get("abi") != "arm64-v8a":
-        bad("abi 不是 arm64-v8a")
+    if manifest.get("abi") not in EM_BY_ABI:
+        bad("abi 未知：" + str(manifest.get("abi")))
     if "{" not in manifest.get("stop", {}).get("pidFile", ""):
         bad("stop.pidFile 不是模板")
     else:
