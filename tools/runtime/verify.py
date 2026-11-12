@@ -149,7 +149,9 @@ def check_archive(path, manifest):
 
         mixed = sorted(
             n for n in members
-            if any(frag in n for frag in BAD_PKG_FRAGMENTS.get(abi, ())) and n.endswith("package.json")
+            if n.endswith("package.json")
+            and ("/@img/" in n or "/node-addon-system-" in n)
+            and any(frag in n for frag in BAD_PKG_FRAGMENTS.get(abi, ()))
         )
         if mixed:
             bad("归档里混入其它平台包：" + ", ".join(mixed[:10]))

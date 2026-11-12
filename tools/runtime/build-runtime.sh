@@ -223,8 +223,19 @@ if [ -d "$ROOTFS/opt/dsh/node_modules" ]; then
     while IFS= read -r -d '' d; do
       find "$d" -mindepth 1 -maxdepth 1 -type d ! -name "$NODE_OS_TAG" -exec rm -rf {} + 2>/dev/null || true
     done
-  find "$ROOTFS/opt/dsh/node_modules" -depth -type d \( -name '*win32*' -o -name '*darwin*' -o -name '*-linux-x64' -o -name '*-linux-x32' -o -name '*-android-*' \) \
-    -exec rm -rf {} + 2>/dev/null || true
+  # ⚠️ 只删平台专属的**原生**包。JS 包必须留：subprocess-local 与
+  # sandbox-windows-acl 在 linux 上也会静态 import @deepseek-ai/dsh-win32-process，
+  # 删了会让 subprocess / sandbox 两个服务在启动时 failed to import（AVD 实测）。
+  if [ -d "$ROOTFS/opt/dsh/node_modules/@img" ]; then
+    find "$ROOTFS/opt/dsh/node_modules/@img" -mindepth 1 -maxdepth 1 -type d \
+      ! -name "sharp-$NODE_OS_TAG" ! -name "sharp-libvips-$NODE_OS_TAG" \
+      -exec rm -rf {} + 2>/dev/null || true
+  fi
+  if [ -d "$ROOTFS/opt/dsh/node_modules/@deepseek-ai" ]; then
+    find "$ROOTFS/opt/dsh/node_modules/@deepseek-ai" -mindepth 1 -maxdepth 1 -type d \
+      -name 'node-addon-system-*' ! -name "node-addon-system-$NODE_OS_TAG" \
+      -exec rm -rf {} + 2>/dev/null || true
+  fi
 fi
 
 # 去 setuid/setgid：Ubuntu base 自带 chfn/chsh/passwd/su/mount 等 setuid 程序。

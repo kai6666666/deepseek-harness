@@ -183,3 +183,4 @@ proot error: execve("/usr/bin/env"): Permission denied
 1. Android Studio AVD（Google APIs x86_64 镜像）——dsh-Go 的模拟器验证走的是这类镜像；
 2. arm64 真机（最可靠）；
 3. 若必须用雷电，只能验证「bionic 路径」或非 PRoot 功能，不能验证 S4 之后的运行时。
+| 2026-11-13 | AVD 验证：AEHD 2.2 + Google APIs x86_64 API34 起机成功；PRoot 在该镜像里可 trace（`proot -r rootfs /bin/echo` rc=0），dsh 打印 token，`GET /` 返回 401。发现裁剪 bug：`@deepseek-ai/dsh-win32-process` 被当成平台包删掉，导致 subprocess/sandbox 服务 import 失败；裁剪改为只删 `@img/sharp-*` 与 `node-addon-system-*` 的原生包 |
