@@ -38,8 +38,9 @@
 |---|---|---|---|
 | **S1** | 运行时资产进 CI：交叉编译 + 硬断言 + artifact | `runtime.yml` 绿、artifact 有 rootfs/manifest/jniLibs、`verify.py` PASS | ✅ 2026-11-12（run 43215359752，22 OK / 0 FAIL） |
 | **S2** | rootfs 安装器：解 `tar.xz`、原子替换、`.stamp`、空间预检、失败可重试 | 真机首启解包成功；重复启动不重解；坏包能报错 | 🟡 代码完成 + CI 编译通过（run 43216285582），待真机 |
-| **S3** | 启动接线：`ProotHost` 补 bind（workspace/`/sdcard`）与 `DSH_HOME`；`{PATCHES}` 注入；停止语义；`EngineManager.start()` 改走 proot | 冷启出 token、页面可加载、无孤儿 node、重启不撞端口 | 🟡 ProotHost 已加固，EngineManager 接线待做 |
-| **S4** | 删除 bionic：`TermuxBootstrap`、bionic 资产、`HostMode`；`apk.yml` 改消费 runtime artifact | `check-apk-assets.py` 新清单全过；APK 里无 bionic 资产 | ⬜ |
+| **S3** | 启动接线：`ProotHost` 补 bind（workspace/`/sdcard`）与 `DSH_HOME`；`{PATCHES}` 注入；停止语义；APK 内置运行时资产 | 冷启出 token、页面可加载、无孤儿 node、重启不撞端口 | 🟡 前半完成（PR #5）；`EngineManager` 接线与 S4 合并做（见 §七） |
+| **S4** | 删除 bionic：`TermuxBootstrap`、bionic 资产、`HostMode`；`EngineManager.start()` 改成唯一 proot 路径；`check-apk-assets.py` 去掉 bionic 条目 | `check-apk-assets.py` 新清单全过；APK 里无 bionic 资产 | ⬜ |
+| **S4.5** | **x86_64 运行时变体**：`build-runtime.sh` ABI 参数化（amd64 ubuntu-base / node-x64 / proot_x86_64 / talloc+shmem amd64）+ Gradle x64 flavor（模拟器用） | `runtime.yml` 出 x86_64 artifact；雷电/MuMu 原生安装并跑通 | ⬜ |
 | **S5** | 能力搬迁：`bash` 身份、`/sdcard` 绑定、`shell`(uid2000)、`root`(uid0)、无线调试、dev-env、镜像 | 真机 D-03…D-11 全过 | ⬜ |
 | **S6** | 数据迁移与救援：`$DSH_HOME` 复用、索引重建、救援 profile 走 proot、rootfs 修复 | 0.4.3/0.4.4 → 0.5.0 升级不丢会话 | ⬜ |
 | **S7** | 真机矩阵：冷启、附件、终端、检索、沙箱、插件、断网、存储不足 | 见 c-plan §P5 判据 | ⬜ |
@@ -66,3 +67,37 @@
 | 2026-11-12 | S2 代码：RootfsInstaller（xz 解包 / 原子替换 / sha256 / 空间预检）+ Gradle 依赖；CI 编译通过，待真机验收 |
 | 2026-11-12 | 事故：apk.yml 的「发布到 Release」只在 `if: success()` 上，PR 构建把 `v0.4.4-test` 的 APK 覆盖成了 PR 代码。已加 `event != pull_request && ref == refs/heads/main` 门禁 |
 | 2026-11-12 | S3 前半：ProotHost 加固（DSH_HOME→/root/.dsh、workspace 与 /sdcard 绑定、{PATCHES} 注入且缺占位符即拒绝、SIGQUIT 停止）；manifest 与 verify 同步；探针改走安装器 |
+| 2026-11-12 | S3 后半（资产侧）：apk.yml 新增 runtime job 并把 rootfs/manifest/jniLibs 铺进 APK；check-apk-assets 增加运行时与四个 jniLib 断言。EngineManager 接线与 S4 合并，理由见 §七 |
+| 2026-11-12 | 计划调整：x86_64 运行时变体插在 S4 之后（S4.5），用于雷电/MuMu 原生测试 |
+
+## 七、为什么 `EngineManager` 接线与 S4 合并做
+
+`start()` 是一条 700 行的单一流程：Termux 安装 → 体检 → 建救援 profile → 12 个
+`ensureXxx`（原生插件、flock、rg、sharp、node-pty、pnpm…）→ 写 15 个 overlay →
+拼 argv → 起进程 → 就绪/救援/网关检查。
+
+这些步骤里的**路径与产物全都按 bionic 写死**：
+
+| 步骤 | 写的值 | proot 下应该是 |
+|---|---|---|
+| `writeSandboxPatch` | `filesDir/boo-sandbox-run` | `/usr/local/bin/boo-sandbox-run`（guest） |
+| `writeSessionSearchPatch` | `filesDir/home/.dsh/session-index.sqlite` | `/root/.dsh/session-index.sqlite`（guest） |
+| 原生插件 ensure | bionic 自编译 `.node` | rootfs 里官方 linux-arm64 预编译 |
+| pnpm / rg / sharp | android 资产 | rootfs 自带 |
+
+如果现在就在 `start()` 里加一条 `if (proot)` 分支而不同时删除 bionic，
+会出现**两套半成品路径**：proot 分支要跳过 12 个 ensure，又得重新生成 3 个 overlay；
+bionic 分支继续留在下面等下次运行 —— 这正是 0.4.4-test 停在「探针能起、产品路径仍是
+bionic」的原因，也是 0.4.4 被判失败的直接原因。
+
+所以顺序定为：
+
+1. S3（本 PR）：把运行时**契约**与**资产**准备好（ProotHost 加固、{PATCHES}、
+   apk.yml 内置 rootfs + jniLibs、APK 资产断言）。此时 App 行为不变，但
+   `ProotProbeActivity` 可以在真机/模拟器上跑完整链路。
+2. S4：**一次**把 `start()` 改成 proot 单路径，同时删除 `TermuxBootstrap`、
+   12 个 bionic ensure、bionic 资产与 `HostMode`，并把三个 overlay 写成 guest 路径。
+   编译与真机验收都在同一个 PR 里完成 —— 不会出现「两条都不完整」的中间态。
+3. S4.5：x86_64 运行时变体（S4 之后单独做，见上表）。
+
+这也是「单宿主」的代价：切换必须是一次原子替换，不能分两次半切换。
