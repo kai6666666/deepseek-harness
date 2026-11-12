@@ -1,6 +1,9 @@
 package com.dsh.android
 
 import android.content.Context
+import com.dsh.android.runtime.ProotHost
+import com.dsh.android.runtime.RootfsInstaller
+import com.dsh.android.runtime.RuntimeManifest
 import com.dsh.android.log.DshLog as Log
 import com.dsh.android.log.EventLog
 import com.dsh.android.log.LogStore
@@ -7232,7 +7235,9 @@ class EngineManager private constructor(private val context: Context) {
         // manifest 由 APK 内置（apk.yml 的 runtime job 铺进 assets/runtime）。
         // 这里一旦命中，就不再走下面的 Termux/bionic 路径；bionic 代码只作为
         // S4b 删除前的临时死代码保留。
-        val prootManifest = runCatching { RuntimeManifest.load(this) }.getOrNull()
+        // 首次启动时 files 里还没有 manifest，必须先从 assets 读；装完由安装器落盘。
+        val prootManifest = runCatching { RootfsInstaller(this).readManifestFromAssets() }
+            .getOrElse { runCatching { RuntimeManifest.load(this) }.getOrNull() }
         if (prootManifest != null) {
             startProot(prootManifest)
             return@withContext
