@@ -218,6 +218,13 @@ jobs:
       - name: 构建 APK
         run: bash ./gradlew :app:assembleSystemDebug --console=plain --stacktrace
 
+      - name: APK 资产断言（单运行时）
+        run: |
+          set -e
+          APK=$(ls app/build/outputs/apk/system/debug/*.apk | head -1)
+          echo "APK=$APK"
+          python3 tools/check-apk-assets.py "$APK"
+
       - name: 产物清单
         if: always()
         run: |
