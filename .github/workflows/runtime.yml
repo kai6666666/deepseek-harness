@@ -32,11 +32,6 @@ jobs:
     name: build-runtime (arm64-v8a)
     runs-on: ubuntu-latest
     timeout-minutes: 90
-    env:
-      DSH_RT_WORK: ${{ runner.temp }}/rt-work
-      DSH_RT_CACHE: ${{ runner.temp }}/rt-cache
-      DSH_RT_OUT: ${{ github.workspace }}/_build/runtime/out
-      CC: aarch64-linux-gnu-gcc
     steps:
       - uses: actions/checkout@v4
 
@@ -52,6 +47,12 @@ jobs:
           node-version: '24'
 
       - name: 组装 rootfs + manifest + jniLibs
+        env:
+          # runner.* 在 job 级 env 里不可用（GitHub 只允许 step 级），第一次就是踩这个
+          DSH_RT_WORK: ${{ runner.temp }}/rt-work
+          DSH_RT_CACHE: ${{ runner.temp }}/rt-cache
+          DSH_RT_OUT: ${{ github.workspace }}/_build/runtime/out
+          CC: aarch64-linux-gnu-gcc
         run: bash tools/runtime/build-runtime.sh
 
       - name: 硬断言（AArch64 / 无 x64 包 / manifest 对账）
