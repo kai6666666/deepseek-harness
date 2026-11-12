@@ -1,0 +1,77 @@
+name: 构建运行时（PRoot / glibc）
+
+# 只做「运行时资产」这一件事：rootfs-arm64-v8a.tar.xz + manifest.json + jniLibs 四件套。
+# 不碰 APK（APK 仍由 apk.yml 构建）。产物作为 artifact 保留，供接线步骤消费。
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'tools/runtime/**'
+      - 'runtime/patches/**'
+      - 'app/src/main/jni/*.c'
+      - 'tools/apply-glibc-patches.py'
+      - '.github/workflows/runtime.yml'
+  pull_request:
+    paths:
+      - 'tools/runtime/**'
+      - 'runtime/patches/**'
+      - 'app/src/main/jni/*.c'
+      - 'tools/apply-glibc-patches.py'
+      - '.github/workflows/runtime.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: runtime-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  runtime:
+    name: build-runtime (arm64-v8a)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 依赖（交叉编译器 + patchelf + xz）
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends patchelf xz-utils gcc-aarch64-linux-gnu libc6-dev-arm64-cross
+          aarch64-linux-gnu-gcc --version | head -1
+
+      - name: Node 24（仅构建机用；rootfs 里是官方 arm64 tarball）
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: 组装 rootfs + manifest + jniLibs
+        env:
+          # runner.* 在 job 级 env 里不可用（GitHub 只允许 step 级），第一次就是踩这个
+          DSH_RT_WORK: ${{ runner.temp }}/rt-work
+          DSH_RT_CACHE: ${{ runner.temp }}/rt-cache
+          DSH_RT_OUT: ${{ github.workspace }}/_build/runtime/out
+          CC: aarch64-linux-gnu-gcc
+        run: bash tools/runtime/build-runtime.sh
+
+      - name: 硬断言（AArch64 / 无 x64 包 / manifest 对账）
+        run: |
+          python3 tools/runtime/verify.py \
+            _build/runtime/out/arm64-v8a/assets/runtime/rootfs-arm64-v8a.tar.xz \
+            _build/runtime/out/arm64-v8a/assets/runtime/manifest.json \
+            _build/runtime/out/arm64-v8a/jniLibs/arm64-v8a
+
+      - name: 体积与摘要
+        run: |
+          ls -lh _build/runtime/out/arm64-v8a/assets/runtime/
+          du -sh _build/runtime/out/arm64-v8a/jniLibs/arm64-v8a
+          sha256sum _build/runtime/out/arm64-v8a/assets/runtime/rootfs-arm64-v8a.tar.xz
+
+      - name: 上传 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: runtime-arm64-v8a
+          path: _build/runtime/out/**
+          retention-days: 7
+          if-no-files-found: error

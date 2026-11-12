@@ -29,6 +29,9 @@ from pathlib import Path
 
 # 与 tools/ci-fetch-assets.sh 的 REQUIRED 保持同步（改了那边就要改这里）
 REQUIRED = [
+    # 运行时（PRoot/glibc）：由 apk.yml 的 runtime job 在出包前铺进 assets。
+    # 缺了它们，App 只能走 bionic 旧路径 —— 而 0.5.0 的目标是单运行时。
+    "runtime/manifest.json", "runtime/rootfs-arm64-v8a.tar.xz",
     "engine.bin", "node-runtime.bin", "bootstrap-aarch64.zip",
     "boo-sandbox-run.bin", "boosandbox.bin", "linkcompat.bin",
     "mobile-ui.zip", "webview-compat.zip",
@@ -137,6 +140,10 @@ def main() -> int:
             if z.getinfo(key).file_size <= 0:
                 errors.append(f"资产为空 {key}")
 
+        for lib in ("libproot.so", "libproot-loader.so", "libtalloc.so", "libandroid-shmem.so"):
+            key = f"lib/arm64-v8a/{lib}"
+            if key not in names:
+                errors.append(f"缺少 jniLib {key}（proot 四件套必须在 jniLibs）")
         print(f"APK {apk.name}：{apk.stat().st_size:,} 字节，{len(names)} 条目")
         missing = [a for a in REQUIRED if f"assets/{a}" not in names]
         print(f"资产 {len(REQUIRED) - len(missing)}/{len(REQUIRED)} 齐备"

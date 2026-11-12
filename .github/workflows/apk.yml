@@ -42,8 +42,56 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # 运行时资产（PRoot rootfs）单独一个 job：产物与 APK 构建解耦，
+  # 失败时能一眼看出是「运行时坏」还是「APK 坏」。缓存只放下载物。
+  runtime:
+    name: runtime (arm64-v8a)
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 依赖（交叉编译器 + patchelf + xz）
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends patchelf xz-utils gcc-aarch64-linux-gnu libc6-dev-arm64-cross
+
+      - name: Node 24（构建机用）
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: 下载缓存
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/rt-cache
+          key: rt-cache-v1-ubuntu24.04.5-node24.22.1
+
+      - name: 组装 rootfs + manifest + jniLibs
+        env:
+          DSH_RT_WORK: ${{ runner.temp }}/rt-work
+          DSH_RT_CACHE: ${{ runner.temp }}/rt-cache
+          DSH_RT_OUT: ${{ github.workspace }}/_build/runtime/out
+          CC: aarch64-linux-gnu-gcc
+        run: bash tools/runtime/build-runtime.sh
+
+      - name: 硬断言
+        run: |
+          python3 tools/runtime/verify.py \
+            _build/runtime/out/arm64-v8a/assets/runtime/rootfs-arm64-v8a.tar.xz \
+            _build/runtime/out/arm64-v8a/assets/runtime/manifest.json \
+            _build/runtime/out/arm64-v8a/jniLibs/arm64-v8a
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: runtime-arm64-v8a
+          path: _build/runtime/out/**
+          retention-days: 1
+          if-no-files-found: error
+
   assemble:
     name: assembleSystemDebug
+    needs: runtime
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
@@ -77,6 +125,20 @@ jobs:
 
       - name: 修可执行位（仓库从 Android 文件系统提交，没带 +x）
         run: chmod +x gradlew tools/*.sh || true
+
+      - name: 取运行时资产
+        uses: actions/download-artifact@v4
+        with:
+          name: runtime-arm64-v8a
+          path: _build/runtime/out
+
+      - name: 铺运行时资产（assets/runtime + jniLibs）
+        run: |
+          set -e
+          mkdir -p app/src/main/assets/runtime app/src/main/jniLibs/arm64-v8a
+          cp _build/runtime/out/arm64-v8a/assets/runtime/* app/src/main/assets/runtime/
+          cp _build/runtime/out/arm64-v8a/jniLibs/arm64-v8a/*.so app/src/main/jniLibs/arm64-v8a/
+          ls -lh app/src/main/assets/runtime app/src/main/jniLibs/arm64-v8a
 
       - name: 铺构建资产
         env:
@@ -285,7 +347,9 @@ jobs:
           retention-days: 14
 
       - name: 发布到 Release（公开可下）
-        if: success()
+        # 只有 main 的构建能发布。PR 构建也曾走到这里，把 v0.4.4-test 的资产
+        # 覆盖成 PR 代码（2026-11-12 实际发生），所以这里同时挡 event 与 ref。
+        if: success() && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

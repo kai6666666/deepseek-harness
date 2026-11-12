@@ -26,6 +26,8 @@ PROOT_SHA=${PROOT_SHA:-10a394b585c2fc2b2c8502544f4e5f1be581dc8bfff79e8ba62f16207
 TALLOC_SHA=${TALLOC_SHA:-556591f43bb773ad8777e1a29522640866a55f95dab71914418b94a8c58ad5a7}
 SHMEM_SHA=${SHMEM_SHA:-0da3a24d558b93c92bcf8d611e0826a99ff96e396b148e6cdf33b47c47c57ff6}
 SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH:-1767225600}
+# 交叉编译：CI 上是 aarch64-linux-gnu-gcc；设备/arm64 主机上就是 gcc
+CC=${CC:-gcc}
 
 WORK=${DSH_RT_WORK:-/root/dsh-runtime-build}
 CACHE=${DSH_RT_CACHE:-/root/.cache/dsh-runtime}
@@ -129,7 +131,8 @@ if [ "${DSH_RT_SKIP_ENGINE:-0}" != "1" ]; then
     [ -f package.json ] || npm init -y >/dev/null 2>&1
     install_engine() {
       local reg=$1 extra=$2
-      npm_config_platform=linux npm_config_arch=arm64 npm_config_cache="$CACHE/npm" \
+      npm_config_platform=linux npm_config_os=linux npm_config_cpu=arm64 npm_config_arch=arm64 \
+        npm_config_cache="$CACHE/npm" \
         npm_config_registry="$reg" \
         npm install --omit=dev --no-audit --no-fund --ignore-scripts --loglevel=error $extra \
         "@deepseek-ai/dsh@$DSH_VERSION"
@@ -151,7 +154,8 @@ if [ "${DSH_RT_SKIP_ENGINE:-0}" != "1" ]; then
     SHARP_VER=$(node -p "require('./node_modules/sharp/package.json').version")
     VIPS_VER=$(node -p "require('./node_modules/sharp/package.json').optionalDependencies['@img/sharp-libvips-linux-arm64']")
     log "optional: node-addon-system-linux-arm64@$NAS_VER sharp-linux-arm64@$SHARP_VER libvips@$VIPS_VER"
-    npm_config_cache="$CACHE/npm" npm install --no-save --force --ignore-scripts --no-audit --no-fund \
+    npm_config_os=linux npm_config_cpu=arm64 npm_config_arch=arm64 \
+      npm_config_cache="$CACHE/npm" npm install --no-save --force --ignore-scripts --no-audit --no-fund \
       "@deepseek-ai/node-addon-system-linux-arm64@$NAS_VER" \
       "@img/sharp-linux-arm64@$SHARP_VER" \
       "@img/sharp-libvips-linux-arm64@$VIPS_VER" >/dev/null
@@ -174,15 +178,31 @@ if [ -f "$JNI_SRC/boo-sandbox-run.c" ]; then
   cp "$JNI_SRC"/*.c "$SRCC/app/src/main/jni/"
   cp "$REPO_ROOT/tools/apply-glibc-patches.py" "$SRCC/tools/"
   ( cd "$SRCC" && python3 tools/apply-glibc-patches.py )
-  gcc -O2 -o "$ROOTFS/usr/local/bin/boo-sandbox-run"                  "$SRCC/app/src/main/jni/boo-sandbox-run.c"
-  gcc -O2 -shared -fPIC -o "$ROOTFS/usr/local/lib/libboosandbox.so"   "$SRCC/app/src/main/jni/boosandbox.c" -ldl
-  gcc -O2 -shared -fPIC -o "$ROOTFS/usr/local/lib/liblinkcompat.so"   "$SRCC/app/src/main/jni/linkcompat.c" -ldl
+  "$CC" -O2 -o "$ROOTFS/usr/local/bin/boo-sandbox-run"                "$SRCC/app/src/main/jni/boo-sandbox-run.c"
+  "$CC" -O2 -shared -fPIC -o "$ROOTFS/usr/local/lib/libboosandbox.so" "$SRCC/app/src/main/jni/boosandbox.c" -ldl
+  "$CC" -O2 -shared -fPIC -o "$ROOTFS/usr/local/lib/liblinkcompat.so" "$SRCC/app/src/main/jni/linkcompat.c" -ldl
   chmod 755 "$ROOTFS/usr/local/bin/boo-sandbox-run"
   chmod 644 "$ROOTFS/usr/local/lib/libboosandbox.so" "$ROOTFS/usr/local/lib/liblinkcompat.so"
   log "C layers: $(ls -l "$ROOTFS/usr/local/bin/boo-sandbox-run" "$ROOTFS/usr/local/lib"/*.so | awk '{printf "%s=%s ", $9, $5}')"
 else
   log "跳过 C 层（缺 app/src/main/jni）"
 fi
+
+# ---------- 3.45 平台裁剪（只留 linux-arm64） ----------
+# npm 会把 node-pty 的全平台 prebuilds、win32/darwin 平台包一起装进来；
+# 它们不是 AArch64，进 APK 既浪费体积又会被 verify.py 拦下。
+if [ -d "$ROOTFS/opt/dsh/node_modules" ]; then
+  find "$ROOTFS/opt/dsh/node_modules" -type d -name prebuilds -print0 2>/dev/null |
+    while IFS= read -r -d '' d; do
+      find "$d" -mindepth 1 -maxdepth 1 -type d ! -name 'linux-arm64' -exec rm -rf {} + 2>/dev/null || true
+    done
+  find "$ROOTFS/opt/dsh/node_modules" -depth -type d \( -name '*win32*' -o -name '*darwin*' -o -name '*-linux-x64' -o -name '*-linux-x32' -o -name '*-android-*' \) \
+    -exec rm -rf {} + 2>/dev/null || true
+fi
+
+# 去 setuid/setgid：Ubuntu base 自带 chfn/chsh/passwd/su/mount 等 setuid 程序。
+# 它们落在 app 私有目录，setuid 本来就不生效；去掉位既能通过 verify，也少一个被误用的入口。
+find "$ROOTFS" -perm /6000 -exec chmod a-s {} + 2>/dev/null || true
 
 # ---------- 3.5 瘦身（默认开；DSH_RT_PRUNE=0 关闭） ----------
 if [ "${DSH_RT_PRUNE:-1}" = "1" ] && [ -d "$ROOTFS/opt/dsh/node_modules" ]; then
@@ -218,13 +238,13 @@ argv = [
     "-b", "{ROOTFS}/var/lib/dsh-app/empty:/sys/fs/selinux",
     "-b", "{ROOTFS}/var/lib/dsh-app/shm:/dev/shm",
     "/usr/bin/env", "-i",
-    "HOME=/root", "USER=root", "LOGNAME=root", "SHELL=/bin/bash",
+    "HOME=/root", "USER=root", "LOGNAME=root", "SHELL=/bin/bash", "DSH_HOME=/root/.dsh",
     "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
     "LANG=C.UTF-8", "TERM=xterm-256color", "TMPDIR=/tmp",
     "NODE_OPTIONS=--dns-result-order=ipv4first", "NODE_PATH=/opt/dsh/node_modules",
     "{GUEST_ENV}",
     "/bin/sh", "-c",
-    "echo $$ > /tmp/dsh-web.pid; exec /usr/local/bin/dsh web --host 127.0.0.1 --port {PORT} --no-open",
+    "echo $ > /tmp/dsh-web.pid; exec /usr/local/bin/dsh web {PATCHES} --host 127.0.0.1 --port {PORT} --no-open",
 ]
 m = {
     "runtimeVersion": ver,
