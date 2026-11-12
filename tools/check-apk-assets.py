@@ -28,11 +28,11 @@ import zipfile
 from pathlib import Path
 
 # 与 tools/ci-fetch-assets.sh 的 REQUIRED 保持同步（改了那边就要改这里）
+# 运行时两项由 --abi 决定（arm64-v8a / x86_64），其余与 ABI 无关
 REQUIRED = [
     # 运行时（PRoot/glibc）：由 apk.yml 的 runtime job 在出包前铺进 assets。
     # 0.5.0 是单运行时：这里不再有任何 bionic 资产（engine.bin / bootstrap /
     # node-runtime / android 原生 addon / pnpm / sharp-wasm32 / rg / adb）。
-    "runtime/manifest.json", "runtime/rootfs-arm64-v8a.tar.xz",
     # 插件资产（build-plugin-assets.sh 一次打齐）
     "mobile-ui.zip",
     "agnes-multimodal.zip", "preset-razor.zip", "preset-skills.zip",
@@ -44,6 +44,9 @@ REQUIRED = [
     "dsh-env.mjs",
     "check-devenv.mjs",
 ]
+
+def required_for(abi: str) -> list[str]:
+    return ["runtime/manifest.json", f"runtime/rootfs-{abi}.tar.xz"] + REQUIRED
 
 
 def required_sonames() -> list[str]:
@@ -113,10 +116,17 @@ def find_aapt2() -> str | None:
 
 
 def main() -> int:
-    if len(sys.argv) < 2:
-        print("用法: check-apk-assets.py <apk>", file=sys.stderr)
+    argv = sys.argv[1:]
+    abi = "arm64-v8a"
+    if "--abi" in argv:
+        i = argv.index("--abi")
+        abi = argv[i + 1]
+        del argv[i:i + 2]
+    if not argv:
+        print("用法: check-apk-assets.py [--abi <abi>] <apk>", file=sys.stderr)
         return 2
-    apk = Path(sys.argv[1])
+    apk = Path(argv[0])
+    required = required_for(abi)
     if not apk.is_file():
         print(f"❌ APK 不存在：{apk}", file=sys.stderr)
         return 2
@@ -128,7 +138,7 @@ def main() -> int:
             errors.append("缺少 AndroidManifest.xml")
         if "classes.dex" not in names:
             errors.append("缺少 classes.dex")
-        for asset in REQUIRED:
+        for asset in required:
             key = f"assets/{asset}"
             if key not in names:
                 errors.append(f"缺少资产 {key}")
@@ -137,12 +147,12 @@ def main() -> int:
                 errors.append(f"资产为空 {key}")
 
         for lib in ("libproot.so", "libproot-loader.so", "libtalloc.so", "libandroid-shmem.so"):
-            key = f"lib/arm64-v8a/{lib}"
+            key = f"lib/{abi}/{lib}"
             if key not in names:
                 errors.append(f"缺少 jniLib {key}（proot 四件套必须在 jniLibs）")
         print(f"APK {apk.name}：{apk.stat().st_size:,} 字节，{len(names)} 条目")
-        missing = [a for a in REQUIRED if f"assets/{a}" not in names]
-        print(f"资产 {len(REQUIRED) - len(missing)}/{len(REQUIRED)} 齐备"
+        missing = [a for a in required if f"assets/{a}" not in names]
+        print(f"资产 {len(required) - len(missing)}/{len(required)} 齐备"
               + (f"，缺：{missing}" if missing else ""))
 
     aapt2 = find_aapt2()

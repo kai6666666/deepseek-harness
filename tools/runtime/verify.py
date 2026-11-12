@@ -22,7 +22,7 @@ import subprocess
 import sys
 import tarfile
 
-EM_AARCH64 = 183
+EM_BY_ABI = {"arm64-v8a": 183, "x86_64": 62}
 REQUIRED = [
     "usr/bin/node",
     "usr/local/bin/dsh",
@@ -32,7 +32,10 @@ REQUIRED = [
     "opt/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js",
 ]
 REQUIRED_JNI = ["libproot.so", "libproot-loader.so", "libtalloc.so", "libandroid-shmem.so"]
-BAD_PKG_FRAGMENTS = ("linux-x64", "linux-x32", "win32-", "darwin-", "android-arm64")
+BAD_PKG_FRAGMENTS = {
+    "arm64-v8a": ("linux-x64", "linux-x32", "win32-", "darwin-", "android-arm64"),
+    "x86_64": ("linux-arm64", "linux-aarch64", "android-arm64", "win32-", "darwin-"),
+}
 
 fails = []
 oks = []
@@ -88,6 +91,11 @@ def check_manifest(manifest):
 
 
 def check_archive(path, manifest):
+    abi = manifest.get("abi", "arm64-v8a")
+    em = EM_BY_ABI.get(abi)
+    if em is None:
+        bad("未知 abi：" + str(abi))
+        em = EM_BY_ABI["arm64-v8a"]
     size = 0
     seen = set()
     with tarfile.open(path, "r:xz") as tf:
@@ -117,7 +125,7 @@ def check_archive(path, manifest):
             return f.read(4096) if f else b""
 
         head = read_head("usr/bin/node")
-        if elf_machine(head) != EM_AARCH64:
+        if elf_machine(head) != em:
             bad("usr/bin/node 不是 AArch64 ELF")
         else:
             ok("usr/bin/node 是 AArch64")
@@ -132,7 +140,7 @@ def check_archive(path, manifest):
             if f is None:
                 continue
             machine = elf_machine(f.read(4096))
-            if machine != EM_AARCH64:
+            if machine != em:
                 wrong.append(n + "(e_machine=" + str(machine) + ")")
         if wrong:
             bad("以下原生模块不是 AArch64：" + ", ".join(wrong[:10]))
@@ -141,7 +149,7 @@ def check_archive(path, manifest):
 
         mixed = sorted(
             n for n in members
-            if any(frag in n for frag in BAD_PKG_FRAGMENTS) and n.endswith("package.json")
+            if any(frag in n for frag in BAD_PKG_FRAGMENTS.get(abi, ())) and n.endswith("package.json")
         )
         if mixed:
             bad("归档里混入其它平台包：" + ", ".join(mixed[:10]))
@@ -158,14 +166,14 @@ def check_archive(path, manifest):
             ok("manifest bytes 一致")
 
 
-def check_jni(dirpath):
+def check_jni(dirpath, em):
     for name in REQUIRED_JNI:
         p = os.path.join(dirpath, name)
         if not os.path.isfile(p):
             bad("缺 jniLib：" + name)
             continue
         with open(p, "rb") as f:
-            if elf_machine(f.read(4096)) != EM_AARCH64:
+            if elf_machine(f.read(4096)) != em:
                 bad("jniLib 不是 AArch64：" + name)
                 continue
         ok("jniLib " + name)
@@ -193,7 +201,7 @@ def main():
         manifest = json.load(f)
     check_manifest(manifest)
     check_archive(rootfs, manifest)
-    check_jni(jni_dir)
+    check_jni(jni_dir, EM_BY_ABI.get(manifest.get("abi", "arm64-v8a"), 183))
 
     print("\n== 运行时产物体检 ==")
     for o in oks:

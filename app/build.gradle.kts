@@ -23,6 +23,9 @@ android {
     namespace = "com.dsh.android"
     compileSdk = 35
 
+    // 模拟器测试用：-PtargetAbi=x86_64 出 x64 包；发布仍只出 arm64。
+    val targetAbi = (project.findProperty("targetAbi") as String?) ?: "arm64-v8a"
+
     defaultConfig {
         applicationId = "com.dsh.android"
         minSdk = 26
@@ -266,7 +269,7 @@ android {
 
         // 只支持 arm64-v8a：内置的引擎资产与 Termux bootstrap 都是 arm64 架构
         ndk {
-            abiFilters += "arm64-v8a"
+            abiFilters += targetAbi
         }
 
         // Web 内核是不是**随 APK 打包**的（gecko flavor 覆盖成 true）。

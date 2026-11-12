@@ -1,0 +1,93 @@
+name: 构建 APK（x86_64 模拟器）
+
+# 只手动触发：给雷电/MuMu 这类 x86_64 模拟器出一个原生包。
+# 发布永远只发 arm64；这个 workflow 不碰 Release。
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: apk-x64
+  cancel-in-progress: true
+
+jobs:
+  x64:
+    name: assembleSystemDebug (x86_64)
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends patchelf xz-utils
+
+      - name: Node 24（构建机用）
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platforms;android-35 build-tools;35.0.0 ndk;27.0.12077973'
+          log-accepted-android-sdk-licenses: true
+
+      - name: 下载缓存
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/rt-cache
+          key: rt-cache-v1-x86_64-ubuntu24.04.5-node24.22.1
+
+      - name: 组装 x86_64 运行时
+        env:
+          ABI: x86_64
+          CC: gcc
+          DSH_RT_WORK: ${{ runner.temp }}/rt-work-x86_64
+          DSH_RT_CACHE: ${{ runner.temp }}/rt-cache
+          DSH_RT_OUT: ${{ github.workspace }}/_build/runtime/out
+        run: bash tools/runtime/build-runtime.sh
+
+      - name: 硬断言
+        run: |
+          python3 tools/runtime/verify.py \
+            _build/runtime/out/x86_64/assets/runtime/rootfs-x86_64.tar.xz \
+            _build/runtime/out/x86_64/assets/runtime/manifest.json \
+            _build/runtime/out/x86_64/jniLibs/x86_64
+
+      - name: 铺运行时资产
+        run: |
+          set -e
+          chmod +x gradlew
+          mkdir -p app/src/main/assets/runtime app/src/main/jniLibs/x86_64
+          cp _build/runtime/out/x86_64/assets/runtime/* app/src/main/assets/runtime/
+          cp _build/runtime/out/x86_64/jniLibs/x86_64/*.so app/src/main/jniLibs/x86_64/
+          ls -lh app/src/main/assets/runtime app/src/main/jniLibs/x86_64
+
+      - name: 打包插件资产
+        run: bash tools/build-plugin-assets.sh
+
+      - name: 构建 APK（x86_64）
+        run: ./gradlew :app:assembleSystemDebug -PtargetAbi=x86_64 --console=plain
+
+      - name: APK 资产断言
+        run: |
+          APK=$(ls app/build/outputs/apk/system/debug/*.apk | head -1)
+          echo "APK=$APK"
+          python3 tools/check-apk-assets.py --abi x86_64 "$APK"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dsh-system-x64-debug
+          path: app/build/outputs/apk/system/debug/*.apk
+          retention-days: 7
+          if-no-files-found: error
