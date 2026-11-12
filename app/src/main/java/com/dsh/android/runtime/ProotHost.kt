@@ -185,7 +185,7 @@ class ProotHost(
         )
         val nodePid = runCatching { pidFile.readText().trim().toInt() }.getOrNull()
         if (nodePid != null && nodePid > 0) {
-            runCatching { Os.kill(nodePid.toLong(), OsConstants.SIGTERM) }
+            runCatching { Os.kill(nodePid, OsConstants.SIGTERM) }
                 .onFailure { Log.w(TAG, "SIGTERM " + nodePid + " 失败: " + it.message) }
             val deadline = System.currentTimeMillis() + 5000
             while (System.currentTimeMillis() < deadline && File("/proc/" + nodePid).exists()) {
@@ -199,7 +199,7 @@ class ProotHost(
             // 但异常退出时必须显式 SIGQUIT，否则 tracee 变孤儿、端口不释放。
             val pid = ProcPid.of(p)
             if (pid != null) {
-                runCatching { Os.kill(pid, OsConstants.SIGQUIT) }
+                runCatching { Os.kill(pid.toInt(), OsConstants.SIGQUIT) }
                     .onFailure { Log.w(TAG, "SIGQUIT " + pid + " 失败: " + it.message) }
             }
             if (!p.waitFor(8, java.util.concurrent.TimeUnit.SECONDS)) {

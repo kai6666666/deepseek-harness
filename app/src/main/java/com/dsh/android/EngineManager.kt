@@ -7236,8 +7236,9 @@ class EngineManager private constructor(private val context: Context) {
         // 这里一旦命中，就不再走下面的 Termux/bionic 路径；bionic 代码只作为
         // S4b 删除前的临时死代码保留。
         // 首次启动时 files 里还没有 manifest，必须先从 assets 读；装完由安装器落盘。
-        val prootManifest = runCatching { RootfsInstaller(this).readManifestFromAssets() }
-            .getOrElse { runCatching { RuntimeManifest.load(this) }.getOrNull() }
+        // 注意：这里在 withContext 的 lambda 里，this 是 CoroutineScope，不是 EngineManager
+        val prootManifest = runCatching { RootfsInstaller(context).readManifestFromAssets() }
+            .getOrElse { runCatching { RuntimeManifest.load(context) }.getOrNull() }
         if (prootManifest != null) {
             startProot(prootManifest)
             return@withContext
