@@ -136,7 +136,7 @@ jobs:
         run: |
           set -e
           mkdir -p app/src/main/assets/runtime app/src/main/jniLibs/arm64-v8a
-          cp _build/runtime/out/arm64-v8a/assets/runtime/* app/src/main/assets/runtime/
+          cp -r _build/runtime/out/arm64-v8a/assets/runtime/.  app/src/main/assets/runtime/
           cp _build/runtime/out/arm64-v8a/jniLibs/arm64-v8a/*.so app/src/main/jniLibs/arm64-v8a/
           ls -lh app/src/main/assets/runtime app/src/main/jniLibs/arm64-v8a
 

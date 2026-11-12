@@ -76,7 +76,7 @@ jobs:
           set -e
           chmod +x gradlew
           mkdir -p app/src/main/assets/runtime app/src/main/jniLibs/x86_64
-          cp _build/runtime/out/x86_64/assets/runtime/* app/src/main/assets/runtime/
+          cp -r _build/runtime/out/x86_64/assets/runtime/.  app/src/main/assets/runtime/
           cp _build/runtime/out/x86_64/jniLibs/x86_64/*.so app/src/main/jniLibs/x86_64/
           ls -lh app/src/main/assets/runtime app/src/main/jniLibs/x86_64
 
