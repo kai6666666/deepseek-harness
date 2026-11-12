@@ -207,3 +207,16 @@ RESULT=PASS
 2. `ProotHost.stop()` 在 pidfile 无效时按 `/proc/*/cmdline` 兜底杀 guest node；
 3. manifest 缺 `{PATCHES}` 的守卫、proot-libs 从 assets 解出并加进 `LD_LIBRARY_PATH`。
 | 2026-11-13 | S4c：`EngineManager.start()` 改为 proot 单路径（bionic 分支整段删除）；删除 `TermuxBootstrap.kt`、`MirrorProbe.kt`、`termux/tool/*`、`termux/util/*` 与 6 个仅定义未调用的 ensure（约 20 KB 源码）；剩余 bionic 辅助函数待随救援/无线调试重构一并删。新增 `tools/local/gradle-mirrors.gradle`（阿里云镜像，仅本地开发用） |
+
+### 9.5 真 App 启动（不是探针）—— AVD 上官方前端已加载
+
+`MainActivity` 启动 → `ensureExtracted` 命中单运行时早返回 → `startProot`：
+15 个 `--patch` overlay（mobile-ui / sandbox-proot / session-search / 工具插件…）全部传入，
+engine 打印 token，WebView 加载官方前端成功（“Into the Unknown” 首页 + 工作区选择器）。
+
+过程中修掉：`MainActivity` 仍会调 `ensureExtracted(assetStamp)`，单运行时下没有
+`engine.bin` → `FileNotFoundException: engine.bin`。在 `ensureExtracted` 开头检测
+`assets/runtime/manifest.json`，命中即返回。
+
+遗留：首页停在「Choose workspace」——引擎侧没有默认工作区，需要用户在 UI 里选
+（或由 App 启动时把 `filesDir/workspace` 注册为默认工作区）。下一步处理。

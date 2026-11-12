@@ -279,6 +279,13 @@ class EngineManager private constructor(private val context: Context) {
      */
     suspend fun ensureExtracted(versionStamp: String) = withContext(Dispatchers.IO) {
         lastAssetStamp = versionStamp
+        // 0.5.0 单运行时：引擎在 APK 内置的 PRoot rootfs 里（/opt/dsh），
+        // 没有 engine.bin 可解。MainActivity 仍会调本方法做启动前准备，
+        // 这里直接返回，避免 FileNotFoundException: engine.bin。
+        if (runCatching { RootfsInstaller(context).readManifestFromAssets() }.isSuccess) {
+            Log.i(TAG, "单运行时：引擎在 PRoot rootfs 内，跳过 engine.bin 解包")
+            return@withContext
+        }
         if (stampFile.isFile && stampFile.readText().trim() == versionStamp) {
             Log.i(TAG, "引擎资产已是最新（$versionStamp），跳过解包")
             return@withContext
