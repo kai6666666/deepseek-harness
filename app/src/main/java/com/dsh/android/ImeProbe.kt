@@ -30,7 +30,7 @@ import android.util.Log
  * 无障碍服务能直接收到 IME 窗口事件，是「最正确」的做法。但那要求用户额外去
  * 设置里授权无障碍，权限很重、且各家 ROM 的保活策略不同 —— 为了一个「球飞一下」
  * 的趣味功能不值得。这里用已有的 uid 2000 / Shizuku 通道（`dumpsys` 本来就在
- * [com.dsh.android.termux.tool.AppShellExecutor.needsShellUid] 的名单里）。
+ * AppShellExecutor.needsShellUid 的名单里）。
  *
  * ## 拿不到 shell 身份怎么办
  *

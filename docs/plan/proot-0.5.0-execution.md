@@ -39,7 +39,7 @@
 | **S1** | 运行时资产进 CI：交叉编译 + 硬断言 + artifact | `runtime.yml` 绿、artifact 有 rootfs/manifest/jniLibs、`verify.py` PASS | ✅ 2026-11-12（run 43215359752，22 OK / 0 FAIL） |
 | **S2** | rootfs 安装器：解 `tar.xz`、原子替换、`.stamp`、空间预检、失败可重试 | 真机首启解包成功；重复启动不重解；坏包能报错 | 🟡 代码完成 + CI 编译通过（run 43216285582），待真机 |
 | **S3** | 启动接线：`ProotHost` 补 bind（workspace/`/sdcard`）与 `DSH_HOME`；`{PATCHES}` 注入；停止语义；APK 内置运行时资产 | 冷启出 token、页面可加载、无孤儿 node、重启不撞端口 | 🟡 前半完成（PR #5）；`EngineManager` 接线与 S4 合并做（见 §七） |
-| **S4** | 删除 bionic：bionic 资产下线（S4b）+ 代码删除（S4c，`TermuxBootstrap`/`HostMode`/72 个 ensure） | `check-apk-assets.py` 新清单全过；APK 里无 bionic 资产 | ✅ S4b（APK 310→136 MB，资产断言进 CI）；S4c 删代码 |
+| **S4** | 删除 bionic：bionic 资产下线（S4b）+ 代码删除（S4c） | `check-apk-assets.py` 新清单全过；APK 里无 bionic 资产 | ✅ S4b；🟡 S4c 进行中 |
 | **S4.5** | **x86_64 运行时变体**：ABI 参数化 + `-PtargetAbi` + `apk-x64.yml` | x86_64 artifact/APK 可出；雷电能否跑 PRoot 见 §九 | 🟡 构建链路完成；雷电被 ptrace 拦截（§九），验收需 AVD/真机 |
 | **S5** | 能力搬迁：`bash` 身份、`/sdcard` 绑定、`shell`(uid2000)、`root`(uid0)、无线调试、dev-env、镜像 | 真机 D-03…D-11 全过 | ⬜ |
 | **S6** | 数据迁移与救援：`$DSH_HOME` 复用、索引重建、救援 profile 走 proot、rootfs 修复 | 0.4.3/0.4.4 → 0.5.0 升级不丢会话 | ⬜ |
@@ -206,3 +206,4 @@ RESULT=PASS
 1. `build-runtime.sh` 的 pidfile 命令被 JS/替换吃掉一个 `$`，写成 `echo $ >`；恢复 `echo $$`，pidfile 才有 node pid；
 2. `ProotHost.stop()` 在 pidfile 无效时按 `/proc/*/cmdline` 兜底杀 guest node；
 3. manifest 缺 `{PATCHES}` 的守卫、proot-libs 从 assets 解出并加进 `LD_LIBRARY_PATH`。
+| 2026-11-13 | S4c：`EngineManager.start()` 改为 proot 单路径（bionic 分支整段删除）；删除 `TermuxBootstrap.kt`、`MirrorProbe.kt`、`termux/tool/*`、`termux/util/*` 与 6 个仅定义未调用的 ensure（约 20 KB 源码）；剩余 bionic 辅助函数待随救援/无线调试重构一并删。新增 `tools/local/gradle-mirrors.gradle`（阿里云镜像，仅本地开发用） |
