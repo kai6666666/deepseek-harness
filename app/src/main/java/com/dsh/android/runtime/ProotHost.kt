@@ -53,8 +53,9 @@ class ProotHost(
         tmpDir.mkdirs()
         dshHome.mkdirs()
         workspace.mkdirs()
-        // guest 里的 DSH_HOME 固定绑到 /root/.dsh，bind 目标目录必须事先存在
-        File(rootfs, "root/.dsh").mkdirs()
+        // DSH_HOME 按**原绝对路径**绑定：EngineManager 写的所有 overlay、插件目录、
+        // 会话索引路径都基于宿主 filesDir 的绝对路径，绑定到 /root/.dsh 会让它们全部失效。
+        // 同一路径绑定的代价只是 guest 里能看到这个目录，收益是零路径改写。
 
         val port = ServerSocket(0).use { it.localPort }
         val vars = mapOf(
@@ -78,7 +79,7 @@ class ProotHost(
             when {
                 !bindsPlaced && arg == "/usr/bin/env" -> {
                     argv += "-b"
-                    argv += dshHome.canonicalPath + ":" + File(rootfs, "root/.dsh").canonicalPath
+                    argv += dshHome.canonicalPath + ":" + dshHome.canonicalPath
                     argv += "-b"
                     argv += workspace.canonicalPath + ":" + workspace.canonicalPath
                     phoneStorage?.takeIf { it.isDirectory }?.let {

@@ -7083,6 +7083,121 @@ class EngineManager private constructor(private val context: Context) {
     }
 
     /** 启动引擎，等待其打印带 token 的 URL。 */
+    /** 当前 PRoot 宿主；非空时 stop() 走它的 pidfile/SIGQUIT 语义。 */
+    @Volatile
+    private var prootHost: ProotHost? = null
+
+    /**
+     * PRoot 单运行时启动（S4）。
+     *
+     * 与 bionic 路径共用同一批 `ensureXxx` 写入函数：它们的落点都是 `$DSH_HOME`
+     * 或 `filesDir`，而 ProotHost 把 `$DSH_HOME` 与 workspace 按**原绝对路径**
+     * 绑定进 guest，所以这些路径在 guest 里逐字有效。
+     *
+     * 只有沙箱 runner 不同：guest 里是 `/usr/local/bin/boo-sandbox-run`，
+     * 不是宿主 `filesDir/boo-sandbox-run`，见 [writeProotSandboxPatch]。
+     */
+    private suspend fun startProot(manifest: RuntimeManifest) {
+        EventLog.record("engine.start.proot", mapOf("runtime" to manifest.runtimeVersion))
+        val installer = RootfsInstaller(context)
+        try {
+            if (!installer.isInstalled(manifest)) {
+                installer.ensure(manifest) { p ->
+                    Log.i(TAG, "runtime " + p.phase + " " + p.done + "/" + p.total)
+                }
+            }
+        } catch (t: Throwable) {
+            Log.e(TAG, "运行时安装失败", t)
+            _state.value = State.Failed("运行时安装失败：" + (t.message ?: t.javaClass.simpleName))
+            return
+        }
+
+        // 救援 profile 与配置写入：与 bionic 路径共用
+        runCatching { ensureRescueProfile() }
+        runCatching { ensureWebCompat() }
+        runCatching { ensureCredentialFileMode() }
+        runCatching { ensurePickerRoots() }
+        runCatching { ensureWebViewCompat() }
+        runCatching { ensureMobileUi() }
+        runCatching { ensureBrowserPane() }
+        runCatching { seedDefaultSettings() }
+        runCatching { ensureAgnesMultimodal() }
+        runCatching { seedAgnesAccounts() }
+        runCatching { ensurePresetRazor() }
+        runCatching { ensurePresetSkills() }
+        runCatching { ensureCoreMemory() }
+        runCatching { ensureMarket() }
+        runCatching { ensureKeyPoolProvider() }
+        runCatching { ensureDefaultModel() }
+        runCatching { ensureBubbleTool() }
+        runCatching { ensureStatusBarTool() }
+        runCatching { ensureUiTool() }
+        runCatching { ensureBrowserTool() }
+        runCatching { ensureLogsTool() }
+        runCatching { ensurePetBridge() }
+
+        val overlays = listOfNotNull(
+            mobileUiPatch,
+            browserPanePatch,
+            agnesMmPatch,
+            marketPatch,
+            writeProotSandboxPatch(),
+            workspacePatch,
+            sessionSearchPatch,
+            pluginManagerPatch,
+            bubblePatch,
+            statusBarPatch,
+            petPatch,
+            uiToolPatch,
+            logsToolPatch,
+            browserToolPatch,
+            quarantinePatch,
+        )
+
+        val host = ProotHost(context, manifest, dshHome = dshHome, workspace = workspaceDir)
+        prootHost = host
+        val proc = try {
+            host.start(
+                mapOf("DSH_HOME" to dshHome.absolutePath, KEY_ENV to KEY_PLACEHOLDER),
+                overlays,
+            )
+        } catch (t: Throwable) {
+            Log.e(TAG, "proot 启动失败", t)
+            prootHost = null
+            _state.value = State.Failed("引擎进程启动失败：" + (t.message ?: t.javaClass.simpleName))
+            return
+        }
+        process = proc
+
+        val token = host.awaitToken(READY_TIMEOUT_MS)
+        if (token == null) {
+            val tail = host.recentLines(20)
+            runCatching { host.stop() }
+            prootHost = null
+            process = null
+            _state.value = State.Failed("引擎启动超时（" + READY_TIMEOUT_MS + "ms）。最后输出:\n" + tail.joinToString("\n"))
+            return
+        }
+        Log.i(TAG, "proot 引擎就绪: " + token)
+        EventLog.record("engine.ready.proot", mapOf("url" to token))
+        _state.value = State.Ready(token)
+    }
+
+    /** guest 里的沙箱 runner 路径与宿主不同：这里是唯一需要按宿主改写的 overlay。 */
+    private fun writeProotSandboxPatch(): File {
+        val f = File(dshHome, "sandbox-proot.patch.yml")
+        f.writeText(
+            """
+            - id: sandbox
+              config:
+                runnerCommand: ['/usr/local/bin/boo-sandbox-run']
+                runnerFailureSignatures: ['boo-sandbox-run: ']
+                probeTimeoutMs: 5000
+            """.trimIndent() + "\n",
+        )
+        return f
+    }
+
     suspend fun start() = withContext(Dispatchers.IO) {
         if (process?.isAlive == true) {
             Log.i(TAG, "引擎已在运行")
@@ -7110,6 +7225,16 @@ class EngineManager private constructor(private val context: Context) {
         homeDir.mkdirs()
         dshHome.mkdirs()
         workspaceDir.mkdirs()
+
+        // ── S4：统一走 PRoot / glibc 运行时 ───────────────────────────────
+        // manifest 由 APK 内置（apk.yml 的 runtime job 铺进 assets/runtime）。
+        // 这里一旦命中，就不再走下面的 Termux/bionic 路径；bionic 代码只作为
+        // S4b 删除前的临时死代码保留。
+        val prootManifest = runCatching { RuntimeManifest.load(this) }.getOrNull()
+        if (prootManifest != null) {
+            startProot(prootManifest)
+            return@withContext
+        }
 
         // ⚠️ Termux 环境与启动前体检**必须排在最前面**，早于下面所有往 engine/ 写东西
         // 的 ensureXxx。理由是体检在发现核心 bundle 被改坏时会触发**整棵 engine/
@@ -8076,6 +8201,13 @@ class EngineManager private constructor(private val context: Context) {
     }
 
     fun stop() {
+        // PRoot 宿主：node 在 guest 里，必须走 pidfile + SIGQUIT，不能只 destroy。
+        prootHost?.let { host ->
+            userStopped = true
+            runCatching { host.stop() }.onFailure { Log.w(TAG, "proot stop 失败: " + it.message) }
+            prootHost = null
+            process = null
+        }
         // Shizuku 桥随引擎一起收：它的接受线程是 daemon、名字随进程释放，
         // 但显式关掉能让下一次 start() 重新绑定同一个名字而不撞车。
         ShizukuChannel.stop()
