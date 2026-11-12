@@ -26,6 +26,8 @@ PROOT_SHA=${PROOT_SHA:-10a394b585c2fc2b2c8502544f4e5f1be581dc8bfff79e8ba62f16207
 TALLOC_SHA=${TALLOC_SHA:-556591f43bb773ad8777e1a29522640866a55f95dab71914418b94a8c58ad5a7}
 SHMEM_SHA=${SHMEM_SHA:-0da3a24d558b93c92bcf8d611e0826a99ff96e396b148e6cdf33b47c47c57ff6}
 SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH:-1767225600}
+# 交叉编译：CI 上是 aarch64-linux-gnu-gcc；设备/arm64 主机上就是 gcc
+CC=${CC:-gcc}
 
 WORK=${DSH_RT_WORK:-/root/dsh-runtime-build}
 CACHE=${DSH_RT_CACHE:-/root/.cache/dsh-runtime}
@@ -129,7 +131,8 @@ if [ "${DSH_RT_SKIP_ENGINE:-0}" != "1" ]; then
     [ -f package.json ] || npm init -y >/dev/null 2>&1
     install_engine() {
       local reg=$1 extra=$2
-      npm_config_platform=linux npm_config_arch=arm64 npm_config_cache="$CACHE/npm" \
+      npm_config_platform=linux npm_config_os=linux npm_config_cpu=arm64 npm_config_arch=arm64 \
+        npm_config_cache="$CACHE/npm" \
         npm_config_registry="$reg" \
         npm install --omit=dev --no-audit --no-fund --ignore-scripts --loglevel=error $extra \
         "@deepseek-ai/dsh@$DSH_VERSION"
@@ -151,7 +154,8 @@ if [ "${DSH_RT_SKIP_ENGINE:-0}" != "1" ]; then
     SHARP_VER=$(node -p "require('./node_modules/sharp/package.json').version")
     VIPS_VER=$(node -p "require('./node_modules/sharp/package.json').optionalDependencies['@img/sharp-libvips-linux-arm64']")
     log "optional: node-addon-system-linux-arm64@$NAS_VER sharp-linux-arm64@$SHARP_VER libvips@$VIPS_VER"
-    npm_config_cache="$CACHE/npm" npm install --no-save --force --ignore-scripts --no-audit --no-fund \
+    npm_config_os=linux npm_config_cpu=arm64 npm_config_arch=arm64 \
+      npm_config_cache="$CACHE/npm" npm install --no-save --force --ignore-scripts --no-audit --no-fund \
       "@deepseek-ai/node-addon-system-linux-arm64@$NAS_VER" \
       "@img/sharp-linux-arm64@$SHARP_VER" \
       "@img/sharp-libvips-linux-arm64@$VIPS_VER" >/dev/null
@@ -174,9 +178,9 @@ if [ -f "$JNI_SRC/boo-sandbox-run.c" ]; then
   cp "$JNI_SRC"/*.c "$SRCC/app/src/main/jni/"
   cp "$REPO_ROOT/tools/apply-glibc-patches.py" "$SRCC/tools/"
   ( cd "$SRCC" && python3 tools/apply-glibc-patches.py )
-  gcc -O2 -o "$ROOTFS/usr/local/bin/boo-sandbox-run"                  "$SRCC/app/src/main/jni/boo-sandbox-run.c"
-  gcc -O2 -shared -fPIC -o "$ROOTFS/usr/local/lib/libboosandbox.so"   "$SRCC/app/src/main/jni/boosandbox.c" -ldl
-  gcc -O2 -shared -fPIC -o "$ROOTFS/usr/local/lib/liblinkcompat.so"   "$SRCC/app/src/main/jni/linkcompat.c" -ldl
+  "$CC" -O2 -o "$ROOTFS/usr/local/bin/boo-sandbox-run"                "$SRCC/app/src/main/jni/boo-sandbox-run.c"
+  "$CC" -O2 -shared -fPIC -o "$ROOTFS/usr/local/lib/libboosandbox.so" "$SRCC/app/src/main/jni/boosandbox.c" -ldl
+  "$CC" -O2 -shared -fPIC -o "$ROOTFS/usr/local/lib/liblinkcompat.so" "$SRCC/app/src/main/jni/linkcompat.c" -ldl
   chmod 755 "$ROOTFS/usr/local/bin/boo-sandbox-run"
   chmod 644 "$ROOTFS/usr/local/lib/libboosandbox.so" "$ROOTFS/usr/local/lib/liblinkcompat.so"
   log "C layers: $(ls -l "$ROOTFS/usr/local/bin/boo-sandbox-run" "$ROOTFS/usr/local/lib"/*.so | awk '{printf "%s=%s ", $9, $5}')"
