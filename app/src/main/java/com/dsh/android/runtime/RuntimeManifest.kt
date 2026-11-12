@@ -12,6 +12,7 @@ import java.io.File
 data class RuntimeManifest(
     val runtimeVersion: String,
     val abi: String,
+    val rootfsAsset: String,
     val rootfsSha256: String,
     val rootfsBytes: Long,
     val jniLibs: Map<String, String>,
@@ -25,8 +26,13 @@ data class RuntimeManifest(
     companion object {
         fun load(context: Context): RuntimeManifest {
             val f = File(context.filesDir, "runtime/manifest.json")
-            require(f.isFile) { "缺少 ${f.absolutePath}" }
-            val o = JSONObject(f.readText())
+            require(f.isFile) { "缺少 " + f.absolutePath }
+            return parse(f.readText())
+        }
+
+        /** 纯解析：assets 与 files 共用（RootfsInstaller 先读 assets 再落盘）。 */
+        fun parse(text: String): RuntimeManifest {
+            val o = JSONObject(text)
             val launch = o.getJSONObject("launch")
             val argv = launch.getJSONArray("argv").let { a ->
                 List(a.length()) { a.getString(it) }
@@ -47,6 +53,7 @@ data class RuntimeManifest(
             return RuntimeManifest(
                 runtimeVersion = o.getString("runtimeVersion"),
                 abi = o.getString("abi"),
+                rootfsAsset = o.getJSONObject("rootfs").optString("asset", "runtime/rootfs-arm64-v8a.tar.xz"),
                 rootfsSha256 = o.getJSONObject("rootfs").getString("sha256"),
                 rootfsBytes = o.getJSONObject("rootfs").getLong("bytes"),
                 jniLibs = jni,
