@@ -145,6 +145,10 @@ class RootfsInstaller(private val context: Context) {
                     @Suppress("DEPRECATION")
                     val entry: TarArchiveEntry = tar.nextEntry ?: break
                     val target = safeTarget(dest, entry.name)
+                    if (entry.name.contains("pam.d")) {
+                        Log.i(TAG, "entry " + entry.name + " dir=" + entry.isDirectory +
+                            " sym=" + entry.isSymbolicLink + " link=" + entry.isLink)
+                    }
                     when {
                         entry.isDirectory -> {
                             target.mkdirs()
@@ -170,15 +174,45 @@ class RootfsInstaller(private val context: Context) {
                             }
                         }
                         else -> {
-                            target.parentFile?.mkdirs()
-                            FileOutputStream(target).use { out ->
-                                val buf = ByteArray(1 shl 20)
-                                while (true) {
-                                    val n = tar.read(buf)
-                                    if (n <= 0) break
-                                    out.write(buf, 0, n)
-                                    done += n
+                            val parent = target.parentFile
+                            if (parent != null && !parent.isDirectory) {
+                                val ok = parent.mkdirs() || parent.isDirectory
+                                if (!ok) {
+                                    // 目录项缺失或被同名文件占位时，NIO 会给出具体的失败原因；
+                                    // 直接 open 只会得到一句 ENOENT，查不出来是哪个祖先坏了。
+                                    Log.e(
+                                        TAG,
+                                        "目录创建失败 parent=" + parent +
+                                            " exists=" + parent.exists() +
+                                            " isDir=" + parent.isDirectory +
+                                            " canon=" + parent.canonicalPath +
+                                            " entry=" + entry.name,
+                                    )
+                                    java.nio.file.Files.createDirectories(parent.toPath())
                                 }
+                            }
+                            try {
+                                FileOutputStream(target).use { out ->
+                                    val buf = ByteArray(1 shl 20)
+                                    while (true) {
+                                        val n = tar.read(buf)
+                                        if (n <= 0) break
+                                        out.write(buf, 0, n)
+                                        done += n
+                                    }
+                                }
+                            } catch (e: java.io.FileNotFoundException) {
+                                Log.e(
+                                    TAG,
+                                    "open 失败 target=" + target +
+                                        " parent=" + parent +
+                                        " exists=" + (parent?.exists()) +
+                                        " isDir=" + (parent?.isDirectory) +
+                                        " canon=" + target.canonicalPath +
+                                        " parentCanon=" + parent?.canonicalPath,
+                                    e,
+                                )
+                                throw e
                             }
                             applyMode(target, entry.mode, false)
                         }
@@ -191,7 +225,11 @@ class RootfsInstaller(private val context: Context) {
     }
 
     private fun safeTarget(root: File, name: String): File {
-        val cleaned = name.trimStart('/')
+        // 归档条目以 "./" 开头。Android 的 File/mkdirs 对 "./" 段的行为在真机上
+        // 出过 ENOENT（LDPlayer x86_64：同目录前 14 个文件都写成功，第 15 个
+        // su 却打不开），统一去掉前缀后路径只含正常段。
+        var cleaned = name.trimStart('/')
+        while (cleaned.startsWith("./")) cleaned = cleaned.substring(2)
         val f = File(root, cleaned)
         val rootPath = root.canonicalPath + File.separator
         if (!f.canonicalPath.startsWith(rootPath) && f.canonicalPath != root.canonicalPath) {
