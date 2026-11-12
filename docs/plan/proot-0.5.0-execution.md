@@ -101,3 +101,50 @@ bionic」的原因，也是 0.4.4 被判失败的直接原因。
 3. S4.5：x86_64 运行时变体（S4 之后单独做，见上表）。
 
 这也是「单宿主」的代价：切换必须是一次原子替换，不能分两次半切换。
+
+## 八、S4.5：x86_64 运行时变体（雷电 / MuMu 原生测试）
+
+> 目的：模拟器是 x86_64。arm64 APK 只能靠转译层跑，proot 的 ptrace 语义在转译下
+> 不可靠。做一个原生 x86_64 变体，模拟器才能当回归环境。
+
+### 8.1 运行时构建参数化
+
+`tools/runtime/build-runtime.sh` 现在把 ABI 写死为 `arm64-v8a`。改成：
+
+| 维度 | arm64-v8a | x86_64 |
+|---|---|---|
+| Ubuntu base | `ubuntu-base-24.04.5-base-arm64.tar.gz` | `...-amd64.tar.gz` |
+| Node | `node-v24.22.1-linux-arm64.tar.xz` | `...-linux-x64.tar.xz` |
+| proot | `proot_5.1.107.102_aarch64.deb` | `proot_5.1.107.102_x86_64.deb` |
+| talloc / shmem | `aarch64` deb | `x86_64` deb |
+| C 适配层 | `aarch64-linux-gnu-gcc` | 宿主 `gcc`（runner 本身就是 x86_64） |
+| 产物 | `rootfs-arm64-v8a.tar.xz` | `rootfs-x86_64.tar.xz` |
+| verify `e_machine` | 183 | 62 |
+
+`verify.py` 的 `BAD_PKG_FRAGMENTS` 要按 ABI 反转：x86_64 构建禁止
+`linux-arm64` / `android-arm64`，允许 `linux-x64`。
+
+### 8.2 两个 CI 产物
+
+- `runtime.yml` / `apk.yml` 的 runtime job 用 **matrix**：`[arm64-v8a, x86_64]`；
+- artifact 名 `runtime-<abi>`，互不覆盖。
+
+### 8.3 Gradle flavor
+
+`flavorDimensions += "abi"`，两个 productFlavor：`arm64` / `x64`，各自：
+
+- `ndk { abiFilters += "<abi>" }`；
+- `src/<flavor>/jniLibs/<abi>/*.so`（proot 四件套）；
+- `src/<flavor>/assets/runtime/*`（rootfs + manifest）。
+
+APK 体积：两个 flavor 各自只带自己的 rootfs，不会翻倍；x64 包仅用于模拟器，
+发布仍然只发 arm64。
+
+### 8.4 验收
+
+| 项 | 判据 |
+|---|---|
+| 构建 | `runtime-x86_64` artifact + `x64` APK 绿 |
+| 安装 | 雷电 14 / MuMu（API 34，x86_64）`adb install` 成功 |
+| 运行 | `ProotProbeActivity` 输出 `health=PASS`、`leftover_node=0` |
+| 冷启 | 记录解包与引擎两段耗时，写回本文 |
