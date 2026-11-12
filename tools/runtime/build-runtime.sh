@@ -282,7 +282,7 @@ argv = [
     "NODE_OPTIONS=--dns-result-order=ipv4first", "NODE_PATH=/opt/dsh/node_modules",
     "{GUEST_ENV}",
     "/bin/sh", "-c",
-    "echo $ > /tmp/dsh-web.pid; exec /usr/local/bin/dsh web {PATCHES} --host 127.0.0.1 --port {PORT} --no-open",
+    "echo $$ > /tmp/dsh-web.pid; exec /usr/local/bin/dsh web {PATCHES} --host 127.0.0.1 --port {PORT} --no-open",
 ]
 m = {
     "runtimeVersion": ver,

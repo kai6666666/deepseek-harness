@@ -184,3 +184,25 @@ proot error: execve("/usr/bin/env"): Permission denied
 2. arm64 真机（最可靠）；
 3. 若必须用雷电，只能验证「bionic 路径」或非 PRoot 功能，不能验证 S4 之后的运行时。
 | 2026-11-13 | AVD 验证：AEHD 2.2 + Google APIs x86_64 API34 起机成功；PRoot 在该镜像里可 trace（`proot -r rootfs /bin/echo` rc=0），dsh 打印 token，`GET /` 返回 401。发现裁剪 bug：`@deepseek-ai/dsh-win32-process` 被当成平台包删掉，导致 subprocess/sandbox 服务 import 失败；裁剪改为只删 `@img/sharp-*` 与 `node-addon-system-*` 的原生包 |
+
+### 9.4 AVD 端到端探针 PASS（2026-11-13）
+
+环境：Google APIs x86_64 API34 + AEHD 2.2，`emulator-5556`，本地 Gradle（阿里云镜像）出包。
+
+```text
+install=done
+runtimeVersion=r1-x86_64-dsh0.2.2-rc.1-node24.22.1-ubuntu24.04.5-7bf4b287f5dc
+started (+18ms)
+token_after_ms=46746
+http=401
+health=PASS
+stopped=true
+leftover_node=0
+RESULT=PASS
+```
+
+期间修掉的三处（都已进本 PR）：
+
+1. `build-runtime.sh` 的 pidfile 命令被 JS/替换吃掉一个 `$`，写成 `echo $ >`；恢复 `echo $$`，pidfile 才有 node pid；
+2. `ProotHost.stop()` 在 pidfile 无效时按 `/proc/*/cmdline` 兜底杀 guest node；
+3. manifest 缺 `{PATCHES}` 的守卫、proot-libs 从 assets 解出并加进 `LD_LIBRARY_PATH`。

@@ -204,7 +204,9 @@ class ProotHost(
                 .replace("{ROOTFS}", rootfs.canonicalPath)
                 .replace("{TMP}", tmpDir.absolutePath)
         )
-        val nodePid = runCatching { pidFile.readText().trim().toInt() }.getOrNull()
+        val rawPid = runCatching { pidFile.readText().trim() }.getOrNull()
+        val nodePid = rawPid?.toIntOrNull()
+        if (nodePid == null) Log.w(TAG, "pidfile 无有效 pid（" + rawPid + "），改用 cmdline 兜底")
         if (nodePid != null && nodePid > 0) {
             runCatching { Os.kill(nodePid, OsConstants.SIGTERM) }
                 .onFailure { Log.w(TAG, "SIGTERM " + nodePid + " 失败: " + it.message) }
@@ -229,11 +231,27 @@ class ProotHost(
                 p.waitFor(3, java.util.concurrent.TimeUnit.SECONDS)
             }
         }
+        // 最后兜底：按 cmdline 找 guest node（pidfile 缺失/损坏时唯一可靠的办法）
+        killGuestNodeByCmdline()
         pump?.interrupt()
         process = null
         tokenUrl = null
         runCatching { pidFile.delete() }
         return !p.isAlive
+    }
+
+    private fun killGuestNodeByCmdline() {
+        val marker = File(rootfs, "usr/bin/node").absolutePath
+        File("/proc").listFiles()?.forEach { p ->
+            if (!p.name.all { it.isDigit() }) return@forEach
+            val cmd = runCatching { File(p, "cmdline").readBytes() }.getOrNull() ?: return@forEach
+            if (!String(cmd, Charsets.UTF_8).contains(marker)) return@forEach
+            val pid = p.name.toIntOrNull() ?: return@forEach
+            Log.w(TAG, "kill 残留 guest node: " + pid)
+            runCatching { Os.kill(pid, OsConstants.SIGTERM) }
+            Thread.sleep(200)
+            if (File("/proc/" + pid).exists()) runCatching { Os.kill(pid, OsConstants.SIGKILL) }
+        }
     }
 
     fun isAlive(): Boolean = process?.isAlive == true
