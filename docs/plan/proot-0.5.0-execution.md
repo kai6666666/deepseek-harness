@@ -40,7 +40,7 @@
 | **S2** | rootfs 安装器：解 `tar.xz`、原子替换、`.stamp`、空间预检、失败可重试 | 真机首启解包成功；重复启动不重解；坏包能报错 | 🟡 代码完成 + CI 编译通过（run 43216285582），待真机 |
 | **S3** | 启动接线：`ProotHost` 补 bind（workspace/`/sdcard`）与 `DSH_HOME`；`{PATCHES}` 注入；停止语义；APK 内置运行时资产 | 冷启出 token、页面可加载、无孤儿 node、重启不撞端口 | 🟡 前半完成（PR #5）；`EngineManager` 接线与 S4 合并做（见 §七） |
 | **S4** | 删除 bionic：bionic 资产下线（S4b）+ 代码删除（S4c，`TermuxBootstrap`/`HostMode`/72 个 ensure） | `check-apk-assets.py` 新清单全过；APK 里无 bionic 资产 | ✅ S4b（APK 310→136 MB，资产断言进 CI）；S4c 删代码 |
-| **S4.5** | **x86_64 运行时变体**：`build-runtime.sh` ABI 参数化 + `-PtargetAbi` + `apk-x64.yml` | `runtime.yml` 出 x86_64 artifact；雷电/MuMu 原生安装并跑通 | 🟡 代码完成，待 CI/模拟器验收 |
+| **S4.5** | **x86_64 运行时变体**：ABI 参数化 + `-PtargetAbi` + `apk-x64.yml` | x86_64 artifact/APK 可出；雷电能否跑 PRoot 见 §九 | 🟡 构建链路完成；雷电被 ptrace 拦截（§九），验收需 AVD/真机 |
 | **S5** | 能力搬迁：`bash` 身份、`/sdcard` 绑定、`shell`(uid2000)、`root`(uid0)、无线调试、dev-env、镜像 | 真机 D-03…D-11 全过 | ⬜ |
 | **S6** | 数据迁移与救援：`$DSH_HOME` 复用、索引重建、救援 profile 走 proot、rootfs 修复 | 0.4.3/0.4.4 → 0.5.0 升级不丢会话 | ⬜ |
 | **S7** | 真机矩阵：冷启、附件、终端、检索、沙箱、插件、断网、存储不足 | 见 c-plan §P5 判据 | ⬜ |
@@ -153,3 +153,33 @@ APK 体积：两个 flavor 各自只带自己的 rootfs，不会翻倍；x64 包
 | 2026-11-12 | S4b：apk.yml 删掉 engine.bin / node-runtime / bootstrap / 原生 addon / pnpm / sharp / rg / adb / webview-compat 的现场构建与资产闸门；`check-apk-assets.py` 只剩 runtime + 插件资产；`DshApplication` 检测到 runtime manifest 即跳过 Termux bootstrap。APK 预期从 310 MB 回落到 ~190 MB |
 | 2026-11-12 | S4b 绿：run 43227977619 APK 成功，**136 MB**（310 → 136，低于 0.4.4 的 184 MB）；bionic 资产已不在包里。同日把 `check-apk-assets.py` 接进 apk.yml 作为出包门禁 |
 | 2026-11-12 | S4.5 代码：`build-runtime.sh` 按 ABI 选 ubuntu/node/proot/talloc/shmem 与 CC，x86_64 三个 deb 的 sha256 已从 Termux x86_64 Packages 索引核对；`verify.py` 按 abi 判 e_machine（183/62）与平台包黑名单；Gradle 增加 `-PtargetAbi`；新增手动 `apk-x64.yml`；`check-apk-assets.py` 支持 `--abi` |
+
+## 九、LDPlayer x86_64 实测结论（2026-11-12）
+
+### 9.1 能走通的
+
+- x86_64 rootfs/manifest/jniLibs 构建、verify、x64 APK、`check-apk-assets --abi x86_64` 全部通过；
+- APK 在雷电 14（Android 14 / API 34）安装成功（同一 applicationId、debug 签名）。
+
+### 9.2 两个真实发现（已修）
+
+1. **patchelf 会改坏 proot**：原版 `proot --version` 正常；`patchelf --replace-needed libtalloc.so.2 libtalloc.so` 之后同一二进制 **SIGSEGV**。
+   → 改为 **不 patchelf**：`libtalloc.so.2` / `libandroid-shmem.so` 以 assets 原名下发，ProotHost 解到 `files/proot-libs`，`LD_LIBRARY_PATH=<nativeLibDir>:<proot-libs>`。
+2. **模拟器拦截 `su` 文件名**：解包时 `./etc/pam.d/su` 必定 ENOENT（同目录前 14 个文件全部成功；mkdir su 目录反而可以），是模拟器安全策略，不是我们的路径/类型判断。
+   → 解包跳过 basename 为 su 的条目（rootfs 里的 su 本 App 用不到；Android root 通道走宿主 su）。
+
+### 9.3 走不通的：LDPlayer 拒绝 ptrace
+
+```text
+proot error: ptrace(TRACEME): Permission denied
+proot error: execve("/usr/bin/env"): Permission denied
+```
+
+- 同一份原版 proot 在 app 数据目录里 `--version` 正常，一旦进入 trace 就 Permission denied；
+- `adbd cannot run as root in production builds`，无法用 root 侧绕过；
+- 这是 **LDPlayer 的 Android 镜像限制**（seccomp/SELinux），与 ABI、rootfs、我们的启动参数无关。
+
+**结论**：雷电/MuMu 这类模拟器不能作为 PRoot 的验收环境。可选替代：
+1. Android Studio AVD（Google APIs x86_64 镜像）——dsh-Go 的模拟器验证走的是这类镜像；
+2. arm64 真机（最可靠）；
+3. 若必须用雷电，只能验证「bionic 路径」或非 PRoot 功能，不能验证 S4 之后的运行时。

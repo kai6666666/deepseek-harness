@@ -105,6 +105,9 @@ class ProotHost(
         // 那是「能跑但悄悄缺能力」，比启动失败更难查，所以直接拒绝。
         require(patchesPlaced) { "manifest 缺 {PATCHES} 占位符（运行时资产过旧）" }
 
+        val prootLibs = File(context.filesDir, "proot-libs")
+        ensureProotLibs(prootLibs)
+
         val pb = ProcessBuilder(argv).directory(context.filesDir)
         pb.environment().apply {
             clear()
@@ -114,6 +117,9 @@ class ProotHost(
             put("ANDROID_ROOT", System.getenv("ANDROID_ROOT") ?: "/system")
             put("ANDROID_DATA", System.getenv("ANDROID_DATA") ?: "/data")
             manifest.launchEnv.forEach { (k, v) -> put(k, expand(v)) }
+            // proot 的 NEEDED 是 libtalloc.so.2（原名）；它不在 jniLibs（Android 只抽
+            // lib*.so），由 ensureProotLibs 从 assets 解到 files/proot-libs。
+            put("LD_LIBRARY_PATH", nativeLibDir + ":" + prootLibs.absolutePath)
         }
 
         Log.i(TAG, "launch: " + argv.joinToString(" "))
@@ -124,6 +130,21 @@ class ProotHost(
             start()
         }
         return p
+    }
+
+    /** 把 proot 的两个原始名依赖从 assets 解到 app 私有目录（每次启动覆盖，几十 KB）。 */
+    private fun ensureProotLibs(dir: File) {
+        dir.mkdirs()
+        for (name in listOf("libtalloc.so.2", "libandroid-shmem.so")) {
+            val out = File(dir, name)
+            val opened = runCatching { context.assets.open("runtime/proot-libs/" + name) }.getOrNull()
+                ?: continue
+            opened.use { input ->
+                out.outputStream().use { output -> input.copyTo(output) }
+            }
+            out.setReadable(true, false)
+            Log.i(TAG, "proot-lib: " + out.absolutePath + " " + out.length())
+        }
     }
 
     private fun drain(p: Process) {

@@ -31,7 +31,7 @@ REQUIRED = [
     "usr/local/lib/liblinkcompat.so",
     "opt/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js",
 ]
-REQUIRED_JNI = ["libproot.so", "libproot-loader.so", "libtalloc.so", "libandroid-shmem.so"]
+REQUIRED_JNI = ["libproot.so", "libproot-loader.so"]
 BAD_PKG_FRAGMENTS = {
     "arm64-v8a": ("linux-x64", "linux-x32", "win32-", "darwin-", "android-arm64"),
     "x86_64": ("linux-arm64", "linux-aarch64", "android-arm64", "win32-", "darwin-"),
@@ -184,12 +184,10 @@ def check_jni(dirpath, em):
     except Exception as e:  # noqa: BLE001
         bad("readelf 失败（跳过 DT_NEEDED 断言）：" + str(e))
         return
-    if "libtalloc.so" not in out:
-        bad("libproot.so 的 DT_NEEDED 不含 libtalloc.so")
+    if "libtalloc.so.2" not in out:
+        bad("libproot.so 的 DT_NEEDED 不含 libtalloc.so.2（不应再 patchelf）")
     else:
-        ok("libproot.so DT_NEEDED 已指向 libtalloc.so")
-    if "libtalloc.so.2" in out:
-        bad("libproot.so 仍依赖 libtalloc.so.2（Android 不会抽取该名字）")
+        ok("libproot.so 保持原始 DT_NEEDED libtalloc.so.2")
 
 
 def main():

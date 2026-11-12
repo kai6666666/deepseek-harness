@@ -46,7 +46,12 @@ REQUIRED = [
 ]
 
 def required_for(abi: str) -> list[str]:
-    return ["runtime/manifest.json", f"runtime/rootfs-{abi}.tar.xz"] + REQUIRED
+    return [
+        "runtime/manifest.json",
+        f"runtime/rootfs-{abi}.tar.xz",
+        "runtime/proot-libs/libtalloc.so.2",
+        "runtime/proot-libs/libandroid-shmem.so",
+    ] + REQUIRED
 
 
 def required_sonames() -> list[str]:
@@ -146,7 +151,7 @@ def main() -> int:
             if z.getinfo(key).file_size <= 0:
                 errors.append(f"资产为空 {key}")
 
-        for lib in ("libproot.so", "libproot-loader.so", "libtalloc.so", "libandroid-shmem.so"):
+        for lib in ("libproot.so", "libproot-loader.so"):
             key = f"lib/{abi}/{lib}"
             if key not in names:
                 errors.append(f"缺少 jniLib {key}（proot 四件套必须在 jniLibs）")
