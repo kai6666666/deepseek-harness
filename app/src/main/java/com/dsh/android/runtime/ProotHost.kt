@@ -1,6 +1,9 @@
 package com.dsh.android.runtime
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Environment
 import android.system.Os
 import android.system.OsConstants
 import android.util.Log
@@ -24,8 +27,9 @@ import java.util.TimeZone
  *  · 停止 = SIGTERM 给 pidfile 里的 node，兜底 SIGQUIT 给 proot。
  *
  * 与 P2 探针版的差别（每一条都是接进产品后才暴露的）：
- *  1. bind 从「只绑 DSH_HOME」扩到「DSH_HOME 映射到 guest 的 /root/.dsh + workspace 原路径」，
- *     否则 bash 工具看不到工作区、会话写到 rootfs 里而不是宿主 home；
+ *  1. bind 从「只绑 DSH_HOME」扩到「DSH_HOME + workspace 原路径 + 手机存储」：
+ *     `DSH_HOME` 按原路径绑、workspace 按原路径绑、`/sdcard` 额外绑到 guest `/sdcard`，
+ *     否则 bash 工具看不到工作区、工作区选择器里的「手机存储」也进不去；
  *  2. manifest 的启动命令带 {PATCHES}，overlay 由这里注入，不再只靠试启动；
  *  3. stop 真正发 SIGQUIT 给 proot（ProotHost 之前只 destroy，proot 不理 SIGTERM）。
  */
@@ -37,7 +41,7 @@ class ProotHost(
     private val tmpDir: File = File(context.cacheDir, "proot-tmp"),
     private val dshHome: File = File(context.filesDir, "home/.dsh"),
     private val workspace: File = File(context.filesDir, "workspace"),
-    private val phoneStorage: File? = null,
+    private val phoneStorage: File? = defaultPhoneStorage(context),
 ) {
     private var process: Process? = null
     private var pump: Thread? = null
@@ -83,8 +87,12 @@ class ProotHost(
                     argv += "-b"
                     argv += workspace.canonicalPath + ":" + workspace.canonicalPath
                     phoneStorage?.takeIf { it.isDirectory }?.let {
+                        val storage = it.canonicalPath
                         argv += "-b"
-                        argv += it.canonicalPath + ":/sdcard"
+                        argv += storage + ":/sdcard"
+                        // 同时保留宿主绝对路径：附件/工作区配置里可能写着 /storage/emulated/0/...
+                        argv += "-b"
+                        argv += storage + ":" + storage
                     }
                     argv += arg
                     bindsPlaced = true
@@ -258,5 +266,13 @@ class ProotHost(
 
     companion object {
         const val TAG = "ProotHost"
+
+        /** 有读存储权限才绑 /sdcard；拒绝时静默跳过，不拖垮引擎启动。 */
+        private fun defaultPhoneStorage(context: Context): File? {
+            val dir = Environment.getExternalStorageDirectory() ?: return null
+            val granted = context.checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) ==
+                PackageManager.PERMISSION_GRANTED
+            return dir.takeIf { granted && it.isDirectory }
+        }
     }
 }
