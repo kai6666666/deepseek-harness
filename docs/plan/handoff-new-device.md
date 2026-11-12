@@ -1,6 +1,6 @@
 # 换设备继续开发（交接手册）
 
-> 更新：2026-11-13 · 当前分支 `feat/proot-0.5.0-x64`（PR #7，tip `9479b961`，CI 全绿）
+> 更新：2026-11-13 · 当前分支 `feat/proot-0.5.0-x64`（PR #7，tip `7cef11fc`，CI 全绿）
 > 主分支 `main` 仍是 0.4.4-test，**没有合并**。所有新代码都在 PR #7 的分支里。
 
 ## 0. 先做的事
@@ -82,9 +82,11 @@ Linux：需要 `/dev/kvm`；命令同上（不需要 AEHD）。
 
 ```bash
 adb install -r app-system-debug.apk
+adb shell am force-stop com.dsh.android
 adb shell run-as com.dsh.android mkdir -p files
 adb shell run-as com.dsh.android touch files/proot-probe.enable
-adb shell am start -n com.dsh.android/.runtime.ProotProbeActivity
+# 必须 NEW_TASK|CLEAR_TASK：否则旧 MainActivity task 会被恢复，引擎会把探针进程顶掉
+adb shell am start -W -f 0x10008000 -n com.dsh.android/.runtime.ProotProbeActivity
 adb shell run-as com.dsh.android cat files/proot-probe.txt
 # 期望：health=PASS / stopped=true / leftover_node=0 / RESULT=PASS
 ```

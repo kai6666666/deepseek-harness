@@ -220,3 +220,9 @@ engine 打印 token，WebView 加载官方前端成功（“Into the Unknown” 
 
 遗留：首页停在「Choose workspace」——引擎侧没有默认工作区，需要用户在 UI 里选
 （或由 App 启动时把 `filesDir/workspace` 注册为默认工作区）。下一步处理。
+
+### 9.6 安装器单飞（2026-11-13）
+- `RootfsInstaller.ensure()` 改为 `synchronized(INSTALL_LOCK)`，同进程内探针/引擎并发只跑一次安装。
+- staging 后缀从 `<ver>-<pid>` 改为 `<ver>-<pid>-<nanoTime>`，Activity 重建也不会同名相撞。
+- 真机冷装：`health=PASS / stopped=true / leftover_node=0 / RESULT=PASS`（token 25.9 s）。
+- 双 Activity 并发：只出现一次 `install=start`，`EXCEPTION` 计数 0，无 staging 残留；第二个探针因两个 ProotHost 争 pidfile 仍会 `TOKEN_TIMEOUT`，探针本身按单实例使用。
