@@ -144,6 +144,14 @@ class RootfsInstaller(private val context: Context) {
                 while (true) {
                     @Suppress("DEPRECATION")
                     val entry: TarArchiveEntry = tar.nextEntry ?: break
+                    // 雷电/MuMu 这类模拟器会拦截文件名恰好是 su 的创建（ENOENT），
+                    // 与路径、权限、tar 类型都无关（同目录其它 14 个 pam 文件都能写）。
+                    // rootfs 里的 su 我们用不到（Android root 通道走宿主 su），
+                    // 跳过并记录，避免整个安装失败。
+                    if (!entry.isDirectory && entry.name.substringAfterLast('/') == "su") {
+                        Log.w(TAG, "跳过 su（模拟器安全策略禁止创建该文件名）：" + entry.name)
+                        continue
+                    }
                     val target = safeTarget(dest, entry.name)
                     if (entry.name.contains("pam.d")) {
                         Log.i(TAG, "entry " + entry.name + " dir=" + entry.isDirectory +
