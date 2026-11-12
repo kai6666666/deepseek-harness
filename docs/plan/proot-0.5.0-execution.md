@@ -38,7 +38,7 @@
 |---|---|---|---|
 | **S1** | 运行时资产进 CI：交叉编译 + 硬断言 + artifact | `runtime.yml` 绿、artifact 有 rootfs/manifest/jniLibs、`verify.py` PASS | ✅ 2026-11-12（run 43215359752，22 OK / 0 FAIL） |
 | **S2** | rootfs 安装器：解 `tar.xz`、原子替换、`.stamp`、空间预检、失败可重试 | 真机首启解包成功；重复启动不重解；坏包能报错 | 🟡 代码完成 + CI 编译通过（run 43216285582），待真机 |
-| **S3** | 启动接线：`ProotHost` 补 bind（workspace/engine/tmp/`/sdcard`）与 `DSH_HOME`；`EngineManager.start()` 改走 proot；停止语义与健康判据 | 冷启出 token、页面可加载、无孤儿 node、重启不撞端口 | ⬜ |
+| **S3** | 启动接线：`ProotHost` 补 bind（workspace/`/sdcard`）与 `DSH_HOME`；`{PATCHES}` 注入；停止语义；`EngineManager.start()` 改走 proot | 冷启出 token、页面可加载、无孤儿 node、重启不撞端口 | 🟡 ProotHost 已加固，EngineManager 接线待做 |
 | **S4** | 删除 bionic：`TermuxBootstrap`、bionic 资产、`HostMode`；`apk.yml` 改消费 runtime artifact | `check-apk-assets.py` 新清单全过；APK 里无 bionic 资产 | ⬜ |
 | **S5** | 能力搬迁：`bash` 身份、`/sdcard` 绑定、`shell`(uid2000)、`root`(uid0)、无线调试、dev-env、镜像 | 真机 D-03…D-11 全过 | ⬜ |
 | **S6** | 数据迁移与救援：`$DSH_HOME` 复用、索引重建、救援 profile 走 proot、rootfs 修复 | 0.4.3/0.4.4 → 0.5.0 升级不丢会话 | ⬜ |
@@ -65,3 +65,4 @@
 | 2026-11-12 | S1 完成：运行时构建进 CI；新增 verify.py；修交叉编译与 npm 平台参数 |
 | 2026-11-12 | S2 代码：RootfsInstaller（xz 解包 / 原子替换 / sha256 / 空间预检）+ Gradle 依赖；CI 编译通过，待真机验收 |
 | 2026-11-12 | 事故：apk.yml 的「发布到 Release」只在 `if: success()` 上，PR 构建把 `v0.4.4-test` 的 APK 覆盖成了 PR 代码。已加 `event != pull_request && ref == refs/heads/main` 门禁 |
+| 2026-11-12 | S3 前半：ProotHost 加固（DSH_HOME→/root/.dsh、workspace 与 /sdcard 绑定、{PATCHES} 注入且缺占位符即拒绝、SIGQUIT 停止）；manifest 与 verify 同步；探针改走安装器 |

@@ -238,13 +238,13 @@ argv = [
     "-b", "{ROOTFS}/var/lib/dsh-app/empty:/sys/fs/selinux",
     "-b", "{ROOTFS}/var/lib/dsh-app/shm:/dev/shm",
     "/usr/bin/env", "-i",
-    "HOME=/root", "USER=root", "LOGNAME=root", "SHELL=/bin/bash",
+    "HOME=/root", "USER=root", "LOGNAME=root", "SHELL=/bin/bash", "DSH_HOME=/root/.dsh",
     "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
     "LANG=C.UTF-8", "TERM=xterm-256color", "TMPDIR=/tmp",
     "NODE_OPTIONS=--dns-result-order=ipv4first", "NODE_PATH=/opt/dsh/node_modules",
     "{GUEST_ENV}",
     "/bin/sh", "-c",
-    "echo $$ > /tmp/dsh-web.pid; exec /usr/local/bin/dsh web --host 127.0.0.1 --port {PORT} --no-open",
+    "echo $ > /tmp/dsh-web.pid; exec /usr/local/bin/dsh web {PATCHES} --host 127.0.0.1 --port {PORT} --no-open",
 ]
 m = {
     "runtimeVersion": ver,

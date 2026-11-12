@@ -31,9 +31,15 @@ class ProotProbeActivity : Activity() {
         }
         var host: ProotHost? = null
         try {
-            val manifest = RuntimeManifest.load(this)
-            val libDir = File(filesDir, "runtime/lib")
-            host = ProotHost(this, manifest, nativeLibDir = libDir.absolutePath)
+            val installer = RootfsInstaller(this)
+            val manifest = runCatching { installer.readManifestFromAssets() }
+                .getOrElse { RuntimeManifest.load(this) }
+            if (!installer.isInstalled(manifest)) {
+                line("install=start " + manifest.runtimeVersion)
+                installer.ensure(manifest) { line("install=" + it.phase + " " + it.done + "/" + it.total) }
+                line("install=done")
+            }
+            host = ProotHost(this, manifest)
 
             line("runtimeVersion=" + manifest.runtimeVersion)
             line("rootfs=" + File(filesDir, "runtime/rootfs").absolutePath)

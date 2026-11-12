@@ -4,6 +4,7 @@ import android.content.Context
 import android.system.Os
 import android.system.OsConstants
 import android.util.Log
+import com.dsh.android.engine.ProcPid
 import java.io.BufferedReader
 import java.io.File
 import java.io.InputStreamReader
@@ -11,15 +12,22 @@ import java.net.HttpURLConnection
 import java.net.ServerSocket
 import java.net.URL
 import java.util.Collections
+import java.util.TimeZone
 
 /**
  * PRoot/glibc 启动器：按 manifest 模板拼 argv、抓 token、按约定停进程。
  *
- * 约定都来自 manifest：
- *  · {NATIVE_LIB_DIR} / {ROOTFS} / {TMP} / {PORT} 由这里替换；
+ * 约定来自 manifest：
+ *  · {NATIVE_LIB_DIR} / {ROOTFS} / {TMP} / {PORT} / {PATCHES} 由这里替换；
  *  · {GUEST_ENV} 是独立元素，展开成 0..N 个 KEY=VALUE；
  *  · 绑定目录插在 /usr/bin/env 之前；
  *  · 停止 = SIGTERM 给 pidfile 里的 node，兜底 SIGQUIT 给 proot。
+ *
+ * 与 P2 探针版的差别（每一条都是接进产品后才暴露的）：
+ *  1. bind 从「只绑 DSH_HOME」扩到「DSH_HOME 映射到 guest 的 /root/.dsh + workspace 原路径」，
+ *     否则 bash 工具看不到工作区、会话写到 rootfs 里而不是宿主 home；
+ *  2. manifest 的启动命令带 {PATCHES}，overlay 由这里注入，不再只靠试启动；
+ *  3. stop 真正发 SIGQUIT 给 proot（ProotHost 之前只 destroy，proot 不理 SIGTERM）。
  */
 class ProotHost(
     private val context: Context,
@@ -28,6 +36,8 @@ class ProotHost(
     private val nativeLibDir: String = context.applicationInfo.nativeLibraryDir,
     private val tmpDir: File = File(context.cacheDir, "proot-tmp"),
     private val dshHome: File = File(context.filesDir, "home/.dsh"),
+    private val workspace: File = File(context.filesDir, "workspace"),
+    private val phoneStorage: File? = null,
 ) {
     private var process: Process? = null
     private var pump: Thread? = null
@@ -37,11 +47,14 @@ class ProotHost(
 
     private val lastLines: MutableList<String> = Collections.synchronizedList(ArrayList())
 
-    fun start(extraEnv: Map<String, String>): Process {
-        require(rootfs.isDirectory) { "rootfs 不存在：$rootfs" }
+    fun start(extraEnv: Map<String, String>, overlays: List<File> = emptyList()): Process {
+        require(rootfs.isDirectory) { "rootfs 不存在：" + rootfs.absolutePath }
         require(File(rootfs, "usr/bin/node").isFile) { "rootfs 缺 node" }
         tmpDir.mkdirs()
         dshHome.mkdirs()
+        workspace.mkdirs()
+        // guest 里的 DSH_HOME 固定绑到 /root/.dsh，bind 目标目录必须事先存在
+        File(rootfs, "root/.dsh").mkdirs()
 
         val port = ServerSocket(0).use { it.localPort }
         val vars = mapOf(
@@ -52,22 +65,44 @@ class ProotHost(
         )
         fun expand(s: String) = vars.entries.fold(s) { acc, (k, v) -> acc.replace(k, v) }
 
+        val patchArgs = overlays.joinToString(" ") { "--patch " + it.absolutePath }
         val argv = ArrayList<String>()
         var bindsPlaced = false
+        var patchesPlaced = false
         for (raw in manifest.launchArgv) {
-            val arg = expand(raw)
+            val replaced = expand(raw)
+            val arg = if (replaced.contains("{PATCHES}")) {
+                patchesPlaced = true
+                replaced.replace("{PATCHES}", patchArgs)
+            } else replaced
             when {
                 !bindsPlaced && arg == "/usr/bin/env" -> {
                     argv += "-b"
-                    argv += dshHome.canonicalPath + ":" + dshHome.canonicalPath
+                    argv += dshHome.canonicalPath + ":" + File(rootfs, "root/.dsh").canonicalPath
+                    argv += "-b"
+                    argv += workspace.canonicalPath + ":" + workspace.canonicalPath
+                    phoneStorage?.takeIf { it.isDirectory }?.let {
+                        argv += "-b"
+                        argv += it.canonicalPath + ":/sdcard"
+                    }
                     argv += arg
                     bindsPlaced = true
                 }
-                arg == "{GUEST_ENV}" -> extraEnv.forEach { (k, v) -> argv += "$k=$v" }
+                arg == "{GUEST_ENV}" -> {
+                    val env = buildMap {
+                        put("DSH_HOME", "/root/.dsh")
+                        put("TZ", TimeZone.getDefault().id)
+                        putAll(extraEnv)
+                    }
+                    env.forEach { (k, v) -> argv += k + "=" + v }
+                }
                 else -> argv += arg
             }
         }
         require(bindsPlaced) { "manifest 里没有 /usr/bin/env 锚点" }
+        // 没有 {PATCHES} 的 manifest 会让引擎在无沙箱 / 无索引 / 无插件源配置下启动：
+        // 那是「能跑但悄悄缺能力」，比启动失败更难查，所以直接拒绝。
+        require(patchesPlaced) { "manifest 缺 {PATCHES} 占位符（运行时资产过旧）" }
 
         val pb = ProcessBuilder(argv).directory(context.filesDir)
         pb.environment().apply {
@@ -100,7 +135,7 @@ class ProotHost(
                     }
                     val m = manifest.tokenRegex.find(line)
                     if (m != null) {
-                        tokenUrl = m.groupValues[1] + "?token=" + m.groupValues[2]
+                        tokenUrl = m.groupValues[1] + "?token=" + m.groupValues[m.groupValues.size - 1]
                         Log.i(TAG, "token: " + tokenUrl)
                     }
                     Log.i(TAG, "[web] " + line)
@@ -115,7 +150,7 @@ class ProotHost(
         val deadline = System.currentTimeMillis() + timeoutMs
         while (System.currentTimeMillis() < deadline) {
             tokenUrl?.let { return it }
-            if (process?.isAlive == false) return null
+            if (process?.isAlive == false) return tokenUrl
             Thread.sleep(100)
         }
         return tokenUrl
@@ -149,24 +184,32 @@ class ProotHost(
         )
         val nodePid = runCatching { pidFile.readText().trim().toInt() }.getOrNull()
         if (nodePid != null && nodePid > 0) {
-            runCatching { Os.kill(nodePid, OsConstants.SIGTERM) }
+            runCatching { Os.kill(nodePid.toLong(), OsConstants.SIGTERM) }
                 .onFailure { Log.w(TAG, "SIGTERM " + nodePid + " 失败: " + it.message) }
             val deadline = System.currentTimeMillis() + 5000
             while (System.currentTimeMillis() < deadline && File("/proc/" + nodePid).exists()) {
                 Thread.sleep(100)
             }
         }
+
         val p = process ?: return true
-        if (!p.isAlive) return true
-        // proot 忽略 SIGTERM；node 已死后 --kill-on-exit 会自行退出。
-        // Android 没暴露 Process.pid()，所以只做最后兜底。
-        if (!p.waitFor(8, java.util.concurrent.TimeUnit.SECONDS)) {
-            Log.w(TAG, "node 已停但 proot 未退，destroyForcibly")
-            p.destroyForcibly()
-            p.waitFor(3, java.util.concurrent.TimeUnit.SECONDS)
+        if (p.isAlive) {
+            // proot 忽略 SIGTERM/SIGINT/SIGHUP；node 死后 --kill-on-exit 通常会收尾，
+            // 但异常退出时必须显式 SIGQUIT，否则 tracee 变孤儿、端口不释放。
+            val pid = ProcPid.of(p)
+            if (pid != null) {
+                runCatching { Os.kill(pid, OsConstants.SIGQUIT) }
+                    .onFailure { Log.w(TAG, "SIGQUIT " + pid + " 失败: " + it.message) }
+            }
+            if (!p.waitFor(8, java.util.concurrent.TimeUnit.SECONDS)) {
+                Log.w(TAG, "SIGQUIT 后 proot 仍未退，destroyForcibly")
+                p.destroyForcibly()
+                p.waitFor(3, java.util.concurrent.TimeUnit.SECONDS)
+            }
         }
         pump?.interrupt()
         process = null
+        tokenUrl = null
         runCatching { pidFile.delete() }
         return !p.isAlive
     }
