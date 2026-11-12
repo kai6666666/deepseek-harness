@@ -107,7 +107,7 @@ adb exec-out screencap -p > screen.png
 ## 6. 不要踩的坑（血泪清单）
 
 1. **不要用 patchelf 改 proot 的 DT_NEEDED**——改过的二进制 SIGSEGV；依赖按原名从 assets 解到 `files/proot-libs`。
-2. **pi​dfile 命令必须是 `echo $$`**，不是 `echo $`；否则停止时杀不到 node。
+2. **pidfile 命令必须是 `echo $$`**，不是 `echo $`；否则停止时杀不到 node。
 3. **裁剪 node_modules 不能删 JS 平台包**（如 `@deepseek-ai/dsh-win32-process`），否则 subprocess/sandbox 服务 import 失败；只删 `@img/sharp-*`、`node-addon-system-*` 与其它 `prebuilds/*`。
 4. **不要提交 `app/src/main/assets/runtime/*`、`jniLibs/*`、`app/build/*`**：全部由 CI 或本地脚本生成。
 5. **targetSdk 保持 28**；升到 29+ 会禁止 execve 私有目录，proot 全挂。
