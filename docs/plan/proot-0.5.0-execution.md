@@ -39,7 +39,7 @@
 | **S1** | 运行时资产进 CI：交叉编译 + 硬断言 + artifact | `runtime.yml` 绿、artifact 有 rootfs/manifest/jniLibs、`verify.py` PASS | ✅ 2026-11-12（run 43215359752，22 OK / 0 FAIL） |
 | **S2** | rootfs 安装器：解 `tar.xz`、原子替换、`.stamp`、空间预检、失败可重试 | 真机首启解包成功；重复启动不重解；坏包能报错 | 🟡 代码完成 + CI 编译通过（run 43216285582），待真机 |
 | **S3** | 启动接线：`ProotHost` 补 bind（workspace/`/sdcard`）与 `DSH_HOME`；`{PATCHES}` 注入；停止语义；APK 内置运行时资产 | 冷启出 token、页面可加载、无孤儿 node、重启不撞端口 | 🟡 前半完成（PR #5）；`EngineManager` 接线与 S4 合并做（见 §七） |
-| **S4** | 删除 bionic：`TermuxBootstrap`、bionic 资产、`HostMode`；`EngineManager.start()` 改成唯一 proot 路径；`check-apk-assets.py` 去掉 bionic 条目 | `check-apk-assets.py` 新清单全过；APK 里无 bionic 资产 | 🟡 启动路径已切 proot（本条 PR），bionic 清理分两步 |
+| **S4** | 删除 bionic：`TermuxBootstrap`、bionic 资产、`HostMode`；`EngineManager.start()` 改成唯一 proot 路径；`check-apk-assets.py` 去掉 bionic 条目 | `check-apk-assets.py` 新清单全过；APK 里无 bionic 资产 | 🟡 S4a 完成（启动切 proot，CI 绿）；S4b 删 bionic |
 | **S4.5** | **x86_64 运行时变体**：`build-runtime.sh` ABI 参数化（amd64 ubuntu-base / node-x64 / proot_x86_64 / talloc+shmem amd64）+ Gradle x64 flavor（模拟器用） | `runtime.yml` 出 x86_64 artifact；雷电/MuMu 原生安装并跑通 | ⬜ |
 | **S5** | 能力搬迁：`bash` 身份、`/sdcard` 绑定、`shell`(uid2000)、`root`(uid0)、无线调试、dev-env、镜像 | 真机 D-03…D-11 全过 | ⬜ |
 | **S6** | 数据迁移与救援：`$DSH_HOME` 复用、索引重建、救援 profile 走 proot、rootfs 修复 | 0.4.3/0.4.4 → 0.5.0 升级不丢会话 | ⬜ |
@@ -149,3 +149,4 @@ APK 体积：两个 flavor 各自只带自己的 rootfs，不会翻倍；x64 包
 | 运行 | `ProotProbeActivity` 输出 `health=PASS`、`leftover_node=0` |
 | 冷启 | 记录解包与引擎两段耗时，写回本文 |
 | 2026-11-12 | S4a：`EngineManager.start()` 命中 manifest 即走 `startProot()`（安装 rootfs → 共用插件写入 → proot 启动 → token/Ready）；`stop()` 走 ProotHost 的 pidfile+SIGQUIT；新增 `compile.yml` 做 5 分钟级 Kotlin 编译门禁。bionic 代码暂时保留为死路径，S4b 删 |
+| 2026-11-12 | S4a CI 绿：编译检查 43224299560、runtime 43224299477、APK 43224299419；APK 310 MB（bionic + runtime 同时在内，S4b 删 bionic 后回落） |
