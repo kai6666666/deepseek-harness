@@ -215,6 +215,9 @@ jobs:
           grep -n 'versionCode = \|versionName = ' app/build.gradle.kts
           sh tools/version.sh --check
 
+      - name: 生成无线调试 adb 工具链（S5）
+        run: bash tools/build-adb-wireless.sh
+
       - name: 构建 APK
         run: bash ./gradlew :app:assembleSystemDebug --console=plain --stacktrace
 
