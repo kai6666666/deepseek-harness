@@ -59,7 +59,8 @@ done
 echo "✅ 开机完成：$( "$ADB" -s "$SERIAL" shell getprop ro.product.cpu.abi | tr -d '\r' )"
 
 echo "== 安装 $APK"
-"$ADB" -s "$SERIAL" install -r -t "$APK" > "$OUT/install.txt" 2>&1 || die "安装失败（$OUT/install.txt）"
+echo "   （136 MB 包，模拟器里可能要 1-2 分钟）"
+timeout 900 "$ADB" -s "$SERIAL" install -r -t "$APK" > "$OUT/install.txt" 2>&1 || die "安装失败或超时（$OUT/install.txt）"
 grep -q Success "$OUT/install.txt" || die "install 未返回 Success"
 
 echo "== 打开探针开关并启动 ProotProbeActivity"
@@ -69,10 +70,12 @@ echo "== 打开探针开关并启动 ProotProbeActivity"
 # NEW_TASK|CLEAR_TASK：否则旧 MainActivity task 会被恢复，引擎把探针顶掉（0x10008000）
 "$ADB" -s "$SERIAL" shell am start -W -f 0x10008000 -n com.dsh.android/.runtime.ProotProbeActivity > "$OUT/amstart.txt" 2>&1 || die "am start 失败"
 
-echo "== 等待探针结果（最多 ${PROBE_TIMEOUT}s）"
+echo "== 等待探针结果（最多 ${PROBE_TIMEOUT}s；模拟器里解 1 GB rootfs 是主要耗时）"
 DEADLINE=$(( $(date +%s) + PROBE_TIMEOUT ))
-RESULT=""
-until $( "$ADB" -s "$SERIAL" shell run-as com.dsh.android test -f files/proot-probe.txt && echo true || echo false ) | grep -q true; do
+while :; do
+  if "$ADB" -s "$SERIAL" shell "run-as com.dsh.android sh -c 'test -f files/proot-probe.txt && echo YES || echo NO'" 2>/dev/null | grep -q YES; then
+    break
+  fi
   [ "$(date +%s)" -lt "$DEADLINE" ] || die "探针超时（${PROBE_TIMEOUT}s），可能 TOKEN_TIMEOUT"
   sleep 3
 done
