@@ -11,6 +11,7 @@ on:
       - 'tools/runtime/**'
       - 'tools/check-apk-assets.py'
       - '.github/workflows/apk-x64.yml'
+      - 'tools/avd/**'
 
 permissions:
   contents: read
