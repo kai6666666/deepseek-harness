@@ -46,7 +46,9 @@ jobs:
       - name: Android SDK
         uses: android-actions/setup-android@v3
         with:
-          packages: 'platforms;android-35 build-tools;35.0.0 ndk;27.0.12077973'
+          # AVD 探针要的包在这里一次装齐：交给 action 装是非交互的，
+          # 不会像 sdkmanager 那样卡在许可提示上（2026-11-13 实际挂过 25 分钟）。
+          packages: 'platforms;android-35 build-tools;35.0.0 ndk;27.0.12077973 emulator system-images;android-34;google_apis;x86_64'
           log-accepted-android-sdk-licenses: true
 
       - name: 下载缓存
