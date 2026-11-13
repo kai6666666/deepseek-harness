@@ -66,6 +66,10 @@ if ! sdkmanager --version >/dev/null 2>&1; then
 fi
 
 # ── 装包（幂等：已装的会跳过）──────────────────────────────────────────────
+# 幂等：CI 上 setup-android 已经把包装好了，这里再跑 sdkmanager 只会白等
+if [ -x "$SDK/emulator/emulator" ] && [ -d "$SDK/system-images/android-${API}/google_apis/${ABI}" ]; then
+  echo "== 包已就绪，跳过 sdkmanager（emulator + ${IMAGE}）"
+else
 echo "== 安装 platform-tools / emulator / platforms;android-${API} / ${IMAGE}"
 yes | sdkmanager --licenses >/dev/null 2>&1 || true
 # ⚠️ 两件事：
@@ -74,12 +78,13 @@ yes | sdkmanager --licenses >/dev/null 2>&1 || true
 #      会把「安装成功」误判成失败（2026-11-13 实际踩到：yes: standard output: Broken pipe）。
 #      所以这一段临时关掉 pipefail，并改用「装完文件在不在」做真判据。
 set +o pipefail
-yes | timeout 1800 sdkmanager --verbose "platform-tools" "emulator" "platforms;android-${API}" "${IMAGE}"
+yes | timeout 900 sdkmanager --verbose "platform-tools" "emulator" "platforms;android-${API}" "${IMAGE}"
 rc=$?
 set -o pipefail
 if [ "$rc" -ne 0 ] || [ ! -d "$SDK/system-images/android-${API}/google_apis/${ABI}" ]; then
   echo "❌ sdkmanager 安装失败（rc=$rc）"
   exit 1
+fi
 fi
 
 # ── Windows：装 AEHD 加速驱动（需要管理员）────────────────────────────────
