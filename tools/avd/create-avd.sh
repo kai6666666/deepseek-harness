@@ -68,7 +68,9 @@ fi
 # ── 装包（幂等：已装的会跳过）──────────────────────────────────────────────
 echo "== 安装 platform-tools / emulator / platforms;android-${API} / ${IMAGE}"
 yes | sdkmanager --licenses >/dev/null 2>&1 || true
-sdkmanager "platform-tools" "emulator" "platforms;android-${API}" "${IMAGE}"
+# ⚠️ 必须喂 yes：sdkmanager 遇到未接受的许可会停下来等输入，CI 里表现为「步骤永远 running」
+yes | timeout 1800 sdkmanager --verbose "platform-tools" "emulator" "platforms;android-${API}" "${IMAGE}" \
+  || { echo "❌ sdkmanager 安装失败或超时"; exit 1; }
 
 # ── Windows：装 AEHD 加速驱动（需要管理员）────────────────────────────────
 if [ "$(uname -s)" = "MSYS_NT"* ] || [ "$(uname -s)" = "MINGW"* ]; then
