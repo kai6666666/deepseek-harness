@@ -68,9 +68,19 @@ fi
 # ── 装包（幂等：已装的会跳过）──────────────────────────────────────────────
 echo "== 安装 platform-tools / emulator / platforms;android-${API} / ${IMAGE}"
 yes | sdkmanager --licenses >/dev/null 2>&1 || true
-# ⚠️ 必须喂 yes：sdkmanager 遇到未接受的许可会停下来等输入，CI 里表现为「步骤永远 running」
-yes | timeout 1800 sdkmanager --verbose "platform-tools" "emulator" "platforms;android-${API}" "${IMAGE}" \
-  || { echo "❌ sdkmanager 安装失败或超时"; exit 1; }
+# ⚠️ 两件事：
+#   1) sdkmanager 遇到未接受的许可会停下来等输入 → CI 里表现为「步骤永远 running」，所以喂 yes；
+#   2) `yes | sdkmanager` 里 sdkmanager 先退出会让 yes 吃 SIGPIPE，配合 `set -o pipefail`
+#      会把「安装成功」误判成失败（2026-11-13 实际踩到：yes: standard output: Broken pipe）。
+#      所以这一段临时关掉 pipefail，并改用「装完文件在不在」做真判据。
+set +o pipefail
+yes | timeout 1800 sdkmanager --verbose "platform-tools" "emulator" "platforms;android-${API}" "${IMAGE}"
+rc=$?
+set -o pipefail
+if [ "$rc" -ne 0 ] || [ ! -d "$SDK/system-images/android-${API}/google_apis/${ABI}" ]; then
+  echo "❌ sdkmanager 安装失败（rc=$rc）"
+  exit 1
+fi
 
 # ── Windows：装 AEHD 加速驱动（需要管理员）────────────────────────────────
 if [ "$(uname -s)" = "MSYS_NT"* ] || [ "$(uname -s)" = "MINGW"* ]; then
