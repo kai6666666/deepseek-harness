@@ -115,8 +115,9 @@ jobs:
 
       - name: 起 AVD 跑探针（RESULT=PASS）
         run: |
-          set -e
+          set -ex
           export ANDROID_SDK_ROOT="$ANDROID_HOME"
+          echo "== emulator 加速自检"; "$ANDROID_HOME/emulator/emulator" -accel-check || true
           bash tools/avd/create-avd.sh
           APK=$(ls app/build/outputs/apk/system/debug/*.apk | head -1)
           bash tools/avd/run-probe.sh "$APK"
