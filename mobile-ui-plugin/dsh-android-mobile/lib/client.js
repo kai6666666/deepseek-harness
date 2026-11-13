@@ -272,6 +272,16 @@ window.__ModuleLoader__.load({
   padding-left: 52px !important;
 }
 
+/* ══ 修复 89（2026-11-13）：左侧栏按钮点不动 ══════════════════════════
+   官方「打开侧边栏」浮动座位 pI_x6G_leadingSeat 是 z-index:15，而我们自己的
+   header 在修复 30b 里被提到 z-index:30（为让 ⋯ 菜单压住消息流）。
+   结果：座位虽被画出来，但点击全被 header 吃掉（CDP 实测 elementFromPoint(26,25)
+   返回 HEADER.wSkVaW_header，不是按钮）。
+   座位正好落在 header 的 52px 左留白里，抬到 40 不会压住 ⋯ 菜单。 */
+[data-mobile] [class*="leadingSeat"] {
+  z-index: 40 !important;
+}
+
 /* ══ 修复 30：头部单行化（2026-09-16 啾灵拍板方案）══════════════════════
    官方 0.1.5 头部两行（标题行 + 对话/轨迹 tabs）在手机上占 ~85px。改为：
    ① tabs 行隐藏，「轨迹」入口移入 ⋯ 菜单（mpInjectTraceItem）
@@ -4124,7 +4134,10 @@ mpWantedOpen = true;
 				if (!mpIsMobile()) return;
 				// 修复 86：插件页的开关/分段控件类名里也带 toggle，以前点一下就改抽屉状态。
 				if (t && t.closest && t.closest("[data-pane=conversation]")) return;
-				if (t && t.closest && t.closest('[class*="toggle"]')) {
+				// 修复 89（2026-11-13）：官方「打开侧边栏」入口的类名是 IW6AQa_iconButton，
+				//   不带 toggle —— 以前只匹配 [class*="toggle"]，点它只翻官方 state，
+				//   不写 mpIntentUntil、也不给我们自己的浮层类 → 抽屉纹丝不动。
+				if (t && t.closest && (t.closest('[class*="toggle"]') || t.closest('[data-sidebar-opener]'))) {
 					mpIntentUntil = Date.now() + 8000;
 					const c0 = mpSidebarCol();
 					if (c0) {
@@ -10920,3 +10933,207 @@ if (!window.__mpHeaderMenuTimer) {
 		return module.exports;
 	}
 });
+
+/* ══ 2026-11-13：drawer-fix-170 内联 ═════════════════════════════════════
+   0.5.0 把 web 产物搬进 rootfs 后，app/src/main/assets/webview-polyfill.js
+   的注入链断了（rootfs 里既没有 webview-polyfill.js，index.html 也没有
+   引用它）→ 这段补丁在真机上从未执行（window.__mpDrawerFix170 === false）。
+   在 polyfill 注入恢复之前，直接内联进 client.js 兜住；两处都用
+   __mpDrawerFix170 守卫，谁先跑谁生效，另一个自动跳过。 */
+/* ===== DSH Android：移动端外壳补丁（由 webview-polyfill 通道注入）=====
+ * A 设置弹窗层级 / B 打开设置即收抽屉 / C 清残留遮罩
+ * D 左按钮仅会话视图改用 header 布局（面板页把官方座位还回去）
+ * E 多模态配置去自定义标记（照 dsh-market）
+ * 与 mobile-ui 的 drawer-fix-170 共用 __mpDrawerFix170 守卫：谁先跑谁生效，另一个自动跳过。
+ */
+/* ===== mobile-ui 补丁（CI 打包前追加到 lib/client.js）=====
+ *
+ * A. 设置弹窗层级：portal 到 body 的模态(z=1000)被抽屉列(z=1100)压住 → 抬到 1200
+ * B. 打开设置即收抽屉：portal 模态挂载时点一次官方 toggle
+ * C. 清理遗留 .mp-drawer-mask
+ * D. 左侧栏按钮：会话视图里改用 header 的布局体系（与右侧按钮同一串类名、15px 图标）
+ *      ⚠️ 只能在「存在 [data-conversation-header-leading]（即会话视图）」时把官方浮动座位
+ *         pI_x6G_leadingSeat 退场；面板页（插件/插件市场/自动化任务/任务看板/智能体）
+ *         没有这个容器，必须把座位放回来 —— 否则插件会倒退回它自己的 40px 浮动汉堡：
+ *           · pointerdown 就开抽屉 → 紧随的 click 落在抽屉「新建会话」上 → 跳回新会话（真机复现）
+ *           · 浮动态写 --mp-float-nav-h=54px → 标题被推下 54px（真机复现：pageHead.y 102 → 48）
+ * E. 多模态配置的双图标：照 dsh-market 的做法，不画自定义标记（只留 shell 齿轮）
+ *
+ * 真机实测依据（PROBE174/175/182/183/186/187/188/189）。
+ * 注意：不要隐藏 .hHd-Xa_root（侧栏与设置面板共用根类，会整屏白）。
+ */
+(function () {
+  if (window.__mpDrawerFix170) return;
+  window.__mpDrawerFix170 = true;
+
+  var STYLE_ID = 'mp-drawer-fix-170';
+  var CSS = ''
+    + 'html[data-mobile] body > [class*="overlay"]:has(> [role="dialog"][aria-modal="true"]){'
+    + 'z-index:1200 !important;'
+    + '}\n'
+    + 'html[data-mobile] body > [class*="overlay"]:has([role="dialog"][aria-modal="true"]){'
+    + 'pointer-events:auto !important;'
+    + '}\n'
+    + 'html[data-mobile] header[data-window-drag],html[data-mobile] header[class*="header"]{'
+    + 'padding-left:20px !important;'
+    + '}\n'
+    + 'html[data-mobile] [data-conversation-header-leading] button svg,'
+    + 'html[data-mobile] button[aria-label*="右侧边栏"] svg{'
+    + 'width:15px !important;height:15px !important;'
+    + '}\n'
+    + '[data-shortcut-modal="settings"] nav button[data-am-nav]::before{'
+    + 'content:none !important;'
+    + '}\n';
+
+  function injectCss() {
+    if (document.getElementById(STYLE_ID)) return;
+    var s = document.createElement('style');
+    s.id = STYLE_ID;
+    s.textContent = CSS;
+    (document.head || document.documentElement).appendChild(s);
+  }
+
+  function sidebarCol() { return document.querySelector('[class*="sidebarCol"]'); }
+  function frameDrawer() { return document.querySelector('[data-sidebar-drawer]'); }
+  function drawerOpen() {
+    var f = frameDrawer();
+    return !!f && !f.hasAttribute('data-sidebar-collapsed');
+  }
+  function drawerToggle() {
+    return document.querySelector('[data-sidebar-toggle]')
+      || document.querySelector('[data-sidebar-opener]');
+  }
+  function closeDrawer() {
+    var f = frameDrawer();
+    if (!f || f.hasAttribute('data-sidebar-collapsed')) return false;
+    var t = drawerToggle();
+    if (!t) return false;
+    t.click();
+    return true;
+  }
+  function isPortalModal(node) {
+    if (!node || node.nodeType !== 1) return false;
+    if (!node.querySelector) return false;
+    if (node.closest && node.closest('[class*="sidebarCol"]')) return false;
+    var col = sidebarCol();
+    if (col && node.contains(col)) return false;
+    var d = node.querySelector('[role="dialog"][aria-modal="true"]');
+    if (!d) return false;
+    var r = d.getBoundingClientRect();
+    return r.width > 1 && r.height > 1;
+  }
+  function sweepMask() {
+    if (!frameDrawer()) return;
+    var masks = document.querySelectorAll('body > .mp-drawer-mask');
+    for (var i = 0; i < masks.length; i++) {
+      try { masks[i].parentNode.removeChild(masks[i]); } catch (e) { /* 静默 */ }
+    }
+  }
+  function handleAdded(node) {
+    if (!isPortalModal(node)) return;
+    sweepMask();
+    if (drawerOpen()) closeDrawer();
+  }
+
+  /* ── D. 左按钮：仅会话视图接管，面板页把座位还回去 ───────────────── */
+  function headerLeading() { return document.querySelector('[data-conversation-header-leading]'); }
+  function leadingSeat() { return document.querySelector('[class*="leadingSeat"]'); }
+  function rightButton() {
+    var bs = document.querySelectorAll('button');
+    for (var i = 0; i < bs.length; i++) {
+      if ((bs[i].getAttribute('aria-label') || '').indexOf('右侧边栏') >= 0) return bs[i];
+    }
+    return null;
+  }
+  var mpLeadBtn = null;
+
+  function onLeadClick(e) {
+    try { e.preventDefault(); e.stopPropagation(); } catch (err) { /* 静默 */ }
+    var t = drawerToggle();
+    if (t) t.click();
+  }
+
+  function removeLeadButton() {
+    if (mpLeadBtn && mpLeadBtn.parentNode) {
+      try { mpLeadBtn.parentNode.removeChild(mpLeadBtn); } catch (e) { /* 静默 */ }
+    }
+  }
+
+  function mountLeadButton(hold, right, seat) {
+    var icon = seat ? seat.querySelector('button svg') : null;
+    if (!mpLeadBtn) {
+      mpLeadBtn = document.createElement('button');
+      mpLeadBtn.type = 'button';
+      mpLeadBtn.setAttribute('aria-label', '打开侧边栏');
+      mpLeadBtn.addEventListener('click', onLeadClick, false);
+    }
+    var cls = right.className + ' mp-lead-btn';
+    if (mpLeadBtn.className !== cls) mpLeadBtn.className = cls;
+
+    var wantIcon = icon || mpLeadBtn.querySelector('svg');
+    if (wantIcon && (!mpLeadBtn.firstChild || mpLeadBtn.getAttribute('data-mp-icon') !== 'left')) {
+      var clone = wantIcon.cloneNode(true);
+      clone.setAttribute('width', '15');
+      clone.setAttribute('height', '15');
+      try { clone.style.width = '15px'; clone.style.height = '15px'; } catch (e) { /* 静默 */ }
+      mpLeadBtn.innerHTML = '';
+      mpLeadBtn.appendChild(clone);
+      mpLeadBtn.setAttribute('data-mp-icon', 'left');
+    }
+    if (mpLeadBtn.parentElement !== hold) hold.insertBefore(mpLeadBtn, hold.firstChild);
+  }
+
+  function syncLeadScope() {
+    if (!document.documentElement.hasAttribute('data-mobile')) return;
+    var seat = leadingSeat();
+    if (!seat) return;
+    var hold = headerLeading();
+    if (!hold) {
+      /* 面板页：座位必须回来，否则插件用 40px 浮动汉堡（点击穿透到「新建会话」、标题下移 54px） */
+      if (seat.style.display === 'none') seat.style.display = '';
+      removeLeadButton();
+      return;
+    }
+    var right = rightButton();
+    if (!right) return;               /* 右按钮还没渲染：先不动，等下一拍 */
+    if (seat.style.display !== 'none') seat.style.display = 'none';
+    mountLeadButton(hold, right, seat);
+  }
+
+  var leadRaf = 0;
+  function scheduleLead() {
+    if (leadRaf) return;
+    leadRaf = requestAnimationFrame(function () {
+      leadRaf = 0;
+      try { syncLeadScope(); } catch (e) { /* 静默 */ }
+    });
+  }
+
+  function boot() {
+    injectCss();
+    sweepMask();
+    scheduleLead();
+    var obs = new MutationObserver(function (muts) {
+      for (var i = 0; i < muts.length; i++) {
+        var added = muts[i].addedNodes;
+        for (var j = 0; j < added.length; j++) handleAdded(added[j]);
+      }
+      scheduleLead();
+    });
+    obs.observe(document.body, { childList: true, subtree: true });
+    window.addEventListener('resize', scheduleLead);
+    window.addEventListener('orientationchange', scheduleLead);
+    setInterval(function () {
+      sweepMask();
+      scheduleLead();
+      if (!drawerOpen()) return;
+      var kids = document.body.children;
+      for (var i = 0; i < kids.length; i++) {
+        if (isPortalModal(kids[i])) { closeDrawer(); return; }
+      }
+    }, 1200);
+  }
+
+  if (document.body) boot();
+  else document.addEventListener('DOMContentLoaded', boot, { once: true });
+})();
