@@ -1,3 +1,4 @@
+# 触发路径以 base 分支的这份文件为准（pull_request 用 base 的 paths 过滤）
 name: 构建 APK（x86_64 模拟器）
 
 # 只手动触发：给雷电/MuMu 这类 x86_64 模拟器出一个原生包。
