@@ -6744,6 +6744,38 @@ class EngineManager private constructor(private val context: Context) {
         runCatching { ensureLogsTool() }
         runCatching { ensurePetBridge() }
 
+        // ── S5：uid 2000 与 root 通道 ──────────────────────────────────────
+        // S4c 删 bionic start() 时把这段 orchestration 一起删了；0.5.0 只留了
+        // 各个 ensure/write 函数本体，必须在这里重新接线，否则 shell/root
+        // 两个工具根本不会出现在模型工具表里。
+        val privRunner = ensurePrivilegedShell()
+        // Shizuku 桥要在引擎启动前起来，且不能因为“当前没授权”就不起：
+        // 用户可能先开 App 再开 Shizuku，socket 名必须已经 bind 住。
+        runCatching { ShizukuChannel.start(context) }
+            .onSuccess {
+                Log.i(TAG, "Shizuku 桥已就绪: manager=" + ShizukuChannel.isManagerInstalled(context) +
+                    " binder=" + ShizukuChannel.isBinderAlive() +
+                    " granted=" + ShizukuChannel.hasPermission())
+            }
+            .onFailure { Log.w(TAG, "Shizuku 桥启动失败: " + it.message) }
+        val adbWireless = ensureAdbWireless()
+        ensurePrivilegedPlugin()
+        val privPatch = writePrivilegedPatch(privRunner != null)
+        shellToolMounted = privPatch != null
+        ensurePrivilegedPrompt(privPatch != null)
+
+        val rootRunner = ensureRootShell()
+        val rootState = RootAccess.detect(context)
+        ensureRootPlugin()
+        val rootPatch = writeRootPatch(rootRunner != null && rootState.granted)
+        rootToolMounted = rootPatch != null
+        if (rootState.granted) {
+            Log.i(TAG, "root 可用（" + rootState.detail + "），已挂载 root 工具")
+        } else {
+            Log.i(TAG, "root 不可用（" + rootState.state + ": " + rootState.detail + "），root 工具未挂载")
+        }
+        ensureRootPrompt(rootPatch != null)
+
         // 注意：这些 writeXxxPatch() 都是幂等写文件，直接调用即可；
         // bionic 路径里的同名局部 val 只在那条流程内可见。
         val overlays = listOfNotNull(
@@ -6762,13 +6794,23 @@ class EngineManager private constructor(private val context: Context) {
             writeLogsToolPatch(),
             writeBrowserToolPatch(),
             writeQuarantinePatch(),
+            privPatch,
+            rootPatch,
         )
 
         val host = ProotHost(context, manifest, dshHome = dshHome, workspace = workspaceDir)
         prootHost = host
+        val prootEnv = buildMap {
+            put("DSH_HOME", dshHome.absolutePath)
+            put(KEY_ENV, KEY_PLACEHOLDER)
+            // 插件会剥掉所有 DSH_*，这里必须显式转交；路径都按原绝对路径绑进 guest。
+            privRunner?.let { put("DSH_PRIV_RUNNER", it.absolutePath) }
+            rootRunner?.let { put("DSH_ROOT_RUNNER", it.absolutePath) }
+            put("DSH_SHIZUKU_SOCKET", ShizukuChannel.socketName(context))
+            adbWireless?.let { put("DSH_ADB_HOME", it.absolutePath) }
+        }
         val proc = try {
-            host.start(
-                mapOf("DSH_HOME" to dshHome.absolutePath, KEY_ENV to KEY_PLACEHOLDER),
+            host.start(prootEnv,
                 overlays,
             )
         } catch (t: Throwable) {

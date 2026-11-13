@@ -94,6 +94,15 @@ class ProotHost(
                         argv += "-b"
                         argv += storage + ":" + storage
                     }
+                    // S5：uid 2000 / root 通道的 runner 与内置 adb 工具链都在 filesDir 根，
+                    // 不在 $DSH_HOME 下；不绑进去，guest 里的插件只能看到一个不存在的路径。
+                    listOf("dsh-android-shell.mjs", "dsh-android-root.mjs", "adbwire").forEach { name ->
+                        val f = File(context.filesDir, name)
+                        if (f.exists()) {
+                            argv += "-b"
+                            argv += f.canonicalPath + ":" + f.canonicalPath
+                        }
+                    }
                     argv += arg
                     bindsPlaced = true
                 }
