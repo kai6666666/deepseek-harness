@@ -98,3 +98,30 @@ jobs:
           path: app/build/outputs/apk/system/debug/*.apk
           retention-days: 7
           if-no-files-found: error
+
+      # ── AVD 端到端探针（T4）────────────────────────────────────────────
+      # ubuntu runner 自带 /dev/kvm：这是唯一「无真机」的 PRoot 验收环境，
+      # 雷电/MuMu 的镜像拒绝 ptrace(TRACEME)，不能当判据。
+      - name: KVM 硬前提
+        run: |
+          set -e
+          sudo chmod 666 /dev/kvm 2>/dev/null || true
+          [ -e /dev/kvm ] || { echo '::error::runner 没有 /dev/kvm'; exit 1; }
+          ls -l /dev/kvm
+
+      - name: 起 AVD 跑探针（RESULT=PASS）
+        run: |
+          set -e
+          export ANDROID_SDK_ROOT="$ANDROID_HOME"
+          bash tools/avd/create-avd.sh
+          APK=$(ls app/build/outputs/apk/system/debug/*.apk | head -1)
+          bash tools/avd/run-probe.sh "$APK"
+
+      - name: 失败现场
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: avd-failure
+          path: out/avd-*/
+          if-no-files-found: ignore
+          retention-days: 7
