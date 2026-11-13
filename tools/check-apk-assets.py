@@ -33,9 +33,7 @@ REQUIRED = [
     # 运行时（PRoot/glibc）：由 apk.yml 的 runtime job 在出包前铺进 assets。
     # 0.5.0 是单运行时：这里不再有任何 bionic 资产（engine.bin / bootstrap /
     # node-runtime / android 原生 addon / pnpm / sharp-wasm32 / rg）。
-    # 无线调试 adb 工具链不是 bionic 运行时，S5 需要它来打通 uid 2000 的
-    # 第二条来源（无线调试）；资产由 0.4.3 回填并入库。
-    "adb-wireless-arm64.zip",
+    # 无线调试 adb 工具链是 arm64 设备资产，单独在 required_for() 里加。
     # 插件资产（build-plugin-assets.sh 一次打齐）
     "mobile-ui.zip",
     "agnes-multimodal.zip", "preset-razor.zip", "preset-skills.zip",
@@ -49,12 +47,14 @@ REQUIRED = [
 ]
 
 def required_for(abi: str) -> list[str]:
+    # adb 工具链是 Termux aarch64 的 android-tools；x86_64 模拟器包不要求它。
+    abi_extra = ["adb-wireless-arm64.zip"] if abi == "arm64-v8a" else []
     return [
         "runtime/manifest.json",
         f"runtime/rootfs-{abi}.tar.xz",
         "runtime/proot-libs/libtalloc.so.2",
         "runtime/proot-libs/libandroid-shmem.so",
-    ] + REQUIRED
+    ] + REQUIRED + abi_extra
 
 
 def required_sonames() -> list[str]:
