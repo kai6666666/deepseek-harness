@@ -21,6 +21,8 @@ elif [ -n "${ANDROID_HOME:-}" ]; then SDK="$ANDROID_HOME"
 elif [ -d "${LOCALAPPDATA:-}/Android/Sdk" ]; then SDK="$LOCALAPPDATA/Android/Sdk"
 else SDK="$HOME/Android/Sdk"; fi
 ADB="${ADB:-$SDK/platform-tools/adb}"
+# ⚠️ emulator 假死时 adb 会永久阻塞，脚本里的 deadline 检查根本轮不到 → 每条 adb 都套 timeout
+ADBT() { timeout 30 "$ADB" "$@"; }
 EMU="${EMU:-$SDK/emulator/emulator}"
 export ANDROID_SDK_ROOT="$SDK" ANDROID_HOME="$SDK"
 
@@ -32,6 +34,10 @@ dump() {
   "$ADB" -s "$SERIAL" logcat -d 2>/dev/null | tail -200 > "$OUT/logcat.txt" || true
   "$ADB" -s "$SERIAL" exec-out screencap -p > "$OUT/screen.png" 2>/dev/null || true
   "$ADB" -s "$SERIAL" shell run-as com.dsh.android cat files/proot-probe.txt > "$OUT/proot-probe.txt" 2>/dev/null || true
+  echo '--- emulator.log (tail) ---'
+  tail -30 "$OUT/emulator.log" 2>/dev/null || true
+  echo '--- adb devices ---'
+  ADBT devices -l 2>/dev/null || true
   ls -l "$OUT" || true
 }
 
@@ -46,9 +52,9 @@ EMU_PID=$!
 trap 'kill $EMU_PID 2>/dev/null || true' EXIT
 
 echo "== 等待开机（最多 ${BOOT_TIMEOUT}s）"
-"$ADB" start-server >/dev/null 2>&1 || true
+ADBT start-server >/dev/null 2>&1 || true
 DEADLINE=$(( $(date +%s) + BOOT_TIMEOUT ))
-until [ "$("$ADB" -s "$SERIAL" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" ]; do
+until [ "$(ADBT -s "$SERIAL" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" ]; do
   [ "$(date +%s)" -lt "$DEADLINE" ] || die "开机超时（${BOOT_TIMEOUT}s）"
   kill -0 $EMU_PID 2>/dev/null || die "emulator 进程已退出，见 $OUT/emulator.log"
   sleep 3
@@ -73,7 +79,7 @@ echo "== 打开探针开关并启动 ProotProbeActivity"
 echo "== 等待探针结果（最多 ${PROBE_TIMEOUT}s；模拟器里解 1 GB rootfs 是主要耗时）"
 DEADLINE=$(( $(date +%s) + PROBE_TIMEOUT ))
 while :; do
-  if "$ADB" -s "$SERIAL" shell "run-as com.dsh.android sh -c 'test -f files/proot-probe.txt && echo YES || echo NO'" 2>/dev/null | grep -q YES; then
+  if ADBT -s "$SERIAL" shell "run-as com.dsh.android sh -c 'test -f files/proot-probe.txt && echo YES || echo NO'" 2>/dev/null | grep -q YES; then
     break
   fi
   [ "$(date +%s)" -lt "$DEADLINE" ] || die "探针超时（${PROBE_TIMEOUT}s），可能 TOKEN_TIMEOUT"
