@@ -184,9 +184,7 @@ done
 ln -sf "../lib/node_modules/pnpm/bin/pnpm.cjs" "$ROOTFS/usr/local/bin/pnpm"
 chmod 755 "$ROOTFS/usr/local/lib/node_modules/pnpm/bin/pnpm.cjs"
 # 裁剪 pnpm 里非当前平台（darwin / win32）的原生模块与 exe，避免 verify.py 拦截
-find "$ROOTFS/usr/local/lib/node_modules/pnpm/dist" -maxdepth 2 -type f \(
-  -name 'reflink.darwin-*.node' -o -name 'reflink.win32-*.node' -o -name '*.exe'
-\) -delete 2>/dev/null || true
+rm -f "$ROOTFS/usr/local/lib/node_modules/pnpm/dist"/reflink.darwin-*.node       "$ROOTFS/usr/local/lib/node_modules/pnpm/dist"/reflink.win32-*.node       "$ROOTFS/usr/local/lib/node_modules/pnpm/dist/vendor"/*.exe 2>/dev/null || true
 cat > "$ROOTFS/usr/local/bin/dsh" <<'SH'
 #!/bin/sh
 exec /usr/local/bin/node /opt/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js "$@"
