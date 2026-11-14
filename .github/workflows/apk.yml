@@ -158,13 +158,19 @@ jobs:
       - name: 现场打包插件资产（15 个 zip）
         run: bash tools/build-plugin-assets.sh
 
-      - name: 校验 mobile-ui.zip 是干净的（补丁只在 polyfill）
+      - name: 校验 mobile-ui.zip 自带移动端补丁
         run: |
           set -e
           Z=app/src/main/assets/mobile-ui.zip
           [ -s "$Z" ] || { echo "::error::mobile-ui.zip 未生成"; exit 1; }
           unzip -p "$Z" 'lib/client.js' > /tmp/cj.js
-          if grep -q '__mpDrawerFix170' /tmp/cj.js; then echo '::error::client.js 仍含补丁（应已迁到 polyfill）'; exit 1; fi
+          # 2026-11-13：0.5.0 把 web 产物搬进 rootfs 后，webview-polyfill.js 的注入链断了
+          #   （rootfs 里没有这个文件，index.html 也没引用）→ 补丁在真机上从未执行。
+          #   在注入恢复之前，client.js 必须自带这段补丁。
+          if ! grep -q '__mpDrawerFix170' /tmp/cj.js; then
+            echo '::error::client.js 缺少 __mpDrawerFix170（polyfill 注入在 0.5.0 失效，client.js 必须自带）'
+            exit 1
+          fi
           ls -l /tmp/cj.js "$Z"
 
       - name: 工具链自检
@@ -184,7 +190,10 @@ jobs:
       - name: UI 契约门禁（哈希类名不许增加 / 不许死引用）
         run: |
           node tools/ui-contract/audit.mjs --dead
-          node tools/ui-contract/audit.mjs --max 67
+          # 2026-11-13：67 → 68。内联进 client.js 的移动端外壳补丁用了 [class*="leadingSeat"]，
+          #   这个名字本来就在 webview-polyfill.js 里（同一份补丁），不是新的引擎耦合；
+          #   内联只是把它复制到另一个文件，审计按「文件 × 唯一类名」计数，于是 +1。
+          node tools/ui-contract/audit.mjs --max 68
 
       - name: 编译门禁（engine 包，不需要资产）
         run: KTCACHE="$HOME/.kt" bash tools/verify-engine.sh
