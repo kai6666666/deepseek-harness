@@ -252,7 +252,7 @@ data class BubbleAppearance(
      * ## 触发源（为什么不是零成本）
      *
      * 唯一可靠的键盘状态来源是 `dumpsys input_method` 的 `mInputShown`，它需要
-     * **uid 2000 / Shizuku** 才能读（[AppShellExecutor.needsShellUid] 已含 `dumpsys`）。
+     * **uid 2000 / Shizuku** 才能读（AppShellExecutor.needsShellUid 已含 `dumpsys`）。
      * 单次耗时 95–150 ms，所以**不能高频轮询**：只在球停稳、且屏幕上确实有键盘
      * 风险时才查，间隔 [IME_POLL_INTERVAL_MS]。
      *

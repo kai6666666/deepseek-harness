@@ -1,9 +1,13 @@
 package com.dsh.android.runtime
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Environment
 import android.system.Os
 import android.system.OsConstants
 import android.util.Log
+import com.dsh.android.engine.ProcPid
 import java.io.BufferedReader
 import java.io.File
 import java.io.InputStreamReader
@@ -11,15 +15,23 @@ import java.net.HttpURLConnection
 import java.net.ServerSocket
 import java.net.URL
 import java.util.Collections
+import java.util.TimeZone
 
 /**
  * PRoot/glibc 启动器：按 manifest 模板拼 argv、抓 token、按约定停进程。
  *
- * 约定都来自 manifest：
- *  · {NATIVE_LIB_DIR} / {ROOTFS} / {TMP} / {PORT} 由这里替换；
+ * 约定来自 manifest：
+ *  · {NATIVE_LIB_DIR} / {ROOTFS} / {TMP} / {PORT} / {PATCHES} 由这里替换；
  *  · {GUEST_ENV} 是独立元素，展开成 0..N 个 KEY=VALUE；
  *  · 绑定目录插在 /usr/bin/env 之前；
  *  · 停止 = SIGTERM 给 pidfile 里的 node，兜底 SIGQUIT 给 proot。
+ *
+ * 与 P2 探针版的差别（每一条都是接进产品后才暴露的）：
+ *  1. bind 从「只绑 DSH_HOME」扩到「DSH_HOME + workspace 原路径 + 手机存储」：
+ *     `DSH_HOME` 按原路径绑、workspace 按原路径绑、`/sdcard` 额外绑到 guest `/sdcard`，
+ *     否则 bash 工具看不到工作区、工作区选择器里的「手机存储」也进不去；
+ *  2. manifest 的启动命令带 {PATCHES}，overlay 由这里注入，不再只靠试启动；
+ *  3. stop 真正发 SIGQUIT 给 proot（ProotHost 之前只 destroy，proot 不理 SIGTERM）。
  */
 class ProotHost(
     private val context: Context,
@@ -28,6 +40,8 @@ class ProotHost(
     private val nativeLibDir: String = context.applicationInfo.nativeLibraryDir,
     private val tmpDir: File = File(context.cacheDir, "proot-tmp"),
     private val dshHome: File = File(context.filesDir, "home/.dsh"),
+    private val workspace: File = File(context.filesDir, "workspace"),
+    private val phoneStorage: File? = defaultPhoneStorage(context),
 ) {
     private var process: Process? = null
     private var pump: Thread? = null
@@ -37,11 +51,15 @@ class ProotHost(
 
     private val lastLines: MutableList<String> = Collections.synchronizedList(ArrayList())
 
-    fun start(extraEnv: Map<String, String>): Process {
-        require(rootfs.isDirectory) { "rootfs 不存在：$rootfs" }
+    fun start(extraEnv: Map<String, String>, overlays: List<File> = emptyList()): Process {
+        require(rootfs.isDirectory) { "rootfs 不存在：" + rootfs.absolutePath }
         require(File(rootfs, "usr/bin/node").isFile) { "rootfs 缺 node" }
         tmpDir.mkdirs()
         dshHome.mkdirs()
+        workspace.mkdirs()
+        // DSH_HOME 按**原绝对路径**绑定：EngineManager 写的所有 overlay、插件目录、
+        // 会话索引路径都基于宿主 filesDir 的绝对路径，绑定到 /root/.dsh 会让它们全部失效。
+        // 同一路径绑定的代价只是 guest 里能看到这个目录，收益是零路径改写。
 
         val port = ServerSocket(0).use { it.localPort }
         val vars = mapOf(
@@ -52,22 +70,76 @@ class ProotHost(
         )
         fun expand(s: String) = vars.entries.fold(s) { acc, (k, v) -> acc.replace(k, v) }
 
+        val patchArgs = overlays.joinToString(" ") { "--patch " + it.absolutePath }
         val argv = ArrayList<String>()
         var bindsPlaced = false
+        var patchesPlaced = false
         for (raw in manifest.launchArgv) {
-            val arg = expand(raw)
+            val replaced = expand(raw)
+            val arg = if (replaced.contains("{PATCHES}")) {
+                patchesPlaced = true
+                replaced.replace("{PATCHES}", patchArgs)
+            } else replaced
             when {
                 !bindsPlaced && arg == "/usr/bin/env" -> {
                     argv += "-b"
                     argv += dshHome.canonicalPath + ":" + dshHome.canonicalPath
+                    argv += "-b"
+                    argv += workspace.canonicalPath + ":" + workspace.canonicalPath
+                    phoneStorage?.takeIf { it.isDirectory }?.let {
+                        val storage = it.canonicalPath
+                        argv += "-b"
+                        argv += storage + ":/sdcard"
+                        // 同时保留宿主绝对路径：附件/工作区配置里可能写着 /storage/emulated/0/...
+                        argv += "-b"
+                        argv += storage + ":" + storage
+                    }
+                    // S5：uid 2000 / root 通道的 runner 与内置 adb 工具链都在 filesDir 根，
+                    // 不在 $DSH_HOME 下；不绑进去，guest 里的插件只能看到一个不存在的路径。
+                    File(context.filesDir, "logs").mkdirs()
+                    File(context.filesDir, "devenv").mkdirs()
+                    listOf(
+                        "dsh-android-shell.mjs",
+                        "dsh-android-root.mjs",
+                        "adbwire",
+                        "dsh-env.mjs",
+                        "check-devenv.mjs",
+                        "logs",
+                        "devenv",
+                    ).forEach { name ->
+                        val f = File(context.filesDir, name)
+                        if (f.exists()) {
+                            argv += "-b"
+                            argv += f.canonicalPath + ":" + f.canonicalPath
+                        }
+                    }
                     argv += arg
                     bindsPlaced = true
                 }
-                arg == "{GUEST_ENV}" -> extraEnv.forEach { (k, v) -> argv += "$k=$v" }
+                arg == "{GUEST_ENV}" -> {
+                    val env = buildMap {
+                        put("DSH_HOME", "/root/.dsh")
+                        put("TZ", TimeZone.getDefault().id)
+                        if (File(rootfs, "etc/ssl/certs/ca-certificates.crt").isFile) {
+                            put("SSL_CERT_FILE", "/etc/ssl/certs/ca-certificates.crt")
+                            put("CURL_CA_BUNDLE", "/etc/ssl/certs/ca-certificates.crt")
+                            put("REQUESTS_CA_BUNDLE", "/etc/ssl/certs/ca-certificates.crt")
+                        }
+                        putAll(extraEnv)
+                    }
+                    env.forEach { (k, v) -> argv += k + "=" + v }
+                }
                 else -> argv += arg
             }
         }
         require(bindsPlaced) { "manifest 里没有 /usr/bin/env 锚点" }
+        // 没有 {PATCHES} 的 manifest 会让引擎在无沙箱 / 无索引 / 无插件源配置下启动：
+        // 那是「能跑但悄悄缺能力」，比启动失败更难查，所以直接拒绝。
+        require(patchesPlaced) { "manifest 缺 {PATCHES} 占位符（运行时资产过旧）" }
+
+        ensureGuestNetworkConfig()
+        val prootLibs = File(context.filesDir, "proot-libs")
+        ensureProotLibs(prootLibs)
 
         val pb = ProcessBuilder(argv).directory(context.filesDir)
         pb.environment().apply {
@@ -78,6 +150,9 @@ class ProotHost(
             put("ANDROID_ROOT", System.getenv("ANDROID_ROOT") ?: "/system")
             put("ANDROID_DATA", System.getenv("ANDROID_DATA") ?: "/data")
             manifest.launchEnv.forEach { (k, v) -> put(k, expand(v)) }
+            // proot 的 NEEDED 是 libtalloc.so.2（原名）；它不在 jniLibs（Android 只抽
+            // lib*.so），由 ensureProotLibs 从 assets 解到 files/proot-libs。
+            put("LD_LIBRARY_PATH", nativeLibDir + ":" + prootLibs.absolutePath)
         }
 
         Log.i(TAG, "launch: " + argv.joinToString(" "))
@@ -90,6 +165,47 @@ class ProotHost(
         return p
     }
 
+    /**
+     * 补齐 PRoot guest 网络与 TLS 基础配置（幂等）：
+     * 1) ubuntu-base 默认 /etc/resolv.conf 与 /etc/hosts 是空文件，PRoot 内没有
+     *    Android bionic netd resolver，导致 Node fetch/DNS 直接 EAI_AGAIN。
+     * 2) 仅在为空或缺失时写入公共 DNS（223.5.5.5 / 119.29.29.29 / 8.8.8.8）与
+     *    127.0.0.1 localhost，保留用户自定义修改。
+     */
+    private fun ensureGuestNetworkConfig() {
+        runCatching {
+            val etc = File(rootfs, "etc")
+            if (!etc.isDirectory) return
+            val resolv = File(etc, "resolv.conf")
+            if (!resolv.isFile || resolv.length() == 0L) {
+                resolv.writeText(
+                    "nameserver 223.5.5.5\n" +
+                        "nameserver 119.29.29.29\n" +
+                        "nameserver 8.8.8.8\n"
+                )
+            }
+            val hosts = File(etc, "hosts")
+            if (!hosts.isFile || hosts.length() == 0L) {
+                hosts.writeText("127.0.0.1 localhost\n::1 localhost\n")
+            }
+        }.onFailure { Log.w(TAG, "写入 guest 网络配置失败: " + it.message) }
+    }
+
+    /** 把 proot 的两个原始名依赖从 assets 解到 app 私有目录（每次启动覆盖，几十 KB）。 */
+    private fun ensureProotLibs(dir: File) {
+        dir.mkdirs()
+        for (name in listOf("libtalloc.so.2", "libandroid-shmem.so")) {
+            val out = File(dir, name)
+            val opened = runCatching { context.assets.open("runtime/proot-libs/" + name) }.getOrNull()
+                ?: continue
+            opened.use { input ->
+                out.outputStream().use { output -> input.copyTo(output) }
+            }
+            out.setReadable(true, false)
+            Log.i(TAG, "proot-lib: " + out.absolutePath + " " + out.length())
+        }
+    }
+
     private fun drain(p: Process) {
         try {
             BufferedReader(InputStreamReader(p.inputStream)).use { r ->
@@ -100,7 +216,7 @@ class ProotHost(
                     }
                     val m = manifest.tokenRegex.find(line)
                     if (m != null) {
-                        tokenUrl = m.groupValues[1] + "?token=" + m.groupValues[2]
+                        tokenUrl = m.groupValues[1] + "?token=" + m.groupValues[m.groupValues.size - 1]
                         Log.i(TAG, "token: " + tokenUrl)
                     }
                     Log.i(TAG, "[web] " + line)
@@ -115,7 +231,7 @@ class ProotHost(
         val deadline = System.currentTimeMillis() + timeoutMs
         while (System.currentTimeMillis() < deadline) {
             tokenUrl?.let { return it }
-            if (process?.isAlive == false) return null
+            if (process?.isAlive == false) return tokenUrl
             Thread.sleep(100)
         }
         return tokenUrl
@@ -147,7 +263,9 @@ class ProotHost(
                 .replace("{ROOTFS}", rootfs.canonicalPath)
                 .replace("{TMP}", tmpDir.absolutePath)
         )
-        val nodePid = runCatching { pidFile.readText().trim().toInt() }.getOrNull()
+        val rawPid = runCatching { pidFile.readText().trim() }.getOrNull()
+        val nodePid = rawPid?.toIntOrNull()
+        if (nodePid == null) Log.w(TAG, "pidfile 无有效 pid（" + rawPid + "），改用 cmdline 兜底")
         if (nodePid != null && nodePid > 0) {
             runCatching { Os.kill(nodePid, OsConstants.SIGTERM) }
                 .onFailure { Log.w(TAG, "SIGTERM " + nodePid + " 失败: " + it.message) }
@@ -156,24 +274,124 @@ class ProotHost(
                 Thread.sleep(100)
             }
         }
+
         val p = process ?: return true
-        if (!p.isAlive) return true
-        // proot 忽略 SIGTERM；node 已死后 --kill-on-exit 会自行退出。
-        // Android 没暴露 Process.pid()，所以只做最后兜底。
-        if (!p.waitFor(8, java.util.concurrent.TimeUnit.SECONDS)) {
-            Log.w(TAG, "node 已停但 proot 未退，destroyForcibly")
-            p.destroyForcibly()
-            p.waitFor(3, java.util.concurrent.TimeUnit.SECONDS)
+        if (p.isAlive) {
+            // proot 忽略 SIGTERM/SIGINT/SIGHUP；node 死后 --kill-on-exit 通常会收尾，
+            // 但异常退出时必须显式 SIGQUIT，否则 tracee 变孤儿、端口不释放。
+            val pid = ProcPid.of(p)
+            if (pid != null) {
+                runCatching { Os.kill(pid.toInt(), OsConstants.SIGQUIT) }
+                    .onFailure { Log.w(TAG, "SIGQUIT " + pid + " 失败: " + it.message) }
+            }
+            if (!p.waitFor(8, java.util.concurrent.TimeUnit.SECONDS)) {
+                Log.w(TAG, "SIGQUIT 后 proot 仍未退，destroyForcibly")
+                p.destroyForcibly()
+                p.waitFor(3, java.util.concurrent.TimeUnit.SECONDS)
+            }
         }
+        // 最后兜底：按 cmdline 找 guest node（pidfile 缺失/损坏时唯一可靠的办法）
+        killGuestNodeByCmdline()
         pump?.interrupt()
         process = null
+        tokenUrl = null
         runCatching { pidFile.delete() }
         return !p.isAlive
+    }
+
+    private fun killGuestNodeByCmdline() {
+        val marker = File(rootfs, "usr/bin/node").absolutePath
+        File("/proc").listFiles()?.forEach { p ->
+            if (!p.name.all { it.isDigit() }) return@forEach
+            val cmd = runCatching { File(p, "cmdline").readBytes() }.getOrNull() ?: return@forEach
+            if (!String(cmd, Charsets.UTF_8).contains(marker)) return@forEach
+            val pid = p.name.toIntOrNull() ?: return@forEach
+            Log.w(TAG, "kill 残留 guest node: " + pid)
+            runCatching { Os.kill(pid, OsConstants.SIGTERM) }
+            Thread.sleep(200)
+            if (File("/proc/" + pid).exists()) runCatching { Os.kill(pid, OsConstants.SIGKILL) }
+        }
     }
 
     fun isAlive(): Boolean = process?.isAlive == true
 
     companion object {
         const val TAG = "ProotHost"
+
+        /**
+         * 在 PRoot 内同步起一个一次性 Node/命令子进程（给 WirelessDebugging / PrivilegedRunner 用）。
+         * 0.5.0 单运行时已删除 filesDir/usr/bin/node，所有宿主侧需要调用 runner.mjs 的地方都必须走 PRoot。
+         */
+        fun startNodeCommand(
+            context: Context,
+            commandArgs: List<String>,
+            extraEnv: Map<String, String> = emptyMap(),
+            dshHome: File = File(context.filesDir, "home/.dsh"),
+        ): Process {
+            val filesDir = context.filesDir
+            val rootfs = File(filesDir, "runtime/rootfs")
+            val nativeLibDir = context.applicationInfo.nativeLibraryDir
+            val proot = File(nativeLibDir, "libproot.so")
+            val loader = File(nativeLibDir, "libproot-loader.so")
+            val tmpDir = File(context.cacheDir, "proot-tmp").apply { mkdirs() }
+            val l2sDir = File(rootfs, "root/.l2s").apply { mkdirs() }
+            val prootLibs = File(filesDir, "proot-libs")
+            val emptyDir = File(rootfs, "var/lib/dsh-app/empty").apply { mkdirs() }
+            val shmDir = File(rootfs, "var/lib/dsh-app/shm").apply { mkdirs() }
+            val argv = mutableListOf(
+                proot.absolutePath,
+                "--kill-on-exit", "--link2symlink", "--sysvipc", "-L", "-0",
+                "--rootfs=${rootfs.canonicalPath}", "--cwd=/root",
+                "-b", "/dev", "-b", "/proc", "-b", "/sys", "-b", "/system", "-b", "/apex",
+                "-b", "${emptyDir.canonicalPath}:/sys/fs/selinux",
+                "-b", "${shmDir.canonicalPath}:/dev/shm",
+                "-b", "${dshHome.canonicalPath}:${dshHome.canonicalPath}",
+            )
+            listOf("dsh-android-shell.mjs", "dsh-android-root.mjs", "adbwire", "logs", "devenv").forEach { name ->
+                val f = File(filesDir, name)
+                if (f.exists()) {
+                    argv += "-b"
+                    argv += "${f.canonicalPath}:${f.canonicalPath}"
+                }
+            }
+            defaultPhoneStorage(context)?.let { st ->
+                val p = st.canonicalPath
+                argv += "-b"; argv += "$p:/sdcard"
+                argv += "-b"; argv += "$p:$p"
+            }
+            argv += listOf(
+                "/usr/bin/env", "-i",
+                "HOME=/root", "USER=root", "LOGNAME=root",
+                "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                "LANG=C.UTF-8", "TMPDIR=/tmp",
+                "DSH_HOME=${dshHome.absolutePath}",
+            )
+            val crt = File(rootfs, "etc/ssl/certs/ca-certificates.crt")
+            if (crt.isFile) argv += "SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt"
+            extraEnv.forEach { (k, v) -> argv += "$k=$v" }
+            argv += "/usr/local/bin/node"
+            argv.addAll(commandArgs)
+            val pb = ProcessBuilder(argv).directory(filesDir)
+            pb.redirectErrorStream(true)
+            pb.environment().apply {
+                clear()
+                put("PATH", "/system/bin:/system/xbin")
+                put("HOME", filesDir.absolutePath)
+                put("TMPDIR", tmpDir.absolutePath)
+                put("PROOT_LOADER", loader.absolutePath)
+                put("PROOT_TMP_DIR", tmpDir.absolutePath)
+                put("PROOT_L2S_DIR", l2sDir.absolutePath)
+                put("LD_LIBRARY_PATH", nativeLibDir + ":" + prootLibs.absolutePath)
+            }
+            return pb.start()
+        }
+
+        /** 有读存储权限才绑 /sdcard；拒绝时静默跳过，不拖垮引擎启动。 */
+        private fun defaultPhoneStorage(context: Context): File? {
+            val dir = Environment.getExternalStorageDirectory() ?: return null
+            val granted = context.checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) ==
+                PackageManager.PERMISSION_GRANTED
+            return dir.takeIf { granted && it.isDirectory }
+        }
     }
 }

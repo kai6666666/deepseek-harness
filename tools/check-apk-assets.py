@@ -28,23 +28,33 @@ import zipfile
 from pathlib import Path
 
 # 与 tools/ci-fetch-assets.sh 的 REQUIRED 保持同步（改了那边就要改这里）
+# 运行时两项由 --abi 决定（arm64-v8a / x86_64），其余与 ABI 无关
 REQUIRED = [
-    "engine.bin", "node-runtime.bin", "bootstrap-aarch64.zip",
-    "boo-sandbox-run.bin", "boosandbox.bin", "linkcompat.bin",
-    "mobile-ui.zip", "webview-compat.zip",
-    "node-addon-android-arm64.zip", "node-addon-system-android-arm64.zip",
+    # 运行时（PRoot/glibc）：由 apk.yml 的 runtime job 在出包前铺进 assets。
+    # 0.5.0 是单运行时：这里不再有任何 bionic 资产（engine.bin / bootstrap /
+    # node-runtime / android 原生 addon / pnpm / sharp-wasm32 / rg）。
+    # 无线调试 adb 工具链是 arm64 设备资产，单独在 required_for() 里加。
+    # 插件资产（build-plugin-assets.sh 一次打齐）
+    "mobile-ui.zip",
     "agnes-multimodal.zip", "preset-razor.zip", "preset-skills.zip",
     "core-memory.zip", "market-plugin.zip",
-    "ripgrep-android-arm64.zip", "sharp-wasm32.zip",
-    "node-pty-android-arm64.zip", "pnpm-android-arm64.zip",
     "shell-tool.zip", "root-tool.zip", "bubble-tool.zip",
     "statusbar-tool.zip", "uiagent-tool.zip", "logs-tool.zip",
     "browser-tool.zip", "browser-pane.zip", "pet-bridge.zip",
-    "adb-wireless-arm64.zip",
     # 开发环境脚本：由 EngineManager.ensureDevEnvScript() 落盘给插件宿主半调用
     "dsh-env.mjs",
     "check-devenv.mjs",
 ]
+
+def required_for(abi: str) -> list[str]:
+    # adb 工具链是 Termux aarch64 的 android-tools；x86_64 模拟器包不要求它。
+    abi_extra = ["adb-wireless-arm64.zip"] if abi == "arm64-v8a" else []
+    return [
+        "runtime/manifest.json",
+        f"runtime/rootfs-{abi}.tar.xz",
+        "runtime/proot-libs/libtalloc.so.2",
+        "runtime/proot-libs/libandroid-shmem.so",
+    ] + REQUIRED + abi_extra
 
 
 def required_sonames() -> list[str]:
@@ -114,10 +124,17 @@ def find_aapt2() -> str | None:
 
 
 def main() -> int:
-    if len(sys.argv) < 2:
-        print("用法: check-apk-assets.py <apk>", file=sys.stderr)
+    argv = sys.argv[1:]
+    abi = "arm64-v8a"
+    if "--abi" in argv:
+        i = argv.index("--abi")
+        abi = argv[i + 1]
+        del argv[i:i + 2]
+    if not argv:
+        print("用法: check-apk-assets.py [--abi <abi>] <apk>", file=sys.stderr)
         return 2
-    apk = Path(sys.argv[1])
+    apk = Path(argv[0])
+    required = required_for(abi)
     if not apk.is_file():
         print(f"❌ APK 不存在：{apk}", file=sys.stderr)
         return 2
@@ -129,7 +146,7 @@ def main() -> int:
             errors.append("缺少 AndroidManifest.xml")
         if "classes.dex" not in names:
             errors.append("缺少 classes.dex")
-        for asset in REQUIRED:
+        for asset in required:
             key = f"assets/{asset}"
             if key not in names:
                 errors.append(f"缺少资产 {key}")
@@ -137,11 +154,14 @@ def main() -> int:
             if z.getinfo(key).file_size <= 0:
                 errors.append(f"资产为空 {key}")
 
+        for lib in ("libproot.so", "libproot-loader.so"):
+            key = f"lib/{abi}/{lib}"
+            if key not in names:
+                errors.append(f"缺少 jniLib {key}（proot 四件套必须在 jniLibs）")
         print(f"APK {apk.name}：{apk.stat().st_size:,} 字节，{len(names)} 条目")
-        missing = [a for a in REQUIRED if f"assets/{a}" not in names]
-        print(f"资产 {len(REQUIRED) - len(missing)}/{len(REQUIRED)} 齐备"
+        missing = [a for a in required if f"assets/{a}" not in names]
+        print(f"资产 {len(required) - len(missing)}/{len(required)} 齐备"
               + (f"，缺：{missing}" if missing else ""))
-        errors.extend(check_nested(z))
 
     aapt2 = find_aapt2()
     if aapt2:

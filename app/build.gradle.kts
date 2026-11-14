@@ -23,6 +23,9 @@ android {
     namespace = "com.dsh.android"
     compileSdk = 35
 
+    // 模拟器测试用：-PtargetAbi=x86_64 出 x64 包；发布仍只出 arm64。
+    val targetAbi = (project.findProperty("targetAbi") as String?) ?: "arm64-v8a"
+
     defaultConfig {
         applicationId = "com.dsh.android"
         minSdk = 26
@@ -266,7 +269,7 @@ android {
 
         // 只支持 arm64-v8a：内置的引擎资产与 Termux bootstrap 都是 arm64 架构
         ndk {
-            abiFilters += "arm64-v8a"
+            abiFilters += targetAbi
         }
 
         // Web 内核是不是**随 APK 打包**的（gecko flavor 覆盖成 true）。
@@ -324,6 +327,20 @@ android {
      */
 
     signingConfigs {
+        // 固定 debug 签名：用仓库里的 tools/dsh-debug.keystore。
+        // 不固定的话，CI 每个 runner 都会生成新的 ~/.android/debug.keystore，
+        // 每轮包都撞 INSTALL_FAILED_UPDATE_INCOMPATIBLE，只能卸载重装，
+        // 而卸载会清掉 filesDir 下的 PRoot rootfs 与 $DSH_HOME。
+        val repoDebugKs = rootProject.file("tools/dsh-debug.keystore")
+        if (repoDebugKs.exists()) {
+            getByName("debug") {
+                storeFile = repoDebugKs
+                storePassword = "android"
+                keyAlias = "androiddebugkey"
+                keyPassword = "android"
+            }
+        }
+
         // ⚠️ 这把钥匙是发行版的终身身份，与 debug 签名**互相独立**。
         // 一旦发出去就不能换：换签名 = 老用户撞 INSTALL_FAILED_UPDATE_INCOMPATIBLE，
         // 只能卸载重装，而卸载会清掉 filesDir 下的整个 Termux 环境与 $DSH_HOME。
@@ -369,8 +386,15 @@ android {
     // 于是运行期 openFd 按原名找不到。规避方式是资产名一律用中性后缀
     // （engine.bin / node-runtime.bin / bootstrap-aarch64.zip），不靠白名单。
 
-    // Node 改为 Termux 官方构建（随 assets 分发、解到 app 私有 $PREFIX），
-    // 不再往 jniLibs 塞可执行文件，因此无需 useLegacyPackaging / extractNativeLibs。
+    // proot 四件套以 jniLibs 分发（libproot.so / libproot-loader.so /
+    // libtalloc.so / libandroid-shmem.so）。系统只会把 lib*.so 解到
+    // nativeLibraryDir 并给可执行位，所以这里必须打开 useLegacyPackaging；
+    // 同时 manifests 里的 extractNativeLibs 由 AGP 按该开关生成。
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -399,6 +423,15 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-service:2.8.7")
     implementation("com.google.android.material:material:1.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+
+    // ── 运行时解包（PRoot rootfs）──────────────────────────────────────
+    // rootfs 是 tar.xz（约 124 MB -> 1.0 GB）。Android 没有 xz/tar 命令，rootfs 里
+    // 也还没有，所以只能自己解。选 commons-compress + xz 而不是抄 dsh-Go 的
+    // ParallelXZInputStream：后者是 AGPL 代码，本仓库是 MIT。
+    //   commons-compress  Apache-2.0
+    //   xz (tukaani)     public domain
+    implementation("org.apache.commons:commons-compress:1.27.1")
+    implementation("org.tukaani:xz:1.10")
 
     // ── Shizuku：uid 2000 特权通道的第二条来源 ──────────────────────────
     //

@@ -1,0 +1,85 @@
+name: 构建运行时（PRoot / glibc）
+
+# 只做「运行时资产」：rootfs-<abi>.tar.xz + manifest.json + jniLibs 四件套。
+# arm64 用于发布；x86_64 只用于模拟器（S4.5）。
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'tools/runtime/**'
+      - 'runtime/patches/**'
+      - 'app/src/main/jni/*.c'
+      - 'tools/apply-glibc-patches.py'
+      - '.github/workflows/runtime.yml'
+  pull_request:
+    paths:
+      - 'tools/runtime/**'
+      - 'runtime/patches/**'
+      - 'app/src/main/jni/*.c'
+      - 'tools/apply-glibc-patches.py'
+      - '.github/workflows/runtime.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: runtime-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  runtime:
+    name: build-runtime (${{ matrix.abi }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        abi: [arm64-v8a, x86_64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 依赖（交叉编译器 + patchelf + xz）
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends patchelf xz-utils gcc-aarch64-linux-gnu libc6-dev-arm64-cross
+          aarch64-linux-gnu-gcc --version | head -1
+
+      - name: Node 24（仅构建机用）
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: 下载缓存
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/rt-cache
+          key: rt-cache-v1-${{ matrix.abi }}-ubuntu24.04.5-node24.22.1
+
+      - name: 组装 rootfs + manifest + jniLibs
+        env:
+          ABI: ${{ matrix.abi }}
+          CC: ${{ matrix.abi == 'arm64-v8a' && 'aarch64-linux-gnu-gcc' || 'gcc' }}
+          DSH_RT_WORK: ${{ runner.temp }}/rt-work-${{ matrix.abi }}
+          DSH_RT_CACHE: ${{ runner.temp }}/rt-cache
+          DSH_RT_OUT: ${{ github.workspace }}/_build/runtime/out
+        run: bash tools/runtime/build-runtime.sh
+
+      - name: 硬断言
+        run: |
+          python3 tools/runtime/verify.py \
+            _build/runtime/out/${{ matrix.abi }}/assets/runtime/rootfs-${{ matrix.abi }}.tar.xz \
+            _build/runtime/out/${{ matrix.abi }}/assets/runtime/manifest.json \
+            _build/runtime/out/${{ matrix.abi }}/jniLibs/${{ matrix.abi }}
+
+      - name: 体积与摘要
+        run: |
+          ls -lh _build/runtime/out/${{ matrix.abi }}/assets/runtime/
+          sha256sum _build/runtime/out/${{ matrix.abi }}/assets/runtime/rootfs-${{ matrix.abi }}.tar.xz
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: runtime-${{ matrix.abi }}
+          path: _build/runtime/out/**
+          retention-days: 7
+          if-no-files-found: error

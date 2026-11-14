@@ -1,0 +1,55 @@
+name: 编译检查（Kotlin）
+
+# 只为快速反馈：不带构建资产、不出包，只跑 Kotlin 编译。
+# 出包与真机验收仍由 apk.yml 负责。
+on:
+  pull_request:
+    paths:
+      - 'app/**/*.kt'
+      - 'app/*.gradle.kts'
+      - '*.gradle.kts'
+      - 'gradle/**'
+      - '.github/workflows/compile.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: compile-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compile:
+    name: :app:compileSystemDebugKotlin
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Android SDK（platform 35 + build-tools 35）
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platforms;android-35 build-tools;35.0.0'
+          log-accepted-android-sdk-licenses: true
+
+      - name: Gradle 缓存
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: compile-gradle-${{ runner.os }}-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties', '**/*.gradle.kts') }}
+          restore-keys: compile-gradle-
+
+      - name: 修可执行位
+        run: chmod +x gradlew || true
+
+      - name: 编译
+        run: ./gradlew :app:compileSystemDebugKotlin --console=plain --no-daemon

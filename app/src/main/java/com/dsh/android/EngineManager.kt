@@ -1,6 +1,9 @@
 package com.dsh.android
 
 import android.content.Context
+import com.dsh.android.runtime.ProotHost
+import com.dsh.android.runtime.RootfsInstaller
+import com.dsh.android.runtime.RuntimeManifest
 import com.dsh.android.log.DshLog as Log
 import com.dsh.android.log.EventLog
 import com.dsh.android.log.LogStore
@@ -237,11 +240,14 @@ class EngineManager private constructor(private val context: Context) {
     var shellToolMounted = false
         private set
 
-    /** Termux 环境：提供 node 可执行文件与 $PREFIX。 */
-    private val bootstrap by lazy { com.dsh.android.termux.TermuxBootstrap(context) }
-
-    /** 引擎解包目录：filesDir/engine */
+    /** 引擎解包目录：filesDir/engine（0.4.x bionic 线；0.5.0 单运行时已不用） */
     private val engineDir get() = File(context.filesDir, "engine")
+    /** 0.5.0 单运行时 rootfs；前端在 /opt/dsh/node_modules 下，不在 filesDir/engine。 */
+    private val rootfsDir get() = File(context.filesDir, "runtime/rootfs")
+    private val rootfsFrontendDist get() =
+        File(rootfsDir, "opt/dsh/node_modules/@deepseek-ai/dsh-web-frontend/dist")
+    private val rootfsEngineModules get() =
+        File(rootfsDir, "opt/dsh/node_modules/@deepseek-ai")
 
     /** 引擎运行所需的可写 HOME（DSH 在此存放配置、凭据、会话）。 */
     private val homeDir get() = File(context.filesDir, "home")
@@ -279,6 +285,13 @@ class EngineManager private constructor(private val context: Context) {
      */
     suspend fun ensureExtracted(versionStamp: String) = withContext(Dispatchers.IO) {
         lastAssetStamp = versionStamp
+        // 0.5.0 单运行时：引擎在 APK 内置的 PRoot rootfs 里（/opt/dsh），
+        // 没有 engine.bin 可解。MainActivity 仍会调本方法做启动前准备，
+        // 这里直接返回，避免 FileNotFoundException: engine.bin。
+        if (runCatching { RootfsInstaller(context).readManifestFromAssets() }.isSuccess) {
+            Log.i(TAG, "单运行时：引擎在 PRoot rootfs 内，跳过 engine.bin 解包")
+            return@withContext
+        }
         if (stampFile.isFile && stampFile.readText().trim() == versionStamp) {
             Log.i(TAG, "引擎资产已是最新（$versionStamp），跳过解包")
             return@withContext
@@ -512,7 +525,7 @@ class EngineManager private constructor(private val context: Context) {
      * 放在这里可以跟着资产版本自动重打，不必重新制作 engine.bin。
      */
     private fun ensureWebCompat() {
-        val dist = File(engineDir, "node_modules/@deepseek-ai/dsh-web-frontend/dist")
+        val dist = rootfsFrontendDist
         val indexHtml = File(dist, "index.html")
         if (!indexHtml.isFile) {
             Log.w(TAG, "未找到前端入口，跳过 WebView 兼容补丁: ${indexHtml.absolutePath}")
@@ -597,7 +610,7 @@ class EngineManager private constructor(private val context: Context) {
             return
         }
 
-        val dist = File(engineDir, "node_modules/@deepseek-ai/dsh-web-frontend/dist")
+        val dist = rootfsFrontendDist
         if (!dist.isDirectory) {
             Log.w(TAG, "引擎尚未解包，跳过 WebView 降级资产")
             return
@@ -627,7 +640,7 @@ class EngineManager private constructor(private val context: Context) {
                 return
             }
 
-            val engineModules = File(engineDir, "node_modules/@deepseek-ai")
+            val engineModules = rootfsEngineModules
             val mobileUiRoot = File(dshHome, "$MOBILE_UI_DIR/$MOBILE_UI_PACKAGE")
 
             // ⚠️ **两棵树各判各的戳，不能只看 dist 那一个。**
@@ -731,190 +744,8 @@ class EngineManager private constructor(private val context: Context) {
         }
     }
 
-    /**
-     * 安装 android-arm64 的原生插件（幂等）。
-     *
-     * DSH 的 profile 解析依赖 `node-addon-require-builtin`：它通过 `dlsym` 拿到 Node
-     * 私有的 `PrincipalRealm::builtin_module_require` 符号，再按 AArch64 机器码匹配出
-     * Realm 里那个字段的偏移。该插件官方只发布 darwin / linux-glibc / win32 变体，
-     * **没有 android**，而 Android 用的是 bionic，`__GLIBC__` 未定义，运行时会直接
-     * 报 `No usable native binding found for node-addon-require-builtin-android-arm64`。
-     *
-     * 这里的做法是用 NDK 为 android-arm64 自行编译一份（复用 linux-glibc-arm64 的
-     * AAPCS 匹配器 —— 纯指令匹配，与 libc 无关），按官方平台包的结构装进
-     * `node_modules/node-addon-require-builtin-android-arm64`。
-     *
-     * 插件很小（约 90 KB），所以走独立的小资产，不必重打 52 MB 的 engine.bin。
-     */
-    private fun ensureNativeAddon() {
-        val nodeModules = File(engineDir, "node_modules")
-        if (!nodeModules.isDirectory) {
-            Log.w(TAG, "引擎尚未解包，跳过原生插件安装")
-            return
-        }
 
-        val target = File(nodeModules, ADDON_PACKAGE)
-        val binary = File(target, "prebuilt/android-arm64-napi-v9.node")
 
-        // 已装好就跳过。插件与 Node 大版本解耦（走 N-API），无需按 node 版本重装。
-        if (binary.isFile && binary.length() > 0) {
-            return
-        }
-
-        try {
-            java.util.zip.ZipInputStream(context.assets.open(ADDON_ASSET).buffered()).use { zis ->
-                var entry = zis.nextEntry
-                while (entry != null) {
-                    if (!entry.isDirectory) {
-                        val out = File(target, entry.name)
-                        out.parentFile?.mkdirs()
-                        out.outputStream().use { zis.copyTo(it) }
-                    }
-                    zis.closeEntry()
-                    entry = zis.nextEntry
-                }
-            }
-            // ⚠️ 0.2.2 的 node-addon-native-custom-loader 先找**包内 build/napi/<tag>/**，
-            //   找不到才退平台包。engine.bin 里没有 build/ 目录，所以要把平台包里的 .node
-            //   再复制一份到 build 路径，否则引擎起不来（真机实测 MODULE_NOT_FOUND）。
-            val buildDir = File(nodeModules, "node-addon-require-builtin/build/napi/napi-v9-android-arm64")
-            val buildNode = File(buildDir, "require_builtin.node")
-            if (!(buildNode.isFile && buildNode.length() > 0)) {
-                buildDir.mkdirs()
-                binary.copyTo(buildNode, overwrite = true)
-            }
-            Log.i(TAG, "已安装原生插件 $ADDON_PACKAGE (${binary.length()} 字节) → build/napi 兜底")
-        } catch (t: Throwable) {
-            // 装不上就不阻断启动：让引擎自己报出更具体的加载失败原因
-            Log.w(TAG, "安装原生插件失败: ${t.message}")
-        }
-    }
-
-    /**
-     * 安装 system 原生插件，并放行 android 平台（幂等）。
-     *
-     * 会话落盘要拿一把内核级的排他锁：`dsh-session-persistence-jsonl` 的
-     * `SessionWriteLease.acquire()` 调 `@deepseek-ai/node-addon-system/flock` 的
-     * `tryLockExclusive(fd)`，拿不到锁就抛 `SessionAlreadyOwnedError`，表现是每轮
-     * 回复都以「本轮运行失败」告终。
-     *
-     * 该插件的 `lib/flock.js` 只白名单了 linux/darwin：
-     *   `if (platform !== 'linux' && platform !== 'darwin') throw ...`
-     * 而 Android 上 `process.platform === 'android'`，于是直接抛
-     * `ERR_FLOCK_UNSUPPORTED_PLATFORM: flock is not supported on android-arm64`。
-     * 官方也只发布 darwin/linux 变体，没有 android 平台包。
-     *
-     * 但 bionic 的 `sys/file.h` 里就有 `int flock(int, int)`，Android 是支持
-     * flock(2) 的。所以这里做两件事：
-     *   ① 用 NDK 编译一份 android-arm64 的 `bin/system.node`（源码就是官方
-     *      `src/flock.c`，未做任何改动），按官方平台包结构装进
-     *      `node_modules/@deepseek-ai/node-addon-system-android-arm64`；
-     *   ② 把 `flock.js` 的平台白名单补上 `android`。
-     *
-     * ② 之所以改运行时文件而不是重打 engine.bin：引擎资产每次升级都会整体覆盖，
-     * 放在这里可以跟着资产版本自动重打（与 [ensureWebCompat] 同样的理由）。
-     *
-     * 注意 flock.js 里 `filename` 只在 `platform === 'linux'` 时才会被改写为
-     * `glibc/system.node` 或 `musl/system.node`；android 不满足该条件，保持
-     * `system.node`，所以解析出的路径正是 `bin/system.node` —— 与本包结构一致，
-     * 无需额外适配。
-     */
-    private fun ensureSystemAddon() {
-        val nodeModules = File(engineDir, "node_modules")
-        if (!nodeModules.isDirectory) {
-            Log.w(TAG, "引擎尚未解包，跳过 system 插件安装")
-            return
-        }
-
-        val target = File(nodeModules, SYSTEM_ADDON_PACKAGE)
-        val binary = File(target, "bin/system.node")
-
-        // 已装好就跳过。走 N-API，与 Node 大版本解耦。
-        if (!(binary.isFile && binary.length() > 0)) {
-            try {
-                java.util.zip.ZipInputStream(context.assets.open(SYSTEM_ADDON_ASSET).buffered()).use { zis ->
-                    var entry = zis.nextEntry
-                    while (entry != null) {
-                        if (!entry.isDirectory) {
-                            val out = File(target, entry.name)
-                            out.parentFile?.mkdirs()
-                            out.outputStream().use { zis.copyTo(it) }
-                        }
-                        zis.closeEntry()
-                        entry = zis.nextEntry
-                    }
-                }
-                Log.i(TAG, "已安装 system 插件 $SYSTEM_ADDON_PACKAGE (${binary.length()} 字节)")
-            } catch (t: Throwable) {
-                // 装不上就不阻断启动：让引擎自己报出更具体的加载失败原因
-                Log.w(TAG, "安装 system 插件失败: ${t.message}")
-            }
-        }
-
-        patchFlockPlatform()
-    }
-
-    /**
-     * 安装 android 版 ripgrep（幂等）。
-     *
-     * `grep` / `glob` 两个工具都由 `dsh-tool-fs-search` 调 `@vscode/ripgrep`
-     * 解析出的二进制来跑：
-     *
-     * ```
-     * const platformPkg = `@vscode/ripgrep-${process.platform}-${arch}`;  // android-arm64
-     * resolved = require.resolve(`${platformPkg}/bin/${binaryName}`);     // 抛错
-     * ```
-     *
-     * 官方的 `optionalDependencies` 只列了 darwin/linux/win32 的 11 个变体，
-     * **没有 android**。于是解析抛错，工具层把它包成
-     * `Error: glob could not start its search command (ripgrep launch failed)`，
-     * 两个工具全废 —— AI 只能改用 `read` 硬啃整个文件，浪费大量上下文。
-     *
-     * 这里装一个 `@vscode/ripgrep-android-arm64` 补上该平台包。二进制取自
-     * 官方的 linux-arm64 变体（`@vscode/ripgrep-linux-arm64` 1.18.0）：
-     * 它是**完全静态**的 aarch64 可执行文件（`readelf -d` 无 NEEDED），
-     * 不依赖 glibc，因此能直接在 Android 上跑（设备实测 `rg --version` 正常）。
-     * 这与 `TermuxBootstrap` 里 termux-exec 那套「静态二进制跨 libc」是同一道理。
-     *
-     * 无需改 `@vscode/ripgrep` 自身的代码：它按 `process.platform`/`process.arch`
-     * 拼包名，装上 `android-arm64` 目录即可命中。也无需改任何版本戳 ——
-     * 判定条件是「二进制存在且非空」。
-     */
-    private fun ensureRipgrep() {
-        val nodeModules = File(engineDir, "node_modules")
-        if (!nodeModules.isDirectory) {
-            Log.w(TAG, "引擎尚未解包，跳过 ripgrep 安装")
-            return
-        }
-
-        val target = File(nodeModules, RIPGREP_PACKAGE)
-        val binary = File(target, "bin/rg")
-
-        if (binary.isFile && binary.length() > 0) {
-            return
-        }
-
-        try {
-            java.util.zip.ZipInputStream(context.assets.open(RIPGREP_ASSET).buffered()).use { zis ->
-                var entry = zis.nextEntry
-                while (entry != null) {
-                    if (!entry.isDirectory) {
-                        val out = File(target, entry.name)
-                        out.parentFile?.mkdirs()
-                        out.outputStream().use { zis.copyTo(it) }
-                    }
-                    zis.closeEntry()
-                    entry = zis.nextEntry
-                }
-            }
-            // 从 APK 资产解出来的文件默认没有执行位，必须显式补上
-            binary.setExecutable(true, false)
-            Log.i(TAG, "已安装 ripgrep $RIPGREP_PACKAGE (${binary.length()} 字节)")
-        } catch (t: Throwable) {
-            // 装不上不阻断启动：grep/glob 会各自报 SEARCH_FAILED，其余工具照常
-            Log.w(TAG, "安装 ripgrep 失败: ${t.message}")
-        }
-    }
 
     /**
      * 安装 sharp 的 WebAssembly 变体（幂等）。
@@ -1774,148 +1605,6 @@ class EngineManager private constructor(private val context: Context) {
         }
     }
 
-    /**
-     * 安装 pnpm 到 `$PREFIX/bin`（幂等）。
-     *
-     * `plugin_manager` 的 `install_bundle` 通过 spawn `pnpm add` 装插件，而
-     * Termux 的 `$PREFIX/bin` 里只有 dpkg/apt 那一套，**没有 pnpm/npm/npx/corepack**。
-     * 症状是 `spawn pnpm ENOENT`，插件装不上 —— 实测 AI 因此退回手改 profile：
-     * 把包塞进 `profiles/web/node_modules/` 并直接编辑用户的 `cordis.patch.yml`。
-     * 那是绕过包管理器，会留下 `.bak` 残file 且不受版本管理。
-     *
-     * **为什么是 pnpm 11 的纯 JS 版，而不是 `@pnpm/exe.android-arm64`**：
-     * exe 版（12.x）是 Rust 重写的自包含二进制，跑得起来（`pnpm --version` 正常），
-     * 但它在 Android 上**做不了任何写操作** —— Rust std 在编译期把 Android 的
-     * `File::lock_shared()` 判为 unsupported，而 pnpm 的 store 操作锁走的正是它：
-     *
-     * ```
-     * ERR_PNPM_STORE_DIR_ACQUIRE_OPERATION_LOCK
-     *   ╰─▶ Failed to acquire the store operation lock at ".../all-stores.lock":
-     *       lock_shared() not supported
-     * ```
-     *
-     * 注意这**不是**内核不给锁：设备实测 `flock(fd, LOCK_SH)` 返回 0，`fcntl` 记录锁
-     * 也正常。是 pnpm 那个二进制的动态符号表里**只有 `fcntl`、根本没有 `flock`**
-     * （`readelf --dyn-syms` 可验），纯属编译期判定，配置绕不过去。
-     *
-     * pnpm 11 是最后一个**纯 JS** 主线（`dist/pnpm.mjs` 单文件 bundle，无 Rust），
-     * 锁走 JS 实现，真机实测 `pnpm add`（含本地路径包、`nodeLinker: hoisted`
-     * 的真实 profile 布局）全部成功。代价是体积从单文件 46 MB 变成 5.9 MB 的 zip
-     * —— 反而更小了。
-     *
-     * 装法：整包解到 `$PREFIX/lib/pnpm`，再在 `$PREFIX/bin/pnpm` 放一个
-     * `exec node <pkg>/bin/pnpm.mjs "$@"` 的启动脚本。**不能**直接把 `bin/pnpm.mjs`
-     * 软链到 `bin/pnpm`：Android 的 SELinux 不给 app 私有目录建符号链接（与
-     * `link` 同一类限制），而且 shebang 在 Termux 里也不可靠。
-     *
-     * 校验走 `PNPM_VERSION` 版本戳（与 `NODE_VERSION`、`MOBILE_UI_VERSION` 同一套
-     * 模式）：把版本写进 marker 文件，不一致才重解。
-     */
-    private fun ensurePnpm() {
-        val bin = File(bootstrap.prefixDir, "bin/pnpm")
-        val stamp = File(bootstrap.prefixDir, PNPM_STAMP)
-
-        if (bin.isFile && bin.length() > 0 &&
-            stamp.isFile && stamp.readText().trim() == PNPM_VERSION
-        ) {
-            return
-        }
-
-        try {
-            val libDir = File(bootstrap.prefixDir, PNPM_DIR)
-            libDir.deleteRecursively()
-            libDir.mkdirs()
-
-            var entryCount = 0
-            java.util.zip.ZipInputStream(context.assets.open(PNPM_ASSET).buffered()).use { zis ->
-                var entry = zis.nextEntry
-                while (entry != null) {
-                    if (!entry.isDirectory) {
-                        val out = File(libDir, entry.name)
-                        out.parentFile?.mkdirs()
-                        out.outputStream().use { zis.copyTo(it) }
-                        entryCount++
-                    }
-                    zis.closeEntry()
-                    entry = zis.nextEntry
-                }
-            }
-
-            val entryJs = File(libDir, "bin/pnpm.mjs")
-            if (!entryJs.isFile) {
-                throw IllegalStateException("资产里没有 bin/pnpm.mjs")
-            }
-
-            // $PREFIX/bin/pnpm：node 是绝对路径，免得依赖 PATH
-            bin.parentFile?.mkdirs()
-            bin.writeText(
-                "#!/system/bin/sh\n" +
-                    "exec " + bootstrap.nodeBinary.absolutePath +
-                    " " + entryJs.absolutePath + " \"$@\"\n"
-            )
-            bin.setReadable(true, false)
-            bin.setExecutable(true, false)
-
-            stamp.writeText(PNPM_VERSION)
-            Log.i(TAG, "已安装 pnpm $PNPM_VERSION ($entryCount 个文件, ${bin.length()} 字节启动脚本)")
-        } catch (t: Throwable) {
-            // 装不上不阻断启动：插件管理器的 install_bundle 会报 ENOENT
-            Log.w(TAG, "安装 pnpm 失败: ${t.message}")
-        }
-    }
-
-    /**
-     * 解出 android 沙箱的两个组件（幂等），返回 runner 路径。
-     *
-     * 背景：DSH 的沙箱层按平台挑后端
-     * （`dsh-sandbox-local` 的 `PLATFORM_CHAINS`：linux→bwrap/landlock、
-     * darwin→seatbelt、win32→windows-acl），Android 落不进任何一条 ——
-     * 设备内核 4.14 没有 Landlock（需 5.13+），没有 bwrap，`unshare -U` 因缺
-     * CAP_SYS_ADMIN 而 EPERM。`confine()` 是 **fail-closed** 的，于是
-     * `workspace-write` 下 bash 直接不可用：
-     *
-     * ```
-     * sandbox mode "workspace-write" is requested but no sandbox backend is
-     * usable on this host; refusing to run the command unconfined.
-     * ```
-     *
-     * 但该 provider 留了操作员口子 `Config.runnerCommand`：非空时**不做平台
-     * 探测**，直接把 runner 当成 bwrap 等价物并按 bwrap 方言拼参数
-     * （`[...runnerCommand, ...bwrapProfileArgs(policy), "--", ...argv]`）。
-     * 所以不必改引擎源码，只要提供一个听得懂那套参数的 runner。
-     *
-     * 两个组件（源码在 `app/src/main/jni/`）：
-     *   · `boo-sandbox-run`   —— 解析 bwrap 方言，把 `--bind` 翻译成
-     *     `BOO_SANDBOX_ALLOW`，再 exec 真实命令；
-     *   · `libboosandbox.so`  —— LD_PRELOAD 写拦截器，在 libc 边界挡住
-     *     allowlist 之外的写（解释器内部的写同样覆盖）。
-     *
-     * ⚠️ 与真 bwrap 的差异：`--unshare-pid` 无法实现（同样缺 CAP_SYS_ADMIN），
-     * 所以 PID 命名空间没有隔离。**文件写边界是完整的**，那是本方案承诺的部分。
-     * 详见 `boo-sandbox-run.c` 头部。
-     */
-    private fun ensureSandbox(): File? {
-        return try {
-            val runner = File(context.filesDir, SANDBOX_RUNNER_FILE)
-            context.assets.open(SANDBOX_RUNNER_ASSET).use { input ->
-                runner.outputStream().use { output -> input.copyTo(output) }
-            }
-            runner.setReadable(true, false)
-            runner.setExecutable(true, false)
-
-            val lib = File(context.filesDir, SANDBOX_LIB_FILE)
-            context.assets.open(SANDBOX_LIB_ASSET).use { input ->
-                lib.outputStream().use { output -> input.copyTo(output) }
-            }
-            lib.setReadable(true, false)
-
-            Log.i(TAG, "已解出沙箱 runner ${runner.name} (${runner.length()} 字节) + ${lib.name} (${lib.length()} 字节)")
-            runner
-        } catch (t: Throwable) {
-            Log.w(TAG, "解出沙箱组件失败: ${t.message}")
-            null
-        }
-    }
 
     /**
      * 写沙箱 overlay，把 `sandbox` 行的 `runnerCommand` 指向上面的 runner（幂等）。
@@ -2362,35 +2051,6 @@ class EngineManager private constructor(private val context: Context) {
         File(dshHome, "profiles/web/node_modules/$MOBILE_UI_PACKAGE").deleteRecursively()
     }
 
-    /**
-     * 把 `assets/dsh-env.mjs` 落到 `filesDir/dsh-env.mjs`。
-     *
-     * 为什么需要落盘：设置页的「开发环境」分节由**引擎插件宿主半**（`lib/index.js`）
-     * 调它 —— 那是引擎进程里的 node，读不到 APK 的 assets，只能读真实文件。
-     *
-     * 为什么不版本戳：这个脚本只有一个文件，直接比**字节数**就够；不一致就重写。
-     * 用版本戳反而多一个必须同步维护的常量（`MOBILE_UI_VERSION` 那样）。
-     */
-    private fun ensureDevEnvScript() {
-        // 两个文件一起落盘：安装器本体 + 验收脚本（verification.md ⑤）
-        for (name in listOf("dsh-env.mjs", "check-devenv.mjs")) {
-            val target = File(context.filesDir, name)
-            try {
-                val bytes = context.assets.open(name).use { it.readBytes() }
-                // 已有且字节数一致就跳过（内容变了长度通常也变；同名工具改长度的概率足够高）
-                if (target.isFile && target.length().toLong() == bytes.size.toLong()) continue
-                val tmp = File(context.filesDir, "$name.tmp")
-                tmp.writeBytes(bytes)
-                if (!tmp.renameTo(target)) {
-                    target.writeBytes(bytes)
-                    tmp.delete()
-                }
-                Log.i(TAG, "已写出开发环境脚本 $name (${bytes.size} 字节)")
-            } catch (t: Throwable) {
-                Log.w(TAG, "写出 $name 失败: ${t.message}")
-            }
-        }
-    }
 
     /**
      * 写出挂载移动端 UI 插件的 overlay，返回其路径；不可用时返回 null。
@@ -3252,47 +2912,6 @@ class EngineManager private constructor(private val context: Context) {
         }
     }
 
-    /**
-     * 把 link()/linkat() 的语义转译层解到真实文件路径（幂等），返回其路径。
-     *
-     * 为什么需要：SELinux 的 `untrusted_app(_27)` 域对 `app_data_file` **没有
-     * `link` 权限**（AOSP 为防沙箱数据外泄主动移除），所以 node 进程里任何
-     * `link()` 都返回 EACCES。而 DSH 上游用硬链接做独占原子发布，并靠 EEXIST
-     * 判定「已被别人发布」：
-     *
-     * ```
-     * try { await link(staged, currentPath); }
-     * catch (e) { if (e.code === 'EEXIST') return false; throw e; }  // ← EACCES 走这里
-     * ```
-     *
-     * 表现就是每轮回复都以「本轮运行失败 EACCES: permission denied, link」告终。
-     *
-     * 策略改不了，但**不需要让 link 成功，只需要让调用方不依赖它**：在 libc 边界
-     * 把 link 转译成「复制 + renameat2(RENAME_NOREPLACE) 发布」，同时保住独占
-     * （目标存在→EEXIST）与保源（真 link 不消耗源文件）两个语义。详见
-     * `app/src/main/jni/linkcompat.c` 的头部注释。
-     *
-     * 为什么解到文件而不是走 jniLibs：`LD_PRELOAD` 只接受真实文件路径，而
-     * AGP 默认 `extractNativeLibs=false` 时 `nativeLibraryDir` 是空目录。本工程
-     * 虽设了 `extractNativeLibs=true`，但资产化能避免 AGP 对 native 库做 strip /
-     * 改名，也与 `engine.bin` / `node-runtime.bin` 的处理方式一致。
-     */
-    private fun ensureLinkCompat(): File? {
-        val dest = File(context.filesDir, LINKCOMPAT_FILE)
-        return try {
-            // 每次都覆盖写：库只有 10KB，而它随 APK 升级而变，比对哈希不值当
-            context.assets.open(LINKCOMPAT_ASSET).use { input ->
-                dest.outputStream().use { output -> input.copyTo(output) }
-            }
-            dest.setReadable(true, false)
-            dest.setExecutable(true, false)
-            Log.i(TAG, "已解出 link 兼容层 $LINKCOMPAT_FILE (${dest.length()} 字节)")
-            dest
-        } catch (t: Throwable) {
-            Log.w(TAG, "解出 link 兼容层失败: ${t.message}")
-            null
-        }
-    }
 
     /**
      * 解出内置号池的注入库（`keyinject.bin` → `filesDir/libkeyinject.so`）。
@@ -4817,6 +4436,22 @@ class EngineManager private constructor(private val context: Context) {
      *
      * @return adb 所在目录，失败给 `null`。
      */
+    /**
+     * 解出开发环境体检/安装脚本（`dsh-env.mjs` + `check-devenv.mjs` → `filesDir/`）。
+     * ProotHost 会把这两个文件绑定进 PRoot guest 原绝对路径。
+     */
+    private fun ensureDevEnvScripts() {
+        for (name in listOf("dsh-env.mjs", "check-devenv.mjs")) {
+            runCatching {
+                val dest = File(context.filesDir, name)
+                context.assets.open(name).use { input ->
+                    dest.outputStream().use { output -> input.copyTo(output) }
+                }
+                dest.setReadable(true, false)
+            }.onFailure { Log.w(TAG, "写入 $name 失败: ${it.message}") }
+        }
+    }
+
     private fun ensureAdbWireless(): File? {
         val dest = File(context.filesDir, ADB_WIRELESS_DIR)
         val adb = File(dest, "bin/adb")
@@ -5487,11 +5122,6 @@ class EngineManager private constructor(private val context: Context) {
         //    内嵌启动快照，早于任何 JS）。不带上这一步，用户点了安全模式也照样打不开，
         //    唯一出路是卸载重装，而卸载会清掉整个 $DSH_HOME。
         //    node 可用时这一步是零成本的（一次 node --version）。
-        if (bootstrap.repairNodeRuntimeIfNeeded()) {
-            Log.w(TAG, "安全模式：内置 Node 运行时已重新解包")
-            changed = true
-        }
-
         // ⚠️ 必须把层级记成 SAFE_MODE，不能只做改动不记状态。两个后果都会真实发生：
         //
         //   ① **横幅会说谎**（违反不变量 I4）：`refreshRescueBanner` 读的就是这个
@@ -5872,7 +5502,7 @@ class EngineManager private constructor(private val context: Context) {
         overlays: List<File>,
         timeoutMs: Long = PROBE_TIMEOUT_MS,
     ): ProbeResult? {
-        val nodeBin = bootstrap.nodeBinary
+        val nodeBin = File(context.filesDir, "usr/bin/node")
         val binJs = File(engineDir, "node_modules/@deepseek-ai/dsh/lib/bin.js")
         if (!nodeBin.isFile || !binJs.isFile) return null
 
@@ -6899,11 +6529,11 @@ class EngineManager private constructor(private val context: Context) {
      * @return null = 压根跑不起来（node 缺失等），调用方应放行而不是误判成 profile 坏了。
      */
     private fun runDumpConfig(): DumpResult? {
-        val nodeBin = bootstrap.nodeBinary
+        val nodeBin = File(context.filesDir, "usr/bin/node")
         val binJs = File(engineDir, "node_modules/@deepseek-ai/dsh/lib/bin.js")
         if (!nodeBin.isFile || !binJs.isFile) return null
         return try {
-            val prefix = bootstrap.prefixDir.absolutePath
+            val prefix = File(context.filesDir, "usr").absolutePath
             val pb = ProcessBuilder(
                 nodeBin.absolutePath, binJs.absolutePath,
                 "--profile", PROFILE_NAME, "--dump-config",
@@ -7083,962 +6713,205 @@ class EngineManager private constructor(private val context: Context) {
     }
 
     /** 启动引擎，等待其打印带 token 的 URL。 */
-    suspend fun start() = withContext(Dispatchers.IO) {
-        if (process?.isAlive == true) {
-            Log.i(TAG, "引擎已在运行")
-            // ⚠️ **早返回也必须跑特权通道自愈。** 这一段原先直接 return，于是
-            //   「引擎还活着」时整块自愈（常驻监听 + 启动自愈 + 固定端口守护）
-            //   一次都不跑 —— 而它恰恰是**用户重开 App 时唯一会走到的那条路**：
-            //   引擎进程被前台服务（`START_STICKY`）保着，`MainActivity.onCreate`
-            //   每次都会调 `start()`，每次都命中这个早返回。
-            //   症状就是用户报的那两条：「清后台重开，权限还是没回来」。
-            resumePrivilegedChannel()
-            return@withContext
+    /** 当前 PRoot 宿主；非空时 stop() 走它的 pidfile/SIGQUIT 语义。 */
+    @Volatile
+    private var prootHost: ProotHost? = null
+
+    /**
+     * PRoot 单运行时启动（S4）。
+     *
+     * 与 bionic 路径共用同一批 `ensureXxx` 写入函数：它们的落点都是 `$DSH_HOME`
+     * 或 `filesDir`，而 ProotHost 把 `$DSH_HOME` 与 workspace 按**原绝对路径**
+     * 绑定进 guest，所以这些路径在 guest 里逐字有效。
+     *
+     * 只有沙箱 runner 不同：guest 里是 `/usr/local/bin/boo-sandbox-run`，
+     * 不是宿主 `filesDir/boo-sandbox-run`，见 [writeProotSandboxPatch]。
+     */
+    private suspend fun startProot(manifest: RuntimeManifest) {
+        EventLog.record("engine.start.proot", mapOf("runtime" to manifest.runtimeVersion))
+        val installer = RootfsInstaller(context)
+        try {
+            if (!installer.isInstalled(manifest)) {
+                installer.ensure(manifest) { p ->
+                    Log.i(TAG, "runtime " + p.phase + " " + p.done + "/" + p.total)
+                }
+            }
+        } catch (t: Throwable) {
+            Log.e(TAG, "运行时安装失败", t)
+            _state.value = State.Failed("运行时安装失败：" + (t.message ?: t.javaClass.simpleName))
+            return
         }
 
-        _state.value = State.Starting
-        logLines.clear()
-        // 启动计时锚点。后面「引擎就绪」事件用它算出总耗时 ——
-        // 「打开 App 慢」这类反馈只有靠这个数才能定位到具体阶段。
-        val startMs = System.currentTimeMillis()
-        EventLog.record("engine.start")
-        // ⚠️ 每次启动都清掉「主动停止」标记，否则 stop() 之后再也起不来
-        //   （EOF 会被当成用户停止而不再上报死亡，这里反过来：新一轮启动了，
-        //   旧标记已经没有意义）。
-        userStopped = false
+        // 救援 profile 与配置写入：与 bionic 路径共用
+        runCatching { ensureRescueProfile() }
+        runCatching { ensureWebCompat() }
+        runCatching { ensureDevEnvScripts() }
+        runCatching { ensureCredentialFileMode() }
+        runCatching { ensurePickerRoots() }
+        runCatching { ensureWebViewCompat() }
+        runCatching { ensureMobileUi() }
+        runCatching { ensureBrowserPane() }
+        runCatching { seedDefaultSettings() }
+        runCatching { ensureAgnesMultimodal() }
+        runCatching { seedAgnesAccounts() }
+        runCatching { ensurePresetRazor() }
+        runCatching { ensurePresetSkills() }
+        runCatching { ensureCoreMemory() }
+        runCatching { ensureMarket() }
+        runCatching { ensureKeyPoolProvider() }
+        runCatching { ensureDefaultModel() }
+        runCatching { ensureBubbleTool() }
+        runCatching { ensureStatusBarTool() }
+        runCatching { ensureUiTool() }
+        runCatching { ensureBrowserTool() }
+        runCatching { ensureLogsTool() }
+        runCatching { ensurePetBridge() }
 
-        homeDir.mkdirs()
-        dshHome.mkdirs()
-        workspaceDir.mkdirs()
-
-        // ⚠️ Termux 环境与启动前体检**必须排在最前面**，早于下面所有往 engine/ 写东西
-        // 的 ensureXxx。理由是体检在发现核心 bundle 被改坏时会触发**整棵 engine/
-        // 重解包**，而那会把已经打好的补丁与已解出的原生插件全部抹掉 —— 那些
-        // ensureXxx 都是幂等的，重解包之后再跑一遍才是正确顺序。
-        // 真机实测：正常态体检耗时 0.7~0.8 秒，对 7~10 秒的启动时间可忽略。
-        if (!bootstrap.installNodeRuntime()) {
-            _state.value = State.Failed(
-                "Termux 环境未就绪，无法启动引擎。\n" +
-                    "prefix=${bootstrap.prefixDir.absolutePath}\n" +
-                    "node=${bootstrap.nodeBinary.absolutePath}"
-            )
-            return@withContext
-        }
-
-        val nodeBin = bootstrap.nodeBinary
-        if (!nodeBin.isFile) {
-            _state.value = State.Failed("找不到 Node 可执行文件: ${nodeBin.absolutePath}")
-            return@withContext
-        }
-
-        // ⚠️ 救援 profile 必须在**体检之前**建好，且必须建在体检**之外**。
-        //
-        //   体检（[preflight]）只处理 `web` profile，它的结论不该影响救援 profile
-        //   的可用性 —— 恰恰相反：**web 坏掉时救援必须还能起来**，那正是它存在的理由。
-        //   所以这里独立建、独立判失败（见 [ensureRescueProfile] 的 @return）。
-        //
-        //   建不出来 ⇒ 救援这条路不可用。这时**不能**假装没事继续（那会让
-        //   L2 的失败变成"救援模式也起不来"这种更糟的表现），而是记下来，
-        //   让降级决策直接跳到 L3（安全模式）。见 [rescueAvailable]。
-        val rescueProfileDir = ensureRescueProfile()
-        rescueAvailable = rescueProfileDir != null
-        if (!rescueAvailable) {
-            Log.e(TAG, "救援 profile 不可用 —— 降级阶梯将跳过 L2 直接到 L3")
-            EventLog.record("rescue.profile.unavailable")
-        }
-
-        // 本次用哪个 profile 启动，由**上一次**留下的救援层级决定。
-        //
-        //   判据只看 RESCUE 一态。SAFE_MODE（L3）与 ISOLATED（L1）**都仍然用
-        //   `web` profile** 启动 —— 两者的语义都是「用用户自己的配置，只是少加载
-        //   几个 bundle」，与救援 profile（完全不用用户配置）是两套不同的机制
-        //   （见 `docs/RESCUE-BOOT-PLAN.md` §4.1 的表）。把它俩也切到 rescue 会
-        //   让它们失去原本的作用，那是行为变更，不是本方案要的。
-        //
-        //   `tier()` 读的是 `$DSH_HOME/rescue/state.json`，由降级决策写入。
-        //   ⚠️ 它**不会**因为"这次起来了"而自动复位 —— 复位只在用户点
-        //   「退出救援模式」时发生（I4：降级状态必须常驻可见 + 可一键退出）。
-        val targetProfile = if (RescueBoot.tier().tier == RescueBoot.Tier.RESCUE) {
-            RESCUE_PROFILE_NAME
-        } else {
-            PROFILE_NAME
-        }
-        if (targetProfile != PROFILE_NAME) {
-            Log.w(TAG, "以救援 profile 启动（--profile $targetProfile）：不加载任何第三方插件")
-            EventLog.record("engine.start.rescue", mapOf("profile" to targetProfile))
-        }
-
-        // 启动前体检：profile 与 patch 层都是模型可写的，改坏会让引擎直接 exit 1，
-        // 而 App 没有任何自救路径（用户只能卸载重装，那会清掉全部会话与凭据）。
-        //
-        // ⚠️ 结论**只是静态的**：它跑 `--dump-config`，不执行插件 `apply()`。
-        //   真机上杀死引擎的异常正是在 `apply()` 期抛的，所以体检放行 ≠ 能起来。
-        //   三态如实写进日志与事件时间线（原来 `false` 把两件事混成了一件）。
-        //
-        // ⚠️ **救援态下跳过体检**（I1：救援启动必须比正常启动简单，不能成为
-        //   第二个失败源）。体检会跑 `--dump-config`、可能触发整棵 engine/
-        //   重解包（15 秒 + 抹掉已打好的补丁）—— 那些动作在救援场景下全是风险，
-        //   而救援 profile 本来就只有核心 bundle，没什么可体检的。
-        val pre = if (targetProfile == PROFILE_NAME) {
-            preflight()
-        } else {
-            Log.i(TAG, "救援启动：跳过启动前体检（I1：救援路径不引入新的失败点）")
-            PreflightResult.StaticOnly
-        }
-        Log.i(TAG, "启动前体检结论：${pre.label}")
-        EventLog.record("preflight.result", mapOf("result" to pre.label))
-        if (pre == PreflightResult.Repaired) {
-            Log.i(TAG, "启动前体检已修复损坏的插件配置，继续启动")
-        }
-
-        // 前端补丁要在 WebView 首次加载前落盘，所以放在启动引擎这一步里
-        ensureWebCompat()
-        // 原生插件是引擎启动的前提（DSH 的 profile 解析依赖它），必须早于进程启动
-        ensureNativeAddon()
-        // system 插件（会话写入锁）：缺了它每轮回复都会以「本轮运行失败」告终
-        ensureSystemAddon()
-        // ripgrep：官方无 android 平台包，缺了 grep/glob 两个工具全废
-        ensureRipgrep()
-        // sharp：官方无 android 预编译二进制，缺了图片附件发送会以 agent-busy 失败
-        ensureSharp()
-        // node-pty：官方 prebuilds 无 android，缺了侧栏终端打不开
-        ensureNodePty()
-        // 终端后端的进程检查器只认 linux/darwin/win32，android 要显式放行
-        patchProcessInspector()
-        // terminal-bash 硬编码 /bin/bash，而 Android 上只有 /bin/sh（没有 bash）→
-        // bash 工具每条命令都报「PTY shell exited during startup」，改用 $PREFIX/bin/bash
-        patchTerminalShell()
-        // 附件模块的目录 fsync 会走到 /data/user/0（SELinux 拒绝 open）→ 附件发不出去
-        patchAttachmentDurability()
-        // 发图格式白名单只认 4 个精确 MIME → image/jpg、heic、剪贴板粘贴全被误拒
-        patchImageMediaType()
-        // ⚠️ 用户自己做的插件在运行期抛出未捕获异常时，installFailLoud 会 proc.exit(1)
-        //   把整个引擎杀掉 → 反复重启 → App 再也打不开（三级降级阶梯对此无效，
-        //   因为这条路径下 RescueBoot.recordFailure 一次都不会被调用）。见其 KDoc。
-        patchFailLoudExit()
-        // 凭据文件权限过宽（0600 之外）会让 credentials 插件硬抛错 → 9 个插件级联 pending
-        // → 整个引擎退出。引擎自己是纯校验不自愈，所以由 App 在启动前收窄。
-        ensureCredentialFileMode()
-        // DeepSeek Messages 要求 assistant 的 tool_use 块连续且紧后跟 tool_result，
-        // 而持久化历史里 text 会夹在多个 tool_use 之间 → 该会话从此永久发不出去
-        patchLlmDeepseekToolOrder()
-        // pi-ai：第三方路由不给 tool_call id 时，原样透出空 id → 落盘后会话永久不可读。
-        // 两处都要改（delta 与 end 各一条路径），见各自的 KDoc。
-        patchLlmPiAiToolCallId()
-        patchLlmToolCallIdFallback()
-        // 目录选择器：撤回「起点改 /sdcard」的旧补丁，改由 HOME 下的入口链接提供
-        restoreDirectoryPickerStart()
-        // 手机存储与 app 私有目录在 Android 上互不可达，靠 HOME 下两个链接做入口
-        ensurePickerRoots()
-        // 移动端 UI 适配插件：必须在 profile 解析前落盘，否则 --patch 挂不上
-        ensureMobileUi()
-        ensureDevEnvScript()
-        // 右侧栏「AI 浏览器」入口（客户端插件）。必须在引擎启动前解包：
-        // 引擎启动时才扫描 dsh.client 声明并编译前端 bundle，晚一步就是
-        // 「文件在、侧栏里没有这一项」，且没有任何报错。
-        ensureBrowserPane()
-        val browserPanePatch = writeBrowserPanePatch()
-        // 降级 bundle：polyfill 只补 API，语法缺口得靠换 bundle 覆盖 dist 与各插件。
-        // ⚠️ **必须在 ensureMobileUi() 之后**：那一支在版本戳不一致时会
-        // `deleteRecursively()` 重解包 mobile-ui 目录，先降级会被它整个抹掉。
-        // （dist / engine 两棵树与该顺序无关，只是顺手放在一起。）
-        ensureWebViewCompat()
-        // 出厂默认设置：只写 profile 的用户 patch 层，且只在它不存在时写一次。
-        // 必须早于引擎启动 —— 引擎的 initProfile() 会给缺失的 patch 文件补一份空模板。
-        seedDefaultSettings()
-        val mobileUiPatch = writeMobileUiPatch()
-        // Agnes 多模态插件：generate_image / generate_video 两个工具 + 多模态配置页。
-        // 同样必须在 profile 解析前落盘，否则 --patch 挂不上。
-        ensureAgnesMultimodal()
-        // 把内置号池接到该插件上（写插件自己的账号池文件，只在缺失时播种一次）。
-        // 必须早于引擎启动：插件读不到账号池就会回落到它自带的默认账号。
-        seedAgnesAccounts()
-        val agnesMmPatch = writeAgnesMultimodalPatch()
-        // 内置预设 dsh-preset-razor（「快准狠模式（通用）」）。
-        // 走 profile bundle（不是 overlay）⇒ 用户能在「插件 → 已安装插件」里自己关掉，
-        // 默认开启。必须在 profile 解析前解包 + 登记，否则 bundle 解析不到。
-        ensurePresetRazor()
-        removeLegacyPresetRazor()
-        registerPresetRazorBundle()
-        // 内置**中文 skill**：落到 $DSH_HOME/skills（全局发现根，每个预设都扫得到），
-        // 让 AI 做主题/桌面宠物时不必重新摸一遍 DSH 结构。
-        ensurePresetSkills()
-        // 创造模式（cordis 预设）的 persona：在官方原句之上并入「快准狠」铁律。
-        // ⚠️ 必须在 ensureExtracted() 之后（改的是 engine/ 里的文件），
-        //    且每次启动都要重打 —— 引擎重解包会把补丁抹掉，见该函数的 KDoc。
-        patchPresetCordisPersona()
-        // ⚠️ 这里**不再**写 `agent-preset-registry` 的 `default: razor`。
-        //
-        // 改造前为了让新会话默认用 razor，App 会把出厂默认位补进 profile 的用户层。
-        // 但 razor 现在是**可被用户关掉的 bundle** —— 一旦关掉，registry 的
-        // `resolve()` 就查不到 `razor` 这条定义，直接抛
-        // `agent-preset/not-found: Unknown agent preset: razor`，新建会话全部失败。
-        //
-        // 所以「默认用它」改为靠「默认开启」实现（bundle 在名单里 ⇒ 预设就在选择器里，
-        // 且 registry 的出厂默认位本来就会选中它）。用户关掉之后，由用户在预设页自己
-        // 选一个默认 —— 那是用户意图，App 不替他决定，也不留一个悬空的 default。
-
-        // 跨会话持久记忆插件：核心记忆常驻注入 + 归档记忆检索 + 回复风格设置页。
-        // 走 profile bundle（不是 overlay）⇒ 用户能在「插件 → 已安装插件」里自己关掉。
-        ensureCoreMemory()
-        removeLegacyCoreMemoryDir()
-        removeCoreMemoryOverlay()
-        registerCoreMemoryBundle()
-        // 插件市场：从 npm 按关键词收录插件，在设置页浏览/搜索/一键安装。
-        // 安装动作复用官方 pluginManager 的 Remote 服务，本插件不自己碰 pnpm。
-        // 同样必须在 profile 解析前落盘，否则 --patch 挂不上。
-        ensureMarket()
-        val marketPatch = writeMarketPatch()
-        // 沙箱：Android 无内核级后端，用自带 runner 保住 workspace-write 的写边界
-        val sandboxPatch = writeSandboxPatch(ensureSandbox())
-        // 默认工作区：Android 落不进引擎的平台分支，必须显式给 documentsDirectory
-        val workspacePatch = writeWorkspacePatch()
-        // 全文检索：上游 web profile 默认 openAt: never（session_search 直接禁用）。
-        // 放成 overlay 而不是改代码：这是公开 Config，升级引擎不受影响。
-        val sessionSearchPatch = writeSessionSearchPatch()
-        // 插件安装源：官方 fallback 只有镜像源，与本机 ~/.npmrc 撞成同一项被去重掉
-        val pluginManagerPatch = writePluginManagerPatch()
-        // link 兼容层：SELinux 不给 app_data_file 的 link 权限，需在 libc 边界转译
-        val linkCompat = ensureLinkCompat()
-        // 内置号池：已改为**服务端网关**，本地不再解出注入库。
-        // 这里调用是为了清掉老安装残留的 libkeyinject.so，恒返回 null（结果不使用）。
-        ensureKeyInject()
-        // ⚠️ **不能**走 `--patch` overlay：overlay 在最顶层整块替换 `llm-pi-ai`
-        // 那一行的 config，会把用户在 GUI 里新建的 provider 一起盖掉，于是
-        // `dsh-config-editor` 的写入校验直接抛
-        // `Configuration for "llm-pi-ai" is overridden by a home patch or
-        // command-line overlay` —— 用户表现为「一添加第三方 API 就报错」。
-        // 所以改为把内置号池**补进 profile 的用户配置层**（见 [ensureKeyPoolProvider]）。
-        ensureKeyPoolProvider()
-        // 老用户在 GUI 里手填过真密钥 ⇒ `.credentials.yaml` 里有一条
-        // `AGNES_CREDENTIAL`，它的优先级**高于**环境变量，会把网关令牌顶掉。
-        // 号池改成服务端网关后这条残留必须清掉，详见 [dropStaleBuiltinCredential]。
-        dropStaleBuiltinCredential()
-        // 默认模型 = 内置 Agnes。引擎的出厂默认是官方模型（deepseek-official），
-        // 而本 App 的用户大多没配过第三方 API ⇒ 那个路由必然失败。详见 [ensureDefaultModel]。
-        ensureDefaultModel()
-
-        // ⚠️ **救援 profile 也必须拿到同一套用户层配置**，否则救援界面是残废的：
-        //   没有默认模型 ⇒ AI 一开口就路由失败；没有号池 ⇒ 用户得自己配 key；
-        //   没有出厂设置 ⇒ 主题/权限预设全空。而「救援模式里 AI 能帮我修」
-        //   正是整个方案的核心承诺（G3），AI 不能用就全盘失效。
-        //
-        //   这四处写入都是**幂等 + 只补缺**的（各自 KDoc 有论证），所以对 rescue
-        //   重复调用是安全的：救援 profile 刚被建出来时它们会播种，之后不再动。
-        //
-        //   ⚠️ 只对**已建出来**的救援 profile 播种（`rescueProfileDir != null`）：
-        //     目录不存在时这几个函数会 `mkdirs()` 把它造出来，而造出来的目录
-        //     只有 `cordis.patch.yml`、**没有 `package.json`** —— 那样的 profile
-        //     引擎读不了（`profile "rescue" does not exist`），比不建更糟。
-        if (rescueProfileDir != null) {
-            seedDefaultSettings(RESCUE_PROFILE_NAME)
-            ensureKeyPoolProvider(RESCUE_PROFILE_NAME)
-            ensureDefaultModel(RESCUE_PROFILE_NAME)
-        }
-        // uid 2000 通道：截图/点击/卸载/settings 等 app 域做不到的操作要靠它。
-        // 未导入密钥时脚本自己回落为本地执行，不影响任何现有功能。
+        // ── S5：uid 2000 与 root 通道 ──────────────────────────────────────
+        // S4c 删 bionic start() 时把这段 orchestration 一起删了；0.5.0 只留了
+        // 各个 ensure/write 函数本体，必须在这里重新接线，否则 shell/root
+        // 两个工具根本不会出现在模型工具表里。
         val privRunner = ensurePrivilegedShell()
-        // ⚠️ **Shizuku 桥必须在引擎启动前起来**，而且**无论 Shizuku 当前可不可用
-        //    都要起**：Shizuku 服务可能是用户稍后才启动的（重启手机后要手动开一次），
-        //    而 socket 名一旦绑定就固定了 —— 起桥时检查可用性会让「先开 App
-        //    再开 Shizuku」永远连不上。见 [ShizukuChannel.start]。
-        //
-        // 这是 uid 2000 的第二条来源，且**不依赖 adbd**：对 Android 10 及以下
-        // （没有无线调试，且 persist.adb.tcp.port 写不进去 ⇒ 每次重启都要 PC
-        // 再跑一次 `adb tcpip 5555`）的用户，这往往是唯一可行的路。
-        if (ShizukuChannel.start(context)) {
-            Log.i(TAG, "Shizuku 桥已就绪: 管理器=${ShizukuChannel.isManagerInstalled(context)} " +
-                "binder=${ShizukuChannel.isBinderAlive()} 已授权=${ShizukuChannel.hasPermission()}")
-        }
-        // 无线调试（Android 11+）用的 adb 工具链：让 uid 2000 通道在
-        // 「只开了无线调试、没做 adb tcpip」的设备上也能用。见 ensureAdbWireless()。
+        // Shizuku 桥要在引擎启动前起来，且不能因为“当前没授权”就不起：
+        // 用户可能先开 App 再开 Shizuku，socket 名必须已经 bind 住。
+        runCatching { ShizukuChannel.start(context) }
+            .onSuccess {
+                Log.i(TAG, "Shizuku 桥已就绪: manager=" + ShizukuChannel.isManagerInstalled(context) +
+                    " binder=" + ShizukuChannel.isBinderAlive() +
+                    " granted=" + ShizukuChannel.hasPermission())
+            }
+            .onFailure { Log.w(TAG, "Shizuku 桥启动失败: " + it.message) }
         val adbWireless = ensureAdbWireless()
-        // 把该通道注册成独立的 `shell` 工具（**不是**改 bash 的行为）：
-        // 默认走 app 身份，模型读工具描述后自己决定要不要用 2000。见 ensurePrivilegedPlugin()。
         ensurePrivilegedPlugin()
         val privPatch = writePrivilegedPatch(privRunner != null)
         shellToolMounted = privPatch != null
-        // 悬浮球控制工具：把「改悬浮窗」接到模型的工具列表里。
-        // ⚠️ 必须早于引擎启动（overlay 要在 profile 解析前落盘），且**与特权无关**——
-        //   悬浮球不需要任何身份，只要求用户开过开关并授权过悬浮窗。
-        ensureBubbleTool()
-        val bubblePatch = writeBubbleToolPatch()
-        // 系统栏配色工具：把「改状态栏/导航栏颜色」接到模型的工具列表里。
-        // ⚠️ 与 bubble 工具**完全并列且独立**（不同信箱、不同能力），同样与特权无关：
-        //   改系统栏配色不需要任何授权。必须早于引擎启动（overlay 要在 profile 解析前落盘）。
-        ensureStatusBarTool()
-        val statusBarPatch = writeStatusBarToolPatch()
-        // UI 调试工具：把「看/点这个 App 的界面」接到模型的工具列表里。
-        // ⚠️ 与 bubble 工具**完全并列且独立**（不同信箱、不同能力）。
-        //   同样必须早于引擎启动：overlay 要在 profile 解析前落盘。
-        ensureUiTool()
-        val uiToolPatch = writeUiToolPatch()
-        // 浏览器工具：把「上网 / 登录 / 读页面 / 点按钮」接到模型的工具列表里。
-        // ⚠️ 与 ui 工具**完全并列且独立**：ui 操作的是本 App 自己的界面，
-        //   browser 操作的是一个独立的第二个 WebView（别的网站）。同样必须
-        //   早于引擎启动：overlay 要在 profile 解析前落盘。
-        ensureBrowserTool()
-        val browserToolPatch = writeBrowserToolPatch()
-        // 日志工具：把「读日志 / 看崩溃现场 / 生成诊断包」接到模型的工具列表里。
-        // ⚠️ 与上面三个工具**完全并列且独立**（不同信箱、不同能力），同样与特权无关：
-        //   读日志不需要任何授权。必须早于引擎启动（overlay 要在 profile 解析前落盘）。
-        ensureLogsTool()
-        val logsToolPatch = writeLogsToolPatch()
-        // 定向隔离层（L1.5）：把上次定位到的坏插件条目在 patch 层禁掉。
-        // ⚠️ 读的是 `RescueBoot` 的持久化状态，**不依赖**本轮启动的任何中间结果，
-        //   所以放在这里（早于引擎启动、晚于所有 `- insert:` overlay 的生成）就够。
-        val quarantinePatch = writeQuarantinePatch()
-        // 桌面宠物状态桥：把引擎的 `session/event` 转成悬浮球的动作切换。
-        // ⚠️ 与上面那条**并列且独立**：那条给模型 `bubble` 工具，这条让宠物自己会动。
-        ensurePetBridge()
-        val petPatch = writePetBridgePatch()
-        // 悬浮球命令信箱：`bubble` 工具把命令写进 `$DSH_HOME/bubble-cmd.json`，
-        // 这里轮询读走交给原生。**必须早于引擎启动** —— 否则模型第一次调工具时
-        // 信箱还没人守，命令会一直等不到回执。
-        BubbleCommandBridge.start(dshHome)
-        // 日志命令信箱：`logs` 工具把请求写进 `$DSH_HOME/logs-cmd.json`，
-        // 这里轮询读走交给原生。**必须早于引擎启动** —— 否则模型第一次调工具时
-        // 信箱还没人守，请求会一直等不到回执。
-        LogCommandBridge.start(dshHome)
-        // 系统栏配色命令信箱：`statusbar` 工具把命令写进 `$DSH_HOME/statusbar-cmd.json`，
-        // 这里轮询读走交给原生。**必须早于引擎启动** —— 否则模型第一次调工具时
-        // 信箱还没人守，命令会一直等不到回执。
-        SystemBarCommandBridge.start(dshHome)
-        // 救援命令信箱：AI 通过插件把 `rescue-cmd.json` 写进 `$DSH_HOME`，这里轮询读走。
-        // 三个动作：`status`（当前层级、摘了哪些插件、上次失败详情）、
-        // `probe`（拿改动后的配置**真跑一次**引擎验证，配额见 PROBE_QUOTA）、
-        // `switch-rescue` / `switch-back`（进出救援态）。
-        //
-        // ⚠️ **必须早于引擎启动**，理由与上面三条相同；而且对这条尤其要紧 ——
-        //   救援场景下引擎可能压根起不来，那时用户唯一的自救手段就是让 AI 走这条路，
-        //   所以信箱必须在**引擎启动之前**就已经有人守。
-        RescueCommandBridge.start(dshHome)
-        // 让模型知道「有特权身份可选、什么时候该用、用了会失去什么」。
-        // ⚠️ 判据用**挂载结果**（`privPatch != null`）而不是 `privRunner != null`：
-        //   前者才是「`shell` 工具真的注册了」。见 ensurePrivilegedPrompt 的 @param。
         ensurePrivilegedPrompt(privPatch != null)
 
-        // root（uid 0）通道：**先端到端探测**再决定挂不挂。
-        // ⚠️ 顺序是硬性的 —— 探测要起 su 进程（可能弹授权框），必须早于引擎进程
-        //   启动，否则用户会在界面已经可用之后才看到那个框。见 [RootAccess]。
-        // ⚠️ 探测结果有 24h 缓存，所以稳态下这里只是一次文件读。
         val rootRunner = ensureRootShell()
         val rootState = RootAccess.detect(context)
         ensureRootPlugin()
         val rootPatch = writeRootPatch(rootRunner != null && rootState.granted)
         rootToolMounted = rootPatch != null
         if (rootState.granted) {
-            Log.i(TAG, "root 可用（${rootState.detail}），已挂载 root 工具")
+            Log.i(TAG, "root 可用（" + rootState.detail + "），已挂载 root 工具")
         } else {
-            Log.i(TAG, "root 不可用（${rootState.state}: ${rootState.detail}），root 工具未挂载")
+            Log.i(TAG, "root 不可用（" + rootState.state + ": " + rootState.detail + "），root 工具未挂载")
         }
-        // 让模型知道「这台设备有没有 root」，否则它会去猜、去反复试
         ensureRootPrompt(rootPatch != null)
 
-        // pnpm 要落到 $PREFIX/bin，必须等 Termux 环境就位之后再装
-        ensurePnpm()
-
-        val binJs = File(engineDir, "node_modules/@deepseek-ai/dsh/lib/bin.js")
-        if (!binJs.isFile) {
-            _state.value = State.Failed("找不到引擎入口: ${binJs.absolutePath}")
-            return@withContext
-        }
-
-        // ⚠️ overlay 的顺序是**语义**的一部分（`--patch` 可重复、按顺序应用，
-        //   后应用的覆盖先应用的）。这里的顺序与改造前逐项一致，别顺手调。
+        // 注意：这些 writeXxxPatch() 都是幂等写文件，直接调用即可；
+        // bionic 路径里的同名局部 val 只在那条流程内可见。
         val overlays = listOfNotNull(
-            mobileUiPatch,
-            browserPanePatch,
-            agnesMmPatch,
-            marketPatch,
-            sandboxPatch,
-            workspacePatch,
-            sessionSearchPatch,
-            pluginManagerPatch,
+            writeMobileUiPatch(),
+            writeBrowserPanePatch(),
+            writeAgnesMultimodalPatch(),
+            writeMarketPatch(),
+            writeProotSandboxPatch(),
+            writeWorkspacePatch(),
+            writeSessionSearchPatch(),
+            writePluginManagerPatch(),
+            writeBubbleToolPatch(),
+            writeStatusBarToolPatch(),
+            writePetBridgePatch(),
+            writeUiToolPatch(),
+            writeLogsToolPatch(),
+            writeBrowserToolPatch(),
+            writeQuarantinePatch(),
             privPatch,
             rootPatch,
-            bubblePatch,
-            statusBarPatch,
-            petPatch,
-            uiToolPatch,
-            logsToolPatch,
-            browserToolPatch,
-            // ⚠️ **必须排在最后**：这一层只做 `disabled: true`，而它要禁用的条目
-            //   正是前面那些 `- insert:` 插进来的。`--patch` 按顺序应用，排在
-            //   插入之前会让 patch 匹配不到目标 id（官方行为：warn 后跳过，静默失效）。
-            quarantinePatch,
         )
-        // ⚠️ 内置号池**刻意不在这个列表里**：它并入 profile 用户配置层，
-        // 不走 overlay —— 理由见 [ensureKeyPoolProvider]。
-        //
-        // ⚠️ 存下来给试启动用（见 [activeOverlays]）：试启动必须与真实启动
-        //   用**同一份** overlay，否则「探测能过、真实过不了」无法排查。
-        activeOverlays = overlays
-        val cmd = buildEngineArgs(nodeBin, binJs, targetProfile, overlays, resolveWebPort())
 
-        Log.i(TAG, "启动引擎: ${cmd.joinToString(" ")}")
-
-        val prefix = bootstrap.prefixDir.absolutePath
-
-        val pb = ProcessBuilder(cmd)
-            .directory(workspaceDir)
-            .redirectErrorStream(true)
-
-        pb.environment().apply {
-            // ⚠️ 刻意**不设** LD_LIBRARY_PATH。
-            //
-            // 这里原先设了 `LD_LIBRARY_PATH=$prefix/lib`，当作「RUNPATH 没覆盖到时
-            // 的兜底」。但它对 Termux 二进制**完全无用**（真机全量对比 $PREFIX/bin 下
-            // 305 个 ELF，带与不带 LD_LIBRARY_PATH 的输出**零差异** —— Termux 的
-            // RUNPATH 已被等长重写成 /data/data/com.dsh.android//usr/lib，自己找得到），
-            // 却会**污染系统二进制**：它们本来该去 /system/lib64 找依赖，被这行带去
-            // Termux 的 lib 目录，于是 screencap / input / app_process 全部
-            // `CANNOT LINK EXECUTABLE "screencap": cannot locate symbol
-            //  "CrcGenerateTable" referenced by "/system/lib64/libunwindstack.so"`。
-            //
-            // 后果不是「少了个功能」而是**误导**：screencap 在 app 域本来就因权限失败，
-            // 现在失败得更早、错误信息指向动态库，模型会被带偏去反复试
-            // `env -u LD_PRELOAD` 之类的无用方向（真机会话日志里实测发生过）。
-            //
-            // 去掉后 node 与 4 个原生模块（require-builtin / flock / node-pty /
-            // sharp-wasm32）、bash/dpkg/pnpm/rg 全部实测正常。
-            // PREFIX/HOME 让 DSH 内部按 Termux 习惯推导路径，与库搜索无关，保留。
-            put("PREFIX", prefix)
+        val host = ProotHost(context, manifest, dshHome = dshHome, workspace = workspaceDir)
+        prootHost = host
+        val prootEnv = buildMap {
             put("DSH_HOME", dshHome.absolutePath)
-            put("HOME", homeDir.absolutePath)
-            put("TMPDIR", context.cacheDir.absolutePath)
-            // $PREFIX/bin 必须排在最前：node 自己 spawn 子进程（如 shell 工具）时
-            // 要能找到 Termux 的 sh/bash 而不是系统的。
-            put("PATH", "$prefix/bin:$prefix/bin/applets:/system/bin:/system/xbin")
-            // CA 证书在 Termux 私有 prefix 里，否则 HTTPS 请求会因证书链失败
-            put("SSL_CERT_FILE", "$prefix/etc/tls/cert.pem")
-            put("CURL_CA_BUNDLE", "$prefix/etc/tls/cert.pem")
-            put("NODE_OPTIONS", "--max-old-space-size=1024")
-            // 镜像环境变量必须注入**引擎进程**，不能只靠 shell 工具那条路。
-            //
-            // ⚠️ 实测漏掉它的后果（2026-10-10，同一台设备）：
-            //   `pkg install` 会调 `select_mirror()` 从 60+ 个上游镜像里**加权随机**
-            //   重挑一个并覆写 `sources.list`，把 App 刚写好的国内快源冲掉。重置成
-            //   USTC 后跑一次 `pkg install zlib`，源立刻变成 grimler.se。
-            //   而 `TERMUX_PKG_NO_MIRROR_SELECT=1`（上游自己的开关）实测能挡住这次覆写。
-            //
-            // ⚠️ [TermuxBootstrap.getShellEnv] 早就带了这组变量，但那条路只覆盖
-            //   `runProbeScript` 与 shell 工具；引擎进程自己 spawn 的 bash（模型装依赖
-            //   用的就是它）走的是本函数的 environment，于是**恰好缺了这一条**。
-            //
-            // 代价实测（同一台设备、同一个包）：USTC 源 71 秒 vs 慢源 21 分钟。
-            try {
-                putAll(com.dsh.android.termux.MirrorProbe.shellEnv(bootstrap.loadMirrors()))
-            } catch (t: Throwable) {
-                // 读状态失败不影响引擎启动 —— 配置文件那一层仍然生效。
-                Log.w(TAG, "注入镜像环境变量失败: ${t.message}")
-            }
-            // link()/linkat() 语义转译：SELinux 不允许 untrusted_app 对 app_data_file
-            // 做硬链接，而 DSH 上游用硬链接做独占原子发布。见 [ensureLinkCompat]。
-            //
-            // ⚠️ 号池注入库已下线（改为服务端网关），现在这里只剩 linkcompat 一个。
-            //    仍用列表拼接而不是覆盖，是为了将来加库时不用改结构。
-            //
-            // ⚠️ 只加在本进程：LD_PRELOAD 会一并继承给 node spawn 的子进程（如 shell
-            // 工具）。linkcompat 只 hook link/linkat 且先试原生，对系统二进制无害。
-            val preloads = listOfNotNull(linkCompat).map { it.absolutePath }
-            if (preloads.isNotEmpty()) {
-                // 空格分隔，与 boo-sandbox-run.c 里追加 LD_PRELOAD 的写法一致
-                put("LD_PRELOAD", preloads.joinToString(" "))
-            }
-            // 内置号池的凭据引用指向**网关令牌**。
-            //
-            // ⚠️ 与旧逻辑的关键差异：以前这里只在注入库解出成功时才设置，因为
-            // 占位符要靠注入库才会被替换 —— 没有库就宁可不设。现在令牌**不需要
-            // 任何本地组件**，所以必须无条件设置，否则引擎解析 `apiKeyEnv` 时
-            // 拿不到值，会报 `MISSING_CREDENTIAL`，号池直接不可用。
             put(KEY_ENV, KEY_PLACEHOLDER)
-            // 沙箱 runner 靠它定位 LD_PRELOAD 拦截器。runner 会把它追加到子进程
-            // 的 LD_PRELOAD 里（保留这里已有的 link 兼容层，两个库都生效）。
-            put("BOO_SANDBOX_LIB", File(context.filesDir, SANDBOX_LIB_FILE).absolutePath)
-            // uid 2000 通道脚本的路径，供特权插件读取（见 [ensurePrivilegedPlugin]）。
-            // 经环境变量传递而不是让 Kotlin 拼 JS 字面量：路径里可能有反斜杠与引号。
+            // 插件会剥掉所有 DSH_*，这里必须显式转交；路径都按原绝对路径绑进 guest。
             privRunner?.let { put("DSH_PRIV_RUNNER", it.absolutePath) }
-            // Shizuku 桥的 socket 名，供 runner 走通道 0。
-            // ⚠️ 这里传的是**纯名字**（`<包名>.shizuku`），不是带 `\0` 前缀的路径：
-            //    envp 是 C 字符串，NUL 就是结束符 —— 传带 NUL 的值会被**静默截断**，
-            //    runner 拿到空串、通道 0 整条不生效且毫无报错。`\0` 由 runner 自己补
-            //    （见 runViaShizuku）。理由详见 ShizukuChannel.socketPath 的注释。
-            // ⚠️ 与 DSH_PRIV_RUNNER 同理：引擎的 scrubbedParentEnv() 会剥掉所有
-            //    `DSH_*`，插件必须显式转交（见 dsh-android-shell/lib/index.js）。
-            put("DSH_SHIZUKU_SOCKET", ShizukuChannel.socketName(context))
-            // root 通道脚本的路径，供 root 插件读取（见 [ensureRootPlugin]）。
-            // 同上：走环境变量而不是拼 JS 字面量。
             rootRunner?.let { put("DSH_ROOT_RUNNER", it.absolutePath) }
-            // 无线调试用的 adb 工具链目录，runner 靠它决定要不要启用无线通道。
-            // 缺失时 runner 只走 legacy 5555，行为与改动前完全一致。
+            put("DSH_SHIZUKU_SOCKET", ShizukuChannel.socketName(context))
             adbWireless?.let { put("DSH_ADB_HOME", it.absolutePath) }
         }
-
-        // ⚠️ 存下这一份给试启动用（见 [activeEnv]）：试启动必须与真实启动**逐项相同**，
-        //   否则「探测能过、真实过不了」无法排查。**必须在 pb.start() 之前存**，
-        //   否则第一次探测可能读到空表而被拒绝。
-        activeEnv = pb.environment().toMap()
-
-        // ── L1 自动隔离（P1）──────────────────────────────────────────────
-        //
-        // ⚠️ **位置是硬性的：必须在这里**，即 [activeOverlays] 与 [activeEnv] 都已
-        //   就绪之后、真正 `pb.start()` 之前。
-        //
-        //   这两个基线原先是在 `start()` 靠后位置才赋值的，而触发闸门要求它们非空 ——
-        //   也就是说，如果按"读起来更顺"的直觉把闸门放在选 profile 那里，闸门**每轮
-        //   都会被自己拦下**，L1 永远不触发。这与本方案开头证伪的
-        //   `consecutiveFailures` 是**同一个缺陷**：判据描述的时机与它存在的时机不重合。
-        //   所以这里不改闸门（改成"没有基线也硬跑"会让探测结论不可信），
-        //   而是把调用点挪到基线之后。
-        //
-        //   触发条件（**不是**「同一 bootId 内连续失败 ≥2 次」—— 那个条件永远不成立，
-        //    见 [RescueBoot.Failure.consecutiveFailures] 里的实测证伪）：
-        //      连续 ≥2 次真实启动失败，且失败原因**指向插件**，且当前是正常态。
-        //
-        //   ⚠️ 为什么在 `pb.start()` **之前**：隔离成功之后本次就要用正常 profile
-        //     起来（用户的绝大多数插件保住了），而引擎是在 `bin.js` 启动时才读
-        //     `package.json` 的 —— 所以在这里改清单，本次启动就生效。
-        //
-        //   ⚠️ 只在正常态跑：救援态走的是 rescue profile（压根没有第三方 bundle，
-        //     没有可隔离的对象）；隔离态已经是上次隔离后的结果了，再跑一遍没有意义
-        //     （幂等靠这个判断 + `.bak-l1`）。见 [maybeIsolateBadBundles]。
-        //
-        //   ⚠️ 隔离之后**不重跑 [preflight]**。L1 只动 `bundles` 里第三方的名字，
-        //     而体检判的是核心 bundle 完不完整，判据没变、结论不会变。反过来，
-        //     体检在发现核心损坏时会触发**整棵 engine/ 重解包**，那会把此刻已经
-        //     就绪的 native addon 与补丁抹掉 —— 白跑一趟还引入新失败点。
-        maybeIsolateBadBundles()
-
-        // ⚠️ L1 可能刚刚把层级降级成 RESCUE（二分没收敛时，见 [maybeIsolateBadBundles]
-        //   末尾）。但 `targetProfile` 与 `cmd` 是在这**之前**算好的，本次发车仍会用
-        //   用户那个已经证明起不来的 web profile —— 白等 20 秒拿到同样的失败。
-        //
-        //   所以这里重新读一次层级：变了就**不发车**，改走既有的重启路径。
-        //   复用 [requestRestart] 而不是自己再拼一遍启动流程，是因为它已经接好了
-        //   `MainActivity` 那条 `State.Dead` 分支（清 `webViewPainted`、置
-        //   `forceReloadOnReady`、重新 `start()`），多一条自建路径只会多一个失败点。
-        //
-        //   ⚠️ 条件**只能判 RESCUE**，不能写成 `tier != NORMAL`：ISOLATED 态意味着
-        //     L1 **成功**摘掉了致命插件，而那时用用户的 web profile 启动恰恰是
-        //     正确动作（绝大多数插件保住了）。写成 `!= NORMAL` 会把成功当成失败，
-        //     把用户直接丢进救援模式、白丢全部插件。
-        if (RescueBoot.tier().tier == RescueBoot.Tier.RESCUE &&
-            targetProfile != RESCUE_PROFILE_NAME
-        ) {
-            Log.w(TAG, "L1 已把层级改为救援模式，本次不发车，改用救援 profile 重启")
-            EventLog.record("engine.restart.for-rescue", mapOf("staleProfile" to targetProfile))
-            requestRestart("L1 降级到救援模式")
-            return@withContext
-        }
-
-        // 无线调试端口由 Kotlin 侧发现（Node 侧发不出 UDP 组播，见 WirelessDebugging）。
-        // 常驻监听：端口会随用户重开无线调试/重启/切网络而变，只在启动时发现一次的话
-        // 一变就永久失效。监听本身由系统 mdnsd 承担，开销可忽略。
-        resumePrivilegedChannel()
-
-        // ── P4：把「你现在处于降级态、可以这样修」写进 agent 指令 ──────────
-        //
-        // ⚠️ **必须在这里**，即 [maybeIsolateBadBundles] 之后。层级是在 L1 里才
-        //   定下来的（它可能刚把 tier 改成 ISOLATED 或 RESCUE），早于它写提示词
-        //   就会写进上一次的层级 —— 表现为「AI 被告知处于救援模式，实际不是」。
-        //
-        // ⚠️ 也**必须早于引擎启动**：`AGENTS.md` 是引擎启动时读的（agent-instructions
-        //   插件），启动之后再写，这一轮就注入不进系统提示词了。
-        ensureRescuePrompt()
-
         val proc = try {
-            pb.start()
+            host.start(prootEnv,
+                overlays,
+            )
         } catch (t: Throwable) {
-            _state.value = State.Failed("引擎进程启动失败: ${t.message}")
-            return@withContext
+            Log.e(TAG, "proot 启动失败", t)
+            prootHost = null
+            _state.value = State.Failed("引擎进程启动失败：" + (t.message ?: t.javaClass.simpleName))
+            return
         }
         process = proc
 
-        // 只用一个后台线程从头到尾持续消费 stdout。
-        // 不能用 use{} 读完 URL 就关流：引擎之后仍在写日志，64KB 管道缓冲写满后
-        // 会阻塞在 write 上导致引擎彻底卡死；重复打开同一 inputStream 也会失败。
-        // ⚠️ 用共享常量 [URL_PATTERN] 而不是就地写一份：试启动（[probeBoot]）
-                        //   也用同一条正则判断"起来了没有"，两处各写一份迟早漂开，
-                        //   而症状会是「试启动说成功、真启动说失败」这种无法解释的差异。
-                        val urlPattern = URL_PATTERN
-        val readyLatch = java.util.concurrent.CountDownLatch(1)
-        var readyUrl: String? = null
-
-        Thread {
-            try {
-                proc.inputStream.bufferedReader().useLines { seq ->
-                    seq.forEach { line ->
-                        // ⚠️ 引擎输出走**独立的 `engine.log`**，不进 `app.log`。
-                        //
-                        // 理由是容量：引擎会逐 token 打输出，一天能刷出几十 MB，
-                        // 而 `app.log` 单文件上限只有 1MB。混在一起的话，原生侧的
-                        // 关键日志（启动、插件、补丁）会被引擎刷掉 —— 而排查时
-                        // 恰恰是原生侧那几十行最有价值。
-                        //
-                        // `LogStore.engine` 是异步写的，所以这一行**不会拖慢读流**
-                        // （读流一慢，引擎写 stdout 就会阻塞，那是老问题的来源）。
-                        LogStore.engine(line)
-                        // ⚠️ **logcat 照打，但必须绕开 `DshLog` 的 sink**（2026-10-14
-                        //   自检发现，同族第 23 例）。
-                        //
-                        // 原来这里是 `Log.i(TAG, "[engine] $line")`。本文件顶部是
-                        // `import com.dsh.android.log.DshLog as Log`，而 `DshLog.i`
-                        // 除了转发给 `android.util.Log` 之外，还会**再落一次盘**
-                        // （见 `DshLog.emit`）—— 而上面那行 `LogStore.engine(line)`
-                        // 已经落过了。于是同一条引擎输出在 `app.log` 与内存缓冲里
-                        // 各存两份（tag 分别是 `DSH` 与 `engine`）。
-                        //
-                        // 真机证据（服务器上 74 个真实用户包）：**72 个**的 `app.log`
-                        // 里混着引擎输出，占 11%~25% 的行；168 个崩溃现场文件里
-                        // 「tag=[DSH] 且正文以 [engine] 开头」的行数与「tag=[engine]」
-                        // 的行数**比值恒为 1.00** —— 一条不多一条不少，正是重复。
-                        //
-                        // 后果正是上面那段注释要避免的那个：`app.log` 单文件只有 1MB、
-                        // `--- last 200 log lines ---` 只有 200 行预算，两者都被重复行
-                        // 占掉一半，而 `engine-start-failed` 的根因（引擎自己打印的
-                        // `dsh: startup failed: … plugin did not activate`）就挤在这半边里。
-                        //
-                        // ⚠️ **不能用 `Log.i`**（那会走回 sink），要用全限定名
-                        // `android.util.Log.i` —— 这违反 `DshLog` 类注释里「调用点不出现
-                        // 全限定写法」那条，但这里正是**必须**绕开的场合：落盘已经由
-                        // `LogStore.engine` 负责，此处只要 logcat。两处都不丢。
-                        android.util.Log.i(TAG, "[engine] $line")
-                        synchronized(logLines) {
-                            logLines.addLast(line)
-                            while (logLines.size > MAX_LOG_LINES) logLines.removeFirst()
-                        }
-                        if (readyUrl == null) {
-                            val m = urlPattern.find(line)
-                            if (m != null) {
-                                readyUrl = m.groupValues[1]
-                                readyLatch.countDown()
-                            }
-                        }
-                    }
-                }
-            } catch (t: Throwable) {
-                Log.w(TAG, "引擎输出流结束: ${t.message}")
-            } finally {
-                // 流关闭（引擎退出）时也要唤醒等待方，避免白等到超时
-                readyLatch.countDown()
-                // ⚠️ **引擎一死就必须把 `engine.log` 的缓冲刷出去**（2026-10-14 自检发现，
-                //   同族第 24 例）。
-                //
-                // `engine.log` / `web.log` 是**异步档**：`LogStore.writeAsync` 攒着
-                // 不 flush，只靠 `BufferedWriter` 的 8 KB 缓冲与「超 1 MB 才 flush」
-                // 那条阈值（见那里的注释）。引擎**正常**跑时这没问题 —— 它迟早会
-                // 攒够 8 KB。
-                //
-                // 但**引擎起不来时正好相反**：它只来得及打几十行（实测约 5 行、
-                // 不足 2 KB）就退出，缓冲**永远到不了阈值** —— 而那几十行恰恰是
-                // 唯一能解释「为什么起不来」的证据（实测是
-                // `dsh: startup failed: 1 required plugin did not activate` +
-                // `credentials-local: .credentials.yaml is readable beyond …`）。
-                // 进程一退，缓冲随进程消失，`engine.log` 停在 0 字节。
-                //
-                // 真机证据（服务器上 73 个真实用户包）：含 `engine-start-failed`
-                // 现场的包有 **33 个**，其中包内有 `engine.log` 的只有 **6 个** ——
-                // 且那 6 个的时间戳是**上一次运行**留下的残卷（23:53 写的，
-                // 包生成于 04:13），不是本次故障的输出。也就是说这个文件在最需要
-                // 它的场合恰好是空的。
-                //
-                // 放在 `finally` 里是因为三条退出路径都要覆盖：引擎启动失败、
-                // 运行期崩溃退出、以及正常结束。
-                runCatching { LogStore.flushAsync() }
-                // ⚠️ **运行期退出检测就在这一行**。
-                //
-                // stdout 读到 EOF ⇔ 引擎进程真的没了（管道写端全关）。这是唯一
-                // 可靠的死亡信号：`process.isAlive` 要靠轮询，而轮询在 App 被
-                // 冻结时同样停摆；EOF 是内核主动通知的，不需要我们醒着。
-                //
-                // 判据用「曾经就绪过」而不是「现在是 Ready」——后者会被
-                // 紧随其后的 `_state.value = State.Failed(...)` 覆盖掉顺序
-                // （见下面的 got/url 分支），用 readyUrl 更稳。
-                //
-                // 只读一次 volatile 快照，避免与 start() 的另一次调用赛跑：
-                // 这次线程属于**这一个** proc，若 process 已被换成新的进程，
-                // 说明有人重启过引擎，此时不该把状态打成 Dead。
-                markEngineDeadIfCurrent(proc, readyUrl != null)
-            }
-        }.apply { isDaemon = true; name = "dsh-engine-output" }.start()
-
-        val got = readyLatch.await(READY_TIMEOUT_MS, TimeUnit.MILLISECONDS)
-        val url = readyUrl
-
-        if (got && url != null) {
-            // ── 引擎**起来了**，但 gateway 可能已经废了（本 App 的第三种故障形态）──
-            //
-            // ⚠️ **这一段的判据与处置都必须早于 `clearFailure()`**，见下面两条注释。
-            //
-            // 真机现场（OPPO PKJ110 / v18）：引擎打印了 URL、界面正常加载，但
-            // `typert-loader` 的 contributor 注册失败 ⇒ gateway 的严格定义被撤下
-            // ⇒ `session/control` / `session/modelCatalog` / `directoryPicker/list`
-            // 全部报 `its strict definition was withdrawn and SRC fallback is forbidden`。
-            // 用户「选不了工作区、发不出消息、插件面板打不开」，而**界面上没有任何
-            // 按钮**——救援阶梯的每一道门都要求「启动失败」，这次启动是成功的。
-            //
-            // 时序是可靠的：真机 `engine.log` 里 typert 那段报错在 `dsh web:`
-            // **之前 21ms**（13:29:30.709 vs .730），而 stdout 循环是先
-            // `logLines.addLast(line)` 再 `readyLatch.countDown()`（见上面那段），
-            // 所以等到这里时证据必然已经在缓冲里。
-            val gatewayTail = synchronized(logLines) { logLines.toList() }
-            val gatewayCulprit = RescueBoot.parseGatewayFailure(gatewayTail)
-            if (gatewayCulprit != null) {
-                Log.e(
-                    TAG,
-                    "引擎打印了 URL 但 typert gateway 整体下线（涉事=${gatewayCulprit.ifEmpty { "未解析到包名" }}）" +
-                        " —— 界面会正常加载，但会话/模型列表/目录选择全部不可用",
-                )
-                EventLog.record(
-                    "engine.gateway-degraded",
-                    mapOf("culprit" to gatewayCulprit.ifEmpty { "unknown" }),
-                )
-                // ⚠️ **先记失败**，再决定降级。这份记录让「连续失败几次」「涉事是谁」
-                //   在重启后仍然可查 —— `start()` 成功分支本来会 `clearFailure()`，
-                //   而这次的「成功」是假的（见 [RescueBoot.recordGatewayFailure] 的说明）。
-                RescueBoot.recordGatewayFailure(
-                    bootId = BootState.bootId,
-                    tailLines = gatewayTail,
-                    culprit = gatewayCulprit,
-                )
-                // 正常态 ⇒ 降级到 L2 救援模式并**立刻重启**，用户零操作。
-                // L2 是**非破坏性**的（不动用户配置、有常驻横幅、可一键退出），
-                // 所以这条路径可以放心走（同 [escalateToRescue] 的 KDoc）。
-                //
-                // ⚠️ 只在 NORMAL 态推。已是 RESCUE 时再推没有意义，而且会把横幅的
-                //   `since` 刷成每次启动的时刻（「自 XX 起」就永远显示刚刚）。
-                // ⚠️ `rescueAvailable == false` 时**不能**推：那个 profile 建不出来，
-                //   推过去下次启动会直接失败（见上面 `ensureRescueProfile` 那段）。
-                val tierNow = RescueBoot.tier().tier
-                if (tierNow == RescueBoot.Tier.NORMAL && rescueAvailable) {
-                    escalateToRescue(
-                        "引擎起来了但 typert gateway 整体下线（contributor 注册失败：" +
-                            "${gatewayCulprit.ifEmpty { "包名未解析到" }}）",
-                        // 这条降级**没有经过 L1 二分**（引擎是「成功」启动的，L1 的闸门
-                        // 一个都没开），所以事件里必须如实标成 gateway 检测，不能冒 L1 的名。
-                        from = "gateway",
-                    )
-                    Log.w(TAG, "已降级到救援模式，立刻重启引擎（下次启动不加载任何第三方插件）")
-                    // ⚠️ **不设 Ready**：直接走既有重启路径，避免界面先加载再重启闪一下。
-                    //   状态打成 [State.Dead] 而不是 [State.Failed] —— 引擎没崩、页面能
-                    //   加载，而 Failed 会把用户引向**破坏性**的「安全模式」按钮；
-                    //   Dead 的「原样重启」正是这里要的（同 [requestRestart] 的 KDoc）。
-                    requestRestart("typert gateway 整体下线，切救援模式")
-                    return@withContext
-                }
-                // 走到这里 = 已经是救援态仍失效，或救援 profile 不可用。
-                // 两者都**不是**第三方插件的问题（rescue 不含任何第三方 bundle），
-                // 所以不再自动推层级 —— 只保持界面可用，让常驻横幅把事实说出来
-                // （不变量 I4：降级状态必须常驻可见 + 可一键退出）。
-                Log.w(
-                    TAG,
-                    "gateway 仍失效（层级=${tierNow.id}，救援可用=$rescueAvailable），不再自动降级",
-                )
-                EventLog.record(
-                    "engine.ready",
-                    mapOf(
-                        "ms" to (System.currentTimeMillis() - startMs).toString(),
-                        "port" to portOf(url),
-                        "degraded" to "gateway",
-                    ),
-                )
-                _state.value = State.Ready(url)
-                Log.i(TAG, "引擎就绪: $url")
-                return@withContext
-            }
-            _state.value = State.Ready(url)
-            Log.i(TAG, "引擎就绪: $url")
-            // ⚠️ 引擎**真的起来了** ⇒ 清掉上次的失败记录。
-            //
-            //   见 RescueBoot 的类注释：这份记录是「上次为什么起不来」的唯一线索，
-            //   救援会话里的 AI 全靠它。但它在**成功之后必须清掉**，
-            //   否则下次再出问题时，AI 看到的是早就不成立的旧失败 ——
-            //   又一处「结论与它描述的时刻不是同一个」（同族已 28 例）。
-            //
-            //   位置要紧：必须放在「确实拿到 URL」这个分支里，不能放在别处。
-            //   `got && url != null` 就是「引擎打印过 URL」的严格判据。
-            //
-            //   ⚠️ 上面那段 gateway 检测已经 `return@withContext` 走了，
-            //   所以走到这里就是**真·成功**，可以放心清。
-            RescueBoot.clearFailure()
-            // 事件时间线里记一笔「从起进程到就绪花了多久」。
-            // ⚠️ 这是「打开 App 慢」这类模糊反馈唯一能定量的地方：没有它，
-            //   用户说「卡」，我们只能猜是引擎慢、解包慢还是网络慢。
-            EventLog.record(
-                "engine.ready",
-                mapOf("ms" to (System.currentTimeMillis() - startMs).toString(), "port" to portOf(url)),
-            )
-        } else if (userStopped || process !== proc) {
-            // ⚠️ **我们自己停掉的，不是启动失败。**（2026-10-15 修，同族第 25 例）
-            //
-            // `readyLatch` 有三条唤醒路径，上面那条注释只交代了前两条：
-            //   ① 正则匹配到 URL ⇒ 引擎起来了
-            //   ② stdout 读到 EOF ⇒ 引擎死了
-            //   ③ **`stop()` 主动 destroy 旧进程** —— 也会让 stdout 立刻 EOF
-            //
-            // 第 ③ 条与「引擎自己崩了」在 `await` 这一侧**完全同形**，于是一路走到
-            // 下面那个 `else`，被记成「引擎启动失败」。而 `stop()` 明明已经把状态
-            // 设成了 [State.Idle]，紧接着被 `State.Failed` 覆盖 —— 用户看到失败
-            // 浮层，更糟的是 `RescueBoot.recordFailure` 把「连续启动失败」+1。
-            //
-            // 真机现场（服务器 `20261014-173741-e2020a5e`，OPPO PKJ110 / Android 16 /
-            // v21 system，`20261014-165820-engine-start-failed.txt`）：
-            //
-            // ```
-            // 16:58:16.174 main                用户请求退出降级态（当前 rescue）
-            // 16:58:16.176 main                请求界面重启引擎：用户请求退出降级态
-            // 16:58:16.177 main                停止引擎            ← stop()
-            // 16:58:16.479 main                引擎已退出: …，准备自动重启（第 2 次）
-            // 16:58:16.483 main                [connection] connection lost, retry #1
-            // 16:58:17.195 DefaultDispatcher-2 启动引擎: …              ← 新 start()
-            // 16:58:18.443 main                界面就绪回调超时（WebView 内核 138）
-            // 16:58:20.152 DefaultDispatcher-1 停止引擎            ← enterSafeMode → stop()
-            // 16:58:20.153 main                [rescue-auto] 连续失败仅 0 次（需 ≥3）
-            // 16:58:20.160 DefaultDispatcher-2 已记录现场: crash/…-engine-start-failed.txt
-            //                                  —— 引擎启动失败（引擎进程在打印 URL 之前就结束了（等了 3672 ms））
-            // 16:58:20.160 DefaultDispatcher-2 engine.failed reason=引擎进程在打印 URL 之前就结束了（等了 3672 ms）
-            // 16:58:23.155 DefaultDispatcher-1 安全模式：已隔离损坏的文件 cordis.patch.yml → …
-            // ```
-            //
-            // 两次 `停止引擎` 都是**主动**的（`requestRestart` 与 `enterSafeMode`），
-            // 而那条 3672 ms 的「启动失败」纯粹是第 ③ 条唤醒路径的产物 ——
-            // 引擎**从未**失败过，是被人叫停的。
-            //
-            // ⚠️ 后果不止一行错日志：这次假失败触发了 `enterSafeMode`（推开用户的
-            //    `cordis.patch.yml` / `package.json`、摘掉 7 个第三方 bundle、删掉
-            //    引擎版本戳），代价是用户重解包 15 秒 + 插件配置全丢。也就是说
-            //   这条误判把「切个 profile」变成了**破坏性操作**。
-            //
-            // 判据与 [markEngineDeadIfCurrent] 完全同源（那里早就在用 `userStopped`），
-            // 只是这里漏了：
-            //   · `userStopped` ⇒ 是我们自己停的，状态已由 [stop] 设为 [State.Idle]
-            //   · `process !== proc` ⇒ 这一轮已被另一次启动接管（stop 之后又 start 了），
-            //     这一轮的任何结论都不该落到全局状态上
-            // 两者都成立时**必须原样返回**，不能改状态、不能记失败。
-            Log.i(
-                TAG,
-                "启动等待被主动停止打断（已等 ${System.currentTimeMillis() - startMs} ms），不算启动失败",
-            )
-            return@withContext
-        } else {
-            val tail = synchronized(logLines) { logLines.joinToString("\n") }
-            // ⚠️ **判据是「等满了没有」，不是「进程还活着没有」。**
-            //
-            // 这里原来写 `if (proc.isAlive) "超时未打印 URL" else "引擎进程已退出"`，
-            // 是**错的**，会把最常见的一种情况报成「超时」：
-            //
-            // `readyLatch` 除了「正则匹配到 URL」之外，还在读 stdout 那条线程的
-            // `finally` 里被 countDown（见上面 `流关闭（引擎退出）时也要唤醒等待方`）。
-            // 于是引擎一退出，`await` **立刻**返回，而此刻 `proc.isAlive` 往往还是
-            // true（`Process.isAlive` 要等子进程被 reap 之后才翻假）。结果：
-            // 引擎明明**刚启动就死了**，界面却写「超时未打印 URL」——
-            // 把「启动即崩」误导成「起得慢」，排查方向直接带偏。
-            //
-            // 真机证据（53 个诊断包、80 场 engine-start-failed）：`READY_TIMEOUT_MS`
-            // 是 120_000，而全部 9 场「超时未打印 URL」的实际等待只有
-            // **6873 / 6911 / 6911 / 6911 / 7356 / 8009 / 10699 ms** ——
-            // 没有一场等满过 120 秒，所以它们**全都不是超时**。
-            //
-            // 改判据后文案才与事实一致，并且把等待时长一并写进原因里
-            // （原来只有崩溃现场文件里才有，日志行里看不到）。
-            val waited = System.currentTimeMillis() - startMs
-            val reason = if (waited >= READY_TIMEOUT_MS) {
-                "等待 ${waited / 1000} 秒仍未打印 URL（确为超时）"
-            } else {
-                "引擎进程在打印 URL 之前就结束了（等了 ${waited} ms）"
-            }
-            // ⚠️ **顺序是要害：先落盘「为什么失败」，再广播 `State.Failed`。**
-            //
-            //   这两个动作的**读者是不同线程**，而广播会**同步**唤醒 main 线程上
-            //   的收集者（`MainActivity` 的 `collect { }` 里那句
-            //   `engine.shouldAutoEnterSafeMode()`），后者立刻去读
-            //   `RescueBoot.lastFailure()`。
-            //
-            //   原先的顺序是反的（先广播、后记录），于是 main 读到的永远是**上一次**
-            //   的失败记录 —— 真机现场（`20261015-013148-76dfff48.zip`，
-            //   Xiaomi 24117RK2CC / Android 17 / v21 gecko）：
-            //
-            //   ```
-            //   01:31:31.462 [I] #101 main                 [rescue-auto] 连续失败仅 0 次（需 ≥3）
-            //   01:31:31.470 [E] #102 DefaultDispatcher-2  已记录现场: engine-start-failed
-            //   ```
-            //
-            //   同一场失败，读记录的线程比写记录的线程**早 8 ms**。后果是
-            //   `consecutiveFailures` 每次都被读成比实际小 1 —— 判据里的门
-            //   （`>= 3`）**永远差一次**，于是自动进安全模式（L3）这条兜底
-            //   整条阶梯**整体推迟一轮**：引擎本该在第 3 次失败时自救，实际要等到
-            //   第 4 次。而这一轮里用户面对的是引擎起不来、界面完全不可用，
-            //   只能自己反复重开 App 去凑那个数。这正是本项目缺陷族
-            //   「结论与它描述的对象不是同一个」在**时序**上的又一例。
-            //
-            //   ⚠️ 说清界限：这是「晚一轮」而**不是**「永不触发」。`tier` 升到
-            //      RESCUE 后 tier 这一条会长期成立，所以下一轮 streak 追上时仍会
-            //      触发。别把它写成「永不」—— 那本身又是一次同族失真。
-            //
-            //   把记录提到广播之前即可根除：广播之后任何时刻读，记录都已就位。
-            //   ⚠️ 别改成「广播后再补一次记录」—— 那会让同一场失败被记两次，
-            //      计数翻倍，L1/L2/L3 全部提前触发（另一种失真）。
-            val tailList = synchronized(logLines) { logLines.toList() }
-            RescueBoot.recordFailure(
-                bootId = BootState.bootId,
-                exitCode = runCatching { proc.exitValue() }.getOrNull(),
-                tailLines = tailList,
-            )
-            _state.value = State.Failed("引擎启动失败（$reason）。最后输出:\n$tail")
-            // ⚠️ **P0：把「真实启动失败」变成可读的状态**（见 RescueBoot 的类注释）。
-            //
-            // 这里传的是**真实启动**的 stdout 尾部 —— 这一点是整个修复的要害：
-            // 启动前体检（[preflight]）读的是 `--dump-config` 的**静态输出**，
-            // 而它看不见插件在 `apply()` 期抛的异常。真机反例（2026-10-14，
-            // 某小米机型 / Android 16 / v18）：`dump-config` 退出码 0、
-            // 4 个 required 条目全在，体检因此**放行**，引擎照死 —— 连续 8 次。
-            //
-            // 所以判据必须换成「引擎自己说了 required plugin did not activate」，
-            // 而那行只在真实启动的输出里。
-            //
-            // ⚠️ 顺序：必须在 CrashRecorder 之前 —— 下面那步要写崩溃现场，
-            //   而现场文件里会读事件时间线；先把「为什么失败」的结构化事实落盘，
-            //   保证即使现场写入失败也留下了线索。
-            //   （记录本身已提到上面 `State.Failed` 之前，见那段说明。）
-            // ⚠️ 「引擎起不来」是本 App 最严重的一类故障（界面直接不可用），
-            //   所以要写**崩溃现场文件**而不只是日志行：现场文件里带着
-            //   最后 200 行日志与设备快照，用户点「导出日志」就能一次性带走。
-            CrashRecorder.recordAnomaly(
-                "engine-start-failed",
-                "引擎启动失败（$reason），已等 $waited ms",
-                'E',
-            )
-            EventLog.record("engine.failed", mapOf("reason" to reason))
+        val token = host.awaitToken(READY_TIMEOUT_MS)
+        if (token == null) {
+            val tail = host.recentLines(20)
+            runCatching { host.stop() }
+            prootHost = null
+            process = null
+            _state.value = State.Failed("引擎启动超时（" + READY_TIMEOUT_MS + "ms）。最后输出:\n" + tail.joinToString("\n"))
+            return
         }
+        Log.i(TAG, "proot 引擎就绪: " + token)
+        EventLog.record("engine.ready.proot", mapOf("url" to token))
+        _state.value = State.Ready(token)
+        resumePrivilegedChannel()
     }
 
-    /**
-     * 让 uid 2000 特权通道回到「尽力可达」状态：常驻监听 + 一次性自愈 + 周期守护。
-     *
-     * ## 为什么单独抽出来
-     *
-     * 这三件事原先只写在 [start] 的**新建进程那条路**上，而 [start] 开头有个
-     * 「引擎已在运行 → 直接 return」的早返回 —— 用户「清后台重开 App」时命中的
-     * 恰恰是那个早返回（引擎进程被前台服务 `START_STICKY` 保着），于是整块自愈
-     * 一次都不跑。这正是用户报的「关掉 WiFi 再清后台重开，权限就没了」里
-     * **后半段**的根因。
-     *
-     * 抽成方法之后两条路都调用它，语义是「无论引擎是刚起还是早就在跑，都把特权
-     * 通道重新拉一遍」。幂等：监听与守护都带「已在跑就返回」的判据，自愈本身也幂等
-     * （5555 正常时 runner 第一句探测就返回）。
-     *
-     * ⚠️ **自愈与守护都在后台线程**，本方法本身不阻塞。
-     * ⚠️ 依赖的路径参数从字段现取（`bootstrap` / `dshHome` / `filesDir`），
-     *   不依赖 [start] 的局部变量 —— 早返回那条路上那些局部变量根本不存在。
-     */
+    /** guest 里的沙箱 runner 路径与宿主不同：这里是唯一需要按宿主改写的 overlay。 */
+    private fun writeProotSandboxPatch(): File {
+        val f = File(dshHome, "sandbox-proot.patch.yml")
+        f.writeText(
+            """
+            - id: sandbox
+              config:
+                runnerCommand: ['/usr/local/bin/boo-sandbox-run']
+                runnerFailureSignatures: ['boo-sandbox-run: ']
+                probeTimeoutMs: 5000
+            """.trimIndent() + "\n",
+        )
+        return f
+    }
+
+    suspend fun start() = withContext(Dispatchers.IO) {
+        if (process?.isAlive == true) {
+            Log.i(TAG, "引擎已在运行")
+            resumePrivilegedChannel()
+            return@withContext
+        }
+
+        _state.value = State.Starting
+        logLines.clear()
+        EventLog.record("engine.start")
+        userStopped = false
+
+        homeDir.mkdirs()
+        dshHome.mkdirs()
+        workspaceDir.mkdirs()
+
+        // 0.5.0 单运行时：APK 必须内置 runtime/manifest.json。
+        // 没有它说明包不完整（或还是 0.4.x 的 bionic 包），直接失败并给出可执行的提示。
+        val manifest = runCatching { RootfsInstaller(context).readManifestFromAssets() }
+            .getOrElse { runCatching { RuntimeManifest.load(context) }.getOrNull() }
+        if (manifest == null) {
+            _state.value = State.Failed(
+                "APK 未内置 PRoot 运行时（assets/runtime/manifest.json 不存在）。\n" +
+                    "这是 0.5.0+ 的唯一运行方式；请安装完整包。"
+            )
+            return@withContext
+        }
+
+        startProot(manifest)
+    }
+
     private fun resumePrivilegedChannel() {
         val runner = File(context.filesDir, PRIVILEGED_RUNNER_FILE)
         // runner 不存在 = 连脚本都没解出来，后面两件事都无从谈起
         if (!runner.isFile) return
         val adbHome = File(context.filesDir, ADB_WIRELESS_DIR)
         val portFile = File(dshHome, WirelessDebugging.PORT_FILE)
-        val nodeBin = bootstrap.nodeBinary
+        val nodeBin = File(context.filesDir, "usr/bin/node")
 
         // 1) 常驻监听无线调试端口（端口会变，一变就永久失效）
         WirelessDebugging.startWatcher(context, portFile)
@@ -8076,6 +6949,13 @@ class EngineManager private constructor(private val context: Context) {
     }
 
     fun stop() {
+        // PRoot 宿主：node 在 guest 里，必须走 pidfile + SIGQUIT，不能只 destroy。
+        prootHost?.let { host ->
+            userStopped = true
+            runCatching { host.stop() }.onFailure { Log.w(TAG, "proot stop 失败: " + it.message) }
+            prootHost = null
+            process = null
+        }
         // Shizuku 桥随引擎一起收：它的接受线程是 daemon、名字随进程释放，
         // 但显式关掉能让下一次 start() 重新绑定同一个名字而不撞车。
         ShizukuChannel.stop()
@@ -8193,7 +7073,7 @@ class EngineManager private constructor(private val context: Context) {
         }
         val result = WirelessDebugging.pair(
             context = context,
-            nodeBin = bootstrap.nodeBinary,
+            nodeBin = File(context.filesDir, "usr/bin/node"),
             runner = runner,
             adbHome = adbHome,
             dshHome = dshHome,
@@ -8222,7 +7102,7 @@ class EngineManager private constructor(private val context: Context) {
             // 所以重复调用没有代价。
             val switched = WirelessDebugging.ensureTcpPort(
                 context = context,
-                nodeBin = bootstrap.nodeBinary,
+                nodeBin = File(context.filesDir, "usr/bin/node"),
                 runner = runner,
                 adbHome = adbHome,
                 dshHome = dshHome,
@@ -8260,7 +7140,8 @@ class EngineManager private constructor(private val context: Context) {
             )
         }
         return WirelessDebugging.switchToTcp(
-            nodeBin = bootstrap.nodeBinary,
+            context = context,
+            nodeBin = File(context.filesDir, "usr/bin/node"),
             runner = runner,
             adbHome = adbHome,
             dshHome = dshHome,
