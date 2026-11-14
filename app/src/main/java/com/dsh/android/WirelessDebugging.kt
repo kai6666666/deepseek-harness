@@ -125,6 +125,7 @@ object WirelessDebugging {
      * 顺序反了就是「有结论也拿不到」。
      */
     private fun runRunner(
+        context: Context,
         nodeBin: File,
         runner: File,
         args: List<String>,
@@ -132,16 +133,28 @@ object WirelessDebugging {
         dshHome: File,
         label: String,
     ): Pair<Int, String> {
-        val pb = ProcessBuilder(listOf(nodeBin.absolutePath, runner.absolutePath) + args)
-        pb.redirectErrorStream(true)
-        pb.environment().apply {
-            put("DSH_HOME", dshHome.absolutePath)
-            put("DSH_ADB_HOME", adbHome.absolutePath)
-            // runner 只用内置 adb 与 Node 内置模块，PATH 给个最小可用集即可
-            put("PATH", "/system/bin:/system/xbin")
-            put("HOME", dshHome.parentFile?.absolutePath ?: dshHome.absolutePath)
+        val proc = if (nodeBin.isFile) {
+            val pb = ProcessBuilder(listOf(nodeBin.absolutePath, runner.absolutePath) + args)
+            pb.redirectErrorStream(true)
+            pb.environment().apply {
+                put("DSH_HOME", dshHome.absolutePath)
+                put("DSH_ADB_HOME", adbHome.absolutePath)
+                put("PATH", "/system/bin:/system/xbin")
+                put("HOME", dshHome.parentFile?.absolutePath ?: dshHome.absolutePath)
+            }
+            pb.start()
+        } else {
+            com.dsh.android.runtime.ProotHost.startNodeCommand(
+                context = context,
+                commandArgs = listOf(runner.absolutePath) + args,
+                extraEnv = mapOf(
+                    "DSH_HOME" to dshHome.absolutePath,
+                    "DSH_ADB_HOME" to adbHome.absolutePath,
+                    "DSH_SHIZUKU_SOCKET" to ShizukuChannel.socketName(context),
+                ),
+                dshHome = dshHome,
+            )
         }
-        val proc = pb.start()
         val output = StringBuilder()
         val lock = Any()
 
@@ -539,7 +552,7 @@ object WirelessDebugging {
         //    没被调用，而实际连上去的不是 adbd。此后每条特权命令都静默回落成 app
         //    身份，设置页却显示一切正常。真正的判据只有 runner 那条
         //    「握手 + `id -u` == 2000」。
-        val first = switchToTcp(nodeBin, runner, adbHome, dshHome, knownPort = -1)
+        val first = switchToTcp(context, nodeBin, runner, adbHome, dshHome, knownPort = -1)
         if (first.ok) return first
 
         // ── 第二轮：runner 说不行，那才值得花时间发现无线调试端口 ──────────
@@ -579,7 +592,7 @@ object WirelessDebugging {
         }
         // 把**刚发现的新鲜端口**传下去。这一点是必需的：`adb tcpip` 要通过无线
         // 调试那条连接才能发出去，而配对/重启过程中 adbd 会换端口，传旧值必失败。
-        return switchToTcp(nodeBin, runner, adbHome, dshHome, knownPort = discovered)
+        return switchToTcp(context, nodeBin, runner, adbHome, dshHome, knownPort = discovered)
     }
 
     /**
@@ -638,8 +651,9 @@ object WirelessDebugging {
         code: String,
         knownPort: Int = -1,
     ): Result {
+        val rootfsNode = File(context.filesDir, "runtime/rootfs/usr/bin/node")
         if (!runner.isFile) return Result(false, "执行通道文件不存在：${runner.absolutePath}")
-        if (!nodeBin.isFile) return Result(false, "Node 可执行文件不存在：${nodeBin.absolutePath}")
+        if (!nodeBin.isFile && !rootfsNode.isFile) return Result(false, "Node 可执行文件不存在：${rootfsNode.absolutePath}")
 
         // 优先用通知带下来的端口；没有再自己发现。
         val port = if (knownPort > 0) {
@@ -664,6 +678,7 @@ object WirelessDebugging {
             //   常驻的 adb server 并继承 stdout ⇒ 管道永不 EOF ⇒ 卡死 89 秒、
             //   配对明明成功却拿不到结论。详见 runRunner 的注释。
             val (code, text) = runRunner(
+                context = context,
                 nodeBin = nodeBin,
                 runner = runner,
                 args = listOf("--pair", port.toString(), code),
@@ -732,14 +747,16 @@ object WirelessDebugging {
      *   切换却总失败」。
      */
     fun switchToTcp(
+        context: Context,
         nodeBin: File,
         runner: File,
         adbHome: File,
         dshHome: File,
         knownPort: Int = -1,
     ): Result {
+        val rootfsNode = File(context.filesDir, "runtime/rootfs/usr/bin/node")
         if (!runner.isFile) return Result(false, "执行通道文件不存在：${runner.absolutePath}")
-        if (!nodeBin.isFile) return Result(false, "Node 可执行文件不存在：${nodeBin.absolutePath}")
+        if (!nodeBin.isFile && !rootfsNode.isFile) return Result(false, "Node 可执行文件不存在：${rootfsNode.absolutePath}")
 
         val output = StringBuilder()
         val exit: Int = try {
@@ -750,6 +767,7 @@ object WirelessDebugging {
             val args = mutableListOf("--switch-tcp")
             if (knownPort > 0) args += knownPort.toString()
             val (code, text) = runRunner(
+                context = context,
                 nodeBin = nodeBin,
                 runner = runner,
                 args = args,

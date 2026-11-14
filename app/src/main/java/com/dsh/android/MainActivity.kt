@@ -3817,10 +3817,20 @@ class MainActivity : AppCompatActivity() {
             dshHome = engine.dshHomeDir,
             scope = lifecycleScope,
             shell = { cmd ->
-                com.dsh.android.engine.PrivilegedRunner(filesDir, engine.dshHomeDir).run(cmd)
+                com.dsh.android.engine.PrivilegedRunner(
+                    filesDir,
+                    engine.dshHomeDir,
+                    applicationInfo.nativeLibraryDir,
+                    ShizukuChannel.socketName(applicationContext),
+                ).run(cmd)
             },
             screenshot = {
-                com.dsh.android.engine.PrivilegedRunner(filesDir, engine.dshHomeDir).screenshot()
+                com.dsh.android.engine.PrivilegedRunner(
+                    filesDir,
+                    engine.dshHomeDir,
+                    applicationInfo.nativeLibraryDir,
+                    ShizukuChannel.socketName(applicationContext),
+                ).screenshot()
             },
         )
     }

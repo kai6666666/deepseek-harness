@@ -20,27 +20,85 @@ import java.util.concurrent.TimeUnit
 class PrivilegedRunner(
     private val filesDir: File,
     private val dshHome: File,
+    private val nativeLibDir: String? = null,
+    private val shizukuSocket: String? = null,
 ) {
 
     private val node: File get() = File(filesDir, "usr/bin/node")
+    private val rootfs: File get() = File(filesDir, "runtime/rootfs")
+    private val rootfsNode: File get() = File(rootfs, "usr/bin/node")
     private val runner: File get() = File(filesDir, "dsh-android-shell.mjs")
 
     private fun preflight() {
-        if (!node.isFile) throw EngineHostException("uid2000 通道不可用：缺 node（" + node.absolutePath + "）")
+        if (!node.isFile && !rootfsNode.isFile) {
+            throw EngineHostException("uid2000 通道不可用：缺 node（" + rootfsNode.absolutePath + "）")
+        }
         if (!runner.isFile) throw EngineHostException("uid2000 通道不可用：缺 runner（" + runner.absolutePath + "）")
     }
 
-    /** 执行一条命令；返回 {exit, output, privileged}。 */
-    suspend fun run(command: String, timeoutMs: Long = 60_000): Map<String, Any?> =
-        withContext(Dispatchers.IO) {
-            preflight()
-            val proc = ProcessBuilder(node.absolutePath, runner.absolutePath, command)
+    private fun startProcess(command: String): Process {
+        if (node.isFile) {
+            return ProcessBuilder(node.absolutePath, runner.absolutePath, command)
                 .redirectErrorStream(true)
                 .apply {
                     environment()["DSH_HOME"] = dshHome.absolutePath
                     environment()["DSH_PRIV_RUNNER"] = runner.absolutePath
                 }
                 .start()
+        }
+        val libDir = nativeLibDir ?: File(filesDir.parentFile, "lib/arm64").absolutePath
+        val proot = File(libDir, "libproot.so")
+        val loader = File(libDir, "libproot-loader.so")
+        val tmpDir = File(filesDir.parentFile, "cache/proot-tmp").apply { mkdirs() }
+        val l2sDir = File(rootfs, "root/.l2s").apply { mkdirs() }
+        val prootLibs = File(filesDir, "proot-libs")
+        val emptyDir = File(rootfs, "var/lib/dsh-app/empty").apply { mkdirs() }
+        val shmDir = File(rootfs, "var/lib/dsh-app/shm").apply { mkdirs() }
+        val argv = mutableListOf(
+            proot.absolutePath,
+            "--kill-on-exit", "--link2symlink", "--sysvipc", "-L", "-0",
+            "--rootfs=${rootfs.canonicalPath}", "--cwd=/root",
+            "-b", "/dev", "-b", "/proc", "-b", "/sys", "-b", "/system", "-b", "/apex",
+            "-b", "${emptyDir.canonicalPath}:/sys/fs/selinux",
+            "-b", "${shmDir.canonicalPath}:/dev/shm",
+            "-b", "${dshHome.canonicalPath}:${dshHome.canonicalPath}",
+            "-b", "${runner.canonicalPath}:${runner.canonicalPath}",
+        )
+        val adbwire = File(filesDir, "adbwire")
+        if (adbwire.exists()) {
+            argv += "-b"; argv += "${adbwire.canonicalPath}:${adbwire.canonicalPath}"
+        }
+        argv += listOf(
+            "/usr/bin/env", "-i",
+            "HOME=/root", "USER=root", "LOGNAME=root",
+            "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+            "LANG=C.UTF-8", "TMPDIR=/tmp",
+            "DSH_HOME=${dshHome.absolutePath}",
+            "DSH_PRIV_RUNNER=${runner.absolutePath}",
+        )
+        if (adbwire.isDirectory) argv += "DSH_ADB_HOME=${adbwire.absolutePath}"
+        if (!shizukuSocket.isNullOrEmpty()) argv += "DSH_SHIZUKU_SOCKET=$shizukuSocket"
+        argv += listOf("/usr/local/bin/node", runner.absolutePath, command)
+        return ProcessBuilder(argv).directory(filesDir)
+            .redirectErrorStream(true)
+            .apply {
+                environment().clear()
+                environment()["PATH"] = "/system/bin:/system/xbin"
+                environment()["HOME"] = filesDir.absolutePath
+                environment()["TMPDIR"] = tmpDir.absolutePath
+                environment()["PROOT_LOADER"] = loader.absolutePath
+                environment()["PROOT_TMP_DIR"] = tmpDir.absolutePath
+                environment()["PROOT_L2S_DIR"] = l2sDir.absolutePath
+                environment()["LD_LIBRARY_PATH"] = libDir + ":" + prootLibs.absolutePath
+            }
+            .start()
+    }
+
+    /** 执行一条命令；返回 {exit, output, privileged}。 */
+    suspend fun run(command: String, timeoutMs: Long = 60_000): Map<String, Any?> =
+        withContext(Dispatchers.IO) {
+            preflight()
+            val proc = startProcess(command)
 
             val output = proc.inputStream.bufferedReader().use { it.readText() }
             if (!proc.waitFor(timeoutMs, TimeUnit.MILLISECONDS)) {

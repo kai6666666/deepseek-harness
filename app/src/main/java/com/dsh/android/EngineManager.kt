@@ -6856,6 +6856,7 @@ class EngineManager private constructor(private val context: Context) {
         Log.i(TAG, "proot 引擎就绪: " + token)
         EventLog.record("engine.ready.proot", mapOf("url" to token))
         _state.value = State.Ready(token)
+        resumePrivilegedChannel()
     }
 
     /** guest 里的沙箱 runner 路径与宿主不同：这里是唯一需要按宿主改写的 overlay。 */
@@ -7139,6 +7140,7 @@ class EngineManager private constructor(private val context: Context) {
             )
         }
         return WirelessDebugging.switchToTcp(
+            context = context,
             nodeBin = File(context.filesDir, "usr/bin/node"),
             runner = runner,
             adbHome = adbHome,

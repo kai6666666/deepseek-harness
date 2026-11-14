@@ -318,6 +318,74 @@ class ProotHost(
     companion object {
         const val TAG = "ProotHost"
 
+        /**
+         * 在 PRoot 内同步起一个一次性 Node/命令子进程（给 WirelessDebugging / PrivilegedRunner 用）。
+         * 0.5.0 单运行时已删除 filesDir/usr/bin/node，所有宿主侧需要调用 runner.mjs 的地方都必须走 PRoot。
+         */
+        fun startNodeCommand(
+            context: Context,
+            commandArgs: List<String>,
+            extraEnv: Map<String, String> = emptyMap(),
+            dshHome: File = File(context.filesDir, "home/.dsh"),
+        ): Process {
+            val filesDir = context.filesDir
+            val rootfs = File(filesDir, "runtime/rootfs")
+            val nativeLibDir = context.applicationInfo.nativeLibraryDir
+            val proot = File(nativeLibDir, "libproot.so")
+            val loader = File(nativeLibDir, "libproot-loader.so")
+            val tmpDir = File(context.cacheDir, "proot-tmp").apply { mkdirs() }
+            val l2sDir = File(rootfs, "root/.l2s").apply { mkdirs() }
+            val prootLibs = File(filesDir, "proot-libs")
+            val emptyDir = File(rootfs, "var/lib/dsh-app/empty").apply { mkdirs() }
+            val shmDir = File(rootfs, "var/lib/dsh-app/shm").apply { mkdirs() }
+            val argv = mutableListOf(
+                proot.absolutePath,
+                "--kill-on-exit", "--link2symlink", "--sysvipc", "-L", "-0",
+                "--rootfs=${rootfs.canonicalPath}", "--cwd=/root",
+                "-b", "/dev", "-b", "/proc", "-b", "/sys", "-b", "/system", "-b", "/apex",
+                "-b", "${emptyDir.canonicalPath}:/sys/fs/selinux",
+                "-b", "${shmDir.canonicalPath}:/dev/shm",
+                "-b", "${dshHome.canonicalPath}:${dshHome.canonicalPath}",
+            )
+            listOf("dsh-android-shell.mjs", "dsh-android-root.mjs", "adbwire", "logs", "devenv").forEach { name ->
+                val f = File(filesDir, name)
+                if (f.exists()) {
+                    argv += "-b"
+                    argv += "${f.canonicalPath}:${f.canonicalPath}"
+                }
+            }
+            defaultPhoneStorage(context)?.let { st ->
+                val p = st.canonicalPath
+                argv += "-b"; argv += "$p:/sdcard"
+                argv += "-b"; argv += "$p:$p"
+            }
+            argv += listOf(
+                "/usr/bin/env", "-i",
+                "HOME=/root", "USER=root", "LOGNAME=root",
+                "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                "LANG=C.UTF-8", "TMPDIR=/tmp",
+                "DSH_HOME=${dshHome.absolutePath}",
+            )
+            val crt = File(rootfs, "etc/ssl/certs/ca-certificates.crt")
+            if (crt.isFile) argv += "SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt"
+            extraEnv.forEach { (k, v) -> argv += "$k=$v" }
+            argv += "/usr/local/bin/node"
+            argv.addAll(commandArgs)
+            val pb = ProcessBuilder(argv).directory(filesDir)
+            pb.redirectErrorStream(true)
+            pb.environment().apply {
+                clear()
+                put("PATH", "/system/bin:/system/xbin")
+                put("HOME", filesDir.absolutePath)
+                put("TMPDIR", tmpDir.absolutePath)
+                put("PROOT_LOADER", loader.absolutePath)
+                put("PROOT_TMP_DIR", tmpDir.absolutePath)
+                put("PROOT_L2S_DIR", l2sDir.absolutePath)
+                put("LD_LIBRARY_PATH", nativeLibDir + ":" + prootLibs.absolutePath)
+            }
+            return pb.start()
+        }
+
         /** 有读存储权限才绑 /sdcard；拒绝时静默跳过，不拖垮引擎启动。 */
         private fun defaultPhoneStorage(context: Context): File? {
             val dir = Environment.getExternalStorageDirectory() ?: return null
