@@ -144,24 +144,33 @@ window.__ModuleLoader__.load({
 }
 [data-mobile] [class*=sidebarCol] {
   position: fixed !important;
-  top: 0;
-  bottom: 0;
-  left: -340px;
+  top: 0 !important;
+  bottom: 0 !important;
+  left: -340px !important;
   width: 320px !important;
   max-width: 85vw !important;
-  z-index: 80;
-  transition: left .22s var(--ds-ease-in-out, ease);
-  box-shadow: 0 0 30px rgba(0, 0, 0, .18);
+  z-index: 80 !important;
+  transform: none !important;
+  transition: left .22s var(--ds-ease-in-out, ease) !important;
+  box-shadow: none !important;
   box-sizing: border-box !important;
   overflow: hidden !important;
   clip-path: inset(0) !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+  contain: layout style !important;
+}
+[data-mobile] [class*=sidebarCol].mp-drawer-open {
+  left: 0 !important;
+  box-shadow: 0 0 30px rgba(0, 0, 0, .18) !important;
+  visibility: visible !important;
+  pointer-events: auto !important;
 }
 [data-mobile] [class*=sidebarCol]:has([data-shortcut-modal="settings"], [data-shortcut-modal="shortcut-edit"], [class*="VOzbGW_panel"]) {
   overflow: visible !important;
   clip-path: none !important;
-}
-[data-mobile] [class*=sidebarCol].mp-drawer-open {
-  left: 0;
+  visibility: visible !important;
+  pointer-events: auto !important;
 }
 [data-mobile] [class*=sidebarCol] > * {
   width: 100% !important;
@@ -3112,8 +3121,9 @@ mpIntentUntil = open ? (Date.now() + 3600000) : 0;
 const frame = document.querySelector('[data-sidebar-drawer]');
 if (open && frame && frame.hasAttribute('data-sidebar-collapsed')) {
   const ob = document.querySelector('[data-sidebar-opener],[data-sidebar-toggle]');
-  if (ob) { mpProgToggle = true; try { ob.click(); } catch (e) {} setTimeout(() => { mpProgToggle = false; mpClearCenterInert(); }, 200); }
+  if (ob) { mpProgToggle = true; try { ob.click(); } catch (e) {} setTimeout(() => { mpProgToggle = false; mpClearCenterInert(); mpApplySidebarGeom(mpVisualOpen); }, 180); }
 }
+c.dataset.mpGeomReady = "1";
 c.classList.toggle("mp-drawer-open", !!open);
 mpApplySidebarGeom(!!open);
 setTimeout(mpClearCenterInert, 50);
@@ -3335,8 +3345,9 @@ mpSetMenuOpenClass(false);
 mpClearCenterInert();
 const colNow = mpSidebarCol();
 const visualOpen = !!colNow && colNow.classList.contains("mp-drawer-open");
-if (visualOpen !== mpVisualOpen) {
-if (colNow) colNow.classList.toggle("mp-drawer-open", mpVisualOpen);
+if (colNow && (visualOpen !== mpVisualOpen || !colNow.dataset.mpGeomReady)) {
+colNow.dataset.mpGeomReady = "1";
+colNow.classList.toggle("mp-drawer-open", mpVisualOpen);
 mpApplySidebarGeom(mpVisualOpen);
 }
 			}
@@ -11045,7 +11056,7 @@ if (!window.__mpHeaderMenuTimer) {
     + 'html[data-mobile] [class*="leadingSeat"]{display:none !important;}'
     + 'html[data-mobile] .mp-lead-btn:not([data-mp-v5]){display:none !important;}'
     + 'html[data-mobile] .mp-lead-v5{position:fixed !important;left:8px !important;top:calc(var(--dsh-android-system-top,0px) + 8px) !important;z-index:65 !important;width:36px !important;height:36px !important;border:none !important;border-radius:8px !important;background:transparent !important;color:inherit !important;display:inline-flex !important;align-items:center !important;justify-content:center !important;padding:0 !important;cursor:pointer !important;}'
-    + 'html[data-mobile] .mp-lead-v5 svg{width:15px !important;height:15px !important;transform:scaleX(-1) !important;}'
+    + 'html[data-mobile] .mp-lead-v5 svg{width:15px !important;height:15px !important;transform:none !important;}'
     + 'html[data-mobile] .mp-lead-v5.mp-lead-hidden{display:none !important;}'
     + 'html[data-mobile] [data-sidebar-right-open]{z-index:90 !important;}'
     + '[data-shortcut-modal="settings"] nav button[data-am-nav]::before{content:none !important;}';
@@ -11094,7 +11105,7 @@ if (!window.__mpHeaderMenuTimer) {
       btn.className = 'mp-lead-v5';
       btn.setAttribute('data-mp-v5', '1');
       btn.setAttribute('aria-label', '打开侧边栏');
-      btn.innerHTML = '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="1.75" y="2.25" width="12.5" height="11.5" rx="2.2" stroke="currentColor" stroke-width="1.2"/><path d="M10.25 2.25v11.5" stroke="currentColor" stroke-width="1.2"/></svg>';
+      btn.innerHTML = '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke-width="1.2" aria-hidden="true"><path d="M13.5 1.5H2.5C1.94772 1.5 1.5 1.94772 1.5 2.5V13.5C1.5 14.0523 1.94772 14.5 2.5 14.5H13.5C14.0523 14.5 14.5 14.0523 14.5 13.5V2.5C14.5 1.94772 14.0523 1.5 13.5 1.5Z" stroke="currentColor"/><path d="M5.5 1.5V14.5" stroke="currentColor"/></svg>';
       btn.addEventListener('click', function (e) {
         try { e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); } catch (err) {}
         var c = col();
@@ -11105,13 +11116,7 @@ if (!window.__mpHeaderMenuTimer) {
         if (t) t.click();
       }, true);
     }
-    if (!btn.dataset.mpCloned) {
-      var rsvg = rightIconSvg();
-      if (rsvg) {
-        rsvg.setAttribute('width', '15'); rsvg.setAttribute('height', '15');
-        btn.innerHTML = ''; btn.appendChild(rsvg); btn.dataset.mpCloned = '1';
-      }
-    }
+
     var c = col();
     var frame = document.querySelector('[class*=pI_x6G_frame]');
     var hide = (c && c.classList.contains('mp-drawer-open')) || (frame && frame.hasAttribute('data-rightbar-fullscreen')) || !!document.querySelector('[data-sidebar-right-open]') || hasOpenModal();
