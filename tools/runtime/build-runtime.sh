@@ -37,6 +37,9 @@ esac
 
 DSH_VERSION=${DSH_VERSION:-0.2.2-rc.1}
 NODE_VERSION=${NODE_VERSION:-24.22.1}
+PNPM_VERSION=${PNPM_VERSION:-10.28.2}
+CA_CERTS_VERSION=${CA_CERTS_VERSION:-20260816ubuntu0.24.04.2}
+CA_CERTS_SHA=${CA_CERTS_SHA:-f9fbacd417b515450b831032cc39d18059e9874e67525679a43c16071dabf9a0}
 UBUNTU_VERSION=${UBUNTU_VERSION:-24.04.5}
 PROOT_VERSION=${PROOT_VERSION:-5.1.107.102}
 TALLOC_VERSION=${TALLOC_VERSION:-2.5.0}
@@ -100,6 +103,8 @@ SHMEM_DEB=$DEB_DIR/libandroid-shmem_${SHMEM_VERSION}_${DEB_ARCH}.deb
 fetch "https://packages.termux.dev/apt/termux-main/pool/main/p/proot/proot_${PROOT_VERSION}_${DEB_ARCH}.deb" "$PROOT_DEB" "$PROOT_SHA"
 fetch "https://packages.termux.dev/apt/termux-main/pool/main/libt/libtalloc/libtalloc_${TALLOC_VERSION}_${DEB_ARCH}.deb" "$TALLOC_DEB" "$TALLOC_SHA"
 fetch "https://packages.termux.dev/apt/termux-main/pool/main/liba/libandroid-shmem/libandroid-shmem_${SHMEM_VERSION}_${DEB_ARCH}.deb" "$SHMEM_DEB" "$SHMEM_SHA"
+CA_DEB=$CACHE/ubuntu/ca-certificates_${CA_CERTS_VERSION}_all.deb
+fetch "http://ports.ubuntu.com/ubuntu-ports/pool/main/c/ca-certificates/ca-certificates_${CA_CERTS_VERSION}_all.deb" "$CA_DEB" "$CA_CERTS_SHA"
 
 # ---------- 2. jniLibs 四件套 ----------
 rm -rf "$WORK/deb" "$JNI"
@@ -145,6 +150,39 @@ mkdir -p "$ROOTFS"/root/.l2s "$ROOTFS"/var/lib/dsh-app/empty "$ROOTFS"/var/lib/d
          "$ROOTFS"/opt/dsh "$ROOTFS"/usr/local/bin "$ROOTFS"/usr/local/lib
 ln -sf /usr/bin/node "$ROOTFS/usr/local/bin/node"
 ln -sf /usr/bin/npm  "$ROOTFS/usr/local/bin/npm" 2>/dev/null || true
+
+# 网络基础与 CA 根证书（ubuntu-base 默认 /etc/resolv.conf 与 /etc/hosts 为空，且无 ca-certificates）
+printf 'nameserver 223.5.5.5
+nameserver 119.29.29.29
+nameserver 8.8.8.8
+' > "$ROOTFS/etc/resolv.conf"
+printf '127.0.0.1 localhost
+::1 localhost
+' > "$ROOTFS/etc/hosts"
+dpkg-deb -x "$CA_DEB" "$ROOTFS"
+mkdir -p "$ROOTFS/etc/ssl/certs"
+cat "$ROOTFS"/usr/share/ca-certificates/mozilla/*.crt > "$ROOTFS/etc/ssl/certs/ca-certificates.crt"
+chmod 644 "$ROOTFS/etc/ssl/certs/ca-certificates.crt"
+# 让 OpenSSL / curl / python / git 按 hash 目录也能认出证书
+if command -v openssl >/dev/null 2>&1; then
+  ( cd "$ROOTFS/etc/ssl/certs" && for f in "$ROOTFS"/usr/share/ca-certificates/mozilla/*.crt; do
+      b=$(basename "$f" .crt).pem
+      ln -sf "/usr/share/ca-certificates/mozilla/$(basename "$f")" "$b"
+    done && openssl rehash . >/dev/null 2>&1 || true )
+fi
+
+# 预装 pnpm 到 /usr/local（独立 prefix，不污染 /opt/dsh，离线可用）
+log "install pnpm@$PNPM_VERSION -> /usr/local"
+ok_pnpm=0
+for reg in "${DSH_RT_NPM_REGISTRY:-https://registry.npmmirror.com}" https://registry.npmjs.org; do
+  if npm_config_cache="$CACHE/npm" npm_config_registry="$reg" npm_config_prefix="$ROOTFS/usr/local"      npm install -g --no-audit --no-fund --ignore-scripts --loglevel=error "pnpm@$PNPM_VERSION"; then
+    ok_pnpm=1; break
+  fi
+done
+[ "$ok_pnpm" = "1" ] || npm_config_cache="$CACHE/npm" npm_config_prefix="$ROOTFS/usr/local"   npm install -g --offline --no-audit --no-fund --ignore-scripts --loglevel=error "pnpm@$PNPM_VERSION" || die "pnpm 安装失败"
+[ -f "$ROOTFS/usr/local/lib/node_modules/pnpm/bin/pnpm.cjs" ] || die "pnpm.cjs 未落盘"
+ln -sf "../lib/node_modules/pnpm/bin/pnpm.cjs" "$ROOTFS/usr/local/bin/pnpm"
+chmod 755 "$ROOTFS/usr/local/lib/node_modules/pnpm/bin/pnpm.cjs"
 cat > "$ROOTFS/usr/local/bin/dsh" <<'SH'
 #!/bin/sh
 exec /usr/local/bin/node /opt/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js "$@"
@@ -258,7 +296,7 @@ log "tar + xz（SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH）"
     -cf - . ) | xz -6e -T0 > "$ASSET_DIR/rootfs-$ABI.tar.xz"
 
 # ---------- 5. manifest ----------
-INPUTS=$( { cat "$0"; sha256sum "$PROOT_DEB" "$TALLOC_DEB" "$SHMEM_DEB" "$NODE_TAR" "$UBUNTU_TAR"; find "$REPO_ROOT/runtime/patches" -type f -print0 | sort -z | xargs -0 sha256sum; } | sha256sum | cut -c1-12 )
+INPUTS=$( { cat "$0"; sha256sum "$PROOT_DEB" "$TALLOC_DEB" "$SHMEM_DEB" "$CA_DEB" "$NODE_TAR" "$UBUNTU_TAR"; find "$REPO_ROOT/runtime/patches" -type f -print0 | sort -z | xargs -0 sha256sum; } | sha256sum | cut -c1-12 )
 RUNTIME_VERSION="r1-$ABI-dsh${DSH_VERSION}-node${NODE_VERSION}-ubuntu${UBUNTU_VERSION}-${INPUTS}"
 
 ROOTFS_SHA=$(sha256sum "$ASSET_DIR/rootfs-$ABI.tar.xz" | cut -d' ' -f1)

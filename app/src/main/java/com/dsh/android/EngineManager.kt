@@ -4436,6 +4436,22 @@ class EngineManager private constructor(private val context: Context) {
      *
      * @return adb 所在目录，失败给 `null`。
      */
+    /**
+     * 解出开发环境体检/安装脚本（`dsh-env.mjs` + `check-devenv.mjs` → `filesDir/`）。
+     * ProotHost 会把这两个文件绑定进 PRoot guest 原绝对路径。
+     */
+    private fun ensureDevEnvScripts() {
+        for (name in listOf("dsh-env.mjs", "check-devenv.mjs")) {
+            runCatching {
+                val dest = File(context.filesDir, name)
+                context.assets.open(name).use { input ->
+                    dest.outputStream().use { output -> input.copyTo(output) }
+                }
+                dest.setReadable(true, false)
+            }.onFailure { Log.w(TAG, "写入 $name 失败: ${it.message}") }
+        }
+    }
+
     private fun ensureAdbWireless(): File? {
         val dest = File(context.filesDir, ADB_WIRELESS_DIR)
         val adb = File(dest, "bin/adb")
@@ -6729,6 +6745,7 @@ class EngineManager private constructor(private val context: Context) {
         // 救援 profile 与配置写入：与 bionic 路径共用
         runCatching { ensureRescueProfile() }
         runCatching { ensureWebCompat() }
+        runCatching { ensureDevEnvScripts() }
         runCatching { ensureCredentialFileMode() }
         runCatching { ensurePickerRoots() }
         runCatching { ensureWebViewCompat() }

@@ -96,7 +96,17 @@ class ProotHost(
                     }
                     // S5：uid 2000 / root 通道的 runner 与内置 adb 工具链都在 filesDir 根，
                     // 不在 $DSH_HOME 下；不绑进去，guest 里的插件只能看到一个不存在的路径。
-                    listOf("dsh-android-shell.mjs", "dsh-android-root.mjs", "adbwire").forEach { name ->
+                    File(context.filesDir, "logs").mkdirs()
+                    File(context.filesDir, "devenv").mkdirs()
+                    listOf(
+                        "dsh-android-shell.mjs",
+                        "dsh-android-root.mjs",
+                        "adbwire",
+                        "dsh-env.mjs",
+                        "check-devenv.mjs",
+                        "logs",
+                        "devenv",
+                    ).forEach { name ->
                         val f = File(context.filesDir, name)
                         if (f.exists()) {
                             argv += "-b"
@@ -110,6 +120,11 @@ class ProotHost(
                     val env = buildMap {
                         put("DSH_HOME", "/root/.dsh")
                         put("TZ", TimeZone.getDefault().id)
+                        if (File(rootfs, "etc/ssl/certs/ca-certificates.crt").isFile) {
+                            put("SSL_CERT_FILE", "/etc/ssl/certs/ca-certificates.crt")
+                            put("CURL_CA_BUNDLE", "/etc/ssl/certs/ca-certificates.crt")
+                            put("REQUESTS_CA_BUNDLE", "/etc/ssl/certs/ca-certificates.crt")
+                        }
                         putAll(extraEnv)
                     }
                     env.forEach { (k, v) -> argv += k + "=" + v }
@@ -122,6 +137,7 @@ class ProotHost(
         // 那是「能跑但悄悄缺能力」，比启动失败更难查，所以直接拒绝。
         require(patchesPlaced) { "manifest 缺 {PATCHES} 占位符（运行时资产过旧）" }
 
+        ensureGuestNetworkConfig()
         val prootLibs = File(context.filesDir, "proot-libs")
         ensureProotLibs(prootLibs)
 
@@ -147,6 +163,32 @@ class ProotHost(
             start()
         }
         return p
+    }
+
+    /**
+     * 补齐 PRoot guest 网络与 TLS 基础配置（幂等）：
+     * 1) ubuntu-base 默认 /etc/resolv.conf 与 /etc/hosts 是空文件，PRoot 内没有
+     *    Android bionic netd resolver，导致 Node fetch/DNS 直接 EAI_AGAIN。
+     * 2) 仅在为空或缺失时写入公共 DNS（223.5.5.5 / 119.29.29.29 / 8.8.8.8）与
+     *    127.0.0.1 localhost，保留用户自定义修改。
+     */
+    private fun ensureGuestNetworkConfig() {
+        runCatching {
+            val etc = File(rootfs, "etc")
+            if (!etc.isDirectory) return
+            val resolv = File(etc, "resolv.conf")
+            if (!resolv.isFile || resolv.length() == 0L) {
+                resolv.writeText(
+                    "nameserver 223.5.5.5\n" +
+                        "nameserver 119.29.29.29\n" +
+                        "nameserver 8.8.8.8\n"
+                )
+            }
+            val hosts = File(etc, "hosts")
+            if (!hosts.isFile || hosts.length() == 0L) {
+                hosts.writeText("127.0.0.1 localhost\n::1 localhost\n")
+            }
+        }.onFailure { Log.w(TAG, "写入 guest 网络配置失败: " + it.message) }
     }
 
     /** 把 proot 的两个原始名依赖从 assets 解到 app 私有目录（每次启动覆盖，几十 KB）。 */

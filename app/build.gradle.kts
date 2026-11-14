@@ -327,6 +327,20 @@ android {
      */
 
     signingConfigs {
+        // 固定 debug 签名：用仓库里的 tools/dsh-debug.keystore。
+        // 不固定的话，CI 每个 runner 都会生成新的 ~/.android/debug.keystore，
+        // 每轮包都撞 INSTALL_FAILED_UPDATE_INCOMPATIBLE，只能卸载重装，
+        // 而卸载会清掉 filesDir 下的 PRoot rootfs 与 $DSH_HOME。
+        val repoDebugKs = rootProject.file("tools/dsh-debug.keystore")
+        if (repoDebugKs.exists()) {
+            getByName("debug") {
+                storeFile = repoDebugKs
+                storePassword = "android"
+                keyAlias = "androiddebugkey"
+                keyPassword = "android"
+            }
+        }
+
         // ⚠️ 这把钥匙是发行版的终身身份，与 debug 签名**互相独立**。
         // 一旦发出去就不能换：换签名 = 老用户撞 INSTALL_FAILED_UPDATE_INCOMPATIBLE，
         // 只能卸载重装，而卸载会清掉 filesDir 下的整个 Termux 环境与 $DSH_HOME。

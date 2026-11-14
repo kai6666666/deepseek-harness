@@ -1,75 +1,74 @@
-#!/data/data/com.dsh.android/files/termux/usr/bin/node
+#!/usr/local/bin/node
 // ─────────────────────────────────────────────────────────────────────────────
 // dsh-env.mjs (v2) —— DSH 开发环境：**分组 + 子项** 的体检 / 安装 / 卸载
 //
-// 形态对齐 Operit 的「环境配置」向导：六张卡片，每张卡片里若干子项各自可勾选。
-// 与 v1（六行）的差别不只是 UI：现在每个**子项**都有独立的安装器与回滚记录。
-//
-// 三类安装器（这是本文件的主干）：
-//   apt    —— `apt-get install <pkgs>`，安装前后取 dpkg 快照做差分，卸载只回滚差集
-//   pip    —— `python3 -m pip install <pkg>`，回滚用 `pip uninstall -y`
-//   custom —— 下载/脚本安装（Gradle zip、rustup），回滚靠记录的 dirs + links
-// 另有三类“零体积”项：
-//   builtin —— 内建运行时（node / pnpm），只探测不装卸
-//   check   —— 能力自检（venv、sshd），缺了就补（apt 里已有的包）
-//   link    —— 软链（python → python3），建/删都是一条 ln
-//
-// 状态文件：$FILES/env-state.json（v2）
-//   { version: 2, items: { "<itemId>": {pkgs,pipPkgs,dirs,links,installedAt,version,adopted} } }
-// v1（顶层 id → 记录）会在读取时自动迁移，并按 item 的 `pkgs` 反查补齐（adopt）。
+// 0.5.0 起运行在 PRoot Ubuntu 24.04 (glibc) 中，同时保留对旧 Termux 目录的兼容。
 // ─────────────────────────────────────────────────────────────────────────────
-
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 
 const FILES = process.env.DSH_FILES || '/data/user/0/com.dsh.android/files';
-const PREFIX = process.env.PREFIX || path.join(FILES, 'termux/usr');
-const HOME = process.env.HOME || path.join(FILES, 'termux/home');
-const STATE_FILE = path.join(FILES, 'env-state.json');
+const IS_PROOT = process.env.PREFIX === '/usr' || fs.existsSync('/etc/debian_version');
+const PREFIX = process.env.PREFIX || (IS_PROOT ? '/usr' : path.join(FILES, 'termux/usr'));
+const HOME = process.env.HOME || (IS_PROOT ? '/root' : path.join(FILES, 'termux/home'));
+const STATE_FILE = IS_PROOT ? path.join(FILES, 'devenv/env-state.json') : path.join(FILES, 'env-state.json');
 const BIN = path.join(PREFIX, 'bin');
 
-const ENV = {
-  ...process.env,
-  PREFIX,
-  HOME,
-  TMPDIR: path.join(PREFIX, 'tmp'),
-  PATH: `${BIN}:${process.env.PATH || '/system/bin:/system/xbin'}`,
-  LD_LIBRARY_PATH: `${path.join(PREFIX, 'lib')}${process.env.LD_LIBRARY_PATH ? ':' + process.env.LD_LIBRARY_PATH : ''}`,
-  // ⚠️ pip 24+ 用 vendored truststore 直接调 OpenSSL；Termux 的 CA 在
-  //   `$PREFIX/etc/tls/cert.pem`，不显式指过去就会在 `load_verify_locations`
-  //   抛异常（真机上就是这样：pip 直接 traceback，提示 exit 2）。
-  PIP_CERT: path.join(PREFIX, 'etc/tls/cert.pem'),
-  SSL_CERT_FILE: path.join(PREFIX, 'etc/tls/cert.pem'),
-  REQUESTS_CA_BUNDLE: path.join(PREFIX, 'etc/tls/cert.pem'),
-};
+function pickBin(...candidates) {
+  for (const c of candidates) {
+    try { if (fs.statSync(c).isFile() || fs.lstatSync(c).isSymbolicLink()) return c; } catch {}
+  }
+  return candidates[0];
+}
+
+const CA_CRT = '/etc/ssl/certs/ca-certificates.crt';
+const ENV = IS_PROOT
+  ? {
+      ...process.env,
+      PREFIX,
+      HOME,
+      TMPDIR: process.env.TMPDIR || '/tmp',
+      DEBIAN_FRONTEND: 'noninteractive',
+      PATH: `/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin`,
+      ...(fs.existsSync(CA_CRT) ? {
+        PIP_CERT: CA_CRT,
+        SSL_CERT_FILE: CA_CRT,
+        CURL_CA_BUNDLE: CA_CRT,
+        REQUESTS_CA_BUNDLE: CA_CRT,
+      } : {}),
+    }
+  : {
+      ...process.env,
+      PREFIX,
+      HOME,
+      TMPDIR: path.join(PREFIX, 'tmp'),
+      PATH: `${BIN}:${process.env.PATH || '/system/bin:/system/xbin'}`,
+      LD_LIBRARY_PATH: `${path.join(PREFIX, 'lib')}${process.env.LD_LIBRARY_PATH ? ':' + process.env.LD_LIBRARY_PATH : ''}`,
+      PIP_CERT: path.join(PREFIX, 'etc/tls/cert.pem'),
+      SSL_CERT_FILE: path.join(PREFIX, 'etc/tls/cert.pem'),
+      REQUESTS_CA_BUNDLE: path.join(PREFIX, 'etc/tls/cert.pem'),
+    };
 
 // ── 保护名单：任何卸载路径都不许碰 ────────────────────────────────────────────
 const PROTECTED = [
-  'bash', 'coreutils', 'dash', 'dpkg', 'apt', 'libapt',
-  'zlib', 'openssl', 'libcrypto', 'libssl', 'libandroid-support',
-  'libc++', 'libc++_shared', 'nodejs', 'nodejs-lts',
+  'bash', 'coreutils', 'dash', 'dpkg', 'apt', 'libapt', 'base-files', 'base-passwd',
+  'libc6', 'libc-bin', 'zlib', 'zlib1g', 'openssl', 'libcrypto', 'libssl', 'ca-certificates',
+  'libandroid-support', 'libc++', 'libc++_shared', 'nodejs', 'nodejs-lts',
+  'perl-base', 'tar', 'gzip', 'xz-utils', 'ubuntu-keyring',
 ];
 
-// ── 分组定义 ─────────────────────────────────────────────────────────────────
-// 每个 item：
-//   kind    apt | pip | custom | check | link | builtin
-//   pkgs    apt 的包名（也是 adopt 的依据）
-//   pipPkg  pip 包名
-//   probe   探测命令（argv 数组），第一行输出用来显示版本
-//   estMb   体积预估（安装前给用户看）
-//   required 该项是否不可卸载
 const GROUPS = [
   {
     id: 'nodejs', label: 'Node.js 环境', desc: 'JavaScript 运行时', required: true,
     items: [
       {
         id: 'node', label: 'Node.js', desc: '内建运行时（不可卸载）', kind: 'builtin',
-        probe: [path.join(BIN, 'node'), '-v'], required: true, estMb: 0,
+        probe: [pickBin('/usr/local/bin/node', '/usr/bin/node', path.join(BIN, 'node')), '-v'], required: true, estMb: 0,
       },
       {
         id: 'pnpm', label: 'PNPM', desc: '引擎自带的包管理器', kind: 'builtin',
-        probe: [path.join(BIN, 'pnpm'), '-v'], required: true, estMb: 0,
+        probe: [pickBin('/usr/local/bin/pnpm', '/usr/bin/pnpm', path.join(BIN, 'pnpm')), '-v'], required: true, estMb: 0,
       },
     ],
   },
@@ -77,26 +76,44 @@ const GROUPS = [
     id: 'python', label: 'Python 环境', desc: 'Python 开发环境',
     items: [
       {
-        id: 'python.core', label: 'Python', desc: '解释器（会连带 llvm/clang）', kind: 'apt',
-        pkgs: ['python'], probe: [path.join(BIN, 'python3'), '-V'], estMb: 690,
+        id: 'python.core', label: 'Python', desc: IS_PROOT ? 'Python 3 解释器' : '解释器（会连带 llvm/clang）', kind: 'apt',
+        pkgs: [IS_PROOT ? 'python3' : 'python'], probe: [path.join(BIN, 'python3'), '-V'], estMb: IS_PROOT ? 45 : 690,
       },
       {
         id: 'python.link', label: 'Python 链接', desc: '把 python 命令链接到 python3', kind: 'link',
         link: { name: 'python', target: 'python3' }, probe: [path.join(BIN, 'python'), '-V'], estMb: 0,
       },
-      {
-        id: 'python.venv', label: '虚拟环境', desc: 'venv + ensurepip', kind: 'check',
-        cmd: [path.join(BIN, 'python3'), '-c', 'import venv, ensurepip; print("ok")'],
-        requires: ['python.core'], estMb: 0,
-      },
-      {
-        id: 'python.pip', label: 'Pip', desc: 'Python 包管理器', kind: 'check',
-        cmd: [path.join(BIN, 'pip'), '--version'], requires: ['python.core'], estMb: 0,
-      },
-      {
-        id: 'python.uv', label: 'uv', desc: 'Rust 写的极速 Python 安装器（apt 包）', kind: 'apt',
-        pkgs: ['uv'], probe: [path.join(BIN, 'uv'), '--version'], requires: ['python.core'], estMb: 40,
-      },
+      IS_PROOT
+        ? {
+            id: 'python.venv', label: '虚拟环境', desc: 'python3-venv + ensurepip', kind: 'apt',
+            pkgs: ['python3-venv'], probe: [path.join(BIN, 'python3'), '-c', 'import venv, ensurepip; print("ok")'],
+            requires: ['python.core'], estMb: 12,
+          }
+        : {
+            id: 'python.venv', label: '虚拟环境', desc: 'venv + ensurepip', kind: 'check',
+            cmd: [path.join(BIN, 'python3'), '-c', 'import venv, ensurepip; print("ok")'],
+            requires: ['python.core'], estMb: 0,
+          },
+      IS_PROOT
+        ? {
+            id: 'python.pip', label: 'Pip', desc: 'Python 包管理器 (python3-pip)', kind: 'apt',
+            pkgs: ['python3-pip'], probe: [path.join(BIN, 'pip3'), '--version'],
+            requires: ['python.core'], estMb: 35,
+          }
+        : {
+            id: 'python.pip', label: 'Pip', desc: 'Python 包管理器', kind: 'check',
+            cmd: [path.join(BIN, 'pip'), '--version'], requires: ['python.core'], estMb: 0,
+          },
+      IS_PROOT
+        ? {
+            id: 'python.uv', label: 'uv', desc: '极速 Python 包管理器 (pip 安装)', kind: 'pip',
+            pipPkg: 'uv', probe: [pickBin('/usr/local/bin/uv', '/root/.local/bin/uv', path.join(BIN, 'uv')), '--version'],
+            requires: ['python.pip'], estMb: 30,
+          }
+        : {
+            id: 'python.uv', label: 'uv', desc: 'Rust 写的极速 Python 安装器（apt 包）', kind: 'apt',
+            pkgs: ['uv'], probe: [path.join(BIN, 'uv'), '--version'], requires: ['python.core'], estMb: 40,
+          },
     ],
   },
   {
@@ -104,16 +121,21 @@ const GROUPS = [
     items: [
       {
         id: 'ssh.client', label: 'SSH 客户端', desc: 'ssh / scp / sftp', kind: 'apt',
-        pkgs: ['openssh'], probe: [path.join(BIN, 'ssh'), '-V'], estMb: 12,
+        pkgs: [IS_PROOT ? 'openssh-client' : 'openssh'], probe: [path.join(BIN, 'ssh'), '-V'], estMb: 12,
       },
       {
         id: 'ssh.sshpass', label: 'sshpass', desc: '密码认证（免交互）', kind: 'apt',
         pkgs: ['sshpass'], probe: [path.join(BIN, 'sshpass'), '-V'], estMb: 1,
       },
-      {
-        id: 'ssh.sshd', label: 'OpenSSH 服务器', desc: 'sshd，供反向隧道', kind: 'check',
-        cmd: [path.join(BIN, 'sshd'), '-V'], requires: ['ssh.client'], estMb: 0,
-      },
+      IS_PROOT
+        ? {
+            id: 'ssh.sshd', label: 'OpenSSH 服务器', desc: 'openssh-server (sshd)', kind: 'apt',
+            pkgs: ['openssh-server'], probe: ['/usr/sbin/sshd', '-V'], requires: ['ssh.client'], estMb: 5,
+          }
+        : {
+            id: 'ssh.sshd', label: 'OpenSSH 服务器', desc: 'sshd，供反向隧道', kind: 'check',
+            cmd: [path.join(BIN, 'sshd'), '-V'], requires: ['ssh.client'], estMb: 0,
+          },
     ],
   },
   {
@@ -121,12 +143,12 @@ const GROUPS = [
     items: [
       {
         id: 'java.jdk', label: 'OpenJDK 17', desc: 'Java 17 开发环境', kind: 'apt',
-        pkgs: ['openjdk-17'], probe: [path.join(BIN, 'java'), '-version'], estMb: 400,
+        pkgs: [IS_PROOT ? 'openjdk-17-jdk' : 'openjdk-17'], probe: [path.join(BIN, 'java'), '-version'], estMb: 400,
       },
       {
         id: 'java.gradle', label: 'Gradle', desc: '构建自动化工具（apt 包）', kind: 'apt',
         pkgs: ['gradle'], probe: [path.join(BIN, 'gradle'), '-v'], requires: ['java.jdk'], estMb: 260,
-        cleanupDirs: [path.join(PREFIX, 'opt/gradle')],
+        cleanupDirs: IS_PROOT ? [] : [path.join(PREFIX, 'opt/gradle')],
       },
     ],
   },
@@ -135,10 +157,10 @@ const GROUPS = [
     items: [
       {
         id: 'rust.apt', label: 'Rust & Cargo', desc: 'apt 版工具链', kind: 'apt',
-        pkgs: ['rust'], probe: [path.join(BIN, 'rustc'), '--version'], estMb: 1100,
+        pkgs: IS_PROOT ? ['rustc', 'cargo'] : ['rust'], probe: [path.join(BIN, 'rustc'), '--version'], estMb: 900,
       },
       {
-        id: 'rust.rustup', label: 'rustup 工具链', desc: 'Termux 不支持（rustls 平台校验在 Android 上 panic）', kind: 'custom',
+        id: 'rust.rustup', label: 'rustup 工具链', desc: '保留给手动安装（推荐上方 apt 版 Rust & Cargo）', kind: 'custom',
         custom: 'rustup', unsupported: true,
         probe: [path.join(HOME, '.cargo/bin/rustup'), '-V'], estMb: 1000,
       },
@@ -154,7 +176,6 @@ const GROUPS = [
     ],
   },
 ];
-
 const ITEM = new Map();
 for (const g of GROUPS) for (const it of g.items) ITEM.set(it.id, { ...it, group: g.id });
 
@@ -237,7 +258,7 @@ function probeOf(item) {
   // apt / pip / custom 都靠可执行文件探测
   if (!fileExists(item.probe[0])) return { ok: false, version: null };
   const r = runSync(item.probe[0], item.probe.slice(1), 20000);
-  if (r.code !== 0) return { ok: false, version: null };
+  if (r.code !== 0 && !(item.id === 'ssh.sshd' && /OpenSSH/i.test(r.out))) return { ok: false, version: null };
   // 传**整段输出**：gradle 的第一行是分隔线，版本号在第 3 行。
   return { ok: true, version: normalizeVersion(item, r.out) };
 }
@@ -340,11 +361,12 @@ async function installApt(item, state, say) {
   const before = dpkgSnapshot();
   await ensureAptIndex(say);
   say(`apt-get install -y ${item.pkgs.join(' ')}`);
-  const r = await runStream('apt-get', ['install', '-y', ...item.pkgs], say);
+  const aptFlags = IS_PROOT ? ['install', '-y', '--no-install-recommends'] : ['install', '-y'];
+  const r = await runStream('apt-get', [...aptFlags, ...item.pkgs], say);
   if (r.code !== 0) throw new Error(`apt 安装失败（exit ${r.code}）`);
   const after = dpkgSnapshot();
   const added = [...after.keys()].filter((p) => !before.has(p));
-  fixPrefixShims(say);
+  if (!IS_PROOT) fixPrefixShims(say);
   let pr = probeOf(item);
   // ⚠️ Termux 的 gradle wrapper 找 `$PREFIX/lib/gradle-gradle-cli-main-<ver>.jar`，
   //   而包里实际把它放在 `$PREFIX/opt/gradle/lib/gradle-cli-main-<ver>.jar`
@@ -360,7 +382,8 @@ async function installPip(item, state, say) {
   const py = path.join(BIN, 'python3');
   if (!fileExists(py)) throw new Error('需要先安装 Python');
   say(`pip install ${item.pipPkg}`);
-  const r = await runStream(py, ['-m', 'pip', 'install', '--no-input', item.pipPkg], say);
+  const pipArgs = IS_PROOT ? ['-m', 'pip', 'install', '--break-system-packages', '--no-input', item.pipPkg] : ['-m', 'pip', 'install', '--no-input', item.pipPkg];
+  const r = await runStream(py, pipArgs, say);
   if (r.code !== 0) throw new Error(`pip 安装失败（exit ${r.code}）`);
   const pr = probeOf(item);
   if (!pr.ok) throw new Error('pip 装完了但找不到可执行文件（可能需要 PATH 刷新）');
@@ -480,7 +503,7 @@ async function removeItem(item, state, say) {
   }
   if (kind === 'pip') {
     const py = path.join(BIN, 'python3');
-    if (fileExists(py)) await runStream(py, ['-m', 'pip', 'uninstall', '-y', item.pipPkg], say, 300000);
+    if (fileExists(py)) await runStream(py, IS_PROOT ? ['-m', 'pip', 'uninstall', '--break-system-packages', '-y', item.pipPkg] : ['-m', 'pip', 'uninstall', '-y', item.pipPkg], say, 300000);
     return;
   }
   if (kind === 'custom') {
@@ -588,7 +611,8 @@ function statusData() {
     };
   });
 
-  const df = runSync('df', ['-k', FILES], 20000);
+  const DF_PATH = IS_PROOT ? '/' : FILES;
+  const df = runSync('df', ['-k', DF_PATH], 20000);
   const last = (df.out || '').trim().split('\n').pop() || '';
   const parts = last.split(/\s+/);
   const freeMb = parts.length >= 4 ? Math.round(Number(parts[3]) / 1024) : null;
@@ -598,7 +622,7 @@ function statusData() {
     prefix: PREFIX,
     stateFile: STATE_FILE,
     builtin,
-    totalMb: dirSizeMb(FILES),
+    totalMb: dirSizeMb(IS_PROOT ? '/usr' : FILES),
     freeMb,
     protectedList: PROTECTED,
     groups,

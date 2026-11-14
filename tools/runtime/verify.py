@@ -25,6 +25,9 @@ import tarfile
 EM_BY_ABI = {"arm64-v8a": 183, "x86_64": 62}
 REQUIRED = [
     "usr/bin/node",
+    "usr/local/bin/pnpm",
+    "etc/ssl/certs/ca-certificates.crt",
+    "etc/resolv.conf",
     "usr/local/bin/dsh",
     "usr/local/bin/boo-sandbox-run",
     "usr/local/lib/libboosandbox.so",
