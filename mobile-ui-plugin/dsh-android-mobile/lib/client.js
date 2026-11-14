@@ -158,6 +158,15 @@ window.__ModuleLoader__.load({
   /* 88c：不用 contain:paint（部分 WebView 会合成器卡住）；clip-path 同样能裁 fixed 子节点。 */
   clip-path: inset(0) !important;
 }
+[data-mobile] [data-pane=sidebar]:has([role="dialog"][aria-modal="true"]) {
+  overflow: visible !important;
+  clip-path: none !important;
+}
+[data-mobile] [role="dialog"][aria-modal="true"],
+[data-mobile] [class*="overlay"]:has([role="dialog"][aria-modal="true"]) {
+  pointer-events: auto !important;
+  z-index: 1200 !important;
+}
 [data-mobile] [data-pane=sidebar].mp-drawer-open {
   left: 0;
 }
@@ -1669,9 +1678,12 @@ window.__ModuleLoader__.load({
 		}
 
 		// ── 6. 侧栏点「新会话」或「会话条」后自动收回抽屉 ──
-		function closeDrawerAfterClick() {
-			setTimeout(() => { mpCloseDrawer(); }, 150);
-		}
+function closeDrawerAfterClick() {
+setTimeout(() => {
+if (window.__mpSetDrawerVisual) window.__mpSetDrawerVisual(false);
+else mpCloseDrawer();
+}, 150);
+}
 		function onNewSessionClick(e) {
 			if (!mpIsMobile()) return; // 修复 40：收抽屉仅移动端有意义
 			// 覆盖两种新建会话按钮（中英文界面）：
@@ -3044,15 +3056,36 @@ return col ? col.querySelector('[class*="toggle"]') : null;
 				// 修复 88c：不用 visibility:hidden / contain:paint（会导致 WebView 合成卡住、
 				//   点击无响应）。改为：关闭时 pointer-events:none + clip-path，把子树裁在盒子里。
 				st.setProperty("pointer-events", open ? "auto" : "none", "important");
-				st.setProperty("clip-path", "inset(0)", "important");
-				st.setProperty("overflow", "hidden", "important");
+const hasModal = !!col.querySelector('[role="dialog"][aria-modal="true"]');
+st.setProperty("clip-path", hasModal ? "none" : "inset(0)", "important");
+st.setProperty("overflow", hasModal ? "visible" : "hidden", "important");
 				col.querySelectorAll(":scope > *, [class*='hHd-Xa_root']").forEach((el) => {
 					el.style.setProperty("width", "100%", "important");
 					el.style.setProperty("min-width", "0", "important");
 					el.style.setProperty("box-sizing", "border-box", "important");
 				});
 			}
-			// 修复 87：导航收起时同步把官方状态翻成 collapsed。
+			let mpVisualOpen = false;
+window.__mpSetDrawerVisual = function(open){
+const c = mpSidebarCol(); if (!c) return false;
+mpClosing = false;
+mpVisualOpen = !!open;
+mpWantedOpen = !!open;
+mpIntentUntil = open ? (Date.now() + 3600000) : 0;
+const frame = document.querySelector('[data-sidebar-drawer]');
+if (open) {
+if (frame && frame.hasAttribute('data-sidebar-collapsed')) {
+const ob = document.querySelector('[data-sidebar-opener],[data-sidebar-toggle]');
+if (ob) { mpProgToggle = true; try { ob.click(); } catch (e) {} setTimeout(() => { mpProgToggle = false; }, 200); }
+}
+} else {
+// 关闭也把官方收起？不，只视觉移出即可；但先把 width/left 立即到位
+}
+c.classList.toggle("mp-drawer-open", !!open);
+mpApplySidebarGeom(!!open);
+return true;
+};
+// 修复 87：导航收起时同步把官方状态翻成 collapsed。
 			//   只摘我们自己的类，官方 frame 仍是 data-sidebar-drawer:not(collapsed)
 			//   → 遮罩继续可见、1 秒后重渲染又把面板"弹回"。
 			function mpCollapseOfficialDrawer() {
@@ -3201,9 +3234,9 @@ return false;
 			}
 			/** 侧栏菜单项点完收抽屉（延后 120ms 让目标页先切）。 */
 			function onMenuItemClick(e) {
-				if (!mpIsMobile()) return;
-				const item = e.target && e.target.closest ? e.target.closest('[role="menuitem"]') : null;
-				if (!item) return;
+if (!mpIsMobile()) return;
+const item = e.target && e.target.closest ? e.target.closest('[role="menuitem"]') : null;
+if (!item) return;
 				if (mpMenuSource === "right") { mpAfterRightMenuItem(); return; }
 				if (mpMenuSource !== "sidebar") return;
 				mpMenuConsumed = true;
@@ -3264,11 +3297,12 @@ mpSetMenuOpenClass(false);
 				mpModalClose = false;
 				// 修复 78f：恢复“跟随官方状态”，但由 mpSetDrawerOpen 内部做 350ms 节流，
 				//   把 React 重渲染造成的瞬时 expanded/collapsed 抖动挡在外面。
-				const wantOpen = mpOfficialDrawerOpen();
-				const colNow = mpSidebarCol();
-				const visualOpen = !!colNow && colNow.classList.contains("mp-drawer-open");
-				if (wantOpen && mpWantedOpen) { mpWantedOpen = false; mpSetDrawerOpen(true); }
-				else if (!wantOpen && visualOpen) mpSetDrawerOpen(false);
+const colNow = mpSidebarCol();
+const visualOpen = !!colNow && colNow.classList.contains("mp-drawer-open");
+if (visualOpen !== mpVisualOpen) {
+if (colNow) colNow.classList.toggle("mp-drawer-open", mpVisualOpen);
+mpApplySidebarGeom(mpVisualOpen);
+}
 			}
 			function mpToggleDrawer() {
 				if (!mpIsMobile()) return; // 修复 40：仅移动端；桌面端完全走官方
@@ -4089,7 +4123,7 @@ mpWantedOpen = true;
 				//    设置弹窗打开期间抽屉会被"视觉收起"（官方仍是 expanded），
 				//    那种状态下按返回键不该去动抽屉。
 				const col = mpSidebarCol();
-				if (col && col.classList.contains("mp-drawer-open")) { mpCloseDrawer(); return true; }
+				if (col && col.classList.contains("mp-drawer-open")) { window.__mpSetDrawerVisual(false); return true; }
 
 				// ⑥ 官方右侧栏（右上角那个按钮开出来的「工作区文件 / 新建终端」栏）。
 				//    判据用服务自己的 `isExpanded()`，不猜 DOM —— 右栏收起时面板只是被
@@ -4131,6 +4165,7 @@ mpWantedOpen = true;
 			document.addEventListener("click", (e) => {
 				if (mpProgToggle) return;
 				const t = e.target;
+				if (t && t.closest && t.closest(".mp-lead-btn")) return;
 				if (!mpIsMobile()) return;
 				// 修复 86：插件页的开关/分段控件类名里也带 toggle，以前点一下就改抽屉状态。
 				if (t && t.closest && t.closest("[data-pane=conversation]")) return;
@@ -4173,6 +4208,7 @@ mpWantedOpen = true;
 				// 修复 88b：把“想开”标志一起清掉，否则 sync 看到官方 expanded 又把我
 				// 们的类加回去 → 面板弹回。
 				mpWantedOpen = false;
+				mpVisualOpen = false;
 				// 修复 88：只做一次官方收起，不再 420/900 两次补点（那是连闪的根源）。
 				setTimeout(() => {
 					const c = mpSidebarCol();
@@ -10965,175 +11001,44 @@ if (!window.__mpHeaderMenuTimer) {
 (function () {
   if (window.__mpDrawerFix170) return;
   window.__mpDrawerFix170 = true;
-
   var STYLE_ID = 'mp-drawer-fix-170';
   var CSS = ''
-    + 'html[data-mobile] body > [class*="overlay"]:has(> [role="dialog"][aria-modal="true"]){'
-    + 'z-index:1200 !important;'
-    + '}\n'
-    + 'html[data-mobile] body > [class*="overlay"]:has([role="dialog"][aria-modal="true"]){'
-    + 'pointer-events:auto !important;'
-    + '}\n'
-    + 'html[data-mobile] header[data-window-drag],html[data-mobile] header[class*="header"]{'
-    + 'padding-left:20px !important;'
-    + '}\n'
-    + 'html[data-mobile] [data-conversation-header-leading] button svg,'
-    + 'html[data-mobile] button[aria-label*="右侧边栏"] svg{'
-    + 'width:15px !important;height:15px !important;'
-    + '}\n'
-    + '[data-shortcut-modal="settings"] nav button[data-am-nav]::before{'
-    + 'content:none !important;'
-    + '}\n';
-
+    + 'html[data-mobile] body > [class*="overlay"]:has(> [role="dialog"][aria-modal="true"]){z-index:1200 !important;}'
+    + 'html[data-mobile] body > [class*="overlay"]:has([role="dialog"][aria-modal="true"]){pointer-events:auto !important;}'
+    + 'html[data-mobile] header[data-window-drag],html[data-mobile] header[class*="header"]{padding-left:52px !important;}'
+    + 'html[data-mobile] [class*="leadingSeat"]{display:none !important;}'
+    + 'html[data-mobile] .mp-lead-btn{position:fixed !important;left:8px !important;top:calc(var(--dsh-android-system-top,0px) + 8px) !important;z-index:2147483000 !important;width:36px !important;height:36px !important;border:none !important;border-radius:8px !important;background:transparent !important;color:inherit !important;display:inline-flex !important;align-items:center !important;justify-content:center !important;padding:0 !important;cursor:pointer !important;}'
+    + '[data-shortcut-modal="settings"] nav button[data-am-nav]::before{content:none !important;}';
   function injectCss() {
     if (document.getElementById(STYLE_ID)) return;
-    var s = document.createElement('style');
-    s.id = STYLE_ID;
-    s.textContent = CSS;
-    (document.head || document.documentElement).appendChild(s);
+    var st = document.createElement('style'); st.id = STYLE_ID; st.textContent = CSS;
+    (document.head || document.documentElement).appendChild(st);
   }
-
-  function sidebarCol() { return document.querySelector('[class*="sidebarCol"]'); }
-  function frameDrawer() { return document.querySelector('[data-sidebar-drawer]'); }
-  function drawerOpen() {
-    var f = frameDrawer();
-    return !!f && !f.hasAttribute('data-sidebar-collapsed');
-  }
-  function drawerToggle() {
-    return document.querySelector('[data-sidebar-toggle]')
-      || document.querySelector('[data-sidebar-opener]');
-  }
-  function closeDrawer() {
-    var f = frameDrawer();
-    if (!f || f.hasAttribute('data-sidebar-collapsed')) return false;
-    var t = drawerToggle();
-    if (!t) return false;
-    t.click();
-    return true;
-  }
-  function isPortalModal(node) {
-    if (!node || node.nodeType !== 1) return false;
-    if (!node.querySelector) return false;
-    if (node.closest && node.closest('[class*="sidebarCol"]')) return false;
-    var col = sidebarCol();
-    if (col && node.contains(col)) return false;
-    var d = node.querySelector('[role="dialog"][aria-modal="true"]');
-    if (!d) return false;
-    var r = d.getBoundingClientRect();
-    return r.width > 1 && r.height > 1;
-  }
-  function sweepMask() {
-    if (!frameDrawer()) return;
-    var masks = document.querySelectorAll('body > .mp-drawer-mask');
-    for (var i = 0; i < masks.length; i++) {
-      try { masks[i].parentNode.removeChild(masks[i]); } catch (e) { /* 静默 */ }
-    }
-  }
-  function handleAdded(node) {
-    if (!isPortalModal(node)) return;
-    sweepMask();
-    if (drawerOpen()) closeDrawer();
-  }
-
-  /* ── D. 左按钮：仅会话视图接管，面板页把座位还回去 ───────────────── */
-  function headerLeading() { return document.querySelector('[data-conversation-header-leading]'); }
-  function leadingSeat() { return document.querySelector('[class*="leadingSeat"]'); }
-  function rightButton() {
-    var bs = document.querySelectorAll('button');
-    for (var i = 0; i < bs.length; i++) {
-      if ((bs[i].getAttribute('aria-label') || '').indexOf('右侧边栏') >= 0) return bs[i];
-    }
-    return null;
-  }
-  var mpLeadBtn = null;
-
-  function onLeadClick(e) {
-    try { e.preventDefault(); e.stopPropagation(); } catch (err) { /* 静默 */ }
-    var t = drawerToggle();
-    if (t) t.click();
-  }
-
-  function removeLeadButton() {
-    if (mpLeadBtn && mpLeadBtn.parentNode) {
-      try { mpLeadBtn.parentNode.removeChild(mpLeadBtn); } catch (e) { /* 静默 */ }
-    }
-  }
-
-  function mountLeadButton(hold, right, seat) {
-    var icon = seat ? seat.querySelector('button svg') : null;
-    if (!mpLeadBtn) {
-      mpLeadBtn = document.createElement('button');
-      mpLeadBtn.type = 'button';
-      mpLeadBtn.setAttribute('aria-label', '打开侧边栏');
-      mpLeadBtn.addEventListener('click', onLeadClick, false);
-    }
-    var cls = right.className + ' mp-lead-btn';
-    if (mpLeadBtn.className !== cls) mpLeadBtn.className = cls;
-
-    var wantIcon = icon || mpLeadBtn.querySelector('svg');
-    if (wantIcon && (!mpLeadBtn.firstChild || mpLeadBtn.getAttribute('data-mp-icon') !== 'left')) {
-      var clone = wantIcon.cloneNode(true);
-      clone.setAttribute('width', '15');
-      clone.setAttribute('height', '15');
-      try { clone.style.width = '15px'; clone.style.height = '15px'; } catch (e) { /* 静默 */ }
-      mpLeadBtn.innerHTML = '';
-      mpLeadBtn.appendChild(clone);
-      mpLeadBtn.setAttribute('data-mp-icon', 'left');
-    }
-    if (mpLeadBtn.parentElement !== hold) hold.insertBefore(mpLeadBtn, hold.firstChild);
-  }
-
-  function syncLeadScope() {
-    if (!document.documentElement.hasAttribute('data-mobile')) return;
-    var seat = leadingSeat();
-    if (!seat) return;
-    var hold = headerLeading();
-    if (!hold) {
-      /* 面板页：座位必须回来，否则插件用 40px 浮动汉堡（点击穿透到「新建会话」、标题下移 54px） */
-      if (seat.style.display === 'none') seat.style.display = '';
-      removeLeadButton();
+  var btn = null;
+  function col() { return document.querySelector('[data-dsh-frame] > [data-pane=sidebar]') || document.querySelector('[class*="sidebarCol"]'); }
+  function ensureBtn() {
+    if (!document.documentElement.hasAttribute('data-mobile')) {
+      if (btn && btn.parentNode) btn.parentNode.removeChild(btn);
       return;
     }
-    var right = rightButton();
-    if (!right) return;               /* 右按钮还没渲染：先不动，等下一拍 */
-    if (seat.style.display !== 'none') seat.style.display = 'none';
-    mountLeadButton(hold, right, seat);
+    if (!btn) {
+      btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'mp-lead-btn';
+      btn.setAttribute('aria-label', '打开侧边栏');
+      btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="2" y="2.5" width="12" height="11" rx="2" stroke="currentColor" stroke-width="1.4"/><path d="M6 2.5v11" stroke="currentColor" stroke-width="1.4"/></svg>';
+      btn.addEventListener('click', function (e) {
+        try { e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); } catch (err) {}
+        var c = col();
+        if (!c) return;
+        var next = !c.classList.contains('mp-drawer-open');
+        if (window.__mpSetDrawerVisual) { window.__mpSetDrawerVisual(next); return; }
+        var t = document.querySelector('[data-sidebar-toggle],[data-sidebar-opener]');
+        if (t) t.click();
+      }, true);
+    }
+    if (btn.parentElement !== document.body) document.body.appendChild(btn);
   }
-
-  var leadRaf = 0;
-  function scheduleLead() {
-    if (leadRaf) return;
-    leadRaf = requestAnimationFrame(function () {
-      leadRaf = 0;
-      try { syncLeadScope(); } catch (e) { /* 静默 */ }
-    });
-  }
-
-  function boot() {
-    injectCss();
-    sweepMask();
-    scheduleLead();
-    var obs = new MutationObserver(function (muts) {
-      for (var i = 0; i < muts.length; i++) {
-        var added = muts[i].addedNodes;
-        for (var j = 0; j < added.length; j++) handleAdded(added[j]);
-      }
-      scheduleLead();
-    });
-    obs.observe(document.body, { childList: true, subtree: true });
-    window.addEventListener('resize', scheduleLead);
-    window.addEventListener('orientationchange', scheduleLead);
-    setInterval(function () {
-      sweepMask();
-      scheduleLead();
-      if (!drawerOpen()) return;
-      var kids = document.body.children;
-      for (var i = 0; i < kids.length; i++) {
-        if (isPortalModal(kids[i])) { closeDrawer(); return; }
-      }
-    }, 1200);
-  }
-
-  if (document.body) boot();
-  else document.addEventListener('DOMContentLoaded', boot, { once: true });
+  function boot() { injectCss(); ensureBtn(); setInterval(ensureBtn, 400); new MutationObserver(ensureBtn).observe(document.body, { childList: true, subtree: true }); }
+  if (document.body) boot(); else document.addEventListener('DOMContentLoaded', boot, { once: true });
 })();
