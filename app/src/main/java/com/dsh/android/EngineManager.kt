@@ -240,8 +240,14 @@ class EngineManager private constructor(private val context: Context) {
     var shellToolMounted = false
         private set
 
-    /** 引擎解包目录：filesDir/engine */
+    /** 引擎解包目录：filesDir/engine（0.4.x bionic 线；0.5.0 单运行时已不用） */
     private val engineDir get() = File(context.filesDir, "engine")
+    /** 0.5.0 单运行时 rootfs；前端在 /opt/dsh/node_modules 下，不在 filesDir/engine。 */
+    private val rootfsDir get() = File(context.filesDir, "runtime/rootfs")
+    private val rootfsFrontendDist get() =
+        File(rootfsDir, "opt/dsh/node_modules/@deepseek-ai/dsh-web-frontend/dist")
+    private val rootfsEngineModules get() =
+        File(rootfsDir, "opt/dsh/node_modules/@deepseek-ai")
 
     /** 引擎运行所需的可写 HOME（DSH 在此存放配置、凭据、会话）。 */
     private val homeDir get() = File(context.filesDir, "home")
@@ -519,7 +525,7 @@ class EngineManager private constructor(private val context: Context) {
      * 放在这里可以跟着资产版本自动重打，不必重新制作 engine.bin。
      */
     private fun ensureWebCompat() {
-        val dist = File(engineDir, "node_modules/@deepseek-ai/dsh-web-frontend/dist")
+        val dist = rootfsFrontendDist
         val indexHtml = File(dist, "index.html")
         if (!indexHtml.isFile) {
             Log.w(TAG, "未找到前端入口，跳过 WebView 兼容补丁: ${indexHtml.absolutePath}")
@@ -604,7 +610,7 @@ class EngineManager private constructor(private val context: Context) {
             return
         }
 
-        val dist = File(engineDir, "node_modules/@deepseek-ai/dsh-web-frontend/dist")
+        val dist = rootfsFrontendDist
         if (!dist.isDirectory) {
             Log.w(TAG, "引擎尚未解包，跳过 WebView 降级资产")
             return
@@ -634,7 +640,7 @@ class EngineManager private constructor(private val context: Context) {
                 return
             }
 
-            val engineModules = File(engineDir, "node_modules/@deepseek-ai")
+            val engineModules = rootfsEngineModules
             val mobileUiRoot = File(dshHome, "$MOBILE_UI_DIR/$MOBILE_UI_PACKAGE")
 
             // ⚠️ **两棵树各判各的戳，不能只看 dist 那一个。**
