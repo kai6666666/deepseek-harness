@@ -1,3 +1,4 @@
+# 触发路径以 base 分支的这份文件为准（pull_request 用 base 的 paths 过滤）
 name: 构建 APK（x86_64 模拟器）
 
 # 只手动触发：给雷电/MuMu 这类 x86_64 模拟器出一个原生包。
@@ -11,6 +12,7 @@ on:
       - 'tools/runtime/**'
       - 'tools/check-apk-assets.py'
       - '.github/workflows/apk-x64.yml'
+      - 'tools/avd/**'
 
 permissions:
   contents: read
@@ -46,7 +48,9 @@ jobs:
       - name: Android SDK
         uses: android-actions/setup-android@v3
         with:
-          packages: 'platforms;android-35 build-tools;35.0.0 ndk;27.0.12077973'
+          # AVD 探针要的包在这里一次装齐：交给 action 装是非交互的，
+          # 不会像 sdkmanager 那样卡在许可提示上（2026-11-13 实际挂过 25 分钟）。
+          packages: 'platforms;android-35 build-tools;35.0.0 ndk;27.0.12077973 emulator system-images;android-34;google_apis;x86_64'
           log-accepted-android-sdk-licenses: true
 
       - name: 下载缓存
@@ -98,3 +102,31 @@ jobs:
           path: app/build/outputs/apk/system/debug/*.apk
           retention-days: 7
           if-no-files-found: error
+
+      # ── AVD 端到端探针（T4）────────────────────────────────────────────
+      # ubuntu runner 自带 /dev/kvm：这是唯一「无真机」的 PRoot 验收环境，
+      # 雷电/MuMu 的镜像拒绝 ptrace(TRACEME)，不能当判据。
+      - name: KVM 硬前提
+        run: |
+          set -e
+          sudo chmod 666 /dev/kvm 2>/dev/null || true
+          [ -e /dev/kvm ] || { echo '::error::runner 没有 /dev/kvm'; exit 1; }
+          ls -l /dev/kvm
+
+      - name: 起 AVD 跑探针（RESULT=PASS）
+        run: |
+          set -ex
+          export ANDROID_SDK_ROOT="$ANDROID_HOME"
+          echo "== emulator 加速自检"; "$ANDROID_HOME/emulator/emulator" -accel-check || true
+          bash tools/avd/create-avd.sh
+          APK=$(ls app/build/outputs/apk/system/debug/*.apk | head -1)
+          bash tools/avd/run-probe.sh "$APK"
+
+      - name: 失败现场
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: avd-failure
+          path: out/avd-*/
+          if-no-files-found: ignore
+          retention-days: 7
