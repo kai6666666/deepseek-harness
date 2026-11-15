@@ -43,7 +43,7 @@
 | **S4.5** | **x86_64 运行时变体**：ABI 参数化 + `-PtargetAbi` + `apk-x64.yml` | x86_64 artifact/APK 可出；雷电能否跑 PRoot 见 §九 | 🟡 构建链路完成；雷电被 ptrace 拦截（§九），验收需 AVD/真机 |
 | **S5** | 能力搬迁：`bash` 身份、`/sdcard` 绑定、`shell`(uid2000)、`root`(uid0)、无线调试、dev-env、镜像 | 真机 D-03…D-11 全过 | ⬜ |
 | **S6** | 数据迁移与救援：`$DSH_HOME` 复用、索引重建、救援 profile 走 proot、rootfs 修复 | 0.4.3/0.4.4 → 0.5.0 升级不丢会话 | ✅ 2026-11-15（`d3ccfd50`，证据 `_build/evidence/handoff-050/s6-data-migration-rescue-pass.md`） |
-| **S7** | 真机矩阵：冷启、附件、终端、检索、沙箱、插件、断网、存储不足 | 见 c-plan §P5 判据 | 🟡 第一轮 2026-11-15（冷启/附件/终端/检索/沙箱/插件/断网/空间预检 全过；证据 `_build/evidence/handoff-050/s7-matrix-round1-pass.md`；待补 UI 端真发图与真搜索、真实塞满存储） |
+| **S7** | 真机矩阵：冷启、附件、终端、检索、沙箱、插件、断网、存储不足 | 见 c-plan §P5 判据 | ✅ 2026-11-15（八项全过；发图/搜索由主人在 UI 上实测确认；证据 `_build/evidence/handoff-050/s7-matrix-round1-pass.md`、`dns-regression-fix.md`） |
 | **S8** | 发布 0.5.0：vc51、CHANGELOG、release notes、0.4.4-test 撤下 | CI 出包 + 真机 smoke | 🟡 物料就绪 2026-11-15（`cc665f23`：`0.5.0`/vc51、CHANGELOG、Release notes、资产名 `dsh-android-0.5.0-arm64.apk`；CI 出包 + 真机 `versionCode=51` 已验）。**剩**：打 tag `v0.5.0` / 建 Release / 撤下 `v0.4.4-test` 需在 `main` 上做（本分支不发布） |
 
 ## 四、本轮完成（2026-11-12）
@@ -63,6 +63,7 @@
 
 | 日期 | 事项 |
 |---|---|
+| 2026-11-15 | S7 收尾：主人在 UI 上实测「发图 / 会花搜索」通过；本轮另修 DNS 回归（见上一行）。全量踩坑与修复整理成 `docs/plan/lessons-proot-0.5.0.md`（含总纲「结论与它描述的对象不是同一个」12 例外衣 + 八类场景 + 验收清单） |
 | 2026-11-15 | DNS 回归修复（`9950149d`）：dev-tools 步骤把构建机 `resolv.conf`（`127.0.0.53` + `*.compute.internal`）带进 rootfs，设备上所有域名解析失败（登录「账号资料暂不可用」、插件市场 `fetch failed` 回落离线目录）。修法：构建期装完即还原公共 DNS；`verify.py` 加解析器硬断言（runtime 29 OK/0 FAIL）；客户端 `needsPublicDns()` 对已知坏值自愈。真机：`model listing loaded 2 model(s)`、`deepseek:401 npmmirror:200`、市场实时条目回归 |
 | 2026-11-15 | S8 物料：`versionName 0.5.0 / vc 51`、CHANGELOG 0.5.0 段、Release notes 重写（去 bionic 资产、加单运行时/迁移/救援/密钥/附件条目）、资产名 `dsh-android-0.5.0-arm64.apk`。CI 出包 `aapt: versionCode=51 versionName=0.5.0`，真机覆盖安装 Success，`engine.ready 44 s health=401`，sharp `ok:true` |
 | 2026-11-15 | dev 工具进镜像：`build-runtime.sh` §3.2 用 binfmt + chroot apt 装 `git/python3/curl`，`verify.py` 三条硬断言；踩坑与修法记在 S7 证据 §五（binfmt 而非 qemu-user-static、bind /dev+/proc、非 root tar 的 chown、per-ABI apt 源、umount 后再打包）。真机新 stamp 首解包即自带三件套，`engine.ready 151 s health=401` |
