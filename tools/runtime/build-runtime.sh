@@ -187,13 +187,12 @@ if [ "${DSH_RT_DEV_TOOLS:-1}" = "1" ]; then
     SUDO=sudo
   fi
   log "install dev tools: git / python3 / curl (apt in rootfs)"
-  case "$ABI" in arm64-v8a) QEMU=qemu-aarch64-static ;; *) QEMU=qemu-x86_64-static ;; esac
   if [ "$ABI" != "x86_64" ]; then
-    if ! command -v "$QEMU" >/dev/null 2>&1; then
-      $SUDO apt-get update -qq && $SUDO apt-get install -y -qq --no-install-recommends qemu-user-static >/dev/null
-    fi
-    command -v "$QEMU" >/dev/null 2>&1 || die "缺 $QEMU（arm64 chroot 需要 qemu-user-static）"
-    $SUDO install -m 755 "$(command -v "$QEMU")" "$ROOTFS/usr/bin/$QEMU"
+    # 用 binfmt_misc（docker/setup-qemu-action 注册，带 F 标志）而不是把
+    # qemu-*-static 拷进 rootfs：runner 的 apt 源里没有 qemu-user-static
+    # （实测 `E: Package 'qemu-user-static' has no installation candidate`）。
+    [ -e /proc/sys/fs/binfmt_misc/qemu-aarch64 ] \
+      || die "缺少 binfmt qemu-aarch64：arm64 chroot 需要 docker/setup-qemu-action"
   fi
   $SUDO rm -f "$ROOTFS"/etc/apt/sources.list.d/*.sources 2>/dev/null || true
   printf 'deb http://ports.ubuntu.com/ubuntu-ports noble main universe\ndeb http://ports.ubuntu.com/ubuntu-ports noble-updates main universe\ndeb http://ports.ubuntu.com/ubuntu-ports noble-security main universe\n' | $SUDO tee "$ROOTFS/etc/apt/sources.list" >/dev/null
@@ -203,7 +202,6 @@ if [ "${DSH_RT_DEV_TOOLS:-1}" = "1" ]; then
     DEBIAN_FRONTEND=noninteractive \
     /bin/sh -c 'apt-get update -qq && apt-get install -y -qq --no-install-recommends git python3 curl ca-certificates' \
     || die "dev 工具安装失败"
-  $SUDO rm -f "$ROOTFS/usr/bin/$QEMU"
   $SUDO rm -rf "$ROOTFS"/var/lib/apt/lists/* "$ROOTFS"/var/cache/apt/archives/*.deb
   for b in git python3 curl; do
     [ -x "$ROOTFS/usr/bin/$b" ] || die "dev 工具缺失: /usr/bin/$b"

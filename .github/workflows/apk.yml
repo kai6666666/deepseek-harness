@@ -50,6 +50,11 @@ jobs:
     timeout-minutes: 75
     steps:
       - uses: actions/checkout@v4
+      - name: 注册 binfmt（arm64 rootfs 里跑 apt）
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
 
       - name: 依赖（交叉编译器 + patchelf + xz）
         run: |
