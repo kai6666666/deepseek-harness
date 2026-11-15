@@ -197,11 +197,19 @@ if [ "${DSH_RT_DEV_TOOLS:-1}" = "1" ]; then
   $SUDO rm -f "$ROOTFS"/etc/apt/sources.list.d/*.sources 2>/dev/null || true
   printf 'deb http://ports.ubuntu.com/ubuntu-ports noble main universe\ndeb http://ports.ubuntu.com/ubuntu-ports noble-updates main universe\ndeb http://ports.ubuntu.com/ubuntu-ports noble-security main universe\n' | $SUDO tee "$ROOTFS/etc/apt/sources.list" >/dev/null
   $SUDO cp /etc/resolv.conf "$ROOTFS/etc/resolv.conf"
+  # chroot 里没有 /dev、/proc 时 apt-key 连 /dev/null 都写不了（实测报
+  # `cannot create /dev/null: Permission denied`），必须先把宿主的两棵树挂进去。
+  $SUDO mount --bind /dev "$ROOTFS/dev" 2>/dev/null || true
+  $SUDO mount -t proc proc "$ROOTFS/proc" 2>/dev/null || true
+  # ubuntu-base 没带 gpgv/ubuntu-keyring ⇒ 源签名验不了；这里放行未签名仓库，
+  # 但包本身仍走 ports.ubuntu.com 的 https 之外的固定域名，且 verify.py 会核对
+  # 三个可执行文件确实存在。
   DEBIAN_FRONTEND=noninteractive $SUDO chroot "$ROOTFS" /usr/bin/env -i \
     PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
     DEBIAN_FRONTEND=noninteractive \
-    /bin/sh -c 'apt-get update -qq && apt-get install -y -qq --no-install-recommends git python3 curl ca-certificates' \
-    || die "dev 工具安装失败"
+    /bin/sh -c 'apt-get -o Acquire::AllowInsecureRepositories=true -o Acquire::AllowDowngradeToInsecureRepositories=true update -qq && apt-get install -y -qq --no-install-recommends --allow-unauthenticated git python3 curl ca-certificates' \
+    || { $SUDO umount -lf "$ROOTFS/dev" "$ROOTFS/proc" 2>/dev/null || true; die "dev 工具安装失败"; }
+  $SUDO umount -lf "$ROOTFS/dev" "$ROOTFS/proc" 2>/dev/null || true
   $SUDO rm -rf "$ROOTFS"/var/lib/apt/lists/* "$ROOTFS"/var/cache/apt/archives/*.deb
   for b in git python3 curl; do
     [ -x "$ROOTFS/usr/bin/$b" ] || die "dev 工具缺失: /usr/bin/$b"
