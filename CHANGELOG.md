@@ -41,6 +41,10 @@ vc=51
   公共 DNS，`verify.py` 增加解析器硬断言，客户端对已知坏值就地自愈（老安装无需重装）。
 - **图片附件**：修复 `@img/colour` 被平台裁剪误删导致的 `Cannot find module`（发图必失败），
   `verify.py` 增加硬断言。
+- **移动端 UI `1.1.0-182`**：修复「插件市场」在手机上塌成右侧窄列（标签竖排、卡片堆叠）。
+  根因是我们把市场的承载容器改成了 `display:block`，破坏了它「父级 flex 列 + 宽度由 flex 决定 +
+  容器查询判窄档」的前提；改为保持 flex 列并补齐祖先链的 width/min-width/height，且只用结构选择器
+  （不写市场哈希类名，`ui-contract` 门禁已加 `mpMarketShell` 断言）。
 - **移动端 UI `1.1.0-181`**：左侧栏图标与右侧栏同规（28×28 / `label-secondary` / 1px 描边），
   关闭态 `visibility:hidden + contain:strict`，消除「工作区条飞出」与图标加粗。
 
