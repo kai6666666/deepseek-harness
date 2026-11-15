@@ -195,7 +195,15 @@ if [ "${DSH_RT_DEV_TOOLS:-1}" = "1" ]; then
       || die "缺少 binfmt qemu-aarch64：arm64 chroot 需要 docker/setup-qemu-action"
   fi
   $SUDO rm -f "$ROOTFS"/etc/apt/sources.list.d/*.sources 2>/dev/null || true
-  printf 'deb http://ports.ubuntu.com/ubuntu-ports noble main universe\ndeb http://ports.ubuntu.com/ubuntu-ports noble-updates main universe\ndeb http://ports.ubuntu.com/ubuntu-ports noble-security main universe\n' | $SUDO tee "$ROOTFS/etc/apt/sources.list" >/dev/null
+  # ⚠️ ports.ubuntu.com 只有 non-amd64 的包；x86_64 rootfs 必须走 archive.ubuntu.com，
+  #    否则 apt 会拿 arm64 索引去满足 amd64 依赖（实测退出码 100）。
+  if [ "$ABI" = "x86_64" ]; then APT_HOST=archive.ubuntu.com; APT_SUITE=noble
+  else APT_HOST=ports.ubuntu.com; APT_SUITE=noble; fi
+  if [ "$APT_HOST" = "ports.ubuntu.com" ]; then APT_URI="http://$APT_HOST/ubuntu-ports"
+  else APT_URI="http://$APT_HOST/ubuntu"; fi
+  printf 'deb %s %s main universe\ndeb %s %s-updates main universe\ndeb %s %s-security main universe\n' \
+    "$APT_URI" "$APT_SUITE" "$APT_URI" "$APT_SUITE" "$APT_URI" "$APT_SUITE" \
+    | $SUDO tee "$ROOTFS/etc/apt/sources.list" >/dev/null
   $SUDO cp /etc/resolv.conf "$ROOTFS/etc/resolv.conf"
   # chroot 里没有 /dev、/proc 时 apt-key 连 /dev/null 都写不了（实测报
   # `cannot create /dev/null: Permission denied`），必须先把宿主的两棵树挂进去。
@@ -209,8 +217,8 @@ if [ "${DSH_RT_DEV_TOOLS:-1}" = "1" ]; then
     /bin/sh -c 'apt-get -o Acquire::AllowInsecureRepositories=true -o Acquire::AllowDowngradeToInsecureRepositories=true update -qq && apt-get install -y -qq --no-install-recommends --allow-unauthenticated git python3 curl ca-certificates' \
     || INSTALL_RC=$?
   # 版本检查必须在卸载 /dev、/proc **之前**（动态加载器要用 /dev/null）。
-  DEV_VER=$(chroot "$ROOTFS" /usr/bin/git --version 2>/dev/null || echo '?')
-  PY_VER=$(chroot "$ROOTFS" /usr/bin/python3 -V 2>/dev/null || echo '?')
+  DEV_VER=$($SUDO chroot "$ROOTFS" /usr/bin/git --version 2>/dev/null || echo '?')
+  PY_VER=$($SUDO chroot "$ROOTFS" /usr/bin/python3 -V 2>/dev/null || echo '?')
   # ⚠️ 必须真卸载：`umount -l` 只把挂载点摘下来，tar 仍可能走进去（实测
   #    `tar: Exiting with failure status due to previous errors`）。
   for m in dev proc; do
@@ -219,6 +227,10 @@ if [ "${DSH_RT_DEV_TOOLS:-1}" = "1" ]; then
   done
   [ -z "${INSTALL_RC:-}" ] || die "dev 工具安装失败（rc=$INSTALL_RC）"
   $SUDO rm -rf "$ROOTFS"/var/lib/apt/lists/* "$ROOTFS"/var/cache/apt/archives/*.deb
+  $SUDO rm -rf "$ROOTFS"/var/cache/ldconfig "$ROOTFS"/var/cache/debconf 2>/dev/null || true
+  # apt 落下的文件属于 root（/etc/ssl/private 是 0700），而后续打包以构建用户跑 tar，
+  # 实测会 `Cannot open: Permission denied`。把整棵树交还构建用户。
+  $SUDO chown -R "$(id -u):$(id -g)" "$ROOTFS"
   for b in git python3 curl; do
     [ -x "$ROOTFS/usr/bin/$b" ] || die "dev 工具缺失: /usr/bin/$b"
   done
