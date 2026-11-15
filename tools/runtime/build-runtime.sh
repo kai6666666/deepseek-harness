@@ -171,6 +171,42 @@ if command -v openssl >/dev/null 2>&1; then
     done && openssl rehash . >/dev/null 2>&1 || true )
 fi
 
+# ---------- 3.2 开发工具（git / python3 / curl） ----------
+# 为什么预置：0.5.0 的救援与自愈都会**重新解包 rootfs**，而镜像外手工 apt 的东西
+# 解包后就没了（S6 真机实测）。放进镜像才谈得上「修复后 dev-env 自动回来」。
+#
+# 做法：CI runner 上直接 chroot 进目标 rootfs 跑 apt（arm64 垫一层 qemu-user）。
+# 不走「apt-get download + 手工解包」：python3 的依赖闭包很深，手工拼必漏。
+if [ "${DSH_RT_DEV_TOOLS:-1}" = "1" ]; then
+  if [ "$(id -u)" != "0" ]; then
+    log "非 root，跳过 dev 工具预置（本地开发可设 DSH_RT_DEV_TOOLS=0 静音）"
+  else
+    log "install dev tools: git / python3 / curl (apt in rootfs)"
+    case "$ABI" in arm64-v8a) QEMU=qemu-aarch64-static ;; *) QEMU=qemu-x86_64-static ;; esac
+    if [ "$ABI" != "x86_64" ]; then
+      if ! command -v "$QEMU" >/dev/null 2>&1; then
+        apt-get update -qq && apt-get install -y -qq --no-install-recommends qemu-user-static >/dev/null
+      fi
+      command -v "$QEMU" >/dev/null 2>&1 || die "缺 $QEMU（arm64 chroot 需要 qemu-user-static）"
+      install -m 755 "$(command -v "$QEMU")" "$ROOTFS/usr/bin/$QEMU"
+    fi
+    rm -f "$ROOTFS"/etc/apt/sources.list.d/*.sources 2>/dev/null || true
+    printf 'deb http://ports.ubuntu.com/ubuntu-ports noble main universe\ndeb http://ports.ubuntu.com/ubuntu-ports noble-updates main universe\ndeb http://ports.ubuntu.com/ubuntu-ports noble-security main universe\n' > "$ROOTFS/etc/apt/sources.list"
+    cp /etc/resolv.conf "$ROOTFS/etc/resolv.conf"
+    DEBIAN_FRONTEND=noninteractive chroot "$ROOTFS" /usr/bin/env -i \
+      PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+      DEBIAN_FRONTEND=noninteractive \
+      /bin/sh -c 'apt-get update -qq && apt-get install -y -qq --no-install-recommends git python3 curl ca-certificates' \
+      || die "dev 工具安装失败"
+    rm -f "$ROOTFS/usr/bin/$QEMU"
+    rm -rf "$ROOTFS"/var/lib/apt/lists/* "$ROOTFS"/var/cache/apt/archives/*.deb
+    for b in git python3 curl; do
+      [ -x "$ROOTFS/usr/bin/$b" ] || die "dev 工具缺失: /usr/bin/$b"
+    done
+    log "dev tools: $(chroot "$ROOTFS" /usr/bin/git --version 2>/dev/null || echo git?) / $(chroot "$ROOTFS" /usr/bin/python3 -V 2>/dev/null || echo py?)"
+  fi
+fi
+
 # 预装 pnpm 到 /usr/local（独立 prefix，不污染 /opt/dsh，离线可用）
 log "install pnpm@$PNPM_VERSION -> /usr/local"
 ok_pnpm=0

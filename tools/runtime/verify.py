@@ -36,6 +36,11 @@ REQUIRED = [
     # 纯 JS，但 sharp 的 dist/colour.cjs 在 require 期无条件加载它；
     # 被平台裁剪误删时症状是 `Cannot find module '@img/colour'`（图片附件全废）。
     "opt/dsh/node_modules/@img/colour/package.json",
+    # dev-env 三件套随镜像下发：rootfs 重解包（救援/自愈）之后仍然可用，
+    # 否则「修复」会把用户手工装的工具一并带走（S6 真机实测）。
+    "usr/bin/git",
+    "usr/bin/python3",
+    "usr/bin/curl",
 ]
 REQUIRED_JNI = ["libproot.so", "libproot-loader.so"]
 BAD_PKG_FRAGMENTS = {
