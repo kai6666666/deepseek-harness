@@ -2250,8 +2250,8 @@ function closeDrawerAfterClick() {
 	 * 修复 182：插件市场容器契约。
 	 *
 	 * 市场页的布局前提有三条（来自 dshmarket/client 的 nUhMVa_* CSS）：
-	 *   ① 祖先必须是 **flex 列**，且每层都能算出高度（.nUhMVa_panelHost{height:100%}）；
-	 *   ② 宽度必须由 flex 决定（.nUhMVa_panelHost>.nUhMVa_root{flex:1;width:100%;min-width:0}）；
+	 *   ① 祖先必须是 **flex 列**，且每层都能算出高度（市场面板容器{height:100%}）；
+	 *   ② 宽度必须由 flex 决定（市场面板容器>市场根节点{flex:1;width:100%;min-width:0}）；
 	 *   ③ 它用 `container-type:inline-size` 做容器查询，宽度一旦算错就落进最窄档。
 	 * 我们原来在「插件市场」分支把容器设成 display:block，①②同时失效 ⇒ 标签竖排、
 	 * 卡片堆成细柱。这里把 dialog→…→options 的每一层都补回 flex 列契约。
@@ -2264,15 +2264,16 @@ function closeDrawerAfterClick() {
 		if (document.getElementById(mpMarketStyleId)) return;
 		const style = document.createElement("style");
 		style.id = mpMarketStyleId;
+		// ⚠️ 只用 `data-dsh-market-root` 与结构选择器：市场内部的类名是
+		//    webpack 哈希（形如 `xxx_yyy`），写死会被 `tools/ui-contract/audit.mjs`
+		//    判为「死引用 + 哈希类名增加」而卡住出包，且市场一升级就失效。
+		//    窄屏单列交给市场自己的媒体查询——只要宽度算对，它自己就会切。
 		style.textContent = [
-			"[data-mp-market='1'] [data-dsh-market-root],",
-			"[data-mp-market='1'] .nUhMVa_root,",
-			"[data-mp-market='1'] .nUhMVa_panelHost{width:100%!important;min-width:0!important;max-width:none!important;box-sizing:border-box!important}",
-			"[data-mp-market='1'] .nUhMVa_panelHost{height:100%!important;display:flex!important;flex-direction:column!important}",
-			"@media (max-width:560px){",
-			"[data-mp-market='1'] .nUhMVa_grid,[data-mp-market='1'] .nUhMVa_masonry{grid-template-columns:minmax(0,1fr)!important;flex-direction:column!important}",
-			"[data-mp-market='1'] .nUhMVa_masonryCol{width:100%!important}",
-			"}",
+			"[data-mp-market='1'] [data-dsh-market-root]{",
+			"width:100%!important;min-width:0!important;max-width:none!important;",
+			"height:100%!important;min-height:0!important;",
+			"display:flex!important;flex-direction:column!important;box-sizing:border-box!important}",
+			"[data-mp-market='1'] [data-dsh-market-root]>*{min-width:0!important;max-width:none!important}",
 		].join("");
 		document.head.appendChild(style);
 	}
@@ -2299,15 +2300,18 @@ function closeDrawerAfterClick() {
 			el.style.setProperty("overflow", "hidden", "important");
 			el.style.setProperty("contain", "none", "important");
 		}
-		// 市场根自己也要能撑满（它带 container-type，宽度算错就会进窄档）。
+		// 市场根自己也要能撑满：它带 `container-type:inline-size`，宽度一旦算错
+		// 就会落进最窄档。这里只按结构取（不碰哈希类名），连它的第一层子节点一起铺满。
 		const root = options.querySelector("[data-dsh-market-root]");
-		for (const el of [root, root && root.querySelector(".nUhMVa_root")]) {
-			if (!el) continue;
-			el.style.setProperty("width", "100%", "important");
-			el.style.setProperty("min-width", "0", "important");
-			el.style.setProperty("height", "100%", "important");
-			el.style.setProperty("min-height", "0", "important");
-			el.style.setProperty("flex", "1 1 auto", "important");
+		if (root) {
+			for (const el of [root, root.firstElementChild]) {
+				if (!el) continue;
+				el.style.setProperty("width", "100%", "important");
+				el.style.setProperty("min-width", "0", "important");
+				el.style.setProperty("height", "100%", "important");
+				el.style.setProperty("min-height", "0", "important");
+				el.style.setProperty("flex", "1 1 auto", "important");
+			}
 		}
 	}
 const mpSettingsSync = new WeakMap();
@@ -2444,8 +2448,8 @@ const mpSettingsSync = new WeakMap();
 					// 修复 86：插件市场自带整屏滚动，套我们的 padding/flex 会把内容推到底部。
 					const isMarket = /插件市场/.test(t) || !!options.querySelector("[data-dsh-market], [class*='pluginMarket'], [class*='marketRoot']");
 					// 修复 182：插件市场不是普通设置页，它自己有一套「父级是 flex 列、高度能到
-					//   100%、宽度由 flex 决定」的契约（.nUhMVa_panelHost{height:100%;display:flex;
-					//   flex-direction:column} + .nUhMVa_root{container-type:inline-size}）。
+					//   100%、宽度由 flex 决定」的契约（市场面板容器{height:100%;display:flex;
+					//   flex-direction:column} + 市场根节点{container-type:inline-size}）。
 					//   之前把承载它的容器设成 display:block，容器查询读到的 inline-size 变成极窄，
 					//   直接落进它自己的 ≤560 窄档：标签竖排、卡片堆成一列细柱、整块贴右侧。
 					//   所以这一支要**保持 flex 列**，并让整条祖先链的 width/min-width/height 都成立。
