@@ -231,6 +231,9 @@ if [ "${DSH_RT_DEV_TOOLS:-1}" = "1" ]; then
   # apt 落下的文件属于 root（/etc/ssl/private 是 0700），而后续打包以构建用户跑 tar，
   # 实测会 `Cannot open: Permission denied`。把整棵树交还构建用户。
   $SUDO chown -R "$(id -u):$(id -g)" "$ROOTFS"
+  # apt 又把文档/手册装回来了（node 那一步清理在它之前），再清一遍省体积。
+  $SUDO rm -rf "$ROOTFS/usr/share/doc" "$ROOTFS/usr/share/man" "$ROOTFS/usr/share/info" 2>/dev/null || true
+  $SUDO find "$ROOTFS/usr/lib/python3.12" -name __pycache__ -type d -prune -exec rm -rf {} + 2>/dev/null || true
   for b in git python3 curl; do
     [ -x "$ROOTFS/usr/bin/$b" ] || die "dev 工具缺失: /usr/bin/$b"
   done
