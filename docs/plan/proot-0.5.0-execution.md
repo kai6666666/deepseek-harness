@@ -42,9 +42,9 @@
 | **S4** | 删除 bionic：bionic 资产下线（S4b）+ 代码删除（S4c） | `check-apk-assets.py` 新清单全过；APK 里无 bionic 资产 | ✅ S4b；🟡 S4c 进行中 |
 | **S4.5** | **x86_64 运行时变体**：ABI 参数化 + `-PtargetAbi` + `apk-x64.yml` | x86_64 artifact/APK 可出；雷电能否跑 PRoot 见 §九 | 🟡 构建链路完成；雷电被 ptrace 拦截（§九），验收需 AVD/真机 |
 | **S5** | 能力搬迁：`bash` 身份、`/sdcard` 绑定、`shell`(uid2000)、`root`(uid0)、无线调试、dev-env、镜像 | 真机 D-03…D-11 全过 | ⬜ |
-| **S6** | 数据迁移与救援：`$DSH_HOME` 复用、索引重建、救援 profile 走 proot、rootfs 修复 | 0.4.3/0.4.4 → 0.5.0 升级不丢会话 | ⬜ |
+| **S6** | 数据迁移与救援：`$DSH_HOME` 复用、索引重建、救援 profile 走 proot、rootfs 修复 | 0.4.3/0.4.4 → 0.5.0 升级不丢会话 | ✅ 2026-11-15（`d3ccfd50`，证据 `_build/evidence/handoff-050/s6-data-migration-rescue-pass.md`） |
 | **S7** | 真机矩阵：冷启、附件、终端、检索、沙箱、插件、断网、存储不足 | 见 c-plan §P5 判据 | ⬜ |
-| **S8** | 发布 0.5.0：vc51、CHANGELOG、release notes、0.4.4-test 撤下 | CI 出包 + 真机 smoke | ⬜ |
+| **S8** | 发布 0.5.0：vc51、CHANGELOG、release notes、0.4.4-test 撤下 | CI 出包 + 真机 smoke | ⬜（含：把 `git`/`python3`/`curl` 预置进 `build-runtime.sh`，使 rootfs 重解包不再丢开发工具） |
 
 ## 四、本轮完成（2026-11-12）
 
@@ -63,6 +63,7 @@
 
 | 日期 | 事项 |
 |---|---|
+| 2026-11-15 | S6：`ProotHost` 支持 profile/命令模式、每次运行独立 pidfile、作用域停止（不再全局杀 guest node）；`RootfsInstaller` 关键文件校验 + `invalidate()` + swap 回滚；`EngineManager` 恢复救援编排（rescue profile / 跳过体检 / 层级重读 / 失败先落盘 / gateway / health / 迁移 / 退出监视）与 start 代际；新增 `RuntimeFiles`/`ProotLaunch` 与 14 条 JVM 单测，CI 升为「编译 + 单测」。真机：救援切换、try-boot 不误杀、rootfs 自愈、旧运行时精确迁移、数据 0 丢失 |
 | 2026-11-12 | S1 完成：运行时构建进 CI；新增 verify.py；修交叉编译与 npm 平台参数 |
 | 2026-11-12 | S2 代码：RootfsInstaller（xz 解包 / 原子替换 / sha256 / 空间预检）+ Gradle 依赖；CI 编译通过，待真机验收 |
 | 2026-11-12 | 事故：apk.yml 的「发布到 Release」只在 `if: success()` 上，PR 构建把 `v0.4.4-test` 的 APK 覆盖成了 PR 代码。已加 `event != pull_request && ref == refs/heads/main` 门禁 |
