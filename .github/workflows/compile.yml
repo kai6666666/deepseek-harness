@@ -50,6 +50,12 @@ jobs:
 
       - name: 修可执行位
         run: chmod +x gradlew || true
+      - name: 编译与 S6 回归测试
+        run: ./gradlew :app:compileSystemDebugKotlin :app:testSystemDebugUnitTest --console=plain --no-daemon
+      - name: S6 test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: s6-unit-tests
+          path: app/build/test-results/testSystemDebugUnitTest/
 
-      - name: 编译
-        run: ./gradlew :app:compileSystemDebugKotlin --console=plain --no-daemon

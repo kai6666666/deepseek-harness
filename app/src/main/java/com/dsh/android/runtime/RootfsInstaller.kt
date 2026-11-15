@@ -34,10 +34,18 @@ class RootfsInstaller(private val context: Context) {
     private val stamp: File get() = File(runtimeDir, ".rootfs.stamp")
     private val manifestFile: File get() = File(runtimeDir, "manifest.json")
 
-    fun isInstalled(manifest: RuntimeManifest): Boolean =
-        stamp.isFile &&
-            stamp.readText().trim() == manifest.runtimeVersion &&
-            File(rootfs, "usr/bin/node").isFile
+    fun isInstalled(manifest: RuntimeManifest): Boolean = runCatching {
+        stamp.isFile && stamp.readText().trim() == manifest.runtimeVersion &&
+            RuntimeFiles.missingCriticalFiles(rootfs).isEmpty()
+    }.getOrDefault(false)
+
+    /** Invalidate only the runtime marker. User data lives outside runtime/rootfs. */
+    fun invalidate(): Boolean = synchronized(INSTALL_LOCK) {
+        val present = java.nio.file.Files.exists(stamp.toPath(), java.nio.file.LinkOption.NOFOLLOW_LINKS)
+        if (present && !stamp.delete()) throw IOException("rootfs stamp removal failed")
+        Log.i(TAG, "rootfs invalidated; hadStamp=$present")
+        present
+    }
 
     /**
      * 幂等安装。onProgress 在调用线程执行（本函数是阻塞 IO，调用方自己放到 IO 线程）。
@@ -77,17 +85,16 @@ class RootfsInstaller(private val context: Context) {
             "rootfs.staging-" + manifest.runtimeVersion + "-" + android.os.Process.myPid() +
                 "-" + System.nanoTime()
         )
-        staging.deleteRecursively()
+        RuntimeFiles.deleteTree(staging)
         if (!staging.mkdirs()) throw IOException("无法创建 staging：" + staging.absolutePath)
 
         try {
             extractXz(xz, staging, onProgress)
-            if (!File(staging, "usr/bin/node").isFile) {
-                throw IOException("解包结果里没有 usr/bin/node（归档损坏或不完整）")
-            }
+            val missing = RuntimeFiles.missingCriticalFiles(staging)
+            if (missing.isNotEmpty()) throw IOException("rootfs critical files missing: ${missing.joinToString()}")
             swapIn(staging)
         } catch (t: Throwable) {
-            staging.deleteRecursively()
+            RuntimeFiles.deleteTree(staging)
             throw if (t is IOException) t else IOException("解包失败：" + t.message, t)
         } finally {
             xz.delete()
@@ -100,18 +107,12 @@ class RootfsInstaller(private val context: Context) {
         return rootfs
     }
 
-    /** 旧 rootfs 挪开 -> staging 改名 -> 删旧。rename 失败时退化为逐项复制。 */
+    /** Rename transaction; tree cleanup treats symlinks as leaf entries. */
     private fun swapIn(staging: File) {
-        val old = File(runtimeDir, "rootfs.old-" + System.currentTimeMillis())
-        if (rootfs.exists() && !rootfs.renameTo(old)) {
-            rootfs.deleteRecursively()
-        }
-        if (!staging.renameTo(rootfs)) {
-            staging.copyRecursively(rootfs, overwrite = true)
-            staging.deleteRecursively()
-        }
-        old.deleteRecursively()
+        val old = RuntimeFiles.swapRootfs(rootfs, staging)
         stamp.delete()
+        if (old != null) runCatching { RuntimeFiles.deleteTree(old) }
+            .onFailure { Log.w(TAG, "Old rootfs retained: ${old.absolutePath}: ${it.message}") }
     }
 
     private fun copyAsset(

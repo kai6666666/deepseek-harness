@@ -4,6 +4,11 @@ import android.content.Context
 import com.dsh.android.runtime.ProotHost
 import com.dsh.android.runtime.RootfsInstaller
 import com.dsh.android.runtime.RuntimeManifest
+import com.dsh.android.runtime.RuntimeFiles
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.CancellationException
+import java.util.concurrent.atomic.AtomicLong
 import com.dsh.android.log.DshLog as Log
 import com.dsh.android.log.EventLog
 import com.dsh.android.log.LogStore
@@ -169,6 +174,10 @@ class EngineManager private constructor(private val context: Context) {
     @Volatile
     private var userStopped = false
     private val logLines = ArrayDeque<String>()
+    private val startMutex = Mutex()
+    private val lifecycleLock = Any()
+    private val startGeneration = AtomicLong(0)
+
 
     /**
      * 最近一次 [ensureExtracted] 收到的版本戳。
@@ -4619,7 +4628,16 @@ class EngineManager private constructor(private val context: Context) {
     private fun ensureRescueProfile(): File? {
         val dir = File(dshHome, "profiles/$RESCUE_PROFILE_NAME")
         val manifest = File(dir, "package.json")
-        if (manifest.isFile) return dir
+        if (manifest.isFile) {
+            val valid = runCatching {
+                val bundles = JSONObject(manifest.readText()).getJSONObject("dsh")
+                    .getJSONObject("profile").getJSONArray("bundles")
+                val names = List(bundles.length()) { bundles.getString(it) }
+                RESCUE_BUNDLES.all { it in names } && names.all { it in RESCUE_BUNDLES }
+            }.getOrDefault(false)
+            if (valid) return dir
+            if (!quarantine(manifest, "救援 profile 修复")) return null
+        }
 
         return try {
             dir.mkdirs()
@@ -4912,6 +4930,7 @@ class EngineManager private constructor(private val context: Context) {
 
         /** 体检发现并隔离/重解包了东西，复检通过。 */
         Repaired("已修复"),
+        Unresolved("静态检查仍待处理"),
     }
 
     /**
@@ -4944,10 +4963,12 @@ class EngineManager private constructor(private val context: Context) {
             // 坏法①②：stderr 里有绝对路径，引擎自己指认了是哪个文件
             suspects += parseBlamedFiles(first.stderr)
             if (suspects.isEmpty()) {
-                // 指认不出来（比如 package.json 的报错只有 JSON 位置、没有路径）：
-                // 退到隔离 profile 自己的两个文件，这是唯一可能抛在这两处的来源
-                suspects += File(profileDir, "package.json")
-                suspects += File(profileDir, PROFILE_PATCH_FILENAME)
+                val manifest = File(profileDir, "package.json")
+                val malformed = manifest.isFile && runCatching { JSONObject(manifest.readText()) }.isFailure
+                if (malformed) suspects += manifest else {
+                    Log.w(TAG, "启动前体检：进程返回 ${first.exitCode}，未指认损坏文件；保留配置")
+                    return PreflightResult.Unresolved
+                }
             }
         } else {
             // 坏法④：核心 bundle 被 skip 时 required 条目会消失
@@ -4963,7 +4984,7 @@ class EngineManager private constructor(private val context: Context) {
 
         // 落在 engine/ 下的坏文件隔离没有意义（下次解包就覆盖了，而 `.stamp` 短路
         // 意味着没有"下次"）—— 直接整棵重解包
-        val engineSide = suspects.filter { it.absolutePath.startsWith(engineDir.absolutePath) }
+        val engineSide = suspects.filter { RuntimeFiles.contains(rootfsDir, it) || RuntimeFiles.contains(engineDir, it) }
         if (engineSide.isNotEmpty()) {
             Log.w(TAG, "启动前体检：engine/ 内的 bundle 损坏 ${engineSide.joinToString(", ")}")
             return rebuildEngine(emptyList())
@@ -4975,7 +4996,7 @@ class EngineManager private constructor(private val context: Context) {
         for (file in suspects) {
             if (quarantine(file, "启动前体检")) quarantined++
         }
-        if (quarantined == 0) return PreflightResult.Clean
+        if (quarantined == 0) return PreflightResult.Unresolved
 
         // 复检：隔离完再跑一次，确认真的修好了
         val second = runDumpConfig()
@@ -5110,18 +5131,9 @@ class EngineManager private constructor(private val context: Context) {
         //    清单摘了、包还在，前端那一批合并 bundle 里照样有它的坏段。
         if (quarantineThirdPartyPackages(profileDir)) changed = true
 
-        // ④ 引擎目录：删戳 = 下次启动重解包，把 engine/ 下的改动全部还原
-        if (stampFile.isFile && stampFile.delete()) {
-            Log.w(TAG, "安全模式：已删除引擎版本戳，将重新解包 engine/")
-            changed = true
-        }
-
-        // ⑤ Node 运行时：上面几样都在 $DSH_HOME / engine/ 里，**都不碰 $PREFIX**，
-        //    而 node 损坏会让引擎连一行 JS 都跑不到 —— 真机实测那种坏法报
-        //    `Check failed: magic_number_ == SerializedData::kMagicNumber`（V8 反序列化
-        //    内嵌启动快照，早于任何 JS）。不带上这一步，用户点了安全模式也照样打不开，
-        //    唯一出路是卸载重装，而卸载会清掉整个 $DSH_HOME。
-        //    node 可用时这一步是零成本的（一次 node --version）。
+        // Node and the engine share one rootfs; its marker is the repair boundary.
+        if (RootfsInstaller(context).invalidate()) changed = true
+        Log.w(TAG, "安全模式：rootfs 已标记重建，home/.dsh、workspace、logs 保留")
         // ⚠️ 必须把层级记成 SAFE_MODE，不能只做改动不记状态。两个后果都会真实发生：
         //
         //   ① **横幅会说谎**（违反不变量 I4）：`refreshRescueBanner` 读的就是这个
@@ -5350,40 +5362,14 @@ class EngineManager private constructor(private val context: Context) {
      * @param missing 体检发现缺失的 required 条目 id（仅用于日志）。
      */
     private suspend fun rebuildEngine(missing: List<String>): PreflightResult {
-        // 用户配置层也可能是共犯（比如它 patch 的目标行已随 bundle 一起消失）
-        quarantine(File(dshHome, "profiles/$PROFILE_NAME/$PROFILE_PATCH_FILENAME"), "启动前体检")
-
-        val stamp = lastAssetStamp
-        if (stamp == null) {
-            // 没拿到版本戳（ensureExtracted 还没被调用过）：只能删戳，让下次启动重解包
-            if (stampFile.delete()) Log.w(TAG, "启动前体检：已删除引擎版本戳，下次启动将重新解包")
-            return PreflightResult.Repaired
-        }
-
-        Log.w(
-            TAG,
-            "启动前体检：核心 bundle 损坏（缺 ${missing.joinToString(", ").ifEmpty { "未指认" }}），" +
-                "正在重新解包 engine/（约 15 秒）",
-        )
-        if (stampFile.isFile) stampFile.delete()
-        return try {
-            ensureExtracted(stamp)
-            val check = runDumpConfig()
-            val stillMissing = check?.let { missingRequiredEntries(it.stdout) }.orEmpty()
-            if (check != null && check.exitCode == 0 && stillMissing.isEmpty()) {
-                Log.i(TAG, "启动前体检：重解包完成，复检通过")
-                PreflightResult.Repaired
-            } else {
-                // 重解包都修不好 ⇒ 不是 engine/ 的问题（多半是设备环境），如实报出来
-                Log.e(TAG, "启动前体检：重解包后仍未通过（缺 ${stillMissing.joinToString(", ")}）")
-                PreflightResult.Repaired
-            }
-        } catch (t: Throwable) {
-            // ensureExtracted 自己会把 State 置成 Failed 并抛出；这里不再吞掉它，
-            // 让 start() 的调用方看到真实的解包失败原因
-            Log.e(TAG, "启动前体检：重新解包失败", t)
-            throw t
-        }
+        Log.w(TAG, "启动前体检：重建 rootfs（缺失=${missing.joinToString()}）")
+        val installer = RootfsInstaller(context)
+        installer.invalidate()
+        installer.ensure(installer.readManifestFromAssets())
+        val check = runDumpConfig()
+        val ok = check != null && check.exitCode == 0 && missingRequiredEntries(check.stdout).isEmpty()
+        EventLog.record("runtime.rebuild", mapOf("verified" to ok.toString()))
+        return if (ok) PreflightResult.Repaired else PreflightResult.Unresolved
     }
 
     /**
@@ -5502,111 +5488,24 @@ class EngineManager private constructor(private val context: Context) {
         overlays: List<File>,
         timeoutMs: Long = PROBE_TIMEOUT_MS,
     ): ProbeResult? {
-        val nodeBin = File(context.filesDir, "usr/bin/node")
-        val binJs = File(engineDir, "node_modules/@deepseek-ai/dsh/lib/bin.js")
-        if (!nodeBin.isFile || !binJs.isFile) return null
-
-        val cmd = buildEngineArgs(nodeBin, binJs, profile, overlays, port = 0)
-        // ⚠️ **环境变量必须与真实启动逐项相同**，所以直接用 [activeEnv]（[start] 存下的
-        //   那一份），而不是在这里再拼一遍。
-        //
-        //   再拼一遍的后果是**必须靠人肉比对才能发现差异**，而差异的症状是
-        //   「试启动能过、真启动过不了」—— 这类差异几乎无法排查，因为两边的
-        //   参数看起来都"对"。真机上真实存在的例子：漏掉 `LD_PRELOAD` 时
-        //   转译层不生效，试启动会因为 link EACCES 而报出一堆与插件无关的错，
-        //   探测结论于是**指向错误的方向**。
-        //
-        //   空 = 还没启动过 ⇒ 无法同构，直接放弃探测（见 [activeEnv] 的说明）。
         val env = activeEnv
-        if (env.isEmpty()) {
-            Log.w(TAG, "试启动放弃：尚无真实启动的环境变量基线（activeEnv 为空）")
-            return null
-        }
-        Log.i(TAG, "试启动（$profile）: ${cmd.joinToString(" ")}")
+        if (env.isEmpty()) return null
+        val host = ProotHost(context, RootfsInstaller(context).readManifestFromAssets(),
+            dshHome = dshHome, workspace = workspaceDir)
         return try {
-            val pb = ProcessBuilder(cmd)
-                .directory(workspaceDir)
-                .redirectErrorStream(true)
-            pb.environment().apply {
-                clear()
-                putAll(env)
-            }
-            val proc = pb.start()
-            val lines = java.util.Collections.synchronizedList(ArrayList<String>())
-            // ⚠️ 用 `AtomicBoolean` 而不是 `@Volatile var`：Kotlin **不允许**把
-            //   `@Volatile` 用在局部变量上（它只作用于有幕后字段的属性），
-            //   而这里必须保证读取线程写、主线程读之间有可见性 ——
-            //   否则可能出现"引擎明明打印了 URL，主线程永远看不到 ready"，
-            //   症状是一次**假失败**，二分法据此摘掉一个好插件。
-            val ready = java.util.concurrent.atomic.AtomicBoolean(false)
-            val reader = Thread {
-                try {
-                    proc.inputStream.bufferedReader().forEachLine { line ->
-                        lines.add(line)
-                        if (URL_PATTERN.containsMatchIn(line)) ready.set(true)
-                    }
-                } catch (t: Throwable) {
-                    // 被 destroyForcibly 打断是预期路径，见 [runDumpConfig] 的同款说明
-                    Log.w(TAG, "试启动输出读取结束: ${t.javaClass.simpleName}")
-                }
-            }.apply { isDaemon = true; start() }
-
-            // ⚠️ **不能只 `waitFor(timeoutMs)` 等它退出。** 引擎是个**常驻 HTTP 服务**：
-            //   成功时它打印 URL 之后**永不退出**，`waitFor` 必然一路等到超时 ——
-            //   于是每次*成功*的探测都白烧满 60 秒，而 L1 的二分法上限是 3 分钟总时长，
-            //   6 轮根本跑不完（第一轮就吃掉 60 秒）。
-            //
-            //   所以判据是"**三者先到先算**"：
-            //     - 打印了 URL ⇒ 成功，立刻杀掉（这就是"能起来"的定义）
-            //     - 进程自己退出了 ⇒ 失败，收集输出后返回
-            //     - 到点了 ⇒ 超时，杀掉（失败路径实测 17~22 秒就该有结论了）
-            //
-            //   轮询粒度 100ms：失败实测 17~22 秒，粒度对结论毫无影响；成功路径则
-            //   决定"省多少时间"，100ms 足够细。
-            val deadline = System.currentTimeMillis() + timeoutMs
-            var exited = false
-            while (System.currentTimeMillis() < deadline) {
-                if (ready.get()) break
-                if (!proc.isAlive) {
-                    exited = true
-                    break
-                }
-                Thread.sleep(100)
-            }
-            // 成功 ⇒ 立刻杀；失败/超时 ⇒ 杀掉（此时它多半已经死了，destroyForcibly 幂等）
-            val ok = ready.get()
-            if (proc.isAlive) {
-                proc.destroyForcibly()
-                proc.waitFor(5, TimeUnit.SECONDS)
-            }
-            // 等读取线程把管道里剩下的输出收干净，否则 tail 会缺最后几行 ——
-            // 而失败原因恰恰常常在最后几行。
-            reader.join(2000)
-
-            Log.i(
-                TAG,
-                if (ok) "试启动成功（已结束探测进程）"
-                else if (!exited) "试启动超时（${timeoutMs} ms），已强制结束"
-                else "试启动失败（进程已退出）",
-            )
-
-            val snapshot = synchronized(lines) { ArrayList(lines) }
-            val exitCode = if (exited) runCatching { proc.exitValue() }.getOrNull() else null
-            val parsed = RescueBoot.parseFailure(
-                bootId = BootState.bootId,
-                exitCode = exitCode,
-                tailLines = snapshot,
-                at = System.currentTimeMillis(),
-            )
-            ProbeResult(
-                ready = ok,
-                exitCode = exitCode,
-                requiredDidNotActivate = parsed.requiredDidNotActivate,
-                tail = parsed.tail,
-            )
+            host.start(env, overlays, profile)
+            val url = host.awaitToken(timeoutMs)
+            val tail = host.recentLines(MAX_LOG_LINES)
+            val ok = url != null && host.isAlive() && RescueBoot.parseGatewayFailure(tail) == null &&
+                host.health() == 401
+            val parsed = RescueBoot.parseFailure(BootState.bootId, host.exitCode(), tail, System.currentTimeMillis())
+            Log.i(TAG, "PRoot 试启动: profile=$profile ready=$ok exit=${host.exitCode()}")
+            ProbeResult(ok, host.exitCode(), parsed.requiredDidNotActivate, parsed.tail)
         } catch (t: Throwable) {
-            Log.w(TAG, "试启动执行失败: ${t.message}")
+            Log.w(TAG, "PRoot 试启动执行失败: ${t.message}")
             null
+        } finally {
+            runCatching { host.stop() }.onFailure { Log.w(TAG, "试启动收尾: ${it.message}") }
         }
     }
 
@@ -6384,7 +6283,7 @@ class EngineManager private constructor(private val context: Context) {
     private fun shadowingOfficialCopies(): List<File> {
         val profileModules = File(dshHome, "profiles/$PROFILE_NAME/node_modules/@deepseek-ai")
         if (!profileModules.isDirectory) return emptyList()
-        val engineModules = File(engineDir, "node_modules/@deepseek-ai")
+        val engineModules = rootfsEngineModules
         val found = ArrayList<File>()
         profileModules.listFiles()?.forEach { local ->
             if (!local.isDirectory) return@forEach
@@ -6529,75 +6428,35 @@ class EngineManager private constructor(private val context: Context) {
      * @return null = 压根跑不起来（node 缺失等），调用方应放行而不是误判成 profile 坏了。
      */
     private fun runDumpConfig(): DumpResult? {
-        val nodeBin = File(context.filesDir, "usr/bin/node")
-        val binJs = File(engineDir, "node_modules/@deepseek-ai/dsh/lib/bin.js")
-        if (!nodeBin.isFile || !binJs.isFile) return null
+        if (RuntimeFiles.missingCriticalFiles(rootfsDir).isNotEmpty()) return null
+        val host = ProotHost(context, RootfsInstaller(context).readManifestFromAssets(),
+            dshHome = dshHome, workspace = workspaceDir)
         return try {
-            val prefix = File(context.filesDir, "usr").absolutePath
-            val pb = ProcessBuilder(
-                nodeBin.absolutePath, binJs.absolutePath,
-                "--profile", PROFILE_NAME, "--dump-config",
-            )
-                .directory(workspaceDir)
-            pb.environment().apply {
-                put("PREFIX", prefix)
-                put("DSH_HOME", dshHome.absolutePath)
-                put("HOME", homeDir.absolutePath)
-                put("TMPDIR", context.cacheDir.absolutePath)
-                put("PATH", "$prefix/bin:$prefix/bin/applets:/system/bin:/system/xbin")
-                put("SSL_CERT_FILE", "$prefix/etc/tls/cert.pem")
-                put("CURL_CA_BUNDLE", "$prefix/etc/tls/cert.pem")
-                put("NODE_OPTIONS", "--max-old-space-size=1024")
-            }
-            val proc = pb.start()
-            // ⚠️ 必须**并发**读走两个流：dump 的输出有 1500+ 行（真机实测），
-            // 单线程先 readText() 一个流会让另一个流的 64KB 管道缓冲写满，
-            // 引擎卡在 write 上永远不退出 —— 体检就成了新的挂死点。
-            //
-            // ⚠️ **两个线程体都必须自己 try/catch**，不能裸奔。
-            //
-            // 上面那条超时分支会 `destroyForcibly()` 杀掉引擎，此刻正阻塞在
-            // `read()` 上的这条线程会被内核中断，`forEachLine` 抛
-            // `java.io.InterruptedIOException: read interrupted`（真机堆栈：
-            // `Linux.readBytes` ← `BufferedReader.readLine` ←
-            // `kotlin.io.LinesSequence$iterator$1.hasNext`）。
-            //
-            // 这是**预期路径**（超时本来就该杀进程），不是故障；但裸线程里没人接
-            // 这个异常，它会一路冒到 JVM 的默认未捕获处理器，被 `CrashRecorder`
-            // 记成一份 `uncaught-exception` 崩溃现场 —— 于是「体检超时」在日志里
-            // 伪装成「未捕获异常」，把排查方向带偏。
-            // 真机证据：`20261013-221218-uncaught-exception.txt`（vivo V2313A，
-            // `thread: Thread-9`，栈底就是这里）。
-            val out = StringBuilder()
-            val err = StringBuilder()
-            val outThread = Thread {
-                try {
-                    proc.inputStream.bufferedReader().forEachLine { out.appendLine(it) }
-                } catch (t: Throwable) {
-                    // 被 destroyForcibly 打断是正常的，只记一句不抛。
-                    Log.w(TAG, "体检 stdout 读取结束: ${t.javaClass.simpleName}")
-                }
+            val env = activeEnv.ifEmpty { mapOf("DSH_HOME" to dshHome.absolutePath, KEY_ENV to KEY_PLACEHOLDER) }
+            val proc = host.startCommand(
+                listOf("/usr/local/bin/node", "/opt/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js",
+                    "--profile", PROFILE_NAME, "--dump-config"), env, mergeError = false)
+            val out = StringBuffer()
+            val err = StringBuffer()
+            fun reader(stream: java.io.InputStream, dest: StringBuffer) = Thread {
+                runCatching { stream.bufferedReader().forEachLine { dest.append(it).append('\n') } }
+                    .onFailure { Log.w(TAG, "体检输出结束: ${it.javaClass.simpleName}") }
             }.apply { isDaemon = true; start() }
-            val errThread = Thread {
-                try {
-                    proc.errorStream.bufferedReader().forEachLine { err.appendLine(it) }
-                } catch (t: Throwable) {
-                    Log.w(TAG, "体检 stderr 读取结束: ${t.javaClass.simpleName}")
-                }
-            }.apply { isDaemon = true; start() }
+            val stdout = reader(proc.inputStream, out)
+            val stderr = reader(proc.errorStream, err)
             if (!proc.waitFor(PREFLIGHT_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
-                proc.destroyForcibly()
-                outThread.join(1000)
-                errThread.join(1000)
-                Log.w(TAG, "启动前体检超时（${PREFLIGHT_TIMEOUT_MS} ms），跳过")
-                return null
+                host.stop(); stdout.join(2000); stderr.join(2000)
+                Log.w(TAG, "PRoot 启动前体检超时；保留配置")
+                null
+            } else {
+                stdout.join(2000); stderr.join(2000)
+                DumpResult(proc.exitValue(), out.toString(), err.toString())
             }
-            outThread.join(2000)
-            errThread.join(2000)
-            DumpResult(proc.exitValue(), out.toString(), err.toString())
         } catch (t: Throwable) {
-            Log.w(TAG, "启动前体检执行失败，跳过: ${t.message}")
+            Log.w(TAG, "PRoot 体检执行失败: ${t.message}")
             null
+        } finally {
+            runCatching { host.stop() }
         }
     }
 
@@ -6615,8 +6474,8 @@ class EngineManager private constructor(private val context: Context) {
         val out = ArrayList<File>()
         for (line in stderr.lineSequence()) {
             val match = BLAMED_PATH.find(line) ?: continue
-            val file = File(match.groupValues[1])
-            if (isWithinManagedRoots(file)) out += file
+            val file = RuntimeFiles.managedFile(File(match.groupValues[1]), context.filesDir, dshHome)
+            if (file != null && isWithinManagedRoots(file)) out += file
         }
         return out
     }
@@ -6637,17 +6496,16 @@ class EngineManager private constructor(private val context: Context) {
             if (!line.contains("skipping profile bundle")) continue
             Log.w(TAG, "启动前体检：${line.trim()}")
             val match = BLAMED_PATH.find(line) ?: continue
-            val file = File(match.groupValues[1])
-            if (isWithinManagedRoots(file)) out += file
+            val file = RuntimeFiles.managedFile(File(match.groupValues[1]), context.filesDir, dshHome)
+            if (file != null && isWithinManagedRoots(file)) out += file
         }
         return out
     }
 
     /** [file] 是否落在本 App 管得着的两棵树里（`$DSH_HOME` 与 `engine/`）。 */
-    private fun isWithinManagedRoots(file: File): Boolean {
-        val path = file.absolutePath
-        return path.startsWith(dshHome.absolutePath) || path.startsWith(engineDir.absolutePath)
-    }
+    private fun isWithinManagedRoots(file: File): Boolean =
+        RuntimeFiles.contains(dshHome, file) || RuntimeFiles.contains(rootfsDir, file) ||
+            RuntimeFiles.contains(engineDir, file)
 
     /**
      * 决定引擎 Web GUI 的监听端口。
@@ -6727,29 +6585,61 @@ class EngineManager private constructor(private val context: Context) {
      * 只有沙箱 runner 不同：guest 里是 `/usr/local/bin/boo-sandbox-run`，
      * 不是宿主 `filesDir/boo-sandbox-run`，见 [writeProotSandboxPatch]。
      */
-    private suspend fun startProot(manifest: RuntimeManifest) {
+    private fun currentStart(generation: Long): Boolean =
+        startGeneration.get() == generation && !userStopped
+
+    /** Record the complete failure before waking the UI's rescue decision. */
+    private fun failStart(generation: Long, reason: String, code: Int? = null, tail: List<String> = emptyList()) {
+        synchronized(lifecycleLock) {
+            if (!currentStart(generation)) return
+            LogStore.flushAsync()
+            RescueBoot.recordFailure(BootState.bootId, code, tail)
+            EventLog.record("engine.failed", mapOf("reason" to reason, "exit" to (code?.toString() ?: "unknown")))
+            CrashRecorder.recordAnomaly("engine-start-failed", reason, 'E')
+            _state.value = State.Failed("$reason\n" + tail.takeLast(20).joinToString("\n"))
+        }
+    }
+
+    private suspend fun startProot(manifest: RuntimeManifest, generation: Long) {
+        val startMs = System.currentTimeMillis()
         EventLog.record("engine.start.proot", mapOf("runtime" to manifest.runtimeVersion))
         val installer = RootfsInstaller(context)
+        var phase = ""
         try {
-            if (!installer.isInstalled(manifest)) {
-                installer.ensure(manifest) { p ->
-                    Log.i(TAG, "runtime " + p.phase + " " + p.done + "/" + p.total)
-                }
+            installer.ensure(manifest) { p ->
+                if (phase != p.phase) { phase = p.phase; Log.i(TAG, "runtime ${p.phase}: ${p.note}") }
             }
+            if (!currentStart(generation)) return
+            val rescueProfileDir = ensureRescueProfile()
+            rescueAvailable = rescueProfileDir != null
+            if (!rescueAvailable) EventLog.record("rescue.profile.unavailable")
+            val wantsRescue = RescueBoot.tier().tier == RescueBoot.Tier.RESCUE
+            if (wantsRescue && !rescueAvailable) {
+                failStart(generation, "救援 profile 初始化失败；保留现有数据")
+                return
+            }
+            val pre = if (wantsRescue) PreflightResult.StaticOnly else preflight()
+            Log.i(TAG, "启动前体检结论：${pre.label}")
+            EventLog.record("preflight.result", mapOf("result" to pre.label))
+            if (!currentStart(generation)) return
+            if (rescueProfileDir != null) {
+                seedDefaultSettings(RESCUE_PROFILE_NAME)
+                ensureKeyPoolProvider(RESCUE_PROFILE_NAME)
+                ensureDefaultModel(RESCUE_PROFILE_NAME)
+            }
+        } catch (c: CancellationException) {
+            throw c
         } catch (t: Throwable) {
-            Log.e(TAG, "运行时安装失败", t)
-            _state.value = State.Failed("运行时安装失败：" + (t.message ?: t.javaClass.simpleName))
+            Log.e(TAG, "运行时准备失败", t)
+            failStart(generation, "运行时准备失败：${t.message}", tail = listOf(t.toString()))
             return
         }
-
-        // 救援 profile 与配置写入：与 bionic 路径共用
-        runCatching { ensureRescueProfile() }
-        runCatching { ensureWebCompat() }
         runCatching { ensureDevEnvScripts() }
         runCatching { ensureCredentialFileMode() }
         runCatching { ensurePickerRoots() }
-        runCatching { ensureWebViewCompat() }
         runCatching { ensureMobileUi() }
+        runCatching { ensureWebViewCompat() }
+        runCatching { ensureWebCompat() }
         runCatching { ensureBrowserPane() }
         runCatching { seedDefaultSettings() }
         runCatching { ensureAgnesMultimodal() }
@@ -6801,7 +6691,7 @@ class EngineManager private constructor(private val context: Context) {
 
         // 注意：这些 writeXxxPatch() 都是幂等写文件，直接调用即可；
         // bionic 路径里的同名局部 val 只在那条流程内可见。
-        val overlays = listOfNotNull(
+        var overlays = listOfNotNull(
             writeMobileUiPatch(),
             writeBrowserPanePatch(),
             writeAgnesMultimodalPatch(),
@@ -6816,47 +6706,120 @@ class EngineManager private constructor(private val context: Context) {
             writeUiToolPatch(),
             writeLogsToolPatch(),
             writeBrowserToolPatch(),
-            writeQuarantinePatch(),
             privPatch,
             rootPatch,
+            writeQuarantinePatch(),
         )
 
-        val host = ProotHost(context, manifest, dshHome = dshHome, workspace = workspaceDir)
-        prootHost = host
         val prootEnv = buildMap {
             put("DSH_HOME", dshHome.absolutePath)
             put(KEY_ENV, KEY_PLACEHOLDER)
-            // 插件会剥掉所有 DSH_*，这里必须显式转交；路径都按原绝对路径绑进 guest。
             privRunner?.let { put("DSH_PRIV_RUNNER", it.absolutePath) }
             rootRunner?.let { put("DSH_ROOT_RUNNER", it.absolutePath) }
             put("DSH_SHIZUKU_SOCKET", ShizukuChannel.socketName(context))
             adbWireless?.let { put("DSH_ADB_HOME", it.absolutePath) }
         }
+        activeOverlays = overlays
+        activeEnv = prootEnv
+        if (!currentStart(generation)) return
+        maybeIsolateBadBundles()
+        if (!currentStart(generation)) return
+        val targetProfile = if (RescueBoot.tier().tier == RescueBoot.Tier.RESCUE) RESCUE_PROFILE_NAME else PROFILE_NAME
+        if (targetProfile == RESCUE_PROFILE_NAME && !rescueAvailable) {
+            failStart(generation, "救援 profile 尚未就位")
+            return
+        }
+        // L1 may have added quarantine IDs. Regenerate this final layer before launching.
+        overlays = overlays.filterNot { it.name == QUARANTINE_PATCH } + listOfNotNull(writeQuarantinePatch())
+        activeOverlays = overlays
+        ensureRescuePrompt()
+        BubbleCommandBridge.start(dshHome)
+        LogCommandBridge.start(dshHome)
+        SystemBarCommandBridge.start(dshHome)
+        RescueCommandBridge.start(dshHome)
+        EventLog.record("engine.profile", mapOf("profile" to targetProfile, "generation" to generation.toString()))
+        if (targetProfile == RESCUE_PROFILE_NAME) EventLog.record("engine.start.rescue", mapOf("profile" to targetProfile))
+        val host = ProotHost(context, manifest, dshHome = dshHome, workspace = workspaceDir)
         val proc = try {
-            host.start(prootEnv,
-                overlays,
-            )
+            synchronized(lifecycleLock) {
+                if (!currentStart(generation)) return
+                host.start(prootEnv, overlays, targetProfile) { line ->
+                    LogStore.engine(line)
+                    if (currentStart(generation)) synchronized(logLines) {
+                        logLines.addLast(line)
+                        while (logLines.size > MAX_LOG_LINES) logLines.removeFirst()
+                    }
+                }.also { prootHost = host; process = it }
+            }
         } catch (t: Throwable) {
-            Log.e(TAG, "proot 启动失败", t)
-            prootHost = null
-            _state.value = State.Failed("引擎进程启动失败：" + (t.message ?: t.javaClass.simpleName))
+            failStart(generation, "引擎进程启动失败：${t.message}", tail = listOf(t.toString()))
             return
         }
-        process = proc
-
+        val waitStart = System.nanoTime()
         val token = host.awaitToken(READY_TIMEOUT_MS)
-        if (token == null) {
-            val tail = host.recentLines(20)
+        if (!currentStart(generation) || process !== proc) return
+        if (token == null || !host.isAlive()) {
+            val waited = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - waitStart)
+            val reason = when {
+                token != null -> "引擎打印 URL 后在就绪前退出（${waited}ms）"
+                waited >= READY_TIMEOUT_MS -> "引擎启动超时（${waited}ms）"
+                else -> "引擎在打印 URL 前退出或输出结束（${waited}ms）"
+            }
+            if (host.outputEnded()) proc.waitFor(2, TimeUnit.SECONDS)
+            val code = host.exitCode()
+            val tail = host.recentLines(MAX_LOG_LINES)
             runCatching { host.stop() }
-            prootHost = null
-            process = null
-            _state.value = State.Failed("引擎启动超时（" + READY_TIMEOUT_MS + "ms）。最后输出:\n" + tail.joinToString("\n"))
+            synchronized(lifecycleLock) {
+                if (!currentStart(generation) || process !== proc) return
+                prootHost = null; process = null
+                failStart(generation, reason, code, tail)
+            }
             return
         }
-        Log.i(TAG, "proot 引擎就绪: " + token)
-        EventLog.record("engine.ready.proot", mapOf("url" to token))
-        _state.value = State.Ready(token)
-        resumePrivilegedChannel()
+        val tail = host.recentLines(MAX_LOG_LINES)
+        val gateway = RescueBoot.parseGatewayFailure(tail)
+        if (gateway != null) {
+            RescueBoot.recordGatewayFailure(BootState.bootId, tail, gateway)
+            EventLog.record("engine.gateway-degraded", mapOf("culprit" to gateway.ifEmpty { "unknown" }))
+            if (RescueBoot.tier().tier == RescueBoot.Tier.NORMAL && rescueAvailable) {
+                escalateToRescue("typert gateway 注册失败：$gateway", from = "gateway")
+                requestRestart("typert gateway 下线，切救援 profile")
+                return
+            }
+        }
+        val health = host.health()
+        if (gateway == null && (health != manifest.unauthStatus || !host.isAlive())) {
+            val code = host.exitCode()
+            val failedTail = host.recentLines(MAX_LOG_LINES)
+            runCatching { host.stop() }
+            synchronized(lifecycleLock) {
+                if (!currentStart(generation) || process !== proc) return
+                prootHost = null; process = null
+                failStart(generation, "引擎就绪检查失败：HTTP=$health", code, failedTail)
+            }
+            return
+        }
+        if (health == manifest.unauthStatus && gateway == null) {
+            runCatching { RuntimeFiles.retireLegacy(context.filesDir) }
+                .onSuccess { moved -> EventLog.record("runtime.migration", mapOf("retired" to moved.joinToString(), "data" to "in-place")) }
+                .onFailure { Log.w(TAG, "旧运行时留待重试：${it.message}") }
+        }
+        synchronized(lifecycleLock) {
+            if (!currentStart(generation) || process !== proc) return
+            if (gateway == null) RescueBoot.clearFailure()
+            EventLog.record("engine.ready", mapOf("ms" to (System.currentTimeMillis() - startMs).toString(),
+                "profile" to targetProfile, "health" to health.toString(), "runtime" to "proot"))
+            EventLog.record("engine.ready.proot", mapOf("profile" to targetProfile))
+            Log.i(TAG, "PRoot 引擎就绪：profile=$targetProfile health=$health")
+            _state.value = State.Ready(token)
+        }
+        Thread({
+            runCatching { host.waitForExit() }
+                .onFailure { Log.w(TAG, "PRoot 退出等待：${it.message}") }
+            LogStore.flushAsync()
+            markEngineDeadIfCurrent(proc, wasReady = true)
+        }, "dsh-proot-exit").apply { isDaemon = true; start() }
+        if (currentStart(generation)) resumePrivilegedChannel()
     }
 
     /** guest 里的沙箱 runner 路径与宿主不同：这里是唯一需要按宿主改写的 overlay。 */
@@ -6875,34 +6838,38 @@ class EngineManager private constructor(private val context: Context) {
     }
 
     suspend fun start() = withContext(Dispatchers.IO) {
-        if (process?.isAlive == true) {
-            Log.i(TAG, "引擎已在运行")
-            resumePrivilegedChannel()
-            return@withContext
+        startMutex.withLock {
+            if (process?.isAlive == true) {
+                resumePrivilegedChannel()
+                return@withLock
+            }
+            val generation = synchronized(lifecycleLock) {
+                userStopped = false
+                startGeneration.incrementAndGet().also { _state.value = State.Starting }
+            }
+            synchronized(logLines) { logLines.clear() }
+            activeEnv = emptyMap(); activeOverlays = emptyList()
+            EventLog.record("engine.start")
+            homeDir.mkdirs(); dshHome.mkdirs(); workspaceDir.mkdirs()
+            val manifest = runCatching { RootfsInstaller(context).readManifestFromAssets() }.getOrNull()
+            if (manifest == null) {
+                failStart(generation, "APK 缺少 runtime/manifest.json，请安装完整包")
+                return@withLock
+            }
+            try {
+                startProot(manifest, generation)
+            } catch (c: CancellationException) {
+                throw c
+            } catch (t: Throwable) {
+                synchronized(lifecycleLock) {
+                    if (currentStart(generation)) {
+                        runCatching { prootHost?.stop() }
+                        prootHost = null; process = null
+                        failStart(generation, "引擎准备异常：${t.message}", tail = listOf(t.toString()))
+                    }
+                }
+            }
         }
-
-        _state.value = State.Starting
-        logLines.clear()
-        EventLog.record("engine.start")
-        userStopped = false
-
-        homeDir.mkdirs()
-        dshHome.mkdirs()
-        workspaceDir.mkdirs()
-
-        // 0.5.0 单运行时：APK 必须内置 runtime/manifest.json。
-        // 没有它说明包不完整（或还是 0.4.x 的 bionic 包），直接失败并给出可执行的提示。
-        val manifest = runCatching { RootfsInstaller(context).readManifestFromAssets() }
-            .getOrElse { runCatching { RuntimeManifest.load(context) }.getOrNull() }
-        if (manifest == null) {
-            _state.value = State.Failed(
-                "APK 未内置 PRoot 运行时（assets/runtime/manifest.json 不存在）。\n" +
-                    "这是 0.5.0+ 的唯一运行方式；请安装完整包。"
-            )
-            return@withContext
-        }
-
-        startProot(manifest)
     }
 
     private fun resumePrivilegedChannel() {
@@ -6948,32 +6915,26 @@ class EngineManager private constructor(private val context: Context) {
         }
     }
 
-    fun stop() {
-        // PRoot 宿主：node 在 guest 里，必须走 pidfile + SIGQUIT，不能只 destroy。
-        prootHost?.let { host ->
-            userStopped = true
-            runCatching { host.stop() }.onFailure { Log.w(TAG, "proot stop 失败: " + it.message) }
-            prootHost = null
-            process = null
+    fun stop() = synchronized(lifecycleLock) {
+        userStopped = true
+        startGeneration.incrementAndGet()
+        val host = prootHost
+        val oldProcess = process
+        prootHost = null; process = null
+        if (host != null) {
+            runCatching { host.stop() }.onFailure { Log.w(TAG, "PRoot stop: ${it.message}") }
+        } else if (oldProcess?.isAlive == true) {
+            oldProcess.destroyForcibly()
+            oldProcess.waitFor(3, TimeUnit.SECONDS)
         }
-        // Shizuku 桥随引擎一起收：它的接受线程是 daemon、名字随进程释放，
-        // 但显式关掉能让下一次 start() 重新绑定同一个名字而不撞车。
         ShizukuChannel.stop()
-        process?.let { p ->
-            Log.i(TAG, "停止引擎")
-            // ⚠️ 必须在 destroy 之前置位：destroy 之后 stdout 线程会立刻读到 EOF
-            //   并进 markEngineDeadIfCurrent，两者是并发的。
-            userStopped = true
-            p.destroy()
-            if (!p.waitFor(3, TimeUnit.SECONDS)) {
-                p.destroyForcibly()
-            }
-        }
-        process = null
-        // 引擎停了就别再占着 mDNS 监听（NsdManager 的 listener 注册是全局资源）
         WirelessDebugging.stopWatcher()
-        // 守护线程同理：引擎都停了，再去切 adbd 没有意义，还白耗电
         WirelessDebugging.stopFixedPortGuard()
+        RescueCommandBridge.stop()
+        BubbleCommandBridge.stop()
+        LogCommandBridge.stop()
+        SystemBarCommandBridge.stop()
+        LogStore.flushAsync()
         _state.value = State.Idle
     }
 
@@ -7036,19 +6997,15 @@ class EngineManager private constructor(private val context: Context) {
      *   （它会给出更准确的 reason + 日志尾巴），这里不抢。
      */
     private fun markEngineDeadIfCurrent(proc: Process, wasReady: Boolean) {
-        if (userStopped) return
-        if (process !== proc) return
-        if (!wasReady) return
-        val code = runCatching { proc.exitValue() }.getOrNull()
-        val detail = if (code != null) "退出码 $code" else "进程已退出"
-        Log.w(TAG, "引擎在运行期退出（$detail），界面已失去后端")
-        // ⚠️ 「引擎在运行期自己死了」是仅次于「起不来」的严重故障：用户正用着，
-        //   界面突然什么都点不动，且**没有任何报错**。崩溃现场文件是这里唯一的
-        //   证据来源 —— 进程退出本身不留堆栈，只能靠我们自己记。
-        //   `expected = false`：不是我们主动停的。
-        CrashRecorder.recordEngineExit(code, expected = false, detail = detail)
-        EventLog.record("engine.exit", mapOf("code" to (code?.toString() ?: "?"), "wasReady" to "true"))
-        _state.value = State.Dead(detail)
+        synchronized(lifecycleLock) {
+            if (userStopped || process !== proc || !wasReady) return
+            val code = runCatching { proc.exitValue() }.getOrNull()
+            val detail = if (code != null) "退出码 $code" else "进程已退出"
+            Log.w(TAG, "引擎在运行期退出（$detail）")
+            CrashRecorder.recordEngineExit(code, expected = false, detail = detail)
+            EventLog.record("engine.exit", mapOf("code" to (code?.toString() ?: "?"), "wasReady" to "true"))
+            _state.value = State.Dead(detail)
+        }
     }
 
     fun isRunning(): Boolean = process?.isAlive == true
