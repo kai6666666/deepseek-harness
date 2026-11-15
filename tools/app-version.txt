@@ -1,2 +1,2 @@
-versionName=0.4.4-test
-versionCode=50
+versionName=0.5.0
+versionCode=51

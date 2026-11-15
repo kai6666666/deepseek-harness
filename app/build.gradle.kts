@@ -35,7 +35,7 @@ android {
         // 全部包（node / bash / dpkg / python）都装在 filesDir 下的 $PREFIX 里，
         // 一升到 29 就会全线 Permission denied。Termux 官方 App 同样停在 28。
         targetSdk = 28
-        versionCode = 50
+        versionCode = 51
         // 后缀语义：`credperm` = 凭据文件权限修复（0.2.9 首发）；
         // `tooliso` = 工具插件注册失败的隔离（可选工具注册失败不再拖垮引擎启动）；
         // `rescue` = 坏插件不再让 App 打不开（四级降级阶梯 + AI 自助修复通道）。
@@ -265,7 +265,14 @@ android {
         //   ③ ⋯ 菜单里的「对话 / 轨迹」改为真开关：菜单不关闭即可连续来回切；
         //   ④ 悬浮气泡补 `showDetails / hideDetails` 中文词典，不再露出原始键名；
         //   ⑤ 开发环境分节补 10s 超时、错误态与重试，插件市场空态正常。
-        versionName = "0.4.4-test"
+        // ⚠️ 51（0.5.0）**换 versionName：0.4.4-test → 0.5.0，并升 vc 50 → 51**。
+        //    0.4.4-test 是 PRoot 改造的过渡包（引擎仍是 bionic 资产 + PRoot 探针），
+        //    0.5.0 才是**单运行时**：APK 里只有 rootfs（node + dsh + pnpm + git/python3/curl），
+        //    引擎、bash、特权通道、沙箱全部跑在 PRoot 里，bionic 资产已删除。
+        //    升级路径 0.4.3/0.4.4 → 0.5.0：`$DSH_HOME`、workspace、logs 原地保留（S6 已验，
+        //    数据 0 丢失），旧 `engine/`、`usr/`、`termux/usr` 首次健康启动后改名进
+        //    `runtime/legacy-bionic/`（改名不删）。
+        versionName = "0.5.0"
 
         // 只支持 arm64-v8a：内置的引擎资产与 Termux bootstrap 都是 arm64 架构
         ndk {

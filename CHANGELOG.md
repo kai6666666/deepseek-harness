@@ -17,6 +17,29 @@
 
 ---
 
+## [0.5.0] — 2026-11-15
+vc=51
+
+### 变更
+- **单运行时 PRoot / glibc**：引擎、`bash`、uid 2000 特权通道、root 通道、沙箱 runner 全部
+  跑在 APK 内置的 Ubuntu 24.04 rootfs 里（node 24.22.1、pnpm 10.28.2、git、python3、curl）。
+  bionic 资产（`engine.bin`、`node-runtime.bin`、`bootstrap-*.zip`、原生 addon）已从 APK 删除。
+- **数据迁移**：`$DSH_HOME`（sessions / storages / profiles / skills / deskpet / 凭据）、
+  `workspace/`、`logs/` 原地保留；0.4.x 的 `engine/`、`usr/`、`termux/usr` 在首次健康启动后
+  改名进 `runtime/legacy-bionic/`（改名不删，`termux/home` 不动）。
+- **救援与自愈**：L2 救援 profile 与 `try-boot` 走 PRoot；rootfs 关键文件缺失或版本戳失效时
+  自动重新解包（约 80 s），用户数据不动；安全模式改为「标记 rootfs 重建」。
+- **进程治理**：每次启动独立 pidfile、按进程树作用域停止；试启动不再按 cmdline 全局清杀，
+  在跑的引擎不会被探测误杀。
+- **密钥不出现在命令行**：调用方环境变量写进 `$DSH_HOME/.proot-env-<runId>`（0600，退出即删），
+  `ps` 不再能看到 API key。
+- **镜像自带开发工具**：`git` / `python3` / `curl` 随 rootfs 下发，重解包不再丢 dev-env
+  （代价：APK 由 143 MB 增至 187 MB）。
+- **图片附件**：修复 `@img/colour` 被平台裁剪误删导致的 `Cannot find module`（发图必失败），
+  `verify.py` 增加硬断言。
+- **移动端 UI `1.1.0-181`**：左侧栏图标与右侧栏同规（28×28 / `label-secondary` / 1px 描边），
+  关闭态 `visibility:hidden + contain:strict`，消除「工作区条飞出」与图标加粗。
+
 ## [0.4.4-test] — 2026-11-11
 vc=50
 
