@@ -35,6 +35,10 @@ vc=51
   `ps` 不再能看到 API key。
 - **镜像自带开发工具**：`git` / `python3` / `curl` 随 rootfs 下发，重解包不再丢 dev-env
   （代价：APK 由 143 MB 增至 187 MB）。
+- **DNS 回归修复**：dev-tools 镜像步骤把构建机的 `resolv.conf`（`nameserver 127.0.0.53` +
+  `search *.compute.internal`）带进了 rootfs，导致设备上**所有域名解析失败**（登录显示
+  「账号资料暂不可用」、插件市场回退离线目录且提示 `fetch failed`）。构建期改为装完即还原
+  公共 DNS，`verify.py` 增加解析器硬断言，客户端对已知坏值就地自愈（老安装无需重装）。
 - **图片附件**：修复 `@img/colour` 被平台裁剪误删导致的 `Cannot find module`（发图必失败），
   `verify.py` 增加硬断言。
 - **移动端 UI `1.1.0-181`**：左侧栏图标与右侧栏同规（28×28 / `label-secondary` / 1px 描边），

@@ -151,7 +151,11 @@ class ProotHost(
             val etc = File(rootfs, "etc")
             if (!etc.isDirectory) return
             File(etc, "resolv.conf").let { f ->
-                if (!f.isFile || f.length() == 0L) f.writeText("nameserver 223.5.5.5\nnameserver 119.29.29.29\nnameserver 8.8.8.8\n")
+                val text = runCatching { f.readText() }.getOrDefault("")
+                if (RuntimeFiles.needsPublicDns(text)) {
+                    f.writeText(RuntimeFiles.PUBLIC_DNS)
+                    Log.w(TAG, "guest resolv.conf 不可用，已重写为公共 DNS（原长度=${text.length}）")
+                }
             }
             File(etc, "hosts").let { f ->
                 if (!f.isFile || f.length() == 0L) f.writeText("127.0.0.1 localhost\n::1 localhost\n")

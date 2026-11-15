@@ -28,6 +28,30 @@ internal object RuntimeFiles {
     fun insufficientSpace(freeBytes: Long, needBytes: Long = ASSUME_UNPACKED_BYTES): Boolean =
         freeBytes in 1 until needBytes
 
+    /** 设备上不可用的解析器：构建机的 systemd-resolved 桩、本机回环。 */
+    private val badResolvers = listOf("127.0.0.53", "compute.internal")
+
+    /**
+     * guest `/etc/resolv.conf` 是否需要重写成公共 DNS。
+     *
+     * 判据是「不可用」而不是「空」：镜像曾把构建机的
+     * `nameserver 127.0.0.53` + `search *.compute.internal` 打进包，手机上没有那个
+     * 解析器，症状是**所有域名都解析失败**（登录、插件市场全 `no-response`）。
+     * 用户自己写的公共 DNS 不动。
+     */
+    fun needsPublicDns(text: String): Boolean {
+        if (text.isBlank()) return true
+        if (badResolvers.any { it in text }) return true
+        // 只认 `nameserver <ip>` 行；注释、`search`、`options` 都不算解析器。
+        return text.lineSequence()
+            .map { it.trim() }
+            .filter { it.startsWith("nameserver") }
+            .map { it.removePrefix("nameserver").trim() }
+            .none { it.isNotEmpty() && it != "127.0.0.1" }
+    }
+
+    const val PUBLIC_DNS = "nameserver 223.5.5.5\nnameserver 119.29.29.29\nnameserver 8.8.8.8\n"
+
     fun missingCriticalFiles(rootfs: File): List<String> = criticalFiles.filter { name ->
         val f = File(rootfs, name)
         !contains(rootfs, f) || !f.isFile || f.length() == 0L

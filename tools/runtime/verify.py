@@ -169,6 +169,25 @@ def check_archive(path, manifest):
         else:
             ok("未混入 x64/win32/darwin/android 平台包")
 
+        # 解析器硬断言：镜像里的 /etc/resolv.conf 只对设备有意义。
+        # `127.0.0.53` 是 systemd-resolved 的本地桩、`*.compute.internal` 是构建机
+        # 内网域名 —— 任何一条混进来，设备上所有 DNS 都会失败（2026-11-15 真机回归）。
+        resolv = members.get("etc/resolv.conf")
+        resolv_text = ""
+        if resolv is not None and resolv.isfile():
+            data = tf.extractfile(resolv)
+            resolv_text = (data.read(4096) if data else b"").decode("utf-8", "replace")
+        if not resolv_text:
+            bad("etc/resolv.conf 缺失或为空")
+        else:
+            polluted = [n for n in ("127.0.0.53", "127.0.0.1", "compute.internal") if n in resolv_text]
+            if polluted:
+                bad("resolv.conf 混入构建机解析器：" + ", ".join(polluted))
+            elif not any(f"nameserver {ip}" in resolv_text for ip in ("223.5.5.5", "119.29.29.29", "8.8.8.8", "1.1.1.1")):
+                bad("resolv.conf 没有公共 nameserver")
+            else:
+                ok("resolv.conf 是设备可用 DNS")
+
         if sha256_file(path) != manifest["rootfs"]["sha256"]:
             bad("manifest.rootfs.sha256 与实际归档不一致")
         else:

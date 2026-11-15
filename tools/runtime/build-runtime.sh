@@ -237,6 +237,13 @@ if [ "${DSH_RT_DEV_TOOLS:-1}" = "1" ]; then
   for b in git python3 curl; do
     [ -x "$ROOTFS/usr/bin/$b" ] || die "dev 工具缺失: /usr/bin/$b"
   done
+  # ⚠️ 上面为了 chroot apt 临时 `cp /etc/resolv.conf` 进来，那份是**构建机**的
+  #    systemd-resolved 桩（`nameserver 127.0.0.53` + `search *.compute.internal`）。
+  #    手机上没有 127.0.0.53，带进镜像就是「所有域名都解析不了」——
+  #    真机症状：登录/插件市场全 `no-response`、market 回落到离线目录（2026-11-15 实测）。
+  #    必须还原成 §3 里写的那份公共 DNS。
+  printf 'nameserver 223.5.5.5\nnameserver 119.29.29.29\nnameserver 8.8.8.8\n' \
+    | $SUDO tee "$ROOTFS/etc/resolv.conf" >/dev/null
   log "dev tools: $DEV_VER / $PY_VER"
 fi
 

@@ -36,6 +36,17 @@ class RuntimeS6Test {
         assertFalse(RuntimeFiles.insufficientSpace(0, need))    // 读不到空间 ⇒ 放行
         assertFalse(RuntimeFiles.insufficientSpace(-1, need))
     }
+    @Test fun builderStubResolverIsRejected() {
+        val runner = "# This is /run/systemd/resolve/stub-resolv.conf\nnameserver 127.0.0.53\noptions edns0 trust-ad\nsearch us-west-2.compute.internal\n"
+        assertTrue(RuntimeFiles.needsPublicDns(runner))
+        assertTrue(RuntimeFiles.needsPublicDns(""))
+        assertTrue(RuntimeFiles.needsPublicDns("nameserver 127.0.0.1\n"))
+        assertTrue(RuntimeFiles.needsPublicDns("# only comments\n"))
+        assertFalse(RuntimeFiles.needsPublicDns("nameserver 223.5.5.5\n"))
+        assertFalse(RuntimeFiles.needsPublicDns("nameserver 9.9.9.9\nsearch lan\n"))
+        assertTrue(RuntimeFiles.PUBLIC_DNS.contains("223.5.5.5"))
+    }
+
     @Test fun pathBoundaryIsNotAStringPrefix() {
         val root = tmp.newFolder("data")
         assertTrue(RuntimeFiles.contains(root, File(root, "profiles/web")))
