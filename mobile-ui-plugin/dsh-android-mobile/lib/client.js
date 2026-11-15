@@ -151,26 +151,32 @@ window.__ModuleLoader__.load({
   max-width: 85vw !important;
   z-index: 80 !important;
   transform: none !important;
-  transition: left .22s var(--ds-ease-in-out, ease) !important;
+  transition: none !important;
   box-shadow: none !important;
   box-sizing: border-box !important;
   overflow: hidden !important;
   clip-path: inset(0) !important;
   visibility: hidden !important;
+  opacity: 0 !important;
   pointer-events: none !important;
-  contain: layout style !important;
+  contain: strict !important;
 }
 [data-mobile] [class*=sidebarCol].mp-drawer-open {
   left: 0 !important;
   box-shadow: 0 0 30px rgba(0, 0, 0, .18) !important;
   visibility: visible !important;
+  opacity: 1 !important;
   pointer-events: auto !important;
+  contain: layout style !important;
+  transition: left .22s var(--ds-ease-in-out, ease) !important;
 }
 [data-mobile] [class*=sidebarCol]:has([data-shortcut-modal="settings"], [data-shortcut-modal="shortcut-edit"], [class*="VOzbGW_panel"]) {
   overflow: visible !important;
   clip-path: none !important;
   visibility: visible !important;
+  opacity: 1 !important;
   pointer-events: auto !important;
+  contain: none !important;
 }
 [data-mobile] [class*=sidebarCol] > * {
   width: 100% !important;
@@ -1705,10 +1711,8 @@ window.__ModuleLoader__.load({
 
 		// ── 6. 侧栏点「新会话」或「会话条」后自动收回抽屉 ──
 function closeDrawerAfterClick() {
-setTimeout(() => {
-if (window.__mpSetDrawerVisual) window.__mpSetDrawerVisual(false);
-else mpCloseDrawer();
-}, 150);
+  if (window.__mpSetDrawerVisual) window.__mpSetDrawerVisual(false);
+  else mpCloseDrawer();
 }
 		function onNewSessionClick(e) {
 			if (!mpIsMobile()) return; // 修复 40：收抽屉仅移动端有意义
@@ -3095,13 +3099,14 @@ st.setProperty("left", open ? "0px" : "-340px", "important");
 st.setProperty("z-index", "80", "important");
 st.setProperty("transform", "none", "important");
 st.setProperty("box-sizing", "border-box", "important");
-st.setProperty("transition", "left .22s var(--ds-ease-in-out, ease)", "important");
-st.setProperty("box-shadow", open ? "0 0 30px rgba(0,0,0,.18)" : "none", "important");
-st.setProperty("pointer-events", open ? "auto" : "none", "important");
 const hasModal = !!col.querySelector('[data-shortcut-modal="settings"], [data-shortcut-modal="shortcut-edit"], [class*="VOzbGW_panel"]');
+st.setProperty("transition", open ? "left .22s var(--ds-ease-in-out, ease)" : "none", "important");
+st.setProperty("box-shadow", open ? "0 0 30px rgba(0,0,0,.18)" : "none", "important");
+st.setProperty("pointer-events", (open || hasModal) ? "auto" : "none", "important");
 st.setProperty("clip-path", hasModal ? "none" : "inset(0)", "important");
 st.setProperty("overflow", hasModal ? "visible" : "hidden", "important");
 st.setProperty("visibility", (open || hasModal) ? "visible" : "hidden", "important");
+st.setProperty("opacity", (open || hasModal) ? "1" : "0", "important");
 col.querySelectorAll(":scope > *, [class*='hHd-Xa_root']").forEach((el) => {
 el.style.setProperty("width", "100%", "important");
 el.style.setProperty("min-width", "0", "important");
@@ -11055,8 +11060,8 @@ if (!window.__mpHeaderMenuTimer) {
     + 'html[data-mobile] header[data-window-drag],html[data-mobile] header[class*="header"]{padding-left:52px !important;}'
     + 'html[data-mobile] [class*="leadingSeat"]{display:none !important;}'
     + 'html[data-mobile] .mp-lead-btn:not([data-mp-v5]){display:none !important;}'
-    + 'html[data-mobile] .mp-lead-v5{position:fixed !important;left:8px !important;top:calc(var(--dsh-android-system-top,0px) + 8px) !important;z-index:65 !important;width:36px !important;height:36px !important;border:none !important;border-radius:8px !important;background:transparent !important;color:inherit !important;display:inline-flex !important;align-items:center !important;justify-content:center !important;padding:0 !important;cursor:pointer !important;}'
-    + 'html[data-mobile] .mp-lead-v5 svg{width:15px !important;height:15px !important;transform:none !important;}'
+    + 'html[data-mobile] .mp-lead-v5{position:fixed !important;left:12px !important;top:calc(var(--dsh-android-system-top,0px) + 11px) !important;z-index:65 !important;width:28px !important;height:28px !important;border:none !important;border-radius:var(--dsw-radius-sm,6px) !important;background:transparent !important;color:var(--dsw-alias-label-secondary) !important;display:inline-flex !important;align-items:center !important;justify-content:center !important;padding:0 !important;cursor:pointer !important;-webkit-tap-highlight-color:transparent !important;}'
+    + 'html[data-mobile] .mp-lead-v5 svg{width:15px !important;height:15px !important;display:block !important;transform:none !important;}'
     + 'html[data-mobile] .mp-lead-v5.mp-lead-hidden{display:none !important;}'
     + 'html[data-mobile] [data-sidebar-right-open]{z-index:90 !important;}'
     + '[data-shortcut-modal="settings"] nav button[data-am-nav]::before{content:none !important;}';
@@ -11105,7 +11110,7 @@ if (!window.__mpHeaderMenuTimer) {
       btn.className = 'mp-lead-v5';
       btn.setAttribute('data-mp-v5', '1');
       btn.setAttribute('aria-label', '打开侧边栏');
-      btn.innerHTML = '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke-width="1.2" aria-hidden="true"><path d="M13.5 1.5H2.5C1.94772 1.5 1.5 1.94772 1.5 2.5V13.5C1.5 14.0523 1.94772 14.5 2.5 14.5H13.5C14.0523 14.5 14.5 14.0523 14.5 13.5V2.5C14.5 1.94772 14.0523 1.5 13.5 1.5Z" stroke="currentColor"/><path d="M5.5 1.5V14.5" stroke="currentColor"/></svg>';
+      btn.innerHTML = '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke-width="1" aria-hidden="true"><path d="M13.5 1.5H2.5C1.94772 1.5 1.5 1.94772 1.5 2.5V13.5C1.5 14.0523 1.94772 14.5 2.5 14.5H13.5C14.0523 14.5 14.5 14.0523 14.5 13.5V2.5C14.5 1.94772 14.0523 1.5 13.5 1.5Z" stroke="currentColor"/><path d="M5.5 1.5V14.5" stroke="currentColor"/></svg>';
       btn.addEventListener('click', function (e) {
         try { e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); } catch (err) {}
         var c = col();
@@ -11117,6 +11122,13 @@ if (!window.__mpHeaderMenuTimer) {
       }, true);
     }
 
+    var rb = document.querySelector('[data-sidebar-right-expand], button[aria-label*="右侧边栏"]');
+    if (rb && btn) {
+      var rbr = rb.getBoundingClientRect();
+      if (rbr.height > 10 && rbr.top >= 0 && rbr.top < 120) {
+        btn.style.setProperty('top', Math.round(rbr.top + (rbr.height - 28) / 2) + 'px', 'important');
+      }
+    }
     var c = col();
     var frame = document.querySelector('[class*=pI_x6G_frame]');
     var hide = (c && c.classList.contains('mp-drawer-open')) || (frame && frame.hasAttribute('data-rightbar-fullscreen')) || !!document.querySelector('[data-sidebar-right-open]') || hasOpenModal();
