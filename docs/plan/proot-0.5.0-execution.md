@@ -44,7 +44,7 @@
 | **S5** | 能力搬迁：`bash` 身份、`/sdcard` 绑定、`shell`(uid2000)、`root`(uid0)、无线调试、dev-env、镜像 | 真机 D-03…D-11 全过 | ⬜ |
 | **S6** | 数据迁移与救援：`$DSH_HOME` 复用、索引重建、救援 profile 走 proot、rootfs 修复 | 0.4.3/0.4.4 → 0.5.0 升级不丢会话 | ✅ 2026-11-15（`d3ccfd50`，证据 `_build/evidence/handoff-050/s6-data-migration-rescue-pass.md`） |
 | **S7** | 真机矩阵：冷启、附件、终端、检索、沙箱、插件、断网、存储不足 | 见 c-plan §P5 判据 | 🟡 第一轮 2026-11-15（冷启/附件/终端/检索/沙箱/插件/断网/空间预检 全过；证据 `_build/evidence/handoff-050/s7-matrix-round1-pass.md`；待补 UI 端真发图与真搜索、真实塞满存储） |
-| **S8** | 发布 0.5.0：vc51、CHANGELOG、release notes、0.4.4-test 撤下 | CI 出包 + 真机 smoke | ⬜（含：把 `git`/`python3`/`curl` 预置进 `build-runtime.sh`，使 rootfs 重解包不再丢开发工具） |
+| **S8** | 发布 0.5.0：vc51、CHANGELOG、release notes、0.4.4-test 撤下 | CI 出包 + 真机 smoke | ⬜（dev 工具预置已完成：`cfeb4cf3`→`8005362a`，镜像自带 git/python3/curl；APK 186.9 MB） |
 
 ## 四、本轮完成（2026-11-12）
 
@@ -63,6 +63,7 @@
 
 | 日期 | 事项 |
 |---|---|
+| 2026-11-15 | dev 工具进镜像：`build-runtime.sh` §3.2 用 binfmt + chroot apt 装 `git/python3/curl`，`verify.py` 三条硬断言；踩坑与修法记在 S7 证据 §五（binfmt 而非 qemu-user-static、bind /dev+/proc、非 root tar 的 chown、per-ABI apt 源、umount 后再打包）。真机新 stamp 首解包即自带三件套，`engine.ready 151 s health=401` |
 | 2026-11-15 | S7 第一轮：修 `@img/colour` 被平台裁剪误删（图片附件整链失效）+ API 密钥移出 argv（写 0600 guest env 文件）；真机验完冷启（33.6~53.1 s）、附件、终端、索引目录、沙箱写边界、插件 0 错、断网冷启（34.1 s）；空间预检抽成纯函数并加单测（19 条） |
 | 2026-11-15 | S6：`ProotHost` 支持 profile/命令模式、每次运行独立 pidfile、作用域停止（不再全局杀 guest node）；`RootfsInstaller` 关键文件校验 + `invalidate()` + swap 回滚；`EngineManager` 恢复救援编排（rescue profile / 跳过体检 / 层级重读 / 失败先落盘 / gateway / health / 迁移 / 退出监视）与 start 代际；新增 `RuntimeFiles`/`ProotLaunch` 与 14 条 JVM 单测，CI 升为「编译 + 单测」。真机：救援切换、try-boot 不误杀、rootfs 自愈、旧运行时精确迁移、数据 0 丢失 |
 | 2026-11-12 | S1 完成：运行时构建进 CI；新增 verify.py；修交叉编译与 npm 平台参数 |
