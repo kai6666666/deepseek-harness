@@ -2245,266 +2245,295 @@ function closeDrawerAfterClick() {
 			normalize();
 		}
 
-		// ── 7. 设置页两级化（全 inline style，不用 CSS 规则——见 CSS 区注释） ──
-		/**
-	 * 修复 182：插件市场容器契约。
-	 *
-	 * 市场页的布局前提有三条（来自 dshmarket/client 的 nUhMVa_* CSS）：
-	 *   ① 祖先必须是 **flex 列**，且每层都能算出高度（市场面板容器{height:100%}）；
-	 *   ② 宽度必须由 flex 决定（市场面板容器>市场根节点{flex:1;width:100%;min-width:0}）；
-	 *   ③ 它用 `container-type:inline-size` 做容器查询，宽度一旦算错就落进最窄档。
-	 * 我们原来在「插件市场」分支把容器设成 display:block，①②同时失效 ⇒ 标签竖排、
-	 * 卡片堆成细柱。这里把 dialog→…→options 的每一层都补回 flex 列契约。
-	 *
-	 * 样式表只做两件事：给 market 根兜住 width/min-width，并在窄屏把它自己的
-	 * grid 强制单列（不依赖它的容器查询是否被触发）。
-	 */
-	const mpMarketStyleId = "mp-market-shell-182";
+/* BEGIN mobile-layout-v183
+ * Mobile-only layout adapter. Keep React nodes/handlers and the market bundle intact.
+ * Plugin headers use stable data attributes. Settings geometry stays inline: the
+ * market's <=560px stylesheet hides the host nav and gives every host div width:100%.
+ * Patch only the content chain; never turn the settings dialog into a market root.
+ */
+	const mpMarketStyleId = "mp-market-shell-183";
 	function mpEnsureMarketStyle() {
 		if (document.getElementById(mpMarketStyleId)) return;
 		const style = document.createElement("style");
 		style.id = mpMarketStyleId;
-		// ⚠️ 只用 `data-dsh-market-root` 与结构选择器：市场内部的类名是
-		//    webpack 哈希（形如 `xxx_yyy`），写死会被 `tools/ui-contract/audit.mjs`
-		//    判为「死引用 + 哈希类名增加」而卡住出包，且市场一升级就失效。
-		//    窄屏单列交给市场自己的媒体查询——只要宽度算对，它自己就会切。
-		style.textContent = [
-			"[data-mp-market='1'] [data-dsh-market-root]{",
-			"width:100%!important;min-width:0!important;max-width:none!important;",
-			"height:100%!important;min-height:0!important;",
-			"display:flex!important;flex-direction:column!important;box-sizing:border-box!important}",
-			"[data-mp-market='1'] [data-dsh-market-root]>*{min-width:0!important;max-width:none!important}",
-		].join("");
+		// No settings selectors here; its title, actions and navigation keep their own grid rows.
+		style.textContent = `
+[data-mobile] [data-plugin-panel] {
+  display:flex!important;flex-direction:column!important;
+  width:100%!important;max-width:none!important;min-width:0!important;
+  height:100%!important;min-height:0!important;padding:0!important;margin:0!important;
+  box-sizing:border-box!important;
+}
+[data-mobile] [data-plugin-panel] [data-plugin-body] {
+  display:flex!important;flex-direction:column!important;flex:1 1 0%!important;
+  width:100%!important;min-width:0!important;height:100%!important;min-height:0!important;
+  padding:0!important;margin:0!important;gap:0!important;box-sizing:border-box!important;
+  overflow-x:hidden!important;overflow-y:auto!important;scroll-padding-top:0!important;
+}
+[data-mobile] [data-plugin-panel] [data-plugin-bar] {
+  display:block!important;position:static!important;flex:0 0 auto!important;
+  width:100%!important;height:auto!important;min-height:0!important;max-height:none!important;
+  padding:12px 16px!important;margin:0!important;box-sizing:border-box!important;
+  overflow:visible!important;clip-path:none!important;transform:none!important;
+}
+[data-mobile] [data-plugin-panel] [data-plugin-bar] > header[data-window-drag] {
+  display:grid!important;grid-template-columns:minmax(0,1fr) auto auto!important;
+  grid-template-rows:auto auto auto!important;gap:8px 8px!important;align-items:center!important;
+  width:100%!important;height:auto!important;min-height:0!important;max-height:none!important;
+  padding:0!important;margin:0!important;box-sizing:border-box!important;
+  position:relative!important;overflow:visible!important;clip-path:none!important;
+}
+[data-mobile] [data-plugin-panel] [data-plugin-bar] > header > :first-child {
+  display:contents!important;
+}
+[data-mobile] [data-plugin-panel] [data-plugin-bar] [data-plugin-header-part] {
+  position:static!important;top:auto!important;right:auto!important;bottom:auto!important;left:auto!important;
+  transform:none!important;translate:none!important;transition:none!important;clip-path:none!important;
+  width:auto!important;max-width:100%!important;min-width:0!important;height:auto!important;
+  margin:0!important;box-sizing:border-box!important;opacity:1!important;visibility:visible!important;
+}
+[data-mobile] [data-plugin-panel] [data-plugin-header-part="title"] {
+  grid-column:1!important;grid-row:1!important;align-self:center!important;
+  font-size:20px!important;line-height:28px!important;font-weight:600!important;
+}
+/* Flatten only the toolbar's layout box: keep every React node and click handler in place. */
+[data-mobile] [data-plugin-panel] [data-plugin-header-part="toolbar"] {
+  display:contents!important;
+}
+[data-mobile] [data-plugin-panel] [data-plugin-header-part="toolbar"] > button {
+  grid-column:2!important;grid-row:1!important;justify-self:end!important;
+}
+[data-mobile] [data-plugin-panel] [data-plugin-header-part="toolbar"] > :has(button) {
+  grid-column:3!important;grid-row:1!important;justify-self:end!important;
+  display:inline-flex!important;align-items:center!important;
+}
+[data-mobile] [data-plugin-panel] [data-plugin-header-part="toolbar"] > :not(button):not(:has(button)) {
+  grid-column:2 / -1!important;grid-row:2!important;justify-self:end!important;
+  position:static!important;margin:0!important;padding:0!important;max-width:100%!important;
+  font-size:12px!important;line-height:20px!important;text-align:right!important;
+  white-space:normal!important;overflow-wrap:anywhere!important;
+}
+[data-mobile] [data-plugin-panel] [data-plugin-header-part="toolbar"] button {
+  min-height:32px!important;height:32px!important;box-sizing:border-box!important;
+}
+[data-mobile] [data-plugin-panel] [data-plugin-header-part="intro"] {
+  grid-column:1!important;grid-row:2!important;display:flex!important;
+  flex-wrap:wrap!important;align-items:center!important;gap:4px 4px!important;
+  font-size:12px!important;line-height:20px!important;
+}
+[data-mobile] [data-plugin-panel] [data-plugin-header-part="tabs"] {
+  grid-column:1 / -1!important;grid-row:3!important;display:flex!important;
+  padding-top:4px!important;justify-content:flex-start!important;
+}
+[data-mobile] [data-plugin-panel] [data-plugin-header-part="tabs"] [role="tablist"] {
+  width:100%!important;max-width:100%!important;min-width:0!important;box-sizing:border-box!important;
+}
+[data-mobile] [data-plugin-panel] [data-plugin-body] > [role="tabpanel"] {
+  width:100%!important;min-width:0!important;padding:8px 16px 24px!important;margin:0!important;
+  box-sizing:border-box!important;
+}
+[data-mobile] [data-plugin-panel] [data-plugin-group] > :first-child {
+  display:flex!important;align-items:center!important;gap:8px!important;
+  width:100%!important;min-width:0!important;box-sizing:border-box!important;
+}
+[data-mobile] [data-plugin-panel] [data-plugin-group] > :first-child > h3 {
+  flex:1 1 auto!important;min-width:0!important;margin:0!important;
+  font-size:15px!important;line-height:22px!important;font-weight:600!important;
+}
+[data-mobile] [data-plugin-panel] [data-plugin-group="extensions"] > :first-child > :last-child {
+  flex:0 0 auto!important;display:inline-flex!important;align-items:center!important;
+  margin-left:auto!important;white-space:nowrap!important;
+}
+/* A narrow screen gets a separate status row instead of squeezing the title or info button. */
+@media (max-width: 359px) {
+  [data-mobile] [data-plugin-panel] [data-plugin-header-part="intro"] {
+    grid-column:1 / -1!important;grid-row:2!important;
+  }
+  [data-mobile] [data-plugin-panel] [data-plugin-header-part="toolbar"] > :not(button):not(:has(button)) {
+    grid-column:1 / -1!important;grid-row:3!important;
+  }
+  [data-mobile] [data-plugin-panel] [data-plugin-header-part="tabs"] {
+    grid-row:4!important;
+  }
+}
+`;
 		document.head.appendChild(style);
 	}
-	function mpMarketShell(dialog, options, on) {
-		if (on) mpEnsureMarketStyle();
-		dialog.dataset.mpMarket = on ? "1" : "0";
-		if (!on) return;
-		// 从承载 market 的那层往上，逐层补齐「flex 列 + 满宽 + 可算高度」。
-		let node = options.parentElement;
-		const chain = [];
-		while (node && node !== dialog && chain.length < 6) {
-			chain.push(node);
-			node = node.parentElement;
-		}
-		for (const el of [options, ...chain]) {
-			el.style.setProperty("display", "flex", "important");
-			el.style.setProperty("flex-direction", "column", "important");
-			el.style.setProperty("width", "100%", "important");
-			el.style.setProperty("min-width", "0", "important");
-			el.style.setProperty("height", "100%", "important");
-			el.style.setProperty("min-height", "0", "important");
-			el.style.setProperty("flex", "1 1 auto", "important");
-			el.style.setProperty("padding", "0", "important");
-			el.style.setProperty("overflow", "hidden", "important");
-			el.style.setProperty("contain", "none", "important");
-		}
-		// 市场根自己也要能撑满：它带 `container-type:inline-size`，宽度一旦算错
-		// 就会落进最窄档。这里只按结构取（不碰哈希类名），连它的第一层子节点一起铺满。
-		const root = options.querySelector("[data-dsh-market-root]");
-		if (root) {
-			for (const el of [root, root.firstElementChild]) {
-				if (!el) continue;
-				el.style.setProperty("width", "100%", "important");
-				el.style.setProperty("min-width", "0", "important");
-				el.style.setProperty("height", "100%", "important");
-				el.style.setProperty("min-height", "0", "important");
-				el.style.setProperty("flex", "1 1 auto", "important");
+
+	// Save individual inline declarations, not cssText: tab switches must restore the
+	// previous host layout without discarding changes made by React or other plugins.
+	const mpMarketInline = new Map();
+	let mpMarketRoots = new Set();
+	const mpMarketTitles = new Map();
+	function mpMarketSet(el, declarations, wanted) {
+		if (!el) return;
+		let props = mpMarketInline.get(el);
+		if (!props) { props = new Map(); mpMarketInline.set(el, props); }
+		let active = wanted.get(el);
+		if (!active) { active = new Set(); wanted.set(el, active); }
+		for (const [name, value] of Object.entries(declarations)) {
+			active.add(name);
+			let saved = props.get(name);
+			const before = el.style.getPropertyValue(name);
+			const priority = el.style.getPropertyPriority(name);
+			if (saved && saved.requested === value && before === saved.applied && priority === "important") continue;
+			if (!saved || before !== saved.applied || priority !== "important") {
+				saved = { value: before, priority };
+				props.set(name, saved);
 			}
+			el.style.setProperty(name, value, "important");
+			saved.requested = value;
+			saved.applied = el.style.getPropertyValue(name);
 		}
 	}
-const mpSettingsSync = new WeakMap();
-		function setupSettingsDialog(dialog) {
-			// 修复 88：用户要求设置页回到官方布局（两栏 + 顶部 tab）。
-			//   这里直接不动 dialog，唯一保留的是系统返回键由 mpDialogBack/Escape 兜底。
-			if (mpIsMobile()) return;
-			if (!mpIsMobile()) return; // 修复 40：仅移动端；桌面端完全走官方
-			const old = mpSettingsSync.get(dialog);
-			if (old) { try { old(); } catch (e) {} return; }
-			const nav0 = Array.from(dialog.children).find((c) => c.tagName === "NAV");
-			if (!nav0) return;
-			dialog.dataset.mpSettings = "1";
-			// 隐藏安卓壳遗留的"开发者选项"（依赖 window.androidBridge，Web 进程里没有）
-			nav0.querySelectorAll("button").forEach((b) => {
-				if ((b.innerText || "").trim() === "开发者选项") b.style.display = "none";
-			});
-			const sysTop = getComputedStyle(document.documentElement).getPropertyValue("--dsh-android-system-top").trim() || "0px";
-			const BAR_H = 48;
-			const barPad = sysTop || "0px"; // 修复 81：自建返回条已删，不再预留 48px
-			const bodyBg = getComputedStyle(document.body).backgroundColor || "#fff";
-			// 面板改成一列：官方默认 flex-flow: row wrap，会把返回条挤成 60px 窄条，
-			// 也会让内容区只剩 26px 高（实测 y=780 h=26）。
-			Object.assign(dialog.style, {
-				width: "100vw", maxWidth: "100vw", height: "100vh", maxHeight: "100vh",
-				borderRadius: "0", boxShadow: "none", position: "fixed", top: "0", left: "0",
-				overflow: "hidden", padding: "0",
-			});
-			dialog.style.setProperty("display", "flex", "important");
-			dialog.style.setProperty("flex-direction", "column", "important");
-			dialog.style.setProperty("flex-wrap", "nowrap", "important");
-			const overlay = dialog.parentElement;
-			if (overlay) {
-				overlay.style.left = "0";
-				overlay.style.width = "100vw";
-				overlay.style.height = "100vh";
-				overlay.style.alignItems = "stretch";
+	function mpMarketRestore(wanted) {
+		for (const [el, props] of mpMarketInline) {
+			for (const [name, saved] of props) {
+				if (wanted.get(el)?.has(name)) continue;
+				if (el.style.getPropertyValue(name) === saved.applied && el.style.getPropertyPriority(name) === "important") {
+					if (saved.value) el.style.setProperty(name, saved.value, saved.priority);
+					else el.style.removeProperty(name);
+				}
+				props.delete(name);
 			}
-			// 顶栏：固定吸顶，标题左对齐（返回键 + 页面名，只有一层）
-			// 修复 81：设置页自带走返回条，这里只保留一个**游离**的标题节点供下方复用，
-			//   不再向 dialog 插入任何 bar（否则它会跟着 dialog 一起被塞进侧栏，
-			//   表现为侧栏顶部多出「‹ 设置」并挤压品牌行）。
-			const titleSpan = document.createElement("span");
-			const closeDialog = () => {
-				const mask = dialog.parentElement?.querySelector(".VOzbGW_mask");
-				if (mask) mask.click();
-			};
-			const refs = { nav: null };
-			const styleNav = (nav, firstName) => {
-				nav.style.setProperty("display", "flex", "important");
-				nav.style.setProperty("flex-direction", "column", "important");
-				nav.style.setProperty("align-items", "stretch", "important");
-				nav.style.setProperty("overflow-y", "auto", "important");
-				nav.style.setProperty("overflow-x", "hidden", "important");
-				nav.style.setProperty("width", "100%", "important");
-				nav.style.setProperty("gap", "2px", "important");
-				nav.style.setProperty("padding", `${barPad} 10px 16px`, "important");
-				nav.style.setProperty("box-sizing", "border-box", "important");
-				nav.style.setProperty("flex", "1 1 0%", "important");
-				nav.style.setProperty("min-height", "0", "important");
-				const navList = nav.querySelector(".VOzbGW_navList");
-				if (navList) {
-					navList.style.flex = "1 1 0%";
-					navList.style.minHeight = "0";
-					navList.style.overflowY = "auto";
-				}
-				if (navList && !navList.querySelector("[data-mp-group]")) {
-					const groups = [
-						{ label: "通用", items: ["通用设置"] },
-						{ label: "插件", items: ["内置插件", "插件"] },
-						{ label: "高级", items: ["Agent 预设", "快照", "附件缓存", "特权权限", "悬浮气泡", "插件市场", "开发环境", "运行日志与诊断", "多模态配置"] },
-					];
-					for (const g of groups) {
-						const first = [...navList.querySelectorAll("button")].find((b) => g.items.includes((b.innerText || "").trim()));
-						if (!first) continue;
-						const label = document.createElement("div");
-						label.className = "mp-nav-group";
-						label.dataset.mpGroup = "1";
-						label.textContent = g.label;
-						label.style.cssText = "padding:14px 16px 4px;font-size:12px;font-weight:600;color:var(--dsw-alias-label-secondary,#888);";
-						navList.insertBefore(label, first);
-					}
-				}
-				Array.from(nav.children).forEach((c) => {
-					if (c.querySelector && c.querySelector("button")) {
-						c.style.flexDirection = "column";
-						c.style.overflowX = "hidden";
-						c.style.gap = "2px";
-						c.style.flex = "1 1 0%";
-						c.style.minWidth = "0";
-					}
-				});
-				nav.querySelectorAll("button").forEach((b) => {
-					b.style.width = "100%";
-					b.style.minHeight = "50px";
-					b.style.justifyContent = "flex-start";
-					b.style.padding = "0 16px";
-					b.style.borderRadius = "12px";
-					b.style.fontSize = "15px";
-					b.style.flex = "none";
-					b.style.textAlign = "left";
-					b.style.background = "transparent";
-				});
-				if (firstName && titleSpan) titleSpan.textContent = firstName;
-			};
-			const sync = () => {
-				const nav = Array.from(dialog.children).find((c) => c.tagName === "NAV") || dialog.querySelector("nav");
-				const options = dialog.querySelector(".VOzbGW_options");
-				if (!nav || !options) return;
-				if (refs.nav !== nav) {
-					refs.nav = nav;
-					nav.addEventListener("click", (e) => {
-						const btn = e.target.closest("button");
-						if (!btn) return;
-						const t = (btn.innerText || "").trim() || "设置";
-						dialog.dataset.mpView = "content";
-						dialog.dataset.mpTitle = t;
-						setTimeout(sync, 0);
-					});
-				}
-				const navTitle = dialog.querySelector(".VOzbGW_navTitle");
-				const header = dialog.querySelector(".VOzbGW_header");
-				if (navTitle) navTitle.style.setProperty("display", "none", "important");
-				if (header) header.style.setProperty("display", "none", "important");
-				const view = dialog.dataset.mpView === "content" ? "content" : "list";
-				if (view === "list") {
-					titleSpan.textContent = "设置";
-					options.style.setProperty("display", "none", "important");
-					styleNav(nav, "设置");
-				} else {
-					const t = dialog.dataset.mpTitle || "设置";
-					titleSpan.textContent = t;
-					nav.style.setProperty("display", "none", "important");
-					// 修复 86：插件市场自带整屏滚动，套我们的 padding/flex 会把内容推到底部。
-					const isMarket = /插件市场/.test(t) || !!options.querySelector("[data-dsh-market], [class*='pluginMarket'], [class*='marketRoot']");
-					// 修复 182：插件市场不是普通设置页，它自己有一套「父级是 flex 列、高度能到
-					//   100%、宽度由 flex 决定」的契约（市场面板容器{height:100%;display:flex;
-					//   flex-direction:column} + 市场根节点{container-type:inline-size}）。
-					//   之前把承载它的容器设成 display:block，容器查询读到的 inline-size 变成极窄，
-					//   直接落进它自己的 ≤560 窄档：标签竖排、卡片堆成一列细柱、整块贴右侧。
-					//   所以这一支要**保持 flex 列**，并让整条祖先链的 width/min-width/height 都成立。
-					mpMarketShell(dialog, options, isMarket);
-					options.style.setProperty("display", isMarket ? "flex" : "block", "important");
-					if (isMarket) options.style.setProperty("flex-direction", "column", "important");
-					options.style.setProperty("padding", isMarket ? "0" : `${barPad} 16px 28px`, "important");
-					options.style.setProperty("box-sizing", "border-box", "important");
-					options.style.setProperty("width", "100%", "important");
-					options.style.setProperty("min-width", "0", "important");
-					options.style.setProperty("flex", isMarket ? "1 1 auto" : "1 1 0%", "important");
-					options.style.setProperty("min-height", "0", "important");
-					if (isMarket) {
-						options.style.setProperty("height", "100%", "important");
-						options.style.setProperty("overflow", "hidden", "important");
-					} else {
-						options.style.removeProperty("height");
-						options.style.setProperty("overflow-y", "auto", "important");
-					}
-					// 多模态配置：设备上装的是旧版插件，页面里还留着面向开发者的措辞 → 就地改成用户向
-					const amDesc = options.querySelector(".am-page-desc");
-					if (amDesc && /插件自己的设置页/.test(amDesc.textContent || "")) {
-						amDesc.textContent = "为图片生成与视频生成配置 Agnes 账号池；自定义号优先，内置免费号池兜底。";
-					}
-					// 官方每个分节自带的 H2 与顶栏标题重复 → 只留顶栏一处
-					// 允许「页面名（补充说明）」形态，例如「特权权限（uid 2000 / root）」
-					options.querySelectorAll(".zGbnIq_title, h1, h2, h3").forEach((h) => {
-						const ht = (h.textContent || "").trim();
-						if (ht === t || ht.startsWith(t + "（") || ht.startsWith(t + "(")) {
-							h.style.setProperty("display", "none", "important");
-						}
-					});
-				}
-			};
-			const back = () => {
-				if ((dialog.dataset.mpView || "list") === "content") {
-					dialog.dataset.mpView = "list";
-					sync();
-				} else {
-					closeDialog();
-				}
-			};
-			// 修复 86b：修复 81 删掉自建返回条时，这一行忘了删 —— 每次打开设置都会抛
-			//   ReferenceError: backBtn is not defined，后面的 sync() 永远不执行。
-			//   返回键已由 mpDialogBack（系统返回键）接管，这里不再需要实体按钮监听。
-			mpDialogBack.set(dialog, back);
-			mpSettingsSync.set(dialog, sync);
-			sync();
+			if (!props.size) mpMarketInline.delete(el);
 		}
-		function mpSyncSettings() {
-			document.querySelectorAll('[role="dialog"][aria-modal="true"]').forEach((d) => {
-				const f = mpSettingsSync.get(d);
-				if (f) { try { f(); } catch (e) { /* 静默 */ } }
+	}
+	function mpSettingsDirectChild(dialog, el) {
+		while (el && el.parentElement !== dialog) el = el.parentElement;
+		return el;
+	}
+	function mpPreserveSettingsFrame(dialog, options, wanted) {
+		const nav = Array.from(dialog.children).find(el => el.tagName === "NAV");
+		const titleSlot = dialog.querySelector('[data-slot="settings.header"]');
+		const title = mpSettingsDirectChild(dialog, titleSlot);
+		const actions = mpSettingsDirectChild(dialog, dialog.querySelector('[data-slot="settings.action"]'));
+		mpMarketSet(dialog, {
+			display: "grid", "grid-template-columns": "minmax(0px, 1fr) auto",
+			"grid-template-rows": "auto auto minmax(0px, 1fr)",
+			"grid-template-areas": '"title actions" "nav nav" "content content"',
+			"min-width": "0px", "min-height": "0px", "box-sizing": "border-box",
+		}, wanted);
+		mpMarketSet(title, {
+            "grid-area": "title", display: "block", width: "auto", height: "auto",
+            "min-width": "0px", "min-height": "0px", "box-sizing": "border-box",
+            padding: "calc(var(--dsh-android-system-top, 0px) + 22px) 0px 0px 16px",
+        }, wanted);
+        mpMarketSet(actions, {
+            "grid-area": "actions", display: "flex", "align-items": "center", "justify-content": "flex-end",
+            width: "auto", height: "auto", "min-width": "0px", "min-height": "0px", "box-sizing": "border-box",
+            padding: "calc(var(--dsh-android-system-top, 0px) + 20px) 16px 0px 10px",
+        }, wanted);
+        mpMarketSet(nav, {
+			"grid-area": "nav", display: "flex", "flex-direction": "column", flex: "0 0 auto",
+			width: "auto", height: "auto", "min-width": "0px", "min-height": "0px",
+			"max-width": "100%", padding: "0px", overflow: "hidden", visibility: "visible",
+		}, wanted);
+		mpMarketSet(nav?.firstElementChild, {
+			display: "flex", "flex-direction": "row", "flex-wrap": "nowrap", flex: "0 0 auto",
+			width: "100%", height: "auto", "min-width": "0px", "box-sizing": "border-box",
+			"overflow-x": "auto", "overflow-y": "hidden", padding: "12px 16px 14px", gap: "4px",
+		}, wanted);
+		mpMarketSet(options, {
+			"grid-area": "content", display: "flex", "flex-direction": "column",
+			width: "100%", "max-width": "100%", "min-width": "0px", height: "auto", "min-height": "0px",
+			padding: "0px", margin: "0px", overflow: "hidden", "box-sizing": "border-box",
+		}, wanted);
+		// The official header slot can be empty. Add a sibling fallback, never replace the slot.
+		// Remove the fallback once a real title appears (hidden spans still duplicate accessibility text).
+		if (title && !titleSlot?.textContent.trim()) {
+			let label = mpMarketTitles.get(dialog);
+			if (!label) {
+				label = document.createElement("span");
+				label.dataset.mpSettingsTitle = "183";
+				label.textContent = "设置";
+				label.style.cssText = "font-size:18px;font-weight:600;line-height:28px;white-space:nowrap";
+				mpMarketTitles.set(dialog, label);
+			}
+			if (label.parentElement !== title) title.appendChild(label);
+		} else if (mpMarketTitles.has(dialog)) {
+			mpMarketTitles.get(dialog).remove();
+			mpMarketTitles.delete(dialog);
+		}
+	}
+	function mpMarketShell(root, boundary, wanted) {
+		// display:contents slots are transparent layout owners; leave them transparent.
+		// Stop BELOW the host: the settings title/nav and the panel's hamburger clearance stay intact.
+		for (let el = root; el && el !== boundary; el = el.parentElement) {
+			if (el !== root && getComputedStyle(el).display === "contents") continue;
+			mpMarketSet(el, {
+				display: "flex", "flex-direction": "column", flex: "1 1 0%",
+				width: "100%", "max-width": "100%", "min-width": "0px",
+				height: "auto", "min-height": "0px", "box-sizing": "border-box",
+				padding: "0px", margin: "0px", overflow: "hidden",
+				transform: "none", scale: "none", translate: "none", animation: "none", transition: "none",
+			}, wanted);
+		}
+		// One density and one gutter for settings, plugin tabs and sidebar panels.
+		// Text autosizing is local to the market; the user's document font/zoom stays untouched.
+		mpMarketSet(root, {
+			"font-size": "14px", "line-height": "22px", "font-family": "inherit",
+			"text-size-adjust": "100%", "-webkit-text-size-adjust": "100%",
+		}, wanted);
+		const children = Array.from(root.children || []);
+		if (children.length !== 2) return;
+		const [head, body] = children;
+		mpMarketSet(head, {
+			flex: "0 0 auto", height: "auto", "min-height": "0px", "max-height": "none",
+			width: "100%", "min-width": "0px", "max-width": "100%", "box-sizing": "border-box",
+			margin: "0px", padding: "8px 16px", transform: "none", scale: "none",
+			animation: "none", transition: "none",
+		}, wanted);
+		// The plugin-tab stylesheet uses min-height:100%, flex:0 0 auto and overflow:visible.
+		// It overflows a clipped parent, leaving neither the parent nor the body swipeable.
+		// A zero min-height, shrinkable flex body owns native scrolling in every entry.
+		mpMarketSet(body, {
+			flex: "1 1 0%", height: "auto", "min-height": "0px", "max-height": "none",
+			width: "100%", "min-width": "0px", "max-width": "100%", "box-sizing": "border-box",
+			margin: "0px", padding: "0px 16px 16px", "overflow-x": "hidden", "overflow-y": "auto",
+			"overscroll-behavior-y": "contain", "touch-action": "pan-x pan-y pinch-zoom",
+			"scroll-behavior": "auto", transform: "none", scale: "none", animation: "none", transition: "none",
+		}, wanted);
+	}
+	function mpFinishMarketLayouts(wanted, roots, dialogs) {
+		mpMarketRestore(wanted);
+		for (const root of mpMarketRoots) if (!roots.has(root)) delete root.dataset.mpMarket;
+		mpMarketRoots = roots;
+		for (const [dialog, title] of mpMarketTitles) {
+			if (!dialogs.has(dialog)) { title.remove(); mpMarketTitles.delete(dialog); }
+		}
+	}
+	function mpSyncSettings() {
+		const wanted = new Map(), roots = new Set(), dialogs = new Set();
+		if (mpIsMobile()) {
+			mpEnsureMarketStyle();
+			document.querySelectorAll("[data-dsh-market-root]").forEach(root => {
+				const dialog = root.closest('[data-shortcut-modal="settings"]');
+				const plugin = root.closest("[data-plugin-panel]");
+				const host = dialog ? mpSettingsDirectChild(dialog, root)
+					: plugin ? plugin.querySelector("[data-plugin-body]") : root.closest("[data-global-panel]");
+				if (!host || host === root) return;
+				if (dialog) {
+					dialogs.add(dialog);
+					mpPreserveSettingsFrame(dialog, host, wanted);
+				} else {
+					mpMarketSet(host, { "min-width": "0px", "min-height": "0px", overflow: "hidden" }, wanted);
+				}
+				mpMarketShell(root, host, wanted);
+				const mode = dialog ? "settings" : plugin ? "plugins" : "panel";
+				if (root.dataset.mpMarket !== mode) root.dataset.mpMarket = mode;
+				roots.add(root);
 			});
 		}
+		mpFinishMarketLayouts(wanted, roots, dialogs);
+	}
+	function setupSettingsDialog(dialog) {
+		// The old list/content implementation was unreachable (two opposite early returns).
+		// The official grid remains the frame; only live market mounts activate this adapter.
+		if (dialog?.matches('[data-shortcut-modal="settings"]')) mpSyncSettings();
+	}
+/* END mobile-layout-v183 */
+
 
 			// ── 8. 移动端外壳（0.1.5 融合版）──
 			// 官方 0.1.5 的窄屏形态只是把侧栏压成 56px 图标条（正文仅 334px）；
@@ -4681,6 +4710,8 @@ mpWantedOpen = true;
 			});
 		};
 		const mo = new MutationObserver((muts) => {
+			// Size new market hosts in this microtask, before the next paint.
+			if (mpIsMobile()) { try { mpSyncSettings(); } catch (e) {} }
 			// 设置 dialog 挂载时立即处理，避免 300ms 节流导致旧样式闪烁
 			for (const m of muts) {
 				for (const n of m.addedNodes) {
@@ -11028,6 +11059,7 @@ if (!window.__mpHeaderMenuTimer) {
 			// `NotAllowedError`，转调原生桥（见 mpInstallClipboardBridge 的注释）。
 			mpInstallClipboardBridge();
 			const disposeImePrejudge = setupImePrejudge();   /* 修复 65 */
+			window.addEventListener("resize", mpSyncSettings);
 			mo.observe(document.body, { childList: true, subtree: true, characterData: true });
 			// 启动爆发：apply() 执行时 React 尚未挂载，而 observer 有 300ms 节流，
 			// 导致顶栏会话标题出现偏慢。前 ~1.2s 内主动补 10 轮（120ms 间隔），
@@ -11056,6 +11088,9 @@ if (!window.__mpHeaderMenuTimer) {
 
 			return () => {
 				mo.disconnect();
+				window.removeEventListener("resize", mpSyncSettings);
+				mpFinishMarketLayouts(new Map(), new Set(), new Set());
+				document.getElementById(mpMarketStyleId)?.remove();
 				document.removeEventListener("click", onNewSessionClick, true);
 				document.removeEventListener("click", onSessionRowClick, true);
 				disposePressFeedback();
