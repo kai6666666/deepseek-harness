@@ -18,6 +18,16 @@ internal object RuntimeFiles {
         file.canonicalFile.toPath().startsWith(base)
     }.getOrDefault(false)
 
+    /** 解包预算：Ubuntu base + node + pnpm + dsh 约 1.0 GB，留 30% 余量。 */
+    const val ASSUME_UNPACKED_BYTES = 1_350L * 1024 * 1024
+
+    /**
+     * 空间预检。`free <= 0` 表示系统读不到可用空间（不是「没空间」），放行 ——
+     * 把「读不出来」当成「不足」会让一批设备永远装不上。
+     */
+    fun insufficientSpace(freeBytes: Long, needBytes: Long = ASSUME_UNPACKED_BYTES): Boolean =
+        freeBytes in 1 until needBytes
+
     fun missingCriticalFiles(rootfs: File): List<String> = criticalFiles.filter { name ->
         val f = File(rootfs, name)
         !contains(rootfs, f) || !f.isFile || f.length() == 0L

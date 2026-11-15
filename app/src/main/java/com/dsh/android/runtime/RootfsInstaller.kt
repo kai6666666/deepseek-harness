@@ -64,9 +64,9 @@ class RootfsInstaller(private val context: Context) {
 
         runtimeDir.mkdirs()
         val free = context.filesDir.usableSpace
-        if (free in 1 until ASSUME_UNPACKED_BYTES) {
+        if (RuntimeFiles.insufficientSpace(free)) {
             throw IOException(
-                "存储空间不足：需要约 " + (ASSUME_UNPACKED_BYTES / 1024 / 1024) +
+                "存储空间不足：需要约 " + (RuntimeFiles.ASSUME_UNPACKED_BYTES / 1024 / 1024) +
                     " MB，剩余 " + (free / 1024 / 1024) + " MB"
             )
         }
@@ -286,7 +286,6 @@ class RootfsInstaller(private val context: Context) {
 
         const val TAG = "RootfsInstaller"
 
-        /** 解包后预算：Ubuntu base + node + pnpm + dsh 约 1.0 GB，留 30% 余量。 */
-        const val ASSUME_UNPACKED_BYTES = 1_350L * 1024 * 1024
+        /** 解包后预算见 [RuntimeFiles.ASSUME_UNPACKED_BYTES]（单一真相源）。 */
     }
 }

@@ -29,6 +29,13 @@ class RuntimeS6Test {
         file(root, "usr/bin/node", "")
         assertEquals(listOf("usr/bin/node"), RuntimeFiles.missingCriticalFiles(root))
     }
+    @Test fun spacePrecheckOnlyFailsWhenMeasuredAndShort() {
+        val need = RuntimeFiles.ASSUME_UNPACKED_BYTES
+        assertTrue(RuntimeFiles.insufficientSpace(need - 1, need))
+        assertFalse(RuntimeFiles.insufficientSpace(need, need))
+        assertFalse(RuntimeFiles.insufficientSpace(0, need))    // 读不到空间 ⇒ 放行
+        assertFalse(RuntimeFiles.insufficientSpace(-1, need))
+    }
     @Test fun pathBoundaryIsNotAStringPrefix() {
         val root = tmp.newFolder("data")
         assertTrue(RuntimeFiles.contains(root, File(root, "profiles/web")))
