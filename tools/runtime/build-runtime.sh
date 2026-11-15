@@ -202,19 +202,27 @@ if [ "${DSH_RT_DEV_TOOLS:-1}" = "1" ]; then
   $SUDO mount --bind /dev "$ROOTFS/dev" 2>/dev/null || true
   $SUDO mount -t proc proc "$ROOTFS/proc" 2>/dev/null || true
   # ubuntu-base 没带 gpgv/ubuntu-keyring ⇒ 源签名验不了；这里放行未签名仓库，
-  # 但包本身仍走 ports.ubuntu.com 的 https 之外的固定域名，且 verify.py 会核对
-  # 三个可执行文件确实存在。
+  # 而三个可执行文件的存在性由 verify.py 硬断言兜底。
   DEBIAN_FRONTEND=noninteractive $SUDO chroot "$ROOTFS" /usr/bin/env -i \
     PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
     DEBIAN_FRONTEND=noninteractive \
     /bin/sh -c 'apt-get -o Acquire::AllowInsecureRepositories=true -o Acquire::AllowDowngradeToInsecureRepositories=true update -qq && apt-get install -y -qq --no-install-recommends --allow-unauthenticated git python3 curl ca-certificates' \
-    || { $SUDO umount -lf "$ROOTFS/dev" "$ROOTFS/proc" 2>/dev/null || true; die "dev 工具安装失败"; }
-  $SUDO umount -lf "$ROOTFS/dev" "$ROOTFS/proc" 2>/dev/null || true
+    || INSTALL_RC=$?
+  # 版本检查必须在卸载 /dev、/proc **之前**（动态加载器要用 /dev/null）。
+  DEV_VER=$(chroot "$ROOTFS" /usr/bin/git --version 2>/dev/null || echo '?')
+  PY_VER=$(chroot "$ROOTFS" /usr/bin/python3 -V 2>/dev/null || echo '?')
+  # ⚠️ 必须真卸载：`umount -l` 只把挂载点摘下来，tar 仍可能走进去（实测
+  #    `tar: Exiting with failure status due to previous errors`）。
+  for m in dev proc; do
+    $SUDO umount "$ROOTFS/$m" 2>/dev/null || $SUDO umount -l "$ROOTFS/$m" 2>/dev/null || true
+    if mountpoint -q "$ROOTFS/$m" 2>/dev/null; then die "$ROOTFS/$m 仍未卸载，拒绝打包"; fi
+  done
+  [ -z "${INSTALL_RC:-}" ] || die "dev 工具安装失败（rc=$INSTALL_RC）"
   $SUDO rm -rf "$ROOTFS"/var/lib/apt/lists/* "$ROOTFS"/var/cache/apt/archives/*.deb
   for b in git python3 curl; do
     [ -x "$ROOTFS/usr/bin/$b" ] || die "dev 工具缺失: /usr/bin/$b"
   done
-  log "dev tools: $(chroot "$ROOTFS" /usr/bin/git --version 2>/dev/null || echo '?') / $(chroot "$ROOTFS" /usr/bin/python3 -V 2>/dev/null || echo '?')"
+  log "dev tools: $DEV_VER / $PY_VER"
 fi
 
 # 预装 pnpm 到 /usr/local（独立 prefix，不污染 /opt/dsh，离线可用）
