@@ -159,6 +159,7 @@ jobs:
           grep -n 'MOBILE_UI_VERSION' "$EM" | head -3
           grep -q "MOBILE_UI_VERSION = \"$MUI\"" "$EM" || { echo '::error::MOBILE_UI_VERSION 未按 tools/mobile-ui-version.txt 写入'; exit 1; }
           grep -q '__mpDrawerFixV5' mobile-ui-plugin/dsh-android-mobile/lib/client.js && echo 'OK client.js 带 v5 侧栏补丁' || { echo '::error::client.js 缺少 __mpDrawerFixV5'; exit 1; }
+          grep -q 'mpMarketShell' mobile-ui-plugin/dsh-android-mobile/lib/client.js && echo 'OK client.js 带插件市场容器契约' || { echo '::error::client.js 缺少 mpMarketShell'; exit 1; }
 
       - name: 现场打包插件资产（15 个 zip）
         run: bash tools/build-plugin-assets.sh

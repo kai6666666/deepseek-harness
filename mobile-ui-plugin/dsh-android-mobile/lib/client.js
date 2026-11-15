@@ -2246,7 +2246,71 @@ function closeDrawerAfterClick() {
 		}
 
 		// ── 7. 设置页两级化（全 inline style，不用 CSS 规则——见 CSS 区注释） ──
-		const mpSettingsSync = new WeakMap();
+		/**
+	 * 修复 182：插件市场容器契约。
+	 *
+	 * 市场页的布局前提有三条（来自 dshmarket/client 的 nUhMVa_* CSS）：
+	 *   ① 祖先必须是 **flex 列**，且每层都能算出高度（.nUhMVa_panelHost{height:100%}）；
+	 *   ② 宽度必须由 flex 决定（.nUhMVa_panelHost>.nUhMVa_root{flex:1;width:100%;min-width:0}）；
+	 *   ③ 它用 `container-type:inline-size` 做容器查询，宽度一旦算错就落进最窄档。
+	 * 我们原来在「插件市场」分支把容器设成 display:block，①②同时失效 ⇒ 标签竖排、
+	 * 卡片堆成细柱。这里把 dialog→…→options 的每一层都补回 flex 列契约。
+	 *
+	 * 样式表只做两件事：给 market 根兜住 width/min-width，并在窄屏把它自己的
+	 * grid 强制单列（不依赖它的容器查询是否被触发）。
+	 */
+	const mpMarketStyleId = "mp-market-shell-182";
+	function mpEnsureMarketStyle() {
+		if (document.getElementById(mpMarketStyleId)) return;
+		const style = document.createElement("style");
+		style.id = mpMarketStyleId;
+		style.textContent = [
+			"[data-mp-market='1'] [data-dsh-market-root],",
+			"[data-mp-market='1'] .nUhMVa_root,",
+			"[data-mp-market='1'] .nUhMVa_panelHost{width:100%!important;min-width:0!important;max-width:none!important;box-sizing:border-box!important}",
+			"[data-mp-market='1'] .nUhMVa_panelHost{height:100%!important;display:flex!important;flex-direction:column!important}",
+			"@media (max-width:560px){",
+			"[data-mp-market='1'] .nUhMVa_grid,[data-mp-market='1'] .nUhMVa_masonry{grid-template-columns:minmax(0,1fr)!important;flex-direction:column!important}",
+			"[data-mp-market='1'] .nUhMVa_masonryCol{width:100%!important}",
+			"}",
+		].join("");
+		document.head.appendChild(style);
+	}
+	function mpMarketShell(dialog, options, on) {
+		if (on) mpEnsureMarketStyle();
+		dialog.dataset.mpMarket = on ? "1" : "0";
+		if (!on) return;
+		// 从承载 market 的那层往上，逐层补齐「flex 列 + 满宽 + 可算高度」。
+		let node = options.parentElement;
+		const chain = [];
+		while (node && node !== dialog && chain.length < 6) {
+			chain.push(node);
+			node = node.parentElement;
+		}
+		for (const el of [options, ...chain]) {
+			el.style.setProperty("display", "flex", "important");
+			el.style.setProperty("flex-direction", "column", "important");
+			el.style.setProperty("width", "100%", "important");
+			el.style.setProperty("min-width", "0", "important");
+			el.style.setProperty("height", "100%", "important");
+			el.style.setProperty("min-height", "0", "important");
+			el.style.setProperty("flex", "1 1 auto", "important");
+			el.style.setProperty("padding", "0", "important");
+			el.style.setProperty("overflow", "hidden", "important");
+			el.style.setProperty("contain", "none", "important");
+		}
+		// 市场根自己也要能撑满（它带 container-type，宽度算错就会进窄档）。
+		const root = options.querySelector("[data-dsh-market-root]");
+		for (const el of [root, root && root.querySelector(".nUhMVa_root")]) {
+			if (!el) continue;
+			el.style.setProperty("width", "100%", "important");
+			el.style.setProperty("min-width", "0", "important");
+			el.style.setProperty("height", "100%", "important");
+			el.style.setProperty("min-height", "0", "important");
+			el.style.setProperty("flex", "1 1 auto", "important");
+		}
+	}
+const mpSettingsSync = new WeakMap();
 		function setupSettingsDialog(dialog) {
 			// 修复 88：用户要求设置页回到官方布局（两栏 + 顶部 tab）。
 			//   这里直接不动 dialog，唯一保留的是系统返回键由 mpDialogBack/Escape 兜底。
@@ -2379,14 +2443,28 @@ function closeDrawerAfterClick() {
 					nav.style.setProperty("display", "none", "important");
 					// 修复 86：插件市场自带整屏滚动，套我们的 padding/flex 会把内容推到底部。
 					const isMarket = /插件市场/.test(t) || !!options.querySelector("[data-dsh-market], [class*='pluginMarket'], [class*='marketRoot']");
-					options.style.setProperty("display", "block", "important");
+					// 修复 182：插件市场不是普通设置页，它自己有一套「父级是 flex 列、高度能到
+					//   100%、宽度由 flex 决定」的契约（.nUhMVa_panelHost{height:100%;display:flex;
+					//   flex-direction:column} + .nUhMVa_root{container-type:inline-size}）。
+					//   之前把承载它的容器设成 display:block，容器查询读到的 inline-size 变成极窄，
+					//   直接落进它自己的 ≤560 窄档：标签竖排、卡片堆成一列细柱、整块贴右侧。
+					//   所以这一支要**保持 flex 列**，并让整条祖先链的 width/min-width/height 都成立。
+					mpMarketShell(dialog, options, isMarket);
+					options.style.setProperty("display", isMarket ? "flex" : "block", "important");
+					if (isMarket) options.style.setProperty("flex-direction", "column", "important");
 					options.style.setProperty("padding", isMarket ? "0" : `${barPad} 16px 28px`, "important");
-					if (isMarket) options.style.setProperty("overflow", "hidden", "important");
 					options.style.setProperty("box-sizing", "border-box", "important");
 					options.style.setProperty("width", "100%", "important");
-					options.style.setProperty("flex", "1 1 0%", "important");
+					options.style.setProperty("min-width", "0", "important");
+					options.style.setProperty("flex", isMarket ? "1 1 auto" : "1 1 0%", "important");
 					options.style.setProperty("min-height", "0", "important");
-					options.style.setProperty("overflow-y", "auto", "important");
+					if (isMarket) {
+						options.style.setProperty("height", "100%", "important");
+						options.style.setProperty("overflow", "hidden", "important");
+					} else {
+						options.style.removeProperty("height");
+						options.style.setProperty("overflow-y", "auto", "important");
+					}
 					// 多模态配置：设备上装的是旧版插件，页面里还留着面向开发者的措辞 → 就地改成用户向
 					const amDesc = options.querySelector(".am-page-desc");
 					if (amDesc && /插件自己的设置页/.test(amDesc.textContent || "")) {
