@@ -266,8 +266,12 @@ if [ -d "$ROOTFS/opt/dsh/node_modules" ]; then
   # ⚠️ 只删平台专属的**原生**包。JS 包必须留：subprocess-local 与
   # sandbox-windows-acl 在 linux 上也会静态 import @deepseek-ai/dsh-win32-process，
   # 删了会让 subprocess / sandbox 两个服务在启动时 failed to import（AVD 实测）。
+  # ⚠️ 只删**平台专属的原生** @img 包。`@img/colour` 是纯 JS，却被 sharp 的
+  # `dist/colour.cjs` 在 require 期无条件加载 —— 按「白名单只留 sharp-*」删会把它
+  # 一起删掉，症状是 `Cannot find module '@img/colour'`，图片附件整条链路失败。
   if [ -d "$ROOTFS/opt/dsh/node_modules/@img" ]; then
     find "$ROOTFS/opt/dsh/node_modules/@img" -mindepth 1 -maxdepth 1 -type d \
+      \( -name 'sharp-*' -o -name 'sharp-libvips-*' \) \
       ! -name "sharp-$NODE_OS_TAG" ! -name "sharp-libvips-$NODE_OS_TAG" \
       -exec rm -rf {} + 2>/dev/null || true
   fi

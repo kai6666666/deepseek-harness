@@ -33,6 +33,9 @@ REQUIRED = [
     "usr/local/lib/libboosandbox.so",
     "usr/local/lib/liblinkcompat.so",
     "opt/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js",
+    # 纯 JS，但 sharp 的 dist/colour.cjs 在 require 期无条件加载它；
+    # 被平台裁剪误删时症状是 `Cannot find module '@img/colour'`（图片附件全废）。
+    "opt/dsh/node_modules/@img/colour/package.json",
 ]
 REQUIRED_JNI = ["libproot.so", "libproot-loader.so"]
 BAD_PKG_FRAGMENTS = {
