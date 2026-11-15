@@ -4,6 +4,17 @@ package com.dsh.android.runtime
 internal object ProotLaunch {
     fun quote(value: String): String = "'" + value.replace("'", "'\"'\"'") + "'"
 
+    /**
+     * Guest-side env file. Caller-supplied variables (API keys, socket names) must not ride in
+     * argv: `ps -A` exposes the whole command line to shell/root, so a key there is a leak.
+     * Values are single-quoted for `sh`; keys are validated so the file cannot inject commands.
+     */
+    fun envFileLines(values: Map<String, String>): List<String> = values.map { (key, value) ->
+        require(Regex("[A-Za-z_][A-Za-z0-9_]*").matches(key)) { "Invalid env key: $key" }
+        require(!value.contains('\n')) { "Env value must be single-line: $key" }
+        "export $key=${quote(value)}"
+    }
+
     fun template(
         source: List<String>,
         profile: String,
@@ -11,6 +22,7 @@ internal object ProotLaunch {
         pid: String,
         patches: List<String>,
         command: List<String>? = null,
+        envFile: String? = null,
     ): List<String> {
         require(Regex("[A-Za-z0-9][A-Za-z0-9._-]*").matches(profile)) { "Invalid profile name" }
         val env = source.indexOf("{GUEST_ENV}")
@@ -20,14 +32,15 @@ internal object ProotLaunch {
         require(source.drop(env + 1).take(2) == listOf("/bin/sh", "-c")) { "Unexpected guest command" }
         require(source.size == env + 4) { "Unexpected launch template tail" }
         val patchArgs = patches.joinToString(" ") { "--patch " + quote(it) }
+        val source1 = envFile?.let { ". ${quote(it)}; " } ?: ""
         val script = if (command != null) {
             require(command.isNotEmpty())
-            "echo \$\$ > ${quote(pid)}; exec " + command.joinToString(" ", transform = ::quote)
+            source1 + "echo \$\$ > ${quote(pid)}; exec " + command.joinToString(" ", transform = ::quote)
         } else {
             val old = "/usr/local/bin/dsh web {PATCHES}"
             val raw = source.last()
             require(raw.contains(old) && raw.contains(originalPid)) { "Unexpected web launch anchor" }
-            raw.replace(old, "/usr/local/bin/dsh --profile ${quote(profile)} {PATCHES}")
+            source1 + raw.replace(old, "/usr/local/bin/dsh --profile ${quote(profile)} {PATCHES}")
                 .replace(originalPid, quote(pid))
                 .replace("{PATCHES}", patchArgs)
         }

@@ -118,6 +118,27 @@ class RuntimeS6Test {
     @Test(expected = IllegalArgumentException::class) fun profileIsANameNotShellInput() {
         ProotLaunch.template(template, "rescue; echo x", "/tmp/dsh-web.pid", "/tmp/x.pid", emptyList())
     }
+    @Test fun callerEnvGoesToAFileNotArgv() {
+        val lines = ProotLaunch.envFileLines(mapOf("AGNES_CREDENTIAL" to "sk-a b'c", "DSH_PRIV_RUNNER" to "/data/x y/r.mjs"))
+        assertEquals(listOf("export AGNES_CREDENTIAL='sk-a b'\"'\"'c'", "export DSH_PRIV_RUNNER='/data/x y/r.mjs'"), lines)
+        val result = ProotLaunch.template(template, "web", "/tmp/dsh-web.pid", "/tmp/x.pid", emptyList(),
+            envFile = "/data/user/0/p/files/home/.dsh/.proot-env-1")
+        assertTrue(result.last().startsWith(". '/data/user/0/p/files/home/.dsh/.proot-env-1'; "))
+        assertFalse(result.any { it.contains("sk-a b'c") })
+    }
+    @Test(expected = IllegalArgumentException::class) fun envKeyCannotInjectCommands() {
+        ProotLaunch.envFileLines(mapOf("A; rm -rf /" to "x"))
+    }
+    @Test(expected = IllegalArgumentException::class) fun envValueMustBeSingleLine() {
+        ProotLaunch.envFileLines(mapOf("A" to "x\nexport B=1"))
+    }
+    @Test fun envFileLinesRoundTripThroughTheShell() {
+        val raw = "v with 'quote' and \$HOME and ; semicolon"
+        val p = ProcessBuilder("/bin/sh", "-c", "set -a; " + ProotLaunch.envFileLines(mapOf("K" to raw))[0] +
+            "; set +a; printf %s \"\$K\"").start()
+        assertEquals(raw, p.inputStream.bufferedReader().readText())
+        assertEquals(0, p.waitFor())
+    }
     @Test fun quoteRoundTripsMetacharactersThroughTheShell() {
         val raw = "a b'c\"d;\$(echo injected)\nlast"
         val p = ProcessBuilder("/bin/sh", "-c", "printf %s " + ProotLaunch.quote(raw)).start()

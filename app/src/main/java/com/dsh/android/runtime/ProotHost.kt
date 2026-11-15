@@ -37,6 +37,7 @@ class ProotHost(
     private var readyOrEof = CountDownLatch(1)
     private val lastLines: MutableList<String> = Collections.synchronizedList(ArrayList())
     private val runId = UUID.randomUUID().toString()
+    private val envFile: File get() = File(dshHome, ".proot-env-$runId")
     private val originalPidFile: File get() = File(
         manifest.stopPidFile.replace("{ROOTFS}", rootfs.canonicalPath).replace("{TMP}", tmpDir.absolutePath)
     )
@@ -79,10 +80,18 @@ class ProotHost(
             "{TMP}" to tmpDir.absolutePath, "{PORT}" to "0",
         )
         fun expand(value: String) = vars.entries.fold(value) { s, (k, v) -> s.replace(k, v) }
+        // Secrets go to a 0600 file inside the already-bound $DSH_HOME, not into argv.
+        val envFile = this.envFile.apply {
+            delete()
+            writeText(ProotLaunch.envFileLines(extraEnv).joinToString("\n", postfix = "\n"))
+            setReadable(false, false); setReadable(true, true)
+            setWritable(false, false); setWritable(true, true)
+        }
+        val guestEnvFile = envFile.canonicalPath  // $DSH_HOME 按原绝对路径绑定，guest 内逐字有效
         val template = ProotLaunch.template(
             manifest.launchArgv.map(::expand), profile,
             "/" + originalPidFile.relativeTo(rootfs.canonicalFile).invariantSeparatorsPath,
-            guestPidFile, overlays.map { it.absolutePath }, command,
+            guestPidFile, overlays.map { it.absolutePath }, command, guestEnvFile,
         )
         val argv = ArrayList<String>()
         fun bind(f: File, guest: String = f.canonicalPath) {
@@ -102,6 +111,8 @@ class ProotHost(
                     argv += arg
                 }
                 "{GUEST_ENV}" -> {
+                    // 只留非机密项：调用方传入的变量已写进 guest 侧 env 文件，
+                    // 不再出现在 argv（`ps -A` 对 shell/root 可见）里。
                     val env = buildMap {
                         put("DSH_HOME", dshHome.canonicalPath)
                         put("TZ", TimeZone.getDefault().id)
@@ -110,7 +121,6 @@ class ProotHost(
                             put("CURL_CA_BUNDLE", "/etc/ssl/certs/ca-certificates.crt")
                             put("REQUESTS_CA_BUNDLE", "/etc/ssl/certs/ca-certificates.crt")
                         }
-                        putAll(extraEnv)
                     }
                     env.forEach { (k, v) -> argv += "$k=$v" }
                 }
@@ -270,6 +280,7 @@ class ProotHost(
             process = null
             tokenUrl = null
             runCatching { pidFile.delete() }
+            runCatching { envFile.delete() }   // 密钥文件只在本次运行期间存在
         }
         return stopped
     }
