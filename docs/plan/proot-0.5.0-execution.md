@@ -63,6 +63,7 @@
 
 | 日期 | 事项 |
 |---|---|
+| 2026-11-15 | DNS 回归修复（`9950149d`）：dev-tools 步骤把构建机 `resolv.conf`（`127.0.0.53` + `*.compute.internal`）带进 rootfs，设备上所有域名解析失败（登录「账号资料暂不可用」、插件市场 `fetch failed` 回落离线目录）。修法：构建期装完即还原公共 DNS；`verify.py` 加解析器硬断言（runtime 29 OK/0 FAIL）；客户端 `needsPublicDns()` 对已知坏值自愈。真机：`model listing loaded 2 model(s)`、`deepseek:401 npmmirror:200`、市场实时条目回归 |
 | 2026-11-15 | S8 物料：`versionName 0.5.0 / vc 51`、CHANGELOG 0.5.0 段、Release notes 重写（去 bionic 资产、加单运行时/迁移/救援/密钥/附件条目）、资产名 `dsh-android-0.5.0-arm64.apk`。CI 出包 `aapt: versionCode=51 versionName=0.5.0`，真机覆盖安装 Success，`engine.ready 44 s health=401`，sharp `ok:true` |
 | 2026-11-15 | dev 工具进镜像：`build-runtime.sh` §3.2 用 binfmt + chroot apt 装 `git/python3/curl`，`verify.py` 三条硬断言；踩坑与修法记在 S7 证据 §五（binfmt 而非 qemu-user-static、bind /dev+/proc、非 root tar 的 chown、per-ABI apt 源、umount 后再打包）。真机新 stamp 首解包即自带三件套，`engine.ready 151 s health=401` |
 | 2026-11-15 | S7 第一轮：修 `@img/colour` 被平台裁剪误删（图片附件整链失效）+ API 密钥移出 argv（写 0600 guest env 文件）；真机验完冷启（33.6~53.1 s）、附件、终端、索引目录、沙箱写边界、插件 0 错、断网冷启（34.1 s）；空间预检抽成纯函数并加单测（19 条） |
