@@ -15,6 +15,7 @@ on:
       - 'tools/build-node-runtime.sh'
       - 'tools/node-runtime-wrap.sh'
       - 'tools/build-native-assets.sh'
+      - 'tools/build-adb-wireless.sh'
       - 'tools/build-plugin-assets.sh'
       - 'tools/build-node-pty.sh'
       - 'tools/build-extra-native.sh'

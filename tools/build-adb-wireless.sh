@@ -14,12 +14,32 @@ ASSETS="${APP_ASSETS:-$ROOT/app/src/main/assets}"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
-MIRROR="${MIRROR:-https://mirrors.tuna.tsinghua.edu.cn/termux/apt/termux-main}"
+# 镜像候选：清华源曾单次 136s 连接超时直接把 apk.yml 打挂（2026-11-16 43906637715），
+# 所以按顺序探活，第一个能下到真 bz2 的就锁定；MIRROR=... 可强制指定。
+MIRRORS_DEFAULT="https://mirrors.tuna.tsinghua.edu.cn/termux/apt/termux-main https://mirrors.ustc.edu.cn/termux/apt/termux-main https://packages.termux.dev/apt/termux-main https://mirrors.bfsu.edu.cn/termux/apt/termux-main https://mirrors.nju.edu.cn/termux/apt/termux-main"
+MIRROR="${MIRROR:-}"
+
+pick_mirror() {
+  [ -n "$MIRROR" ] && return 0
+  local m
+  for m in $MIRRORS_DEFAULT; do
+    echo "  · 探测镜像 $m" >&2
+    if curl -4 -fsS -L -m 90 --connect-timeout 12 -o "$WORK/Packages.bz2" \
+         "$m/dists/stable/main/binary-aarch64/Packages.bz2" \
+       && bzip2 -t "$WORK/Packages.bz2" 2>/dev/null; then
+      MIRROR="$m"; echo "  ✅ 使用镜像 $MIRROR" >&2; return 0
+    fi
+    rm -f "$WORK/Packages.bz2"
+  done
+  echo "❌ 所有 Termux 镜像均不可用（可用 MIRROR=... 指定）" >&2
+  return 1
+}
 mkdir -p "$ASSETS"
 
 ensure_index() {
   [ -s "$WORK/Packages" ] && return
-  curl -4 -sS -L -m 300 -o "$WORK/Packages.bz2" "$MIRROR/dists/stable/main/binary-aarch64/Packages.bz2"
+  pick_mirror
+  [ -s "$WORK/Packages.bz2" ] || curl -4 -sS -L -m 300 --connect-timeout 15     -o "$WORK/Packages.bz2" "$MIRROR/dists/stable/main/binary-aarch64/Packages.bz2"
   bzip2 -dc "$WORK/Packages.bz2" > "$WORK/Packages"
 }
 
@@ -41,11 +61,12 @@ PY
 fetch_deb() {
   local pkg="$1" rel f
   rel="$(deb_url "$pkg")"
+  [ -n "$rel" ] || { echo "❌ $pkg 在 Packages 里没有 Filename" >&2; exit 1; }
   f="$WORK/$(basename "$rel")"
   if [ ! -s "$f" ] || ! head -c 8 "$f" | grep -q '^!<arch>'; then
     echo "   ← $(basename "$rel")" >&2
     for i in 1 2 3; do
-      curl -4 -fsS -L -m 600 -o "$f" "$MIRROR/$rel" || true
+      curl -4 -fsS -L -m 300 --connect-timeout 15 -o "$f" "$MIRROR/$rel" || true
       head -c 8 "$f" 2>/dev/null | grep -q '^!<arch>' && break
       echo "   ↻ 重试 $i（下载内容不是 ar）" >&2
       rm -f "$f"
