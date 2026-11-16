@@ -435,35 +435,95 @@ class SystemWebHost(
                     domStorageEnabled = true
                     // 授权页可能弹 cookie 同意/第三方跳转，保持与主视图一致。
                     mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
+                    javaScriptCanOpenWindowsAutomatically = true
+                    setSupportMultipleWindows(true)
                 }
                 // 授权过程会依次跳到 DeepSeek 的多个域，最后回到本地引擎完成登录。
-                // 在这里**不拦 URL**（拦了就会把授权链打断），只做跳转放行。
+                // 正常授权链一律放行，只在“回到本地引擎”时收尾。
+                var dialog: android.app.Dialog? = null
                 popup.webViewClient = object : WebViewClient() {
                     override fun shouldOverrideUrlLoading(
                         v: WebView,
                         request: WebResourceRequest,
                     ): Boolean {
                         val u = request.url.toString()
+                        Log.i(DshApplication.TAG, "登录弹窗导航: ${u.take(120)}")
                         // 回到本地引擎 = 授权回调已经完成，关掉这个窗口免得留在后台。
                         if (u.startsWith(LOCAL_ENGINE_PREFIX)) {
                             Log.i(DshApplication.TAG, "登录授权已回到本地引擎，关闭弹窗")
-                            (v.parent as? android.view.ViewGroup)?.removeView(v)
-                            v.destroy()
+                            runCatching { dialog?.dismiss() }
+                            runCatching {
+                                (v.parent as? android.view.ViewGroup)?.removeView(v)
+                                v.destroy()
+                            }
                             return true
                         }
-                        Log.i(DshApplication.TAG, "登录弹窗导航: ${u.take(100)}")
                         return false
                     }
+
+                    override fun onPageFinished(view: WebView, url: String?) {
+                        super.onPageFinished(view, url)
+                        Log.i(DshApplication.TAG, "登录弹窗加载完成: ${url?.take(120)}")
+                    }
                 }
-                transport.webView = popup
+                // ⚠️ 关键：内核给的是一个**没有窗口**的渲染目标。不把它挂进真正的
+                //   窗口，页面就不会渲染、也不会调度导航 —— 表现就是“点登录没反应”。
+                //   Cookie 只落在本 App 的 WebView jar 里，所以不能改成交给系统
+                //   浏览器（拿不到回调后的会话）。
+                val activity = popupActivityOf(parent.context)
+                if (activity == null) {
+                    transport.webView = popup
+                    Log.w(DshApplication.TAG, "登录弹窗缺少 Activity，窗口未挂载")
+                    return true
+                }
+                val container = android.widget.FrameLayout(activity)
+                container.setBackgroundColor(android.graphics.Color.WHITE)
+                container.addView(
+                    popup,
+                    android.widget.FrameLayout.LayoutParams(
+                        android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                        android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                    ),
+                )
+                val d = android.app.Dialog(activity)
+                d.setContentView(container)
+                d.setCanceledOnTouchOutside(false)
+                d.setOnDismissListener {
+                    runCatching { popup.stopLoading() }
+                    runCatching { popup.destroy() }
+                }
+                // 返回键关窗，不拦其它按键。
+                d.setOnKeyListener { _, keyCode, event ->
+                    if (keyCode == android.view.KeyEvent.KEYCODE_BACK &&
+                        event.action == android.view.KeyEvent.ACTION_UP
+                    ) {
+                        d.dismiss()
+                        true
+                    } else {
+                        false
+                    }
+                }
+                dialog = d
                 // ⚠️ `transport.webView = popup` **之后**才能回 true：
                 //   内核在收到 true 时立刻读 `transport.webView`，赋值晚一步就是白窗口。
-                Log.i(DshApplication.TAG, "window.open 已建空白窗口（等待页面自行导航）")
+                transport.webView = popup
+                d.show()
+                Log.i(DshApplication.TAG, "登录弹窗已展示（应用内授权，cookie 留在本 App）")
                 true
             } catch (t: Throwable) {
                 Log.w(DshApplication.TAG, "建 window.open 窗口失败: ${t.message}")
                 false
             }
+        }
+
+        /** 把 WebView 的 Context 解到 Activity（可能是 ContextThemeWrapper）。 */
+        private fun popupActivityOf(context: android.content.Context): android.app.Activity? {
+            var c: android.content.Context? = context
+            while (c is android.content.ContextWrapper) {
+                if (c is android.app.Activity) return c
+                c = c.baseContext
+            }
+            return null
         }
 
 
