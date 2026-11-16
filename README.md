@@ -207,6 +207,7 @@ docs/agents/                           开发文档（35 篇，按需检索）
 - [DSH / DeepSeek Harness](https://github.com/deepseek-ai) —— 引擎与 Web 前端
 - [Termux](https://github.com/termux) —— bootstrap、node、adb 运行时
 - [Mozilla GeckoView](https://wiki.mozilla.org/Mobile/GeckoView) —— 内置 Web 内核
+- [DSHAPP](https://github.com/pht88888888/DSHAPP) —— 移动端集成与登录流程参考
 - [ripgrep](https://github.com/BurntSushi/ripgrep) · [sharp](https://github.com/lovell/sharp)
   · [pnpm](https://github.com/pnpm/pnpm) · [Shizuku](https://github.com/RikkaApps/Shizuku)
 
