@@ -35,7 +35,8 @@ case "$ABI" in
   *) echo "[rt][ERROR] 不支持的 ABI: $ABI" >&2; exit 2 ;;
 esac
 
-DSH_VERSION=${DSH_VERSION:-0.2.2-rc.1}
+# 版本唯一真源：tools/engine-version.txt（= @deepseek-ai/dsh 官方版本号）
+DSH_VERSION=${DSH_VERSION:-$(tr -d ' \r\n' < "$REPO_ROOT/tools/engine-version.txt")}
 NODE_VERSION=${NODE_VERSION:-24.22.1}
 PNPM_VERSION=${PNPM_VERSION:-10.28.2}
 CA_CERTS_VERSION=${CA_CERTS_VERSION:-20260816ubuntu0.24.04.2}

@@ -102,9 +102,11 @@ jobs:
     env:
       ASSETS_TAG: ${{ github.event.inputs.assets_release || vars.ASSETS_RELEASE }}
       STRICT_ASSETS: ${{ github.event.inputs.strict_assets || '0' }}
-      REL_TAG: v0.5.0
     steps:
       - uses: actions/checkout@v4
+
+      - name: 版本对齐闸门（engine-version == versionName）
+        run: python3 tools/check-version-alignment.py
 
       - name: JDK 17
         uses: actions/setup-java@v4
@@ -254,9 +256,10 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: 发布到 Release（公开可下）
-        # 只有 main 的构建能发布。PR 构建也曾走到这里，把 v0.4.4-test 的资产
-        # 覆盖成 PR 代码（2026-11-12 实际发生），所以这里同时挡 event 与 ref。
+      - name: 发布调试包（tag=v<versionName>-debug，prerelease，永不抢 Latest）
+        # 版本一律取 gradle versionName，且必须等于 tools/engine-version.txt；
+        # tag 带 -debug 后缀并强制 prerelease + make_latest=false，
+        # 否则调试包会像 2026-11-16 的 v0.5.0 那样抢走仓库 Latest。
         if: success() && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -264,23 +267,29 @@ jobs:
           set -e
           APK=$(find app/build/outputs/apk/system/debug -name '*.apk' | head -1)
           [ -n "$APK" ] || { echo "::error::no apk found"; exit 1; }
-          NAME="dsh-android-0.5.0-arm64.apk"
+          VER=$(grep -E '^[[:space:]]*versionName[[:space:]]*=' app/build.gradle.kts | head -1 | sed -e 's/.*=[[:space:]]*"//' -e 's/".*//')
+          VC=$(grep -E '^[[:space:]]*versionCode[[:space:]]*=' app/build.gradle.kts | head -1 | sed -e 's/.*=[[:space:]]*//')
+          ENG=$(tr -d ' \r\n' < tools/engine-version.txt)
+          MUI=$(tr -d ' \r\n' < tools/mobile-ui-version.txt)
+          [ "$VER" = "$ENG" ] || { echo "::error title=version::versionName($VER) ≠ engine-version($ENG)，先跑 tools/sync-dsh-version.py"; exit 1; }
+          REL_TAG="v${VER}-debug"
+          NAME="dsh-${VER}-system-debug-arm64.apk"
           cp -f "$APK" "/tmp/$NAME"
           SHA=$(sha256sum "/tmp/$NAME" | cut -d' ' -f1)
           SIZE=$(stat -c%s "/tmp/$NAME")
-          NODE=$(grep -oE 'NODE_EXECUTABLE_VERSION = "v[0-9.]+"' app/src/main/java/com/dsh/android/termux/TermuxBootstrap.kt | grep -oE 'v[0-9.]+' | head -1 || true)
-          MUI=$(grep -oE 'MOBILE_UI_VERSION = "[0-9.]+-[0-9]+"' app/src/main/java/com/dsh/android/EngineManager.kt | grep -oE '[0-9.]+-[0-9]+' | head -1 || true)
-          echo "APK=$APK -> /tmp/$NAME size=$SIZE sha256=$SHA node=${NODE:-?} mobile-ui=${MUI:-?}"
-          NOTES=$(printf 'engine @deepseek-ai/dsh@0.2.2-rc.1（PRoot 单运行时）\n\n- versionName **0.5.0** / versionCode **51**\n- apk size `%s` bytes\n- sha256 `%s`\n- runtime `%s`（rootfs: ubuntu 24.04 + node 24.22.1 + pnpm 10.28.2 + git/python3/curl）\n- mobile-ui `%s`\n- 单运行时：引擎 / bash / uid2000 / root / 沙箱全部跑在 PRoot 内，APK 不再含 bionic 资产\n- 数据迁移：`$DSH_HOME`、workspace、logs 原地保留；旧 engine//usr/termux/usr 改名进 runtime/legacy-bionic\n- 救援：L2 救援 profile 与 try-boot 走 PRoot，rootfs 损坏可自愈（重新解包，数据不动）\n' "$SIZE" "$SHA" "${NODE:-?}" "${MUI:-?}")
+          echo "APK=$APK -> $NAME size=$SIZE sha256=$SHA ver=$VER vc=$VC engine=$ENG mui=$MUI"
+          NOTES=$(printf '调试包（debug 签名），不是发行版。\n\n- versionName **%s** / versionCode **%s**\n- engine `@deepseek-ai/dsh@%s`\n- mobile-ui `%s`\n- size `%s` bytes\n- sha256 `%s`\n\n发行版请取 Latest Release。\n' "$VER" "$VC" "$ENG" "$MUI" "$SIZE" "$SHA")
           if gh release view "$REL_TAG" >/dev/null 2>&1; then
-            gh release edit "$REL_TAG" --notes "$NOTES" || true
+            gh release edit "$REL_TAG" --title "DSH Android ${VER} 调试包（vc=${VC}）" --notes "$NOTES" --prerelease >/dev/null
           else
-            gh release create "$REL_TAG" --title "DSH Android 0.5.0（PRoot 单运行时 / vc=51）" --notes "$NOTES"
+            gh release create "$REL_TAG" --title "DSH Android ${VER} 调试包（vc=${VC}）" --notes "$NOTES" --prerelease >/dev/null
           fi
+          RID=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$REL_TAG" -q .id)
+          gh api -X PATCH "repos/$GITHUB_REPOSITORY/releases/$RID" -f prerelease=true -f make_latest=false >/dev/null
           gh release upload "$REL_TAG" "/tmp/$NAME" --clobber
-          echo '--- assets ---'
+          echo '--- release ---'
+          gh release view "$REL_TAG" --json tagName,isPrerelease -q '"\(.tagName) prerelease=\(.isPrerelease)"'
           gh release view "$REL_TAG" --json assets -q '.assets[] | "\(.name) \(.size) \(.state)"'
-
       - name: 上传构建日志（失败时）
         if: failure()
         uses: actions/upload-artifact@v4
