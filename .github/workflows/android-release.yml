@@ -116,11 +116,47 @@ jobs:
             echo "::notice title=webview-compat::tools/build-webview_compat.py 不在仓库里，跳过"
           fi
 
+      # === PRoot 单运行时：发布线也必须现造 runtime，否则 APK 缺 assets/runtime/manifest.json
+      #     （真机现象：crash/....-engine-start-failed.txt APK 缺少 runtime/manifest.json）
+      - name: 注册 binfmt（arm64 rootfs 里跑 apt）
+        if: env.ASSETS_TAG == ''
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+      - name: runtime 依赖（交叉编译器 + patchelf + xz）
+        if: env.ASSETS_TAG == ''
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends patchelf xz-utils gcc-aarch64-linux-gnu libc6-dev-arm64-cross
+      - name: Node 24（runtime 构建机用）
+        if: env.ASSETS_TAG == ''
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: 组装 PRoot 单运行时（rootfs + manifest + jniLibs）
+        if: env.ASSETS_TAG == ''
+        env:
+          DSH_RT_WORK: ${{ runner.temp }}/rt-work
+          DSH_RT_CACHE: ${{ runner.temp }}/rt-cache
+          DSH_RT_OUT: ${{ github.workspace }}/_build/runtime/out
+          CC: aarch64-linux-gnu-gcc
+        run: bash tools/runtime/build-runtime.sh
+      - name: runtime 硬断言 + 铺进 assets/jniLibs
+        if: env.ASSETS_TAG == ''
+        run: |
+          python3 tools/runtime/verify.py \
+            _build/runtime/out/arm64-v8a/assets/runtime/rootfs-arm64-v8a.tar.xz \
+            _build/runtime/out/arm64-v8a/assets/runtime/manifest.json \
+            _build/runtime/out/arm64-v8a/jniLibs/arm64-v8a
+          mkdir -p app/src/main/assets/runtime app/src/main/jniLibs/arm64-v8a
+          cp -r _build/runtime/out/arm64-v8a/assets/runtime/. app/src/main/assets/runtime/
+          cp _build/runtime/out/arm64-v8a/jniLibs/arm64-v8a/*.so app/src/main/jniLibs/arm64-v8a/
+          ls -lh app/src/main/assets/runtime app/src/main/jniLibs/arm64-v8a
       - name: 资产闸门（缺 bootstrap 直接失败）
         run: |
           a=app/src/main/assets
           miss=0
-          for f in engine.bin node-runtime.bin bootstrap-aarch64.zip; do
+          for f in engine.bin node-runtime.bin bootstrap-aarch64.zip runtime/manifest.json runtime/rootfs-arm64-v8a.tar.xz; do
             if [ -s "$a/$f" ]; then
               echo "✅ $f $(du -h "$a/$f" | cut -f1)"
             else
