@@ -2576,6 +2576,37 @@ function closeDrawerAfterClick() {
 	}
 /* END mobile-layout-v183 */
 
+/* BEGIN mobile-external-open-v185
+ * window.open cannot reach the system browser: the popup starts as about:blank and
+ * its later navigation never leaves the WebView. Route both shapes through a
+ * main-frame navigation, which PhoneHost's shouldOverrideUrlLoading turns into
+ * Intent.ACTION_VIEW (the way the desktop build uses openExternal).
+ */
+function setupExternalWindowShim() {
+  const original = window.open;
+  const toBrowser = url => {
+    try { location.href = url; return true; } catch (e) { return false; }
+  };
+  const stubWindow = () => ({
+    closed: false,
+    focus() {}, blur() {}, postMessage() {},
+    close() { this.closed = true; },
+    location: {
+      href: 'about:blank',
+      replace(url) { if (typeof url === 'string') toBrowser(url); },
+      assign(url) { if (typeof url === 'string') toBrowser(url); },
+      toString() { return this.href; },
+    },
+    document: { open() { return this; }, write() {}, writeln() {}, close() {} },
+  });
+  window.open = function (url, name, features) {
+    if (typeof url === 'string' && /^https?:\/\//i.test(url)) { toBrowser(url); return null; }
+    return stubWindow();
+  };
+  return () => { window.open = original; };
+}
+/* END mobile-external-open-v185 */
+
 /* BEGIN mobile-header-tap-v184
  * Re-arm the host's compatibility-click guard on each physical gesture. The
  * first click reaches React, duplicates from that same gesture do not. Only the
@@ -11204,6 +11235,7 @@ if (!window.__mpHeaderMenuTimer) {
 			document.addEventListener("click", onMenuItemClick, true);   /* rc3 菜单项点完收抽屉 */
 			const disposePressFeedback = setupPressFeedback();
 			const disposePluginHeaderTap = setupPluginHeaderTap();
+			const disposeExternalWindow = setupExternalWindowShim();
 			const disposeStatusBridge = mpInstallStatusBridge();
 			const disposeTranscriptBridge = mpInstallTranscriptBridge();
 			// 余额桥：页面侧拉 DeepSeek 余额 + 按 usage 算花费，回给原生徽标。
@@ -11250,6 +11282,7 @@ if (!window.__mpHeaderMenuTimer) {
 				document.removeEventListener("click", onSessionRowClick, true);
 				disposePressFeedback();
 				disposePluginHeaderTap();
+				disposeExternalWindow();
 				disposeStatusBridge();
 				disposeTranscriptBridge();
 				disposeImePrejudge();

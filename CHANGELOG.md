@@ -41,6 +41,10 @@ vc=51
   公共 DNS，`verify.py` 增加解析器硬断言，客户端对已知坏值就地自愈（老安装无需重装）。
 - **图片附件**：修复 `@img/colour` 被平台裁剪误删导致的 `Cannot find module`（发图必失败），
   `verify.py` 增加硬断言。
+- **window.open 页面级接管（1.1.0-185）**：WebView 里 `window.open` 返回的弹窗不会
+  真的导航，登录授权页既不显示也不外跳。移动端插件在页面里接管 `window.open`：
+  真实 URL 直接走主框架导航（宿主 `shouldOverrideUrlLoading` 转 `ACTION_VIEW`），
+  `about:blank` 预开窗口返回带 `location.replace/assign` 的代理，同样落到默认浏览器。
 - **外链与登录统一走系统默认浏览器**：`window.open` 预开的 `about:blank`
   窗口原先只交给内核、从未挂到任何窗口上，导致登录授权页既不渲染也不
   导航（日志停在「已建空白窗口」）；插件市场里用 `window.open` 打开的

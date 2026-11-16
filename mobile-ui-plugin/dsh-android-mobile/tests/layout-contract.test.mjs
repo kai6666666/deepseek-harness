@@ -210,3 +210,13 @@ test('new market mounts are sized before the debounced general pass', () => {
   const observer = source.slice(source.indexOf('const mo = new MutationObserver'));
   assert.ok(observer.indexOf('mpSyncSettings();') < observer.indexOf('setTimeout('));
 });
+
+test('window.open routes external URLs through a main-frame navigation', () => {
+  const start = source.indexOf('/* BEGIN mobile-external-open-v185');
+  const end = source.indexOf('/* END mobile-external-open-v185 */', start);
+  assert.ok(start >= 0 && end > start, 'external window shim exists');
+  const block = source.slice(start, end);
+  assert.match(block, /location\.href = url/, 'external URL becomes a main-frame navigation');
+  assert.match(block, /replace\(url\)/, 'popup.location.replace is captured');
+  assert.ok(source.includes('setupExternalWindowShim()'), 'shim is mounted');
+});
