@@ -2319,7 +2319,16 @@ function closeDrawerAfterClick() {
 [data-mobile] [data-plugin-panel] [data-plugin-header-part="intro"] {
   grid-column:1!important;grid-row:2!important;display:flex!important;
   flex-wrap:wrap!important;align-items:center!important;gap:4px 4px!important;
-  font-size:12px!important;line-height:20px!important;
+  font-size:12px!important;line-height:20px!important;min-height:32px!important;
+}
+[data-mobile] [data-plugin-panel] [data-plugin-header-part="intro"] button {
+  display:inline-flex!important;align-items:center!important;justify-content:center!important;
+  flex:0 0 32px!important;min-width:32px!important;min-height:32px!important;
+  width:32px!important;height:32px!important;touch-action:manipulation!important;
+  pointer-events:auto!important;-webkit-app-region:no-drag!important;
+}
+[data-mobile] [data-plugin-panel] [data-plugin-header-part="toolbar"] button {
+  touch-action:manipulation!important;pointer-events:auto!important;-webkit-app-region:no-drag!important;
 }
 [data-mobile] [data-plugin-panel] [data-plugin-header-part="tabs"] {
   grid-column:1 / -1!important;grid-row:3!important;display:flex!important;
@@ -2474,10 +2483,12 @@ function closeDrawerAfterClick() {
 		mpMarketSet(root, {
 			"font-size": "14px", "line-height": "22px", "font-family": "inherit",
 			"text-size-adjust": "100%", "-webkit-text-size-adjust": "100%",
+			position: "relative", "overflow-anchor": "none",
 		}, wanted);
-		const children = Array.from(root.children || []);
-		if (children.length !== 2) return;
-		const [head, body] = children;
+		// A conditional back-to-top BUTTON appears after scrollTop > 300.
+		// Head/body are still the first two DIVs; keep their contracts on every scroll.
+		const [head, body] = Array.from(root.children || []);
+		if (head?.tagName !== "DIV" || body?.tagName !== "DIV") return;
 		mpMarketSet(head, {
 			flex: "0 0 auto", height: "auto", "min-height": "0px", "max-height": "none",
 			width: "100%", "min-width": "0px", "max-width": "100%", "box-sizing": "border-box",
@@ -2493,7 +2504,23 @@ function closeDrawerAfterClick() {
 			margin: "0px", padding: "0px 16px 16px", "overflow-x": "hidden", "overflow-y": "auto",
 			"overscroll-behavior-y": "contain", "touch-action": "pan-x pan-y pinch-zoom",
 			"scroll-behavior": "auto", transform: "none", scale: "none", animation: "none", transition: "none",
+			"overflow-anchor": "none",
 		}, wanted);
+		// The category rail belongs to this body, not the Plugins page's host scroller.
+		// Only bounded direct DIVs are adapted; buttons/dialogs and cards keep their layout.
+		for (const child of Array.from(body.children || [])) {
+			if (child.tagName !== "DIV") continue;
+			const declarations = { "max-width": "100%", "min-width": "0px", "box-sizing": "border-box" };
+			const position = getComputedStyle(child).position;
+			if (position === "sticky" || position === "fixed" || mpMarketInline.get(child)?.has("position")) {
+				Object.assign(declarations, {
+					position: "static", top: "auto", right: "auto", bottom: "auto", left: "auto",
+					width: "100%", "z-index": "auto", margin: "0px",
+					transform: "none", scale: "none", translate: "none", animation: "none", transition: "none",
+				});
+			}
+			mpMarketSet(child, declarations, wanted);
+		}
 	}
 	function mpFinishMarketLayouts(wanted, roots, dialogs) {
 		mpMarketRestore(wanted);
@@ -2533,6 +2560,118 @@ function closeDrawerAfterClick() {
 		if (dialog?.matches('[data-shortcut-modal="settings"]')) mpSyncSettings();
 	}
 /* END mobile-layout-v183 */
+
+/* BEGIN mobile-header-tap-v184
+ * Re-arm the host's compatibility-click guard on each physical gesture. The
+ * first click reaches React, duplicates from that same gesture do not. Only the
+ * plugin description's own pinned tooltip opts back into touch visibility.
+ */
+function setupPluginHeaderTap() {
+  const mobile = () => document.documentElement.hasAttribute("data-mobile");
+  const selector = '[data-plugin-panel] [data-plugin-header-part] button[aria-expanded], [data-plugin-panel] [data-plugin-header-part="intro"] button[aria-label="插件说明"]';
+  const targetButton = target => target?.closest?.(selector);
+  let press = null;
+  let frame = 0;
+  const marked = new Set();
+  const style = document.createElement("style");
+  style.id = "mp-plugin-header-tap-v184";
+  style.textContent = `
+[data-mobile] [role="tooltip"][data-mp-plugin-info="true"][data-pinned] {
+  display:block!important;position:fixed!important;
+  left:var(--mp-plugin-info-left,16px)!important;
+  top:var(--mp-plugin-info-top,144px)!important;right:auto!important;bottom:auto!important;
+  width:max-content!important;min-width:0!important;max-width:calc(100vw - 32px)!important;
+  height:auto!important;box-sizing:border-box!important;padding:10px 12px!important;
+  font-size:13px!important;line-height:20px!important;white-space:normal!important;
+  transform:none!important;scale:none!important;translate:none!important;
+  animation:none!important;transition:none!important;opacity:1!important;visibility:visible!important;
+  pointer-events:auto!important;z-index:12500!important;
+}`;
+  document.head.appendChild(style);
+  const unmark = tooltip => {
+    tooltip.removeAttribute("data-mp-plugin-info");
+    tooltip.style.removeProperty("--mp-plugin-info-left");
+    tooltip.style.removeProperty("--mp-plugin-info-top");
+    marked.delete(tooltip);
+  };
+  const paint = () => {
+    frame = 0;
+    const button = mobile() ? document.querySelector('[data-plugin-panel] [data-plugin-header-part="intro"] button[aria-label="插件说明"]') : null;
+    const ids = (button?.getAttribute("aria-describedby") || "").split(/\s+/).filter(Boolean);
+    const tooltip = ids.map(id => document.getElementById(id)).find(el => el?.getAttribute("role") === "tooltip" && el.hasAttribute("data-pinned"));
+    for (const old of marked) if (old !== tooltip || !old.isConnected) unmark(old);
+    if (!button || !tooltip) return;
+    tooltip.setAttribute("data-mp-plugin-info", "true");
+    marked.add(tooltip);
+    const anchor = button.getBoundingClientRect();
+    const box = tooltip.getBoundingClientRect();
+    const left = Math.max(16, Math.min(innerWidth - box.width - 16, anchor.left + anchor.width / 2 - box.width / 2));
+    const top = Math.max(16, Math.min(innerHeight - box.height - 16, anchor.bottom + 8));
+    for (const [key, value] of [["--mp-plugin-info-left", left], ["--mp-plugin-info-top", top]]) {
+      const next = `${Math.round(value * 100) / 100}px`;
+      if (tooltip.style.getPropertyValue(key) !== next) tooltip.style.setProperty(key, next);
+    }
+  };
+  const schedule = () => { if (!frame) frame = requestAnimationFrame(paint); };
+  const down = event => {
+    const button = targetButton(event.target);
+    if (!mobile() || !button || (event.type === "pointerdown" && event.pointerType !== "touch")) return;
+    const now = Date.now();
+    if (event.type === "touchstart" && press?.button === button && now - press.started < 80) return;
+    // The host registers its window-capture click listener before this plugin.
+    // Reset here, on pointerdown/touchstart, so even rapid distinct taps pass it.
+    button.__dshLastClick = 0;
+    press = { button, started: now, consumed: false };
+  };
+  const click = event => {
+    const button = targetButton(event.target);
+    if (!mobile() || !button) return;
+    if (event.detail !== 0 && press?.button === button && Date.now() - press.started < 1500) {
+      if (press.consumed) {
+        event.stopImmediatePropagation();
+        event.preventDefault();
+        return;
+      }
+      press.consumed = true;
+    }
+    schedule();
+  };
+  const key = event => {
+    const button = targetButton(event.target);
+    if (!mobile() || !button || (event.key !== "Enter" && event.key !== " ")) return;
+    button.__dshLastClick = 0;
+    press = null;
+  };
+  const cancel = () => { press = null; };
+  const observer = new MutationObserver(schedule);
+  observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["aria-describedby", "data-pinned"] });
+  window.addEventListener("pointerdown", down, true);
+  window.addEventListener("touchstart", down, { capture: true, passive: true });
+  window.addEventListener("click", click, true);
+  window.addEventListener("keydown", key, true);
+  window.addEventListener("pointercancel", cancel, true);
+  window.addEventListener("touchcancel", cancel, true);
+  window.addEventListener("resize", schedule);
+  window.addEventListener("scroll", schedule, true);
+  schedule();
+  return () => {
+    observer.disconnect();
+    if (frame) cancelAnimationFrame(frame);
+    window.removeEventListener("pointerdown", down, true);
+    window.removeEventListener("touchstart", down, true);
+    window.removeEventListener("click", click, true);
+    window.removeEventListener("keydown", key, true);
+    window.removeEventListener("pointercancel", cancel, true);
+    window.removeEventListener("touchcancel", cancel, true);
+    window.removeEventListener("resize", schedule);
+    window.removeEventListener("scroll", schedule, true);
+    for (const tooltip of marked) unmark(tooltip);
+    style.remove();
+    press = null;
+  };
+}
+/* END mobile-header-tap-v184 */
+
 
 
 			// ── 8. 移动端外壳（0.1.5 融合版）──
@@ -11049,6 +11188,7 @@ if (!window.__mpHeaderMenuTimer) {
 			document.addEventListener("click", onGuideClick, true);      /* 右栏 guide 点击记账 */
 			document.addEventListener("click", onMenuItemClick, true);   /* rc3 菜单项点完收抽屉 */
 			const disposePressFeedback = setupPressFeedback();
+			const disposePluginHeaderTap = setupPluginHeaderTap();
 			const disposeStatusBridge = mpInstallStatusBridge();
 			const disposeTranscriptBridge = mpInstallTranscriptBridge();
 			// 余额桥：页面侧拉 DeepSeek 余额 + 按 usage 算花费，回给原生徽标。
@@ -11094,6 +11234,7 @@ if (!window.__mpHeaderMenuTimer) {
 				document.removeEventListener("click", onNewSessionClick, true);
 				document.removeEventListener("click", onSessionRowClick, true);
 				disposePressFeedback();
+				disposePluginHeaderTap();
 				disposeStatusBridge();
 				disposeTranscriptBridge();
 				disposeImePrejudge();

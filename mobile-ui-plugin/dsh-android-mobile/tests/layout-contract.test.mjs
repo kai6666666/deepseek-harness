@@ -23,12 +23,12 @@ class Style {
   removeProperty(name) { this.writes++; this.values.delete(name); }
 }
 const element = (parentElement = null, display = 'block') => ({
-  parentElement, display, style: new Style(), dataset: {},
+  tagName: 'DIV', nodeType: 1, parentElement, display, position: 'static', style: new Style(), dataset: {}, children: [],
 });
 function harness() {
   const context = vm.createContext({
     document: { querySelectorAll: () => [] },
-    getComputedStyle: el => ({ display: el.display }),
+    getComputedStyle: el => ({ display: el.display, position: el.style.getPropertyValue('position') || el.position }),
     mpIsMobile: () => false,
   });
   vm.runInContext(block + '\nglobalThis.layout = { set: mpMarketSet, restore: mpMarketRestore, shell: mpMarketShell, sync: mpSyncSettings, patches: mpMarketInline };', context);
@@ -169,11 +169,41 @@ test('entry-independent density is local and restores original font and animatio
   assert.equal(root.style.getPropertyValue('transition'), 'all 0.2s');
 });
 
-test('unexpected child shape keeps internal nodes unchanged', () => {
+test('conditional back-to-top span still lets the market adapter size head and body', () => {
   const h = harness(), host = element(), root = element(host);
-  root.children = [element(root), element(root), element(root)];
+  const head = element(root), body = element(root), top = element(root);
+  top.tagName = 'SPAN';
+  root.children = [head, body, top];
   h.shell(root, host, new Map());
-  assert.ok(root.children.every(el => el.style.writes === 0));
+  assert.equal(head.style.getPropertyValue('height'), 'auto');
+  assert.equal(body.style.getPropertyValue('overflow-y'), 'auto');
+  assert.equal(top.style.writes, 0, 'the fixed back-to-top span keeps its own placement');
+});
+
+test('a non-DIV second child keeps market internals unchanged', () => {
+  const h = harness(), host = element(), root = element(host);
+  const head = element(root), body = element(root);
+  body.tagName = 'SPAN';
+  root.children = [head, body];
+  h.shell(root, host, new Map());
+  assert.equal(head.style.writes, 0);
+  assert.equal(body.style.writes, 0);
+});
+
+test('sticky category rail rejoins the scroll flow and is restored on leave', () => {
+  const h = harness(), host = element(), root = element(host);
+  const head = element(root), body = element(root), cats = element(body);
+  cats.position = 'sticky';
+  body.children = [cats];
+  root.children = [head, body];
+  h.shell(root, host, new Map());
+  assert.equal(cats.style.getPropertyValue('position'), 'static');
+  assert.equal(cats.style.getPropertyValue('width'), '100%');
+  assert.equal(cats.style.getPropertyValue('z-index'), 'auto');
+  assert.equal(cats.style.getPropertyValue('top'), 'auto');
+  h.restore(new Map());
+  assert.equal(cats.style.getPropertyValue('position'), '');
+  assert.equal(cats.style.getPropertyValue('width'), '');
 });
 
 test('new market mounts are sized before the debounced general pass', () => {
