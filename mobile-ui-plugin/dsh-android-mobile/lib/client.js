@@ -2492,6 +2492,7 @@ function closeDrawerAfterClick() {
 		mpMarketSet(head, {
 			flex: "0 0 auto", height: "auto", "min-height": "0px", "max-height": "none",
 			width: "100%", "min-width": "0px", "max-width": "100%", "box-sizing": "border-box",
+			position: "static", top: "auto", right: "auto", bottom: "auto", left: "auto", "z-index": "auto",
 			margin: "0px", padding: "8px 16px", transform: "none", scale: "none",
 			animation: "none", transition: "none",
 		}, wanted);
@@ -2508,19 +2509,33 @@ function closeDrawerAfterClick() {
 		}, wanted);
 		// The category rail belongs to this body, not the Plugins page's host scroller.
 		// Only bounded direct DIVs are adapted; buttons/dialogs and cards keep their layout.
-		for (const child of Array.from(body.children || [])) {
-			if (child.tagName !== "DIV") continue;
-			const declarations = { "max-width": "100%", "min-width": "0px", "box-sizing": "border-box" };
-			const position = getComputedStyle(child).position;
-			if (position === "sticky" || position === "fixed" || mpMarketInline.get(child)?.has("position")) {
-				Object.assign(declarations, {
-					position: "static", top: "auto", right: "auto", bottom: "auto", left: "auto",
-					width: "100%", "z-index": "auto", margin: "0px",
-					transform: "none", scale: "none", translate: "none", animation: "none", transition: "none",
-				});
+		const mpFlattenRails = container => {
+			for (const child of Array.from(container.children || [])) {
+				if (child.tagName !== "DIV") continue;
+				const declarations = { "max-width": "100%", "min-width": "0px", "box-sizing": "border-box" };
+				const position = getComputedStyle(child).position;
+				if (position === "sticky" || position === "fixed" || mpMarketInline.get(child)?.has("position")) {
+					Object.assign(declarations, {
+						position: "static", top: "auto", right: "auto", bottom: "auto", left: "auto",
+						width: "100%", "z-index": "auto", margin: "0px",
+						transform: "none", scale: "none", translate: "none", animation: "none", transition: "none",
+					});
+				}
+				mpMarketSet(child, declarations, wanted);
 			}
-			mpMarketSet(child, declarations, wanted);
-		}
+		};
+		// Rails can sit two levels deep (head > stickyHead[display:contents] > cats),
+		// so walk a few levels instead of trusting a single parent hop.
+		const mpFlattenDeep = (container, depth) => {
+			mpFlattenRails(container);
+			if (depth >= 3) return;
+			for (const child of Array.from(container.children || [])) {
+				if (child.tagName !== "DIV" || child.getAttribute?.("role") === "dialog") continue;
+				mpFlattenDeep(child, depth + 1);
+			}
+		};
+		mpFlattenDeep(head, 0);
+		mpFlattenDeep(body, 0);
 	}
 	function mpFinishMarketLayouts(wanted, roots, dialogs) {
 		mpMarketRestore(wanted);
