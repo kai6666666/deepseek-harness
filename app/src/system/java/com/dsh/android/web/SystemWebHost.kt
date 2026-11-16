@@ -437,14 +437,21 @@ class SystemWebHost(
                     javaScriptCanOpenWindowsAutomatically = true
                     setSupportMultipleWindows(true)
                 }
-                var holder: android.view.ViewGroup? = null
-                var cleaned = false
-                fun cleanup() {
-                    if (cleaned) return
-                    cleaned = true
-                    runCatching { holder?.let { (it.parent as? android.view.ViewGroup)?.removeView(it) } }
-                    runCatching { popup.stopLoading() }
-                    runCatching { popup.destroy() }
+                // 1x1 透明容器：只为让内核有一个**真实窗口**可以调度导航。
+                // 不显示任何 UI —— 授权页要交给默认浏览器打开（与桌面端
+                // `shell.openExternal(platformLoginUrl(...))` 同一条路）。
+                val activity = popupActivityOf(parent.context)
+                var holder: android.widget.FrameLayout? = null
+                fun detach() {
+                    runCatching {
+                        holder?.let { h ->
+                            (h.parent as? android.view.ViewGroup)?.removeView(h)
+                            h.removeAllViews()
+                        }
+                        popup.stopLoading()
+                        popup.destroy()
+                    }
+                    holder = null
                 }
                 popup.webViewClient = object : WebViewClient() {
                     override fun shouldOverrideUrlLoading(
@@ -452,47 +459,45 @@ class SystemWebHost(
                         request: WebResourceRequest,
                     ): Boolean {
                         val u = request.url.toString()
-                        // 本地引擎 / about:blank 放行（授权链的预开窗口就是 about:blank）。
-                        if (u.startsWith(LOCAL_ENGINE_PREFIX) || u.startsWith("about:")) return false
-                        // 其余一律交给系统默认浏览器（设置里的默认浏览器，例如 Chrome）。
-                        Log.i(DshApplication.TAG, "window.open 转系统浏览器: ${u.take(120)}")
-                        cleanup()
-                        callbacks.onExternalUrl(u)
-                        return true
+                        Log.i(DshApplication.TAG, "登录弹窗导航: ${u.take(120)}")
+                        if (u.startsWith(LOCAL_ENGINE_PREFIX)) {
+                            Log.i(DshApplication.TAG, "登录授权已回到本地引擎，关闭弹窗")
+                            detach()
+                            return true
+                        }
+                        // 授权页交给系统默认浏览器：与桌面端判断一致 ——
+                        // `attempt.phase=waiting-browser`，引擎自己轮询完成登录，
+                        // 不依赖这个 WebView 的 cookie。
+                        if (u.startsWith("http://") || u.startsWith("https://")) {
+                            Log.i(DshApplication.TAG, "登录授权转系统浏览器: ${u.take(120)}")
+                            detach()
+                            callbacks.onExternalUrl(u)
+                            return true
+                        }
+                        return false
                     }
 
                     override fun onPageFinished(view: WebView, url: String?) {
                         super.onPageFinished(view, url)
-                        Log.i(DshApplication.TAG, "window.open 窗口加载完成: ${url?.take(120)}")
+                        Log.i(DshApplication.TAG, "登录弹窗就绪: ${url?.take(120)}")
                     }
                 }
-                // ⚠️ 内核给的是一个**没有窗口**的渲染目标；不 attach 就既不渲染也不调度
-                //   导航（表现就是“点登录没反应”）。这里挂一个 1×1 的隐形宿主：
-                //   用户看不到任何东西，但内核能把 popup 的导航跑起来，从而触发
-                //   shouldOverrideUrlLoading，把目标 URL 交给系统浏览器。
-                val activity = popupActivityOf(parent.context)
                 if (activity != null) {
-                    val host = android.widget.FrameLayout(activity)
-                    host.addView(
+                    val h = android.widget.FrameLayout(activity)
+                    h.alpha = 0f
+                    h.addView(
                         popup,
                         android.widget.FrameLayout.LayoutParams(1, 1),
                     )
-                    activity.addContentView(
-                        host,
-                        android.widget.FrameLayout.LayoutParams(1, 1),
+                    val decor = activity.window?.decorView as? android.view.ViewGroup
+                    decor?.addView(
+                        h,
+                        android.view.ViewGroup.LayoutParams(1, 1),
                     )
-                    holder = host
+                    holder = h
                 }
-                // ⚠️ `transport.webView = popup` 必须在回 true 之前。
                 transport.webView = popup
-                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(
-                    { cleanup() },
-                    20000L,
-                )
-                Log.i(
-                    DshApplication.TAG,
-                    "window.open 已建隐形宿主（1×1），等待页面自行导航后转系统浏览器",
-                )
+                Log.i(DshApplication.TAG, "window.open 已建空白窗口（等待页面自行导航）")
                 true
             } catch (t: Throwable) {
                 Log.w(DshApplication.TAG, "建 window.open 窗口失败: ${t.message}")
