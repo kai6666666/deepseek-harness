@@ -1,0 +1,30 @@
+// 本地/CI 镜像用的 Gradle init 脚本（可选，不参与正常构建）
+//
+// 用法：
+//   gradle -I tools/local/gradle-mirrors.gradle :app:assembleSystemDebug -PtargetAbi=x86_64
+//
+// 为什么用 init 脚本而不是改 settings.gradle.kts：
+//   · 仓库的 settings 是**事实源**（google()/mavenCentral()/Mozilla），不能为了
+//     某个地区的网络环境改它；
+//   · init 脚本在 settings 评估后替换仓库列表，构建产物与正常构建同源。
+//
+// 注意：mirror 缺包时会直接失败并指出缺哪个坐标，不会静默回退到慢源。
+settingsEvaluated { settings ->
+    settings.pluginManagement.repositories { handler ->
+        handler.clear()
+        handler.maven { url 'https://maven.aliyun.com/repository/gradle-plugin' }
+        handler.maven { url 'https://maven.aliyun.com/repository/google' }
+        handler.maven { url 'https://maven.aliyun.com/repository/public' }
+    }
+    settings.dependencyResolutionManagement.repositories { handler ->
+        handler.clear()
+        handler.maven { url 'https://maven.aliyun.com/repository/google' }
+        handler.maven { url 'https://maven.aliyun.com/repository/public' }
+        handler.maven { url 'https://maven.aliyun.com/repository/gradle-plugin' }
+        // gecko flavor 的 GeckoView 只在 Mozilla 仓库；content 过滤避免它参与其它依赖解析
+        handler.maven {
+            url 'https://maven.mozilla.org/maven2/'
+            content { includeGroup 'org.mozilla.geckoview' }
+        }
+    }
+}

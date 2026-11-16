@@ -59,7 +59,7 @@ window.__ModuleLoader__.load({
    第一版在这里加了一条
      
    结果**完全不生效**：同一个属性上已经有一条修复 66 加的
-     [data-mobile] [data-pane=conversation] { padding-top: var(--mp-float-nav-h, 0px) !important }
+     [data-mobile] [class*=centerCol] { padding-top: var(--mp-float-nav-h, 0px) !important }
    它带 !important，后加的规则压不过它（实测 getComputedStyle 仍是 0px）。
 
    也不能在 CSS 里写成 max(两条变量之和 / 取大者)：max() 要 Chrome 79，而本 App
@@ -132,60 +132,101 @@ window.__ModuleLoader__.load({
    插件/插件市场/任务看板整体右移被裁，会话视图挤在右半。
    这次三件事分开做：轨道归零、正文钉第 2 轨、侧栏固定浮层，
    再单独把内层根节点宽度拉到 100%，避免“外层 320 / 内层按 153 排版”。 */
-[data-mobile] [data-dsh-frame] {
+[data-mobile] [class*=pI_x6G_frame] {
   grid-template-columns: 0px minmax(0, 1fr) 0px !important;
 }
-[data-mobile] [data-pane=conversation] {
+[data-mobile] [class*=centerCol] {
   grid-column: 2 !important;
   min-width: 0 !important;
 }
 [data-mobile] [data-rightbar-col] {
   grid-column: 3 !important;
 }
-[data-mobile] [data-pane=sidebar] {
+[data-mobile] [class*=sidebarCol] {
   position: fixed !important;
-  top: 0;
-  bottom: 0;
-  left: calc(-100vw - 40px);
-  width: 100vw !important;
-  z-index: 40;
-  transition: left .22s var(--ds-ease-in-out, ease);
-  box-shadow: 0 0 30px rgba(0, 0, 0, .18);
+  top: 0 !important;
+  bottom: 0 !important;
+  left: -340px !important;
+  width: 320px !important;
+  max-width: 85vw !important;
+  z-index: 80 !important;
+  transform: none !important;
+  transition: none !important;
+  box-shadow: none !important;
   box-sizing: border-box !important;
-  /* 修复 88：侧栏里的 workspace 行是 fixed/sticky，光把侧栏移出屏幕它还会浮在正文上。
-     overflow+contain 把整棵子树裁进侧栏盒子。 */
   overflow: hidden !important;
-  /* 88c：不用 contain:paint（部分 WebView 会合成器卡住）；clip-path 同样能裁 fixed 子节点。 */
   clip-path: inset(0) !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  contain: strict !important;
 }
-[data-mobile] [data-pane=sidebar].mp-drawer-open {
-  left: 0;
+[data-mobile] [class*=sidebarCol].mp-drawer-open {
+  left: 0 !important;
+  box-shadow: 0 0 30px rgba(0, 0, 0, .18) !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  pointer-events: auto !important;
+  contain: layout style !important;
+  transition: left .22s var(--ds-ease-in-out, ease) !important;
 }
-[data-mobile] [data-pane=sidebar] > * {
+[data-mobile] [class*=sidebarCol]:has([data-shortcut-modal="settings"], [data-shortcut-modal="shortcut-edit"], [class*="VOzbGW_panel"]) {
+  overflow: visible !important;
+  clip-path: none !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  pointer-events: auto !important;
+  contain: none !important;
+}
+[data-mobile] [class*=sidebarCol] > * {
   width: 100% !important;
   min-width: 0 !important;
   box-sizing: border-box !important;
 }
-[data-mobile] [data-pane=sidebar] [class*="hHd-Xa_root"] {
+[data-mobile] [class*=sidebarCol] [class*="hHd-Xa_root"] {
   width: 100% !important;
   min-width: 0 !important;
   box-sizing: border-box !important;
 }
-[data-mobile] [data-pane=sidebar] [class*="hHd-Xa_root"] > * {
+[data-mobile] [class*=sidebarCol] [class*="hHd-Xa_root"] > * {
   min-width: 0 !important;
 }
-/* 修复 96：pageBar 自身是 sticky，改成 static，标题随整页滚动。 */
-[data-mobile] [data-pane=conversation] [class*="pageBar"] {
+[data-mobile] [class*=centerCol] [class*="pageBar"] {
   position: static !important;
   top: auto !important;
 }
-/* 修复 87：引擎的 pI_x6G_drawerMask 是 z-index:70 + pointer-events:auto，
-   它盖在整屏侧栏上 → 面板发暗、点任意位置等于点遮罩、抽屉被关回会话。
-   窄屏侧栏已经整屏，遮罩没有存在意义，直接停用。 */
+[data-mobile] [class*="pageBar"][data-natural] [class*="pageHead"] {
+  clip-path: none !important;
+  overflow: visible !important;
+  min-height: 76px !important;
+}
 [data-mobile] [class*="drawerMask"] {
   display: none !important;
   opacity: 0 !important;
   pointer-events: none !important;
+}
+[data-mobile] .mp-drawer-scrim {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: min(320px, 85vw);
+  right: 0;
+  z-index: 75;
+  background: rgba(0, 0, 0, .28);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .22s ease;
+}
+[data-mobile] .mp-drawer-scrim.mp-scrim-open {
+  opacity: 1;
+  pointer-events: auto;
+}
+[data-mobile] [role="listbox"],
+[data-mobile] [role="menu"],
+[data-mobile] [class*="_portal_"],
+[data-mobile] [class*="JYBKaa_portal"] {
+  z-index: 1300 !important;
+  pointer-events: auto !important;
 }
 [data-mobile] .Nqubda_panel[data-mp-approval] {
   box-shadow: var(--dsw-shadow-lv3, 0 8px 30px rgba(0, 0, 0, .25)) !important;
@@ -205,7 +246,7 @@ window.__ModuleLoader__.load({
 
 /* ⚠️ 侧栏一旦 position:fixed 就脱离网格流，其后的正文列会自动落进第 1 条
    （0px）轨道 → 正文宽度变成 0。必须给正文/右栏显式指定轨道列。 */
-[data-mobile] [data-pane=conversation] {
+[data-mobile] [class*=centerCol] {
   grid-column: 2 !important;
 }
 
@@ -223,7 +264,7 @@ window.__ModuleLoader__.load({
 
 
 /* ⚠️ 修复 39：打开态**必须**限定在 [data-mobile] 下。
-   宽屏下 [data-pane=sidebar] 没有浮层化（仍是 static），若遮罩可点可见，
+   宽屏下 [class*=sidebarCol] 没有浮层化（仍是 static），若遮罩可点可见，
    就会盖住侧栏与整页 → 变暗、点不动、误关抽屉（啾灵 2026-09-16 反馈）。
    基类已是 opacity:0 + pointer-events:none，所以这里加上作用域 = 兜底：
    即便 .mp-drawer-open 被以任何方式误加，宽屏下也不会变暗、不会吃点击。 */
@@ -270,6 +311,16 @@ window.__ModuleLoader__.load({
 /* 官方 header 给汉堡让出左侧空间（标题不再被压住） */
 [data-mobile] header[data-window-drag] {
   padding-left: 52px !important;
+}
+
+/* ══ 修复 89（2026-11-13）：左侧栏按钮点不动 ══════════════════════════
+   官方「打开侧边栏」浮动座位 pI_x6G_leadingSeat 是 z-index:15，而我们自己的
+   header 在修复 30b 里被提到 z-index:30（为让 ⋯ 菜单压住消息流）。
+   结果：座位虽被画出来，但点击全被 header 吃掉（CDP 实测 elementFromPoint(26,25)
+   返回 HEADER.wSkVaW_header，不是按钮）。
+   座位正好落在 header 的 52px 左留白里，抬到 40 不会压住 ⋯ 菜单。 */
+[data-mobile] [class*="leadingSeat"] {
+  z-index: 40 !important;
 }
 
 /* ══ 修复 30：头部单行化（2026-09-16 啾灵拍板方案）══════════════════════
@@ -1318,21 +1369,21 @@ window.__ModuleLoader__.load({
      ② 本插件的汉堡由 mpAnchorBurger() 挂载：有顶栏时进 header（absolute），
         **没有顶栏时回落到 document.body（fixed 左上角浮层）** —— 这一步本身
         是对的（否则插件页就没有入口回不去侧栏了）；
-     ③ 而插件页自己的「.X_2TxG_pageHead」只有 padding-top:28px，那是官方给
+     ③ 而插件页自己的「.pageHead」只有 padding-top:28px，那是官方给
         **桌面端** --dsh-frame-top-clearance 预留的量（该变量只在
         darwin / windows-titlebar 下定义，Android 上恒为 0）→ 页面从视口顶部
         开始排，正好撞进汉堡的浮层范围。
 
    修法：**不给插件页写死像素，也不去硬编码它的 hash 类名**。
      汉堡是浮层时，把它真实的 bottom（+ 呼吸位）写成 CSS 变量
-     --mp-float-nav-h，由「[data-pane=conversation]」（官方 layout 的稳定类名）
+     --mp-float-nav-h，由「[class*=centerCol]」（官方 layout 的稳定类名）
      吃成 padding-top；汉堡回到顶栏里时该变量清零，conversation 页逐像素不变。
      这样任何面板页、任何屏幕、任何系统栏高度都自动对齐，且官方换 hash 类名
      也不会失效（我们不依赖 X_2TxG_page 这个构建期哈希）。
 
    ⚠️ 只动 centerCol 的**上内边距**：它是 flex 列容器、内部只有 main slot
       一个子项，加内边距 = 子项整体下移，不改变子项自身的布局语义。 */
-[data-mobile] [data-pane=conversation] {
+[data-mobile] [class*=centerCol] {
   padding-top: var(--mp-float-nav-h, 0px) !important;
 }
 
@@ -1659,9 +1710,10 @@ window.__ModuleLoader__.load({
 		}
 
 		// ── 6. 侧栏点「新会话」或「会话条」后自动收回抽屉 ──
-		function closeDrawerAfterClick() {
-			setTimeout(() => { mpCloseDrawer(); }, 150);
-		}
+function closeDrawerAfterClick() {
+  if (window.__mpSetDrawerVisual) window.__mpSetDrawerVisual(false);
+  else mpCloseDrawer();
+}
 		function onNewSessionClick(e) {
 			if (!mpIsMobile()) return; // 修复 40：收抽屉仅移动端有意义
 			// 覆盖两种新建会话按钮（中英文界面）：
@@ -2193,184 +2245,480 @@ window.__ModuleLoader__.load({
 			normalize();
 		}
 
-		// ── 7. 设置页两级化（全 inline style，不用 CSS 规则——见 CSS 区注释） ──
-		const mpSettingsSync = new WeakMap();
-		function setupSettingsDialog(dialog) {
-			// 修复 88：用户要求设置页回到官方布局（两栏 + 顶部 tab）。
-			//   这里直接不动 dialog，唯一保留的是系统返回键由 mpDialogBack/Escape 兜底。
-			if (mpIsMobile()) return;
-			if (!mpIsMobile()) return; // 修复 40：仅移动端；桌面端完全走官方
-			const old = mpSettingsSync.get(dialog);
-			if (old) { try { old(); } catch (e) {} return; }
-			const nav0 = Array.from(dialog.children).find((c) => c.tagName === "NAV");
-			if (!nav0) return;
-			dialog.dataset.mpSettings = "1";
-			// 隐藏安卓壳遗留的"开发者选项"（依赖 window.androidBridge，Web 进程里没有）
-			nav0.querySelectorAll("button").forEach((b) => {
-				if ((b.innerText || "").trim() === "开发者选项") b.style.display = "none";
-			});
-			const sysTop = getComputedStyle(document.documentElement).getPropertyValue("--dsh-android-system-top").trim() || "0px";
-			const BAR_H = 48;
-			const barPad = sysTop || "0px"; // 修复 81：自建返回条已删，不再预留 48px
-			const bodyBg = getComputedStyle(document.body).backgroundColor || "#fff";
-			// 面板改成一列：官方默认 flex-flow: row wrap，会把返回条挤成 60px 窄条，
-			// 也会让内容区只剩 26px 高（实测 y=780 h=26）。
-			Object.assign(dialog.style, {
-				width: "100vw", maxWidth: "100vw", height: "100vh", maxHeight: "100vh",
-				borderRadius: "0", boxShadow: "none", position: "fixed", top: "0", left: "0",
-				overflow: "hidden", padding: "0",
-			});
-			dialog.style.setProperty("display", "flex", "important");
-			dialog.style.setProperty("flex-direction", "column", "important");
-			dialog.style.setProperty("flex-wrap", "nowrap", "important");
-			const overlay = dialog.parentElement;
-			if (overlay) {
-				overlay.style.left = "0";
-				overlay.style.width = "100vw";
-				overlay.style.height = "100vh";
-				overlay.style.alignItems = "stretch";
+/* BEGIN mobile-layout-v183
+ * Mobile-only layout adapter. Keep React nodes/handlers and the market bundle intact.
+ * Plugin headers use stable data attributes. Settings geometry stays inline: the
+ * market's <=560px stylesheet hides the host nav and gives every host div width:100%.
+ * Patch only the content chain; never turn the settings dialog into a market root.
+ */
+	const mpMarketStyleId = "mp-market-shell-183";
+	function mpEnsureMarketStyle() {
+		if (document.getElementById(mpMarketStyleId)) return;
+		const style = document.createElement("style");
+		style.id = mpMarketStyleId;
+		// No settings selectors here; its title, actions and navigation keep their own grid rows.
+		style.textContent = `
+[data-mobile] [data-plugin-panel] {
+  display:flex!important;flex-direction:column!important;
+  width:100%!important;max-width:none!important;min-width:0!important;
+  height:100%!important;min-height:0!important;padding:0!important;margin:0!important;
+  box-sizing:border-box!important;
+}
+[data-mobile] [data-plugin-panel] [data-plugin-body] {
+  display:flex!important;flex-direction:column!important;flex:1 1 0%!important;
+  width:100%!important;min-width:0!important;height:100%!important;min-height:0!important;
+  padding:0!important;margin:0!important;gap:0!important;box-sizing:border-box!important;
+  overflow-x:hidden!important;overflow-y:auto!important;scroll-padding-top:0!important;
+}
+[data-mobile] [data-plugin-panel] [data-plugin-bar] {
+  display:block!important;position:static!important;flex:0 0 auto!important;
+  width:100%!important;height:auto!important;min-height:0!important;max-height:none!important;
+  padding:12px 16px!important;margin:0!important;box-sizing:border-box!important;
+  overflow:visible!important;clip-path:none!important;transform:none!important;
+}
+[data-mobile] [data-plugin-panel] [data-plugin-bar] > header[data-window-drag] {
+  display:grid!important;grid-template-columns:minmax(0,1fr) auto auto!important;
+  grid-template-rows:auto auto auto!important;gap:8px 8px!important;align-items:center!important;
+  width:100%!important;height:auto!important;min-height:0!important;max-height:none!important;
+  padding:0!important;margin:0!important;box-sizing:border-box!important;
+  position:relative!important;overflow:visible!important;clip-path:none!important;
+}
+[data-mobile] [data-plugin-panel] [data-plugin-bar] > header > :first-child {
+  display:contents!important;
+}
+[data-mobile] [data-plugin-panel] [data-plugin-bar] [data-plugin-header-part] {
+  position:static!important;top:auto!important;right:auto!important;bottom:auto!important;left:auto!important;
+  transform:none!important;translate:none!important;transition:none!important;clip-path:none!important;
+  width:auto!important;max-width:100%!important;min-width:0!important;height:auto!important;
+  margin:0!important;box-sizing:border-box!important;opacity:1!important;visibility:visible!important;
+}
+[data-mobile] [data-plugin-panel] [data-plugin-header-part="title"] {
+  grid-column:1!important;grid-row:1!important;align-self:center!important;
+  font-size:20px!important;line-height:28px!important;font-weight:600!important;
+}
+/* Flatten only the toolbar's layout box: keep every React node and click handler in place. */
+[data-mobile] [data-plugin-panel] [data-plugin-header-part="toolbar"] {
+  display:contents!important;
+}
+[data-mobile] [data-plugin-panel] [data-plugin-header-part="toolbar"] > button {
+  grid-column:2!important;grid-row:1!important;justify-self:end!important;
+}
+[data-mobile] [data-plugin-panel] [data-plugin-header-part="toolbar"] > :has(button) {
+  grid-column:3!important;grid-row:1!important;justify-self:end!important;
+  display:inline-flex!important;align-items:center!important;
+}
+[data-mobile] [data-plugin-panel] [data-plugin-header-part="toolbar"] > :not(button):not(:has(button)) {
+  grid-column:2 / -1!important;grid-row:2!important;justify-self:end!important;
+  position:static!important;margin:0!important;padding:0!important;max-width:100%!important;
+  font-size:12px!important;line-height:20px!important;text-align:right!important;
+  white-space:normal!important;overflow-wrap:anywhere!important;
+}
+[data-mobile] [data-plugin-panel] [data-plugin-header-part="toolbar"] button {
+  min-height:32px!important;height:32px!important;box-sizing:border-box!important;
+}
+[data-mobile] [data-plugin-panel] [data-plugin-header-part="intro"] {
+  grid-column:1!important;grid-row:2!important;display:flex!important;
+  flex-wrap:wrap!important;align-items:center!important;gap:4px 4px!important;
+  font-size:12px!important;line-height:20px!important;min-height:32px!important;
+}
+[data-mobile] [data-plugin-panel] [data-plugin-header-part="intro"] button {
+  display:inline-flex!important;align-items:center!important;justify-content:center!important;
+  flex:0 0 32px!important;min-width:32px!important;min-height:32px!important;
+  width:32px!important;height:32px!important;touch-action:manipulation!important;
+  pointer-events:auto!important;-webkit-app-region:no-drag!important;
+}
+[data-mobile] [data-plugin-panel] [data-plugin-header-part="toolbar"] button {
+  touch-action:manipulation!important;pointer-events:auto!important;-webkit-app-region:no-drag!important;
+}
+[data-mobile] [data-plugin-panel] [data-plugin-header-part="tabs"] {
+  grid-column:1 / -1!important;grid-row:3!important;display:flex!important;
+  padding-top:4px!important;justify-content:flex-start!important;
+}
+[data-mobile] [data-plugin-panel] [data-plugin-header-part="tabs"] [role="tablist"] {
+  width:100%!important;max-width:100%!important;min-width:0!important;box-sizing:border-box!important;
+}
+[data-mobile] [data-plugin-panel] [data-plugin-body] > [role="tabpanel"] {
+  width:100%!important;min-width:0!important;padding:8px 16px 24px!important;margin:0!important;
+  box-sizing:border-box!important;
+}
+[data-mobile] [data-plugin-panel] [data-plugin-group] > :first-child {
+  display:flex!important;align-items:center!important;gap:8px!important;
+  width:100%!important;min-width:0!important;box-sizing:border-box!important;
+}
+[data-mobile] [data-plugin-panel] [data-plugin-group] > :first-child > h3 {
+  flex:1 1 auto!important;min-width:0!important;margin:0!important;
+  font-size:15px!important;line-height:22px!important;font-weight:600!important;
+}
+[data-mobile] [data-plugin-panel] [data-plugin-group="extensions"] > :first-child > :last-child {
+  flex:0 0 auto!important;display:inline-flex!important;align-items:center!important;
+  margin-left:auto!important;white-space:nowrap!important;
+}
+/* A narrow screen gets a separate status row instead of squeezing the title or info button. */
+@media (max-width: 359px) {
+  [data-mobile] [data-plugin-panel] [data-plugin-header-part="intro"] {
+    grid-column:1 / -1!important;grid-row:2!important;
+  }
+  [data-mobile] [data-plugin-panel] [data-plugin-header-part="toolbar"] > :not(button):not(:has(button)) {
+    grid-column:1 / -1!important;grid-row:3!important;
+  }
+  [data-mobile] [data-plugin-panel] [data-plugin-header-part="tabs"] {
+    grid-row:4!important;
+  }
+}
+`;
+		document.head.appendChild(style);
+	}
+
+	// Save individual inline declarations, not cssText: tab switches must restore the
+	// previous host layout without discarding changes made by React or other plugins.
+	const mpMarketInline = new Map();
+	let mpMarketRoots = new Set();
+	const mpMarketTitles = new Map();
+	function mpMarketSet(el, declarations, wanted) {
+		if (!el) return;
+		let props = mpMarketInline.get(el);
+		if (!props) { props = new Map(); mpMarketInline.set(el, props); }
+		let active = wanted.get(el);
+		if (!active) { active = new Set(); wanted.set(el, active); }
+		for (const [name, value] of Object.entries(declarations)) {
+			active.add(name);
+			let saved = props.get(name);
+			const before = el.style.getPropertyValue(name);
+			const priority = el.style.getPropertyPriority(name);
+			if (saved && saved.requested === value && before === saved.applied && priority === "important") continue;
+			if (!saved || before !== saved.applied || priority !== "important") {
+				saved = { value: before, priority };
+				props.set(name, saved);
 			}
-			// 顶栏：固定吸顶，标题左对齐（返回键 + 页面名，只有一层）
-			// 修复 81：设置页自带走返回条，这里只保留一个**游离**的标题节点供下方复用，
-			//   不再向 dialog 插入任何 bar（否则它会跟着 dialog 一起被塞进侧栏，
-			//   表现为侧栏顶部多出「‹ 设置」并挤压品牌行）。
-			const titleSpan = document.createElement("span");
-			const closeDialog = () => {
-				const mask = dialog.parentElement?.querySelector(".VOzbGW_mask");
-				if (mask) mask.click();
-			};
-			const refs = { nav: null };
-			const styleNav = (nav, firstName) => {
-				nav.style.setProperty("display", "flex", "important");
-				nav.style.setProperty("flex-direction", "column", "important");
-				nav.style.setProperty("align-items", "stretch", "important");
-				nav.style.setProperty("overflow-y", "auto", "important");
-				nav.style.setProperty("overflow-x", "hidden", "important");
-				nav.style.setProperty("width", "100%", "important");
-				nav.style.setProperty("gap", "2px", "important");
-				nav.style.setProperty("padding", `${barPad} 10px 16px`, "important");
-				nav.style.setProperty("box-sizing", "border-box", "important");
-				nav.style.setProperty("flex", "1 1 0%", "important");
-				nav.style.setProperty("min-height", "0", "important");
-				const navList = nav.querySelector(".VOzbGW_navList");
-				if (navList) {
-					navList.style.flex = "1 1 0%";
-					navList.style.minHeight = "0";
-					navList.style.overflowY = "auto";
-				}
-				if (navList && !navList.querySelector("[data-mp-group]")) {
-					const groups = [
-						{ label: "通用", items: ["通用设置"] },
-						{ label: "插件", items: ["内置插件", "插件"] },
-						{ label: "高级", items: ["Agent 预设", "快照", "附件缓存", "特权权限", "悬浮气泡", "插件市场", "开发环境", "运行日志与诊断", "多模态配置"] },
-					];
-					for (const g of groups) {
-						const first = [...navList.querySelectorAll("button")].find((b) => g.items.includes((b.innerText || "").trim()));
-						if (!first) continue;
-						const label = document.createElement("div");
-						label.className = "mp-nav-group";
-						label.dataset.mpGroup = "1";
-						label.textContent = g.label;
-						label.style.cssText = "padding:14px 16px 4px;font-size:12px;font-weight:600;color:var(--dsw-alias-label-secondary,#888);";
-						navList.insertBefore(label, first);
-					}
-				}
-				Array.from(nav.children).forEach((c) => {
-					if (c.querySelector && c.querySelector("button")) {
-						c.style.flexDirection = "column";
-						c.style.overflowX = "hidden";
-						c.style.gap = "2px";
-						c.style.flex = "1 1 0%";
-						c.style.minWidth = "0";
-					}
-				});
-				nav.querySelectorAll("button").forEach((b) => {
-					b.style.width = "100%";
-					b.style.minHeight = "50px";
-					b.style.justifyContent = "flex-start";
-					b.style.padding = "0 16px";
-					b.style.borderRadius = "12px";
-					b.style.fontSize = "15px";
-					b.style.flex = "none";
-					b.style.textAlign = "left";
-					b.style.background = "transparent";
-				});
-				if (firstName && titleSpan) titleSpan.textContent = firstName;
-			};
-			const sync = () => {
-				const nav = Array.from(dialog.children).find((c) => c.tagName === "NAV") || dialog.querySelector("nav");
-				const options = dialog.querySelector(".VOzbGW_options");
-				if (!nav || !options) return;
-				if (refs.nav !== nav) {
-					refs.nav = nav;
-					nav.addEventListener("click", (e) => {
-						const btn = e.target.closest("button");
-						if (!btn) return;
-						const t = (btn.innerText || "").trim() || "设置";
-						dialog.dataset.mpView = "content";
-						dialog.dataset.mpTitle = t;
-						setTimeout(sync, 0);
-					});
-				}
-				const navTitle = dialog.querySelector(".VOzbGW_navTitle");
-				const header = dialog.querySelector(".VOzbGW_header");
-				if (navTitle) navTitle.style.setProperty("display", "none", "important");
-				if (header) header.style.setProperty("display", "none", "important");
-				const view = dialog.dataset.mpView === "content" ? "content" : "list";
-				if (view === "list") {
-					titleSpan.textContent = "设置";
-					options.style.setProperty("display", "none", "important");
-					styleNav(nav, "设置");
-				} else {
-					const t = dialog.dataset.mpTitle || "设置";
-					titleSpan.textContent = t;
-					nav.style.setProperty("display", "none", "important");
-					// 修复 86：插件市场自带整屏滚动，套我们的 padding/flex 会把内容推到底部。
-					const isMarket = /插件市场/.test(t) || !!options.querySelector("[data-dsh-market], [class*='pluginMarket'], [class*='marketRoot']");
-					options.style.setProperty("display", "block", "important");
-					options.style.setProperty("padding", isMarket ? "0" : `${barPad} 16px 28px`, "important");
-					if (isMarket) options.style.setProperty("overflow", "hidden", "important");
-					options.style.setProperty("box-sizing", "border-box", "important");
-					options.style.setProperty("width", "100%", "important");
-					options.style.setProperty("flex", "1 1 0%", "important");
-					options.style.setProperty("min-height", "0", "important");
-					options.style.setProperty("overflow-y", "auto", "important");
-					// 多模态配置：设备上装的是旧版插件，页面里还留着面向开发者的措辞 → 就地改成用户向
-					const amDesc = options.querySelector(".am-page-desc");
-					if (amDesc && /插件自己的设置页/.test(amDesc.textContent || "")) {
-						amDesc.textContent = "为图片生成与视频生成配置 Agnes 账号池；自定义号优先，内置免费号池兜底。";
-					}
-					// 官方每个分节自带的 H2 与顶栏标题重复 → 只留顶栏一处
-					// 允许「页面名（补充说明）」形态，例如「特权权限（uid 2000 / root）」
-					options.querySelectorAll(".zGbnIq_title, h1, h2, h3").forEach((h) => {
-						const ht = (h.textContent || "").trim();
-						if (ht === t || ht.startsWith(t + "（") || ht.startsWith(t + "(")) {
-							h.style.setProperty("display", "none", "important");
-						}
-					});
-				}
-			};
-			const back = () => {
-				if ((dialog.dataset.mpView || "list") === "content") {
-					dialog.dataset.mpView = "list";
-					sync();
-				} else {
-					closeDialog();
-				}
-			};
-			// 修复 86b：修复 81 删掉自建返回条时，这一行忘了删 —— 每次打开设置都会抛
-			//   ReferenceError: backBtn is not defined，后面的 sync() 永远不执行。
-			//   返回键已由 mpDialogBack（系统返回键）接管，这里不再需要实体按钮监听。
-			mpDialogBack.set(dialog, back);
-			mpSettingsSync.set(dialog, sync);
-			sync();
+			el.style.setProperty(name, value, "important");
+			saved.requested = value;
+			saved.applied = el.style.getPropertyValue(name);
 		}
-		function mpSyncSettings() {
-			document.querySelectorAll('[role="dialog"][aria-modal="true"]').forEach((d) => {
-				const f = mpSettingsSync.get(d);
-				if (f) { try { f(); } catch (e) { /* 静默 */ } }
+	}
+	function mpMarketRestore(wanted) {
+		for (const [el, props] of mpMarketInline) {
+			for (const [name, saved] of props) {
+				if (wanted.get(el)?.has(name)) continue;
+				if (el.style.getPropertyValue(name) === saved.applied && el.style.getPropertyPriority(name) === "important") {
+					if (saved.value) el.style.setProperty(name, saved.value, saved.priority);
+					else el.style.removeProperty(name);
+				}
+				props.delete(name);
+			}
+			if (!props.size) mpMarketInline.delete(el);
+		}
+	}
+	function mpSettingsDirectChild(dialog, el) {
+		while (el && el.parentElement !== dialog) el = el.parentElement;
+		return el;
+	}
+	function mpPreserveSettingsFrame(dialog, options, wanted) {
+		const nav = Array.from(dialog.children).find(el => el.tagName === "NAV");
+		const titleSlot = dialog.querySelector('[data-slot="settings.header"]');
+		const title = mpSettingsDirectChild(dialog, titleSlot);
+		const actions = mpSettingsDirectChild(dialog, dialog.querySelector('[data-slot="settings.action"]'));
+		mpMarketSet(dialog, {
+			display: "grid", "grid-template-columns": "minmax(0px, 1fr) auto",
+			"grid-template-rows": "auto auto minmax(0px, 1fr)",
+			"grid-template-areas": '"title actions" "nav nav" "content content"',
+			"min-width": "0px", "min-height": "0px", "box-sizing": "border-box",
+		}, wanted);
+		mpMarketSet(title, {
+            "grid-area": "title", display: "block", width: "auto", height: "auto",
+            "min-width": "0px", "min-height": "0px", "box-sizing": "border-box",
+            padding: "calc(var(--dsh-android-system-top, 0px) + 22px) 0px 0px 16px",
+        }, wanted);
+        mpMarketSet(actions, {
+            "grid-area": "actions", display: "flex", "align-items": "center", "justify-content": "flex-end",
+            width: "auto", height: "auto", "min-width": "0px", "min-height": "0px", "box-sizing": "border-box",
+            padding: "calc(var(--dsh-android-system-top, 0px) + 20px) 16px 0px 10px",
+        }, wanted);
+        mpMarketSet(nav, {
+			"grid-area": "nav", display: "flex", "flex-direction": "column", flex: "0 0 auto",
+			width: "auto", height: "auto", "min-width": "0px", "min-height": "0px",
+			"max-width": "100%", padding: "0px", overflow: "hidden", visibility: "visible",
+		}, wanted);
+		mpMarketSet(nav?.firstElementChild, {
+			display: "flex", "flex-direction": "row", "flex-wrap": "nowrap", flex: "0 0 auto",
+			width: "100%", height: "auto", "min-width": "0px", "box-sizing": "border-box",
+			"overflow-x": "auto", "overflow-y": "hidden", padding: "12px 16px 14px", gap: "4px",
+		}, wanted);
+		mpMarketSet(options, {
+			"grid-area": "content", display: "flex", "flex-direction": "column",
+			width: "100%", "max-width": "100%", "min-width": "0px", height: "auto", "min-height": "0px",
+			padding: "0px", margin: "0px", overflow: "hidden", "box-sizing": "border-box",
+		}, wanted);
+		// The official header slot can be empty. Add a sibling fallback, never replace the slot.
+		// Remove the fallback once a real title appears (hidden spans still duplicate accessibility text).
+		if (title && !titleSlot?.textContent.trim()) {
+			let label = mpMarketTitles.get(dialog);
+			if (!label) {
+				label = document.createElement("span");
+				label.dataset.mpSettingsTitle = "183";
+				label.textContent = "设置";
+				label.style.cssText = "font-size:18px;font-weight:600;line-height:28px;white-space:nowrap";
+				mpMarketTitles.set(dialog, label);
+			}
+			if (label.parentElement !== title) title.appendChild(label);
+		} else if (mpMarketTitles.has(dialog)) {
+			mpMarketTitles.get(dialog).remove();
+			mpMarketTitles.delete(dialog);
+		}
+	}
+	function mpMarketShell(root, boundary, wanted) {
+		// display:contents slots are transparent layout owners; leave them transparent.
+		// Stop BELOW the host: the settings title/nav and the panel's hamburger clearance stay intact.
+		for (let el = root; el && el !== boundary; el = el.parentElement) {
+			if (el !== root && getComputedStyle(el).display === "contents") continue;
+			mpMarketSet(el, {
+				display: "flex", "flex-direction": "column", flex: "1 1 0%",
+				width: "100%", "max-width": "100%", "min-width": "0px",
+				height: "auto", "min-height": "0px", "box-sizing": "border-box",
+				padding: "0px", margin: "0px", overflow: "hidden",
+				transform: "none", scale: "none", translate: "none", animation: "none", transition: "none",
+			}, wanted);
+		}
+		// One density and one gutter for settings, plugin tabs and sidebar panels.
+		// Text autosizing is local to the market; the user's document font/zoom stays untouched.
+		mpMarketSet(root, {
+			"font-size": "14px", "line-height": "22px", "font-family": "inherit",
+			"text-size-adjust": "100%", "-webkit-text-size-adjust": "100%",
+			position: "relative", "overflow-anchor": "none",
+		}, wanted);
+		// A conditional back-to-top BUTTON appears after scrollTop > 300.
+		// Head/body are still the first two DIVs; keep their contracts on every scroll.
+		const [head, body] = Array.from(root.children || []);
+		if (head?.tagName !== "DIV" || body?.tagName !== "DIV") return;
+		mpMarketSet(head, {
+			flex: "0 0 auto", height: "auto", "min-height": "0px", "max-height": "none",
+			width: "100%", "min-width": "0px", "max-width": "100%", "box-sizing": "border-box",
+			position: "static", top: "auto", right: "auto", bottom: "auto", left: "auto", "z-index": "auto",
+			margin: "0px", padding: "8px 16px", transform: "none", scale: "none",
+			animation: "none", transition: "none",
+		}, wanted);
+		// The plugin-tab stylesheet uses min-height:100%, flex:0 0 auto and overflow:visible.
+		// It overflows a clipped parent, leaving neither the parent nor the body swipeable.
+		// A zero min-height, shrinkable flex body owns native scrolling in every entry.
+		mpMarketSet(body, {
+			flex: "1 1 0%", height: "auto", "min-height": "0px", "max-height": "none",
+			width: "100%", "min-width": "0px", "max-width": "100%", "box-sizing": "border-box",
+			margin: "0px", padding: "0px 16px 16px", "overflow-x": "hidden", "overflow-y": "auto",
+			"overscroll-behavior-y": "contain", "touch-action": "pan-x pan-y pinch-zoom",
+			"scroll-behavior": "auto", transform: "none", scale: "none", animation: "none", transition: "none",
+			"overflow-anchor": "none",
+		}, wanted);
+		// The category rail belongs to this body, not the Plugins page's host scroller.
+		// Only bounded direct DIVs are adapted; buttons/dialogs and cards keep their layout.
+		const mpFlattenRails = container => {
+			for (const child of Array.from(container.children || [])) {
+				if (child.tagName !== "DIV") continue;
+				const declarations = { "max-width": "100%", "min-width": "0px", "box-sizing": "border-box" };
+				const position = getComputedStyle(child).position;
+				if (position === "sticky" || position === "fixed" || mpMarketInline.get(child)?.has("position")) {
+					Object.assign(declarations, {
+						position: "static", top: "auto", right: "auto", bottom: "auto", left: "auto",
+						width: "100%", "z-index": "auto", margin: "0px",
+						transform: "none", scale: "none", translate: "none", animation: "none", transition: "none",
+					});
+				}
+				mpMarketSet(child, declarations, wanted);
+			}
+		};
+		// Rails can sit two levels deep (head > stickyHead[display:contents] > cats),
+		// so walk a few levels instead of trusting a single parent hop.
+		const mpFlattenDeep = (container, depth) => {
+			mpFlattenRails(container);
+			if (depth >= 3) return;
+			for (const child of Array.from(container.children || [])) {
+				if (child.tagName !== "DIV" || child.getAttribute?.("role") === "dialog") continue;
+				mpFlattenDeep(child, depth + 1);
+			}
+		};
+		mpFlattenDeep(head, 0);
+		mpFlattenDeep(body, 0);
+	}
+	function mpFinishMarketLayouts(wanted, roots, dialogs) {
+		mpMarketRestore(wanted);
+		for (const root of mpMarketRoots) if (!roots.has(root)) delete root.dataset.mpMarket;
+		mpMarketRoots = roots;
+		for (const [dialog, title] of mpMarketTitles) {
+			if (!dialogs.has(dialog)) { title.remove(); mpMarketTitles.delete(dialog); }
+		}
+	}
+	function mpSyncSettings() {
+		const wanted = new Map(), roots = new Set(), dialogs = new Set();
+		if (mpIsMobile()) {
+			mpEnsureMarketStyle();
+			document.querySelectorAll("[data-dsh-market-root]").forEach(root => {
+				const dialog = root.closest('[data-shortcut-modal="settings"]');
+				const plugin = root.closest("[data-plugin-panel]");
+				const host = dialog ? mpSettingsDirectChild(dialog, root)
+					: plugin ? plugin.querySelector("[data-plugin-body]") : root.closest("[data-global-panel]");
+				if (!host || host === root) return;
+				if (dialog) {
+					dialogs.add(dialog);
+					mpPreserveSettingsFrame(dialog, host, wanted);
+				} else {
+					mpMarketSet(host, { "min-width": "0px", "min-height": "0px", overflow: "hidden" }, wanted);
+				}
+				mpMarketShell(root, host, wanted);
+				const mode = dialog ? "settings" : plugin ? "plugins" : "panel";
+				if (root.dataset.mpMarket !== mode) root.dataset.mpMarket = mode;
+				roots.add(root);
 			});
 		}
+		mpFinishMarketLayouts(wanted, roots, dialogs);
+	}
+	function setupSettingsDialog(dialog) {
+		// The old list/content implementation was unreachable (two opposite early returns).
+		// The official grid remains the frame; only live market mounts activate this adapter.
+		if (dialog?.matches('[data-shortcut-modal="settings"]')) mpSyncSettings();
+	}
+/* END mobile-layout-v183 */
+
+/* BEGIN mobile-external-open-v185
+ * window.open cannot reach the system browser: the popup starts as about:blank and
+ * its later navigation never leaves the WebView. Route both shapes through a
+ * main-frame navigation, which PhoneHost's shouldOverrideUrlLoading turns into
+ * Intent.ACTION_VIEW (the way the desktop build uses openExternal).
+ */
+function setupExternalWindowShim() {
+  const original = window.open;
+  const toBrowser = url => {
+    try { location.href = url; return true; } catch (e) { return false; }
+  };
+  const stubWindow = () => ({
+    closed: false,
+    focus() {}, blur() {}, postMessage() {},
+    close() { this.closed = true; },
+    location: {
+      href: 'about:blank',
+      replace(url) { if (typeof url === 'string') toBrowser(url); },
+      assign(url) { if (typeof url === 'string') toBrowser(url); },
+      toString() { return this.href; },
+    },
+    document: { open() { return this; }, write() {}, writeln() {}, close() {} },
+  });
+  window.open = function (url, name, features) {
+    if (typeof url === 'string' && /^https?:\/\//i.test(url)) { toBrowser(url); return null; }
+    return stubWindow();
+  };
+  return () => { window.open = original; };
+}
+/* END mobile-external-open-v185 */
+
+/* BEGIN mobile-header-tap-v184
+ * Re-arm the host's compatibility-click guard on each physical gesture. The
+ * first click reaches React, duplicates from that same gesture do not. Only the
+ * plugin description's own pinned tooltip opts back into touch visibility.
+ */
+function setupPluginHeaderTap() {
+  const mobile = () => document.documentElement.hasAttribute("data-mobile");
+  const selector = '[data-plugin-panel] [data-plugin-header-part] button[aria-expanded], [data-plugin-panel] [data-plugin-header-part="intro"] button[aria-label="插件说明"]';
+  const targetButton = target => target?.closest?.(selector);
+  let press = null;
+  let frame = 0;
+  const marked = new Set();
+  const style = document.createElement("style");
+  style.id = "mp-plugin-header-tap-v184";
+  style.textContent = `
+[data-mobile] [role="tooltip"][data-mp-plugin-info="true"][data-pinned] {
+  display:block!important;position:fixed!important;
+  left:var(--mp-plugin-info-left,16px)!important;
+  top:var(--mp-plugin-info-top,144px)!important;right:auto!important;bottom:auto!important;
+  width:max-content!important;min-width:0!important;max-width:calc(100vw - 32px)!important;
+  height:auto!important;box-sizing:border-box!important;padding:10px 12px!important;
+  font-size:13px!important;line-height:20px!important;white-space:normal!important;
+  transform:none!important;scale:none!important;translate:none!important;
+  animation:none!important;transition:none!important;opacity:1!important;visibility:visible!important;
+  pointer-events:auto!important;z-index:12500!important;
+}`;
+  document.head.appendChild(style);
+  const unmark = tooltip => {
+    tooltip.removeAttribute("data-mp-plugin-info");
+    tooltip.style.removeProperty("--mp-plugin-info-left");
+    tooltip.style.removeProperty("--mp-plugin-info-top");
+    marked.delete(tooltip);
+  };
+  const paint = () => {
+    frame = 0;
+    const button = mobile() ? document.querySelector('[data-plugin-panel] [data-plugin-header-part="intro"] button[aria-label="插件说明"]') : null;
+    const ids = (button?.getAttribute("aria-describedby") || "").split(/\s+/).filter(Boolean);
+    const tooltip = ids.map(id => document.getElementById(id)).find(el => el?.getAttribute("role") === "tooltip" && el.hasAttribute("data-pinned"));
+    for (const old of marked) if (old !== tooltip || !old.isConnected) unmark(old);
+    if (!button || !tooltip) return;
+    tooltip.setAttribute("data-mp-plugin-info", "true");
+    marked.add(tooltip);
+    const anchor = button.getBoundingClientRect();
+    const box = tooltip.getBoundingClientRect();
+    const left = Math.max(16, Math.min(innerWidth - box.width - 16, anchor.left + anchor.width / 2 - box.width / 2));
+    const top = Math.max(16, Math.min(innerHeight - box.height - 16, anchor.bottom + 8));
+    for (const [key, value] of [["--mp-plugin-info-left", left], ["--mp-plugin-info-top", top]]) {
+      const next = `${Math.round(value * 100) / 100}px`;
+      if (tooltip.style.getPropertyValue(key) !== next) tooltip.style.setProperty(key, next);
+    }
+  };
+  const schedule = () => { if (!frame) frame = requestAnimationFrame(paint); };
+  const down = event => {
+    const button = targetButton(event.target);
+    if (!mobile() || !button || (event.type === "pointerdown" && event.pointerType !== "touch")) return;
+    const now = Date.now();
+    if (event.type === "touchstart" && press?.button === button && now - press.started < 80) return;
+    // The host registers its window-capture click listener before this plugin.
+    // Reset here, on pointerdown/touchstart, so even rapid distinct taps pass it.
+    button.__dshLastClick = 0;
+    press = { button, started: now, consumed: false };
+  };
+  const click = event => {
+    const button = targetButton(event.target);
+    if (!mobile() || !button) return;
+    if (event.detail !== 0 && press?.button === button && Date.now() - press.started < 1500) {
+      if (press.consumed) {
+        event.stopImmediatePropagation();
+        event.preventDefault();
+        return;
+      }
+      press.consumed = true;
+    }
+    schedule();
+  };
+  const key = event => {
+    const button = targetButton(event.target);
+    if (!mobile() || !button || (event.key !== "Enter" && event.key !== " ")) return;
+    button.__dshLastClick = 0;
+    press = null;
+  };
+  const cancel = () => { press = null; };
+  const observer = new MutationObserver(schedule);
+  observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["aria-describedby", "data-pinned"] });
+  window.addEventListener("pointerdown", down, true);
+  window.addEventListener("touchstart", down, { capture: true, passive: true });
+  window.addEventListener("click", click, true);
+  window.addEventListener("keydown", key, true);
+  window.addEventListener("pointercancel", cancel, true);
+  window.addEventListener("touchcancel", cancel, true);
+  window.addEventListener("resize", schedule);
+  window.addEventListener("scroll", schedule, true);
+  schedule();
+  return () => {
+    observer.disconnect();
+    if (frame) cancelAnimationFrame(frame);
+    window.removeEventListener("pointerdown", down, true);
+    window.removeEventListener("touchstart", down, true);
+    window.removeEventListener("click", click, true);
+    window.removeEventListener("keydown", key, true);
+    window.removeEventListener("pointercancel", cancel, true);
+    window.removeEventListener("touchcancel", cancel, true);
+    window.removeEventListener("resize", schedule);
+    window.removeEventListener("scroll", schedule, true);
+    for (const tooltip of marked) unmark(tooltip);
+    style.remove();
+    press = null;
+  };
+}
+/* END mobile-header-tap-v184 */
+
+
 
 			// ── 8. 移动端外壳（0.1.5 融合版）──
 			// 官方 0.1.5 的窄屏形态只是把侧栏压成 56px 图标条（正文仅 334px）；
@@ -2987,12 +3335,12 @@ let mpWantedOpen = false;
 
 				function mpSidebarCol() {
 // ⚠️ 修复 78：必须**限定在 frame 内**。
-//   只写 [data-pane=sidebar] 时，设置/导航弹窗（hHd-Xa）里同样带
+//   只写 [class*=sidebarCol] 时，设置/导航弹窗（hHd-Xa）里同样带
 //   data-pane=sidebar 的节点会先命中；它的 .hHd-Xa_root 在弹窗开合过程中
 //   反复增删 hHd-Xa_collapsed，mpOfficialDrawerOpen() 于是忽真忽假，
 //   mpSetDrawerOpen 反复给遮罩加/去 mp-drawer-open → 会话页“忽明忽暗”。
-return document.querySelector("[data-dsh-frame] > [data-pane=sidebar]")
-|| document.querySelector("[data-pane=sidebar]")
+return document.querySelector("[class*=pI_x6G_frame] > [class*=sidebarCol]")
+|| document.querySelector("[class*=sidebarCol]")
 || document.querySelector('[class*="sidebarCol"]');
 }
 			function mpOfficialToggle() {
@@ -3012,37 +3360,78 @@ return col ? col.querySelector('[class*="toggle"]') : null;
 			//   就以 rail/面板形态留在流里 —— 表现为「自动弹回侧栏」。这里把几何全部
 			//   写成 inline + important（只有内联 important 能压内联/更高优先级的规则），
 			//   并把宽度改成整屏，右侧不再露出会话。
-			function mpApplySidebarGeom(open) {
-				const col = mpSidebarCol();
-				if (!col) return;
-				const st = col.style;
-				st.setProperty("position", "fixed", "important");
-				st.setProperty("top", "0", "important");
-				st.setProperty("bottom", "0", "important");
-				st.setProperty("height", "100%", "important");
-				st.setProperty("width", "100vw", "important");
-				st.setProperty("max-width", "100vw", "important");
-				st.setProperty("min-width", "0", "important");
-				st.setProperty("left", open ? "0px" : "calc(-100vw - 40px)", "important");
-				// 引擎 pI_x6G_drawerMask 是 z-index:70，侧栏必须压过它。
-				st.setProperty("z-index", "80", "important");
-				// 官方用 transform 平移 rail（实测 x=-52 但 left:0），不清掉会把整屏面板又推偏。
-				st.setProperty("transform", "none", "important");
-				st.setProperty("box-sizing", "border-box", "important");
-				st.setProperty("transition", "left .22s var(--ds-ease-in-out, ease)", "important");
-				st.setProperty("box-shadow", open ? "0 0 30px rgba(0,0,0,.18)" : "none", "important");
-				// 修复 88c：不用 visibility:hidden / contain:paint（会导致 WebView 合成卡住、
-				//   点击无响应）。改为：关闭时 pointer-events:none + clip-path，把子树裁在盒子里。
-				st.setProperty("pointer-events", open ? "auto" : "none", "important");
-				st.setProperty("clip-path", "inset(0)", "important");
-				st.setProperty("overflow", "hidden", "important");
-				col.querySelectorAll(":scope > *, [class*='hHd-Xa_root']").forEach((el) => {
-					el.style.setProperty("width", "100%", "important");
-					el.style.setProperty("min-width", "0", "important");
-					el.style.setProperty("box-sizing", "border-box", "important");
-				});
-			}
-			// 修复 87：导航收起时同步把官方状态翻成 collapsed。
+			function mpEnsureScrim() {
+let sc = document.querySelector('.mp-drawer-scrim');
+if (!sc && document.body) {
+sc = document.createElement('div');
+sc.className = 'mp-drawer-scrim';
+sc.addEventListener('click', (e) => {
+e.preventDefault(); e.stopPropagation();
+if (window.__mpSetDrawerVisual) window.__mpSetDrawerVisual(false);
+}, true);
+document.body.appendChild(sc);
+}
+return sc;
+}
+function mpClearCenterInert() {
+if (!mpIsMobile()) return;
+const cc = document.querySelector('.pI_x6G_centerCol');
+if (cc && cc.hasAttribute('inert')) cc.removeAttribute('inert');
+const br = document.querySelector('.pI_x6G_bottomRow');
+if (br && br.hasAttribute('inert')) br.removeAttribute('inert');
+}
+function mpApplySidebarGeom(open) {
+const col = mpSidebarCol();
+if (!col) return;
+const st = col.style;
+st.setProperty("position", "fixed", "important");
+st.setProperty("top", "0", "important");
+st.setProperty("bottom", "0", "important");
+st.setProperty("height", "100%", "important");
+st.setProperty("width", "320px", "important");
+st.setProperty("max-width", "85vw", "important");
+st.setProperty("min-width", "0", "important");
+st.setProperty("left", open ? "0px" : "-340px", "important");
+st.setProperty("z-index", "80", "important");
+st.setProperty("transform", "none", "important");
+st.setProperty("box-sizing", "border-box", "important");
+const hasModal = !!col.querySelector('[data-shortcut-modal="settings"], [data-shortcut-modal="shortcut-edit"], [class*="VOzbGW_panel"]');
+st.setProperty("transition", open ? "left .22s var(--ds-ease-in-out, ease)" : "none", "important");
+st.setProperty("box-shadow", open ? "0 0 30px rgba(0,0,0,.18)" : "none", "important");
+st.setProperty("pointer-events", (open || hasModal) ? "auto" : "none", "important");
+st.setProperty("clip-path", hasModal ? "none" : "inset(0)", "important");
+st.setProperty("overflow", hasModal ? "visible" : "hidden", "important");
+st.setProperty("visibility", (open || hasModal) ? "visible" : "hidden", "important");
+st.setProperty("opacity", (open || hasModal) ? "1" : "0", "important");
+col.querySelectorAll(":scope > *, [class*='hHd-Xa_root']").forEach((el) => {
+el.style.setProperty("width", "100%", "important");
+el.style.setProperty("min-width", "0", "important");
+el.style.setProperty("box-sizing", "border-box", "important");
+});
+const sc = mpEnsureScrim();
+if (sc) sc.classList.toggle('mp-scrim-open', !!open);
+mpClearCenterInert();
+}
+let mpVisualOpen = false;
+window.__mpSetDrawerVisual = function(open){
+const c = mpSidebarCol(); if (!c) return false;
+mpClosing = false;
+mpVisualOpen = !!open;
+mpWantedOpen = !!open;
+mpIntentUntil = open ? (Date.now() + 3600000) : 0;
+const frame = document.querySelector('[data-sidebar-drawer]');
+if (open && frame && frame.hasAttribute('data-sidebar-collapsed')) {
+  const ob = document.querySelector('[data-sidebar-opener],[data-sidebar-toggle]');
+  if (ob) { mpProgToggle = true; try { ob.click(); } catch (e) {} setTimeout(() => { mpProgToggle = false; mpClearCenterInert(); mpApplySidebarGeom(mpVisualOpen); }, 180); }
+}
+c.dataset.mpGeomReady = "1";
+c.classList.toggle("mp-drawer-open", !!open);
+mpApplySidebarGeom(!!open);
+setTimeout(mpClearCenterInert, 50);
+setTimeout(mpClearCenterInert, 250);
+return true;
+};
+// 修复 87：导航收起时同步把官方状态翻成 collapsed。
 			//   只摘我们自己的类，官方 frame 仍是 data-sidebar-drawer:not(collapsed)
 			//   → 遮罩继续可见、1 秒后重渲染又把面板"弹回"。
 			function mpCollapseOfficialDrawer() {
@@ -3191,9 +3580,9 @@ return false;
 			}
 			/** 侧栏菜单项点完收抽屉（延后 120ms 让目标页先切）。 */
 			function onMenuItemClick(e) {
-				if (!mpIsMobile()) return;
-				const item = e.target && e.target.closest ? e.target.closest('[role="menuitem"]') : null;
-				if (!item) return;
+if (!mpIsMobile()) return;
+const item = e.target && e.target.closest ? e.target.closest('[role="menuitem"]') : null;
+if (!item) return;
 				if (mpMenuSource === "right") { mpAfterRightMenuItem(); return; }
 				if (mpMenuSource !== "sidebar") return;
 				mpMenuConsumed = true;
@@ -3234,13 +3623,13 @@ mpSetMenuOpenClass(false);
 				// 模态弹窗打开时：只做**视觉收起**（抽屉滑出屏幕），不点官方 toggle。
 				// （修复 26 教训：官方收起会触发 railIn → footArea opacity:0 → 连坐弹窗。）
 				// 弹窗关闭后这里会自然走到下一行，把推迟的官方收起补做掉。
-				const modal = document.querySelector('[role="dialog"][aria-modal="true"]');
+				const modal = document.querySelector('[data-shortcut-modal="settings"], [data-shortcut-modal="shortcut-edit"], [class*="VOzbGW_panel"], body > [class*="overlay"] [role="dialog"][aria-modal="true"]');
 				if (modal) {
 					const col = mpSidebarCol();
 					// 只看「视觉开」类：官方 expanded 与否在弹窗期间无所谓，
 					// 否则 visualOnly 收起完成后会被这里反复重入（重启定时器）。
 					if (col && col.classList.contains("mp-drawer-open")) {
-						mpCloseDrawer({ visualOnly: true });
+						if (window.__mpSetDrawerVisual) window.__mpSetDrawerVisual(false);
 					}
 					return;
 				}
@@ -3254,11 +3643,14 @@ mpSetMenuOpenClass(false);
 				mpModalClose = false;
 				// 修复 78f：恢复“跟随官方状态”，但由 mpSetDrawerOpen 内部做 350ms 节流，
 				//   把 React 重渲染造成的瞬时 expanded/collapsed 抖动挡在外面。
-				const wantOpen = mpOfficialDrawerOpen();
-				const colNow = mpSidebarCol();
-				const visualOpen = !!colNow && colNow.classList.contains("mp-drawer-open");
-				if (wantOpen && mpWantedOpen) { mpWantedOpen = false; mpSetDrawerOpen(true); }
-				else if (!wantOpen && visualOpen) mpSetDrawerOpen(false);
+mpClearCenterInert();
+const colNow = mpSidebarCol();
+const visualOpen = !!colNow && colNow.classList.contains("mp-drawer-open");
+if (colNow && (visualOpen !== mpVisualOpen || !colNow.dataset.mpGeomReady)) {
+colNow.dataset.mpGeomReady = "1";
+colNow.classList.toggle("mp-drawer-open", mpVisualOpen);
+mpApplySidebarGeom(mpVisualOpen);
+}
 			}
 			function mpToggleDrawer() {
 				if (!mpIsMobile()) return; // 修复 40：仅移动端；桌面端完全走官方
@@ -3481,11 +3873,11 @@ mpWantedOpen = true;
 			// 修复 86：把页内 sticky bar 的 top 内联写死（官方 CSS 常带 !important）。
 			function mpFixPageBars() {
 				const hdr = document.querySelector("header[data-window-drag]");
-				const bars = document.querySelectorAll("[data-pane=conversation] [class*='pageBar']");
+				const bars = document.querySelectorAll("[class*=centerCol] [class*='pageBar']");
 				if (!hdr || !bars.length) return;
 				// sticky 的 top 相对滚动容器（pageBody）的上缘，header 覆盖的范围也要算进去。
 				// 插件页里 header 可能因标题/描述变高，所以每次实测，不用常量。
-				const body = document.querySelector("[data-pane=conversation] [class*='pageBody']");
+				const body = document.querySelector("[class*=centerCol] [class*='pageBody']");
 				const top = body ? body.getBoundingClientRect().top : 0;
 				// 只接受「正常顶部栏」高度；量到异常大值（插件页某些状态会把 header 撑高）宁可不动。
 				const hh = hdr.getBoundingClientRect().height;
@@ -3569,7 +3961,7 @@ mpWantedOpen = true;
 			}
 
 			/* ══ 修复 66：汉堡浮层时给主区让出顶部空间（配合 CSS 的
-			   [data-mobile] [data-pane=conversation] { padding-top: var(--mp-float-nav-h) }）══
+			   [data-mobile] [class*=centerCol] { padding-top: var(--mp-float-nav-h) }）══
 
 			   背景见 CSS 那条注释：切到全局面板（插件 / 定时任务）后官方顶栏随
 			   conversation 一起卸载，汉堡由 mpAnchorBurger() 回落到 body 的
@@ -3614,7 +4006,7 @@ mpWantedOpen = true;
 
 				   ⚠️ 两种让位（浮层汉堡、状态栏）必须在**同一个变量**里合并：
 				     吃这个变量的是 CSS 里那条带 !important 的
-				     [data-pane=conversation] { padding-top: var(--mp-float-nav-h) }，
+				     [class*=centerCol] { padding-top: var(--mp-float-nav-h) }，
 				     同属性上再加一条不带 !important 的规则压不过它。
 				   ⚠️ 合并用 JS 的 Math.max 而不是 CSS 的 max()：后者要 Chrome 79，
 				     本 App 目标内核是 chrome74，老内核上整条声明失效。
@@ -4079,7 +4471,7 @@ mpWantedOpen = true;
 				//    设置弹窗打开期间抽屉会被"视觉收起"（官方仍是 expanded），
 				//    那种状态下按返回键不该去动抽屉。
 				const col = mpSidebarCol();
-				if (col && col.classList.contains("mp-drawer-open")) { mpCloseDrawer(); return true; }
+				if (col && col.classList.contains("mp-drawer-open")) { window.__mpSetDrawerVisual(false); return true; }
 
 				// ⑥ 官方右侧栏（右上角那个按钮开出来的「工作区文件 / 新建终端」栏）。
 				//    判据用服务自己的 `isExpanded()`，不猜 DOM —— 右栏收起时面板只是被
@@ -4121,10 +4513,14 @@ mpWantedOpen = true;
 			document.addEventListener("click", (e) => {
 				if (mpProgToggle) return;
 				const t = e.target;
+				if (t && t.closest && (t.closest(".mp-lead-btn") || t.closest(".mp-lead-v5"))) return;
 				if (!mpIsMobile()) return;
 				// 修复 86：插件页的开关/分段控件类名里也带 toggle，以前点一下就改抽屉状态。
-				if (t && t.closest && t.closest("[data-pane=conversation]")) return;
-				if (t && t.closest && t.closest('[class*="toggle"]')) {
+				if (t && t.closest && t.closest("[class*=centerCol]")) return;
+				// 修复 89（2026-11-13）：官方「打开侧边栏」入口的类名是 IW6AQa_iconButton，
+				//   不带 toggle —— 以前只匹配 [class*="toggle"]，点它只翻官方 state，
+				//   不写 mpIntentUntil、也不给我们自己的浮层类 → 抽屉纹丝不动。
+				if (t && t.closest && (t.closest('[class*="toggle"]') || t.closest('[data-sidebar-opener]'))) {
 					mpIntentUntil = Date.now() + 8000;
 					const c0 = mpSidebarCol();
 					if (c0) {
@@ -4160,16 +4556,17 @@ mpWantedOpen = true;
 				// 修复 88b：把“想开”标志一起清掉，否则 sync 看到官方 expanded 又把我
 				// 们的类加回去 → 面板弹回。
 				mpWantedOpen = false;
+				mpVisualOpen = false;
 				// 修复 88：只做一次官方收起，不再 420/900 两次补点（那是连闪的根源）。
 				setTimeout(() => {
 					const c = mpSidebarCol();
 					if (c) c.classList.remove("mp-drawer-open");
 					mpApplySidebarGeom(false);
-					try { mpCollapseOfficialDrawer(); } catch (e) { /* 静默 */ }
+					mpClearCenterInert();
 				}, 120);
 				// 修复 86：进非会话页时把页内滚动归零，避免沿用上次的位置停在半截。
 				if (MP_NAV_TEXT.includes(btnText)) setTimeout(() => {
-					const pb = document.querySelector("[data-pane=conversation] [class*='pageBody']");
+					const pb = document.querySelector("[class*=centerCol] [class*='pageBody']");
 					if (pb) pb.scrollTop = 0;
 				}, 560);
 			}, true);
@@ -4498,6 +4895,8 @@ mpWantedOpen = true;
 			});
 		};
 		const mo = new MutationObserver((muts) => {
+			// Size new market hosts in this microtask, before the next paint.
+			if (mpIsMobile()) { try { mpSyncSettings(); } catch (e) {} }
 			// 设置 dialog 挂载时立即处理，避免 300ms 节流导致旧样式闪烁
 			for (const m of muts) {
 				for (const n of m.addedNodes) {
@@ -10835,6 +11234,8 @@ if (!window.__mpHeaderMenuTimer) {
 			document.addEventListener("click", onGuideClick, true);      /* 右栏 guide 点击记账 */
 			document.addEventListener("click", onMenuItemClick, true);   /* rc3 菜单项点完收抽屉 */
 			const disposePressFeedback = setupPressFeedback();
+			const disposePluginHeaderTap = setupPluginHeaderTap();
+			const disposeExternalWindow = setupExternalWindowShim();
 			const disposeStatusBridge = mpInstallStatusBridge();
 			const disposeTranscriptBridge = mpInstallTranscriptBridge();
 			// 余额桥：页面侧拉 DeepSeek 余额 + 按 usage 算花费，回给原生徽标。
@@ -10845,6 +11246,7 @@ if (!window.__mpHeaderMenuTimer) {
 			// `NotAllowedError`，转调原生桥（见 mpInstallClipboardBridge 的注释）。
 			mpInstallClipboardBridge();
 			const disposeImePrejudge = setupImePrejudge();   /* 修复 65 */
+			window.addEventListener("resize", mpSyncSettings);
 			mo.observe(document.body, { childList: true, subtree: true, characterData: true });
 			// 启动爆发：apply() 执行时 React 尚未挂载，而 observer 有 300ms 节流，
 			// 导致顶栏会话标题出现偏慢。前 ~1.2s 内主动补 10 轮（120ms 间隔），
@@ -10873,9 +11275,14 @@ if (!window.__mpHeaderMenuTimer) {
 
 			return () => {
 				mo.disconnect();
+				window.removeEventListener("resize", mpSyncSettings);
+				mpFinishMarketLayouts(new Map(), new Set(), new Set());
+				document.getElementById(mpMarketStyleId)?.remove();
 				document.removeEventListener("click", onNewSessionClick, true);
 				document.removeEventListener("click", onSessionRowClick, true);
 				disposePressFeedback();
+				disposePluginHeaderTap();
+				disposeExternalWindow();
 				disposeStatusBridge();
 				disposeTranscriptBridge();
 				disposeImePrejudge();
@@ -10920,3 +11327,129 @@ if (!window.__mpHeaderMenuTimer) {
 		return module.exports;
 	}
 });
+
+/* ══ 2026-11-13：drawer-fix-170 内联 ═════════════════════════════════════
+   0.5.0 把 web 产物搬进 rootfs 后，app/src/main/assets/webview-polyfill.js
+   的注入链断了（rootfs 里既没有 webview-polyfill.js，index.html 也没有
+   引用它）→ 这段补丁在真机上从未执行（window.__mpDrawerFix170 === false）。
+   在 polyfill 注入恢复之前，直接内联进 client.js 兜住；两处都用
+   __mpDrawerFix170 守卫，谁先跑谁生效，另一个自动跳过。 */
+/* ===== DSH Android：移动端外壳补丁（由 webview-polyfill 通道注入）=====
+ * A 设置弹窗层级 / B 打开设置即收抽屉 / C 清残留遮罩
+ * D 左按钮仅会话视图改用 header 布局（面板页把官方座位还回去）
+ * E 多模态配置去自定义标记（照 dsh-market）
+ * 与 mobile-ui 的 drawer-fix-170 共用 __mpDrawerFix170 守卫：谁先跑谁生效，另一个自动跳过。
+ */
+/* ===== mobile-ui 补丁（CI 打包前追加到 lib/client.js）=====
+ *
+ * A. 设置弹窗层级：portal 到 body 的模态(z=1000)被抽屉列(z=1100)压住 → 抬到 1200
+ * B. 打开设置即收抽屉：portal 模态挂载时点一次官方 toggle
+ * C. 清理遗留 .mp-drawer-mask
+ * D. 左侧栏按钮：会话视图里改用 header 的布局体系（与右侧按钮同一串类名、15px 图标）
+ *      ⚠️ 只能在「存在 [data-conversation-header-leading]（即会话视图）」时把官方浮动座位
+ *         pI_x6G_leadingSeat 退场；面板页（插件/插件市场/自动化任务/任务看板/智能体）
+ *         没有这个容器，必须把座位放回来 —— 否则插件会倒退回它自己的 40px 浮动汉堡：
+ *           · pointerdown 就开抽屉 → 紧随的 click 落在抽屉「新建会话」上 → 跳回新会话（真机复现）
+ *           · 浮动态写 --mp-float-nav-h=54px → 标题被推下 54px（真机复现：pageHead.y 102 → 48）
+ * E. 多模态配置的双图标：照 dsh-market 的做法，不画自定义标记（只留 shell 齿轮）
+ *
+ * 真机实测依据（PROBE174/175/182/183/186/187/188/189）。
+ * 注意：不要隐藏 .hHd-Xa_root（侧栏与设置面板共用根类，会整屏白）。
+ */
+(function () {
+  if (window.__mpDrawerFixV5) return;
+  window.__mpDrawerFixV5 = true;
+  var STYLE_ID = 'mp-drawer-fix-v5';
+  var CSS = ''
+    + 'html[data-mobile] body > [class*="overlay"]:has(> [role="dialog"][aria-modal="true"]){z-index:1000 !important;}'
+    + 'html[data-mobile] body > [class*="overlay"]:has([role="dialog"][aria-modal="true"]){pointer-events:auto !important;}'
+    + 'html[data-mobile] header[data-window-drag],html[data-mobile] header[class*="header"]{padding-left:52px !important;}'
+    + 'html[data-mobile] [class*="leadingSeat"]{display:none !important;}'
+    + 'html[data-mobile] .mp-lead-btn:not([data-mp-v5]){display:none !important;}'
+    + 'html[data-mobile] .mp-lead-v5{position:fixed !important;left:12px !important;top:calc(var(--dsh-android-system-top,0px) + 11px) !important;z-index:65 !important;width:28px !important;height:28px !important;border:none !important;border-radius:var(--dsw-radius-sm,6px) !important;background:transparent !important;color:var(--dsw-alias-label-secondary) !important;display:inline-flex !important;align-items:center !important;justify-content:center !important;padding:0 !important;cursor:pointer !important;-webkit-tap-highlight-color:transparent !important;}'
+    + 'html[data-mobile] .mp-lead-v5 svg{width:15px !important;height:15px !important;display:block !important;transform:none !important;}'
+    + 'html[data-mobile] .mp-lead-v5.mp-lead-hidden{display:none !important;}'
+    + 'html[data-mobile] [data-sidebar-right-open]{z-index:90 !important;}'
+    + '[data-shortcut-modal="settings"] nav button[data-am-nav]::before{content:none !important;}';
+  function injectCss() {
+    var oldSt = document.getElementById('mp-drawer-fix-170');
+    if (oldSt && oldSt.parentNode) oldSt.parentNode.removeChild(oldSt);
+    if (document.getElementById(STYLE_ID)) return;
+    var st = document.createElement('style'); st.id = STYLE_ID; st.textContent = CSS;
+    (document.head || document.documentElement).appendChild(st);
+  }
+  var btn = null;
+  function col() { return document.querySelector('[class*=pI_x6G_frame] > [class*=sidebarCol]') || document.querySelector('[class*="sidebarCol"]'); }
+  function rightIconSvg() {
+    var bs = document.querySelectorAll('button');
+    for (var i = 0; i < bs.length; i++) {
+      if ((bs[i].getAttribute('aria-label') || '').indexOf('右侧边栏') >= 0) {
+        var svg = bs[i].querySelector('svg');
+        if (svg) return svg.cloneNode(true);
+      }
+    }
+    return null;
+  }
+  function hasOpenModal() {
+    var ds = document.querySelectorAll('[role="dialog"][aria-modal="true"]');
+    for (var i = 0; i < ds.length; i++) {
+      if ((ds[i].className && String(ds[i].className).indexOf('hHd-Xa_root') >= 0) || (ds[i].closest && ds[i].closest('[class*=sidebarCol]'))) {
+        if (!ds[i].matches('[data-shortcut-modal="settings"], [data-shortcut-modal="shortcut-edit"], [class*="VOzbGW_panel"]')) continue;
+      }
+      var r = ds[i].getBoundingClientRect();
+      if (r.width > 1 && r.height > 1) return true;
+    }
+    return false;
+  }
+  function ensureBtn() {
+    if (!document.documentElement.hasAttribute('data-mobile')) {
+      if (btn && btn.parentNode) btn.parentNode.removeChild(btn);
+      return;
+    }
+    var stale = document.querySelectorAll('.mp-lead-btn:not([data-mp-v5])');
+    for (var i = 0; i < stale.length; i++) {
+      try { stale[i].parentNode.removeChild(stale[i]); } catch (e) {}
+    }
+    if (!btn) {
+      btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'mp-lead-v5';
+      btn.setAttribute('data-mp-v5', '1');
+      btn.setAttribute('aria-label', '打开侧边栏');
+      btn.innerHTML = '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke-width="1" aria-hidden="true"><path d="M13.5 1.5H2.5C1.94772 1.5 1.5 1.94772 1.5 2.5V13.5C1.5 14.0523 1.94772 14.5 2.5 14.5H13.5C14.0523 14.5 14.5 14.0523 14.5 13.5V2.5C14.5 1.94772 14.0523 1.5 13.5 1.5Z" stroke="currentColor"/><path d="M5.5 1.5V14.5" stroke="currentColor"/></svg>';
+      btn.addEventListener('click', function (e) {
+        try { e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); } catch (err) {}
+        var c = col();
+        if (!c) return;
+        var next = !c.classList.contains('mp-drawer-open');
+        if (window.__mpSetDrawerVisual) { window.__mpSetDrawerVisual(next); return; }
+        var t = document.querySelector('[data-sidebar-toggle],[data-sidebar-opener]');
+        if (t) t.click();
+      }, true);
+    }
+
+    var rb = document.querySelector('[data-sidebar-right-expand], button[aria-label*="右侧边栏"]');
+    if (rb && btn) {
+      var rbr = rb.getBoundingClientRect();
+      if (rbr.height > 10 && rbr.top >= 0 && rbr.top < 120) {
+        btn.style.setProperty('top', Math.round(rbr.top + (rbr.height - 28) / 2) + 'px', 'important');
+      }
+    }
+    var c = col();
+    var frame = document.querySelector('[class*=pI_x6G_frame]');
+    var hide = (c && c.classList.contains('mp-drawer-open')) || (frame && frame.hasAttribute('data-rightbar-fullscreen')) || !!document.querySelector('[data-sidebar-right-open]') || hasOpenModal();
+    btn.classList.toggle('mp-lead-hidden', !!hide);
+    var cc = document.querySelector('.pI_x6G_centerCol');
+    if (cc && cc.hasAttribute('inert')) cc.removeAttribute('inert');
+    if (btn.parentElement !== document.body) document.body.appendChild(btn);
+  }
+  function boot() {
+    injectCss();
+    ensureBtn();
+    setInterval(ensureBtn, 400);
+    new MutationObserver(ensureBtn).observe(document.body, {
+      childList: true, subtree: true, attributes: true, attributeFilter: ['inert', 'class', 'data-rightbar-fullscreen', 'data-sidebar-right-open']
+    });
+  }
+  if (document.body) boot(); else document.addEventListener('DOMContentLoaded', boot, { once: true });
+})();

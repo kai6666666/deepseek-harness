@@ -34,7 +34,7 @@
  */
 
 import { spawn } from 'node:child_process';
-import { openSync, writeSync, closeSync } from 'node:fs';
+import { existsSync, openSync, writeSync, closeSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { readFile, stat } from 'node:fs/promises';
 import net from 'node:net';
@@ -369,9 +369,17 @@ const DEV_ENV_ROUTE = '/api/dsh-android/devenv';
 /** app 私有目录：与 Kotlin 侧 `filesDir` 同一个路径（包名固定 com.dsh.android）。 */
 const DEV_ENV_FILES = process.env.DSH_FILES || '/data/user/0/com.dsh.android/files';
 const DEV_ENV_SCRIPT = path.join(DEV_ENV_FILES, 'dsh-env.mjs');
-const DEV_ENV_NODE = path.join(DEV_ENV_FILES, 'termux/usr/bin/node');
+// 0.5.0 PRoot Ubuntu 下 node 在 /usr/local/bin/node（或 process.execPath），不再是 termux/usr/bin/node
+const DEV_ENV_NODE = existsSync('/usr/local/bin/node')
+? '/usr/local/bin/node'
+: (existsSync(path.join(DEV_ENV_FILES, 'termux/usr/bin/node'))
+? path.join(DEV_ENV_FILES, 'termux/usr/bin/node')
+: process.execPath);
+const DEV_ENV_IS_PROOT = !DEV_ENV_NODE.includes('/termux/');
 const DEV_ENV_LOG = path.join(DEV_ENV_FILES, 'logs/devenv.log');
-const DEV_ENV_JOB = path.join(DEV_ENV_FILES, 'devenv-job.json');
+const DEV_ENV_JOB = DEV_ENV_IS_PROOT
+? path.join(DEV_ENV_FILES, 'devenv/devenv-job.json')
+: path.join(DEV_ENV_FILES, 'devenv-job.json');
 
 /** 允许的动作与目标（白名单，防止把任意参数透给子进程）。 */
 const DEV_ENV_ACTIONS = new Set(['install', 'remove', 'reset']);
@@ -391,7 +399,15 @@ function devEnvStatus() {
 return new Promise((resolve) => {
 const child = spawn(DEV_ENV_NODE, [DEV_ENV_SCRIPT, 'status', '--json'], {
 cwd: DEV_ENV_FILES,
-env: {
+env: DEV_ENV_IS_PROOT
+? {
+...process.env,
+DSH_FILES: DEV_ENV_FILES,
+PREFIX: '/usr',
+HOME: process.env.HOME || '/root',
+TMPDIR: process.env.TMPDIR || '/tmp',
+}
+: {
 ...process.env,
 PREFIX: path.join(DEV_ENV_FILES, 'termux/usr'),
 HOME: path.join(DEV_ENV_FILES, 'termux/home'),
@@ -484,7 +500,15 @@ await writeFile(DEV_ENV_JOB, JSON.stringify(job));
 
 const child = spawn(DEV_ENV_NODE, args, {
 cwd: DEV_ENV_FILES,
-env: {
+env: DEV_ENV_IS_PROOT
+? {
+...process.env,
+DSH_FILES: DEV_ENV_FILES,
+PREFIX: '/usr',
+HOME: process.env.HOME || '/root',
+TMPDIR: process.env.TMPDIR || '/tmp',
+}
+: {
 ...process.env,
 PREFIX: path.join(DEV_ENV_FILES, 'termux/usr'),
 HOME: path.join(DEV_ENV_FILES, 'termux/home'),

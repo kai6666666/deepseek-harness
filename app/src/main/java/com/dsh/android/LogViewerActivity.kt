@@ -598,19 +598,19 @@ class LogViewerActivity : AppCompatActivity() {
         val home = File(filesDir, "home/.dsh")
         listOf(
             File(filesDir, "engine/.stamp"),
-            File(filesDir, "engine/node_modules/@deepseek-ai/dsh/package.json"),
+            File(filesDir, "runtime/rootfs/opt/dsh/node_modules/@deepseek-ai/dsh/package.json"),
             File(home, "mobile-ui/dsh-android-mobile/package.json"),
             File(home, "shell-tool/dsh-android-shell/package.json"),
             File(home, "bubble-tool/dsh-android-bubble/package.json"),
             File(home, "uiagent-tool/dsh-android-uiagent/package.json"),
             File(home, "logs-tool/dsh-android-logs/package.json"),
-            File(home, "sandbox.patch.yml"),
+            File(home, "sandbox-proot.patch.yml"),
             File(home, "profiles/web/package.json"),
-            File(filesDir, "usr/bin/node"),
-            File(filesDir, "usr/bin/pnpm"),
-            File(filesDir, "liblinkcompat.so"),
-            File(filesDir, "libboosandbox.so"),
-            File(filesDir, "boo-sandbox-run"),
+            File(filesDir, "runtime/rootfs/usr/bin/node"),
+            File(filesDir, "runtime/rootfs/usr/local/bin/pnpm"),
+            File(filesDir, "runtime/rootfs/usr/local/lib/liblinkcompat.so"),
+            File(filesDir, "runtime/rootfs/usr/local/lib/libboosandbox.so"),
+            File(filesDir, "runtime/rootfs/usr/local/bin/boo-sandbox-run"),
         ).filter { it.exists() || it.parentFile?.exists() == true }
     }.getOrDefault(emptyList())
 

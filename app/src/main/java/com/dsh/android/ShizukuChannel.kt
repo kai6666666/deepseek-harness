@@ -335,7 +335,7 @@ object ShizukuChannel {
         return try {
             // ⚠️ 两路输出必须**并发**排空：单线程先读 stdout 再读 stderr 会在
             //    子进程写满 stderr 管道（64 KB）而 stdout 还没读完时死锁
-            //    （与 AppShellExecutor 里那条注释同一个原因）。
+            //    （与已删除的 AppShellExecutor 里那条注释同一个原因）。
             //
             // ⚠️ **必须是 `arrayOfNulls<ByteArray>(1)`，不能是 `arrayOf<ByteArray>()`。**
             //    后者创建的是**长度 0** 的数组（`arrayOf()` 无参就是空数组），

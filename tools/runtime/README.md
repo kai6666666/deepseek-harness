@@ -52,3 +52,27 @@ rootfs tar.xz               → 124 MB
 - `tokenLine.regex`：从 stdout 抓 `dsh web: http://127.0.0.1:<port>/?token=…`
 - `health`：TCP 可连 + 无 cookie 401 + 带 cookie 200
 - `stop`：`SIGTERM` 给 pidfile 里的 node；兜底 `SIGQUIT` 给 proot（proot 忽略 SIGTERM/SIGINT/SIGHUP）
+
+## CI
+
+`.github/workflows/runtime.yml` 在 ubuntu runner 上构建并上传 artifact：
+
+```yaml
+env:
+  CC: aarch64-linux-gnu-gcc      # 必须交叉编译，不能沿用 gcc
+```
+
+产物上传为 `runtime-arm64-v8a`（rootfs + manifest + jniLibs），保留 7 天。
+
+## 产物体检
+
+```bash
+python3 tools/runtime/verify.py \
+  _build/runtime/out/arm64-v8a/assets/runtime/rootfs-arm64-v8a.tar.xz \
+  _build/runtime/out/arm64-v8a/assets/runtime/manifest.json \
+  _build/runtime/out/arm64-v8a/jniLibs/arm64-v8a
+# ---- RUNTIME PASS  n OK / 0 FAIL
+```
+
+判据：node 与所有 `*.node` 必须是 AArch64；不得混入 `linux-x64`/`win32`/`darwin` 包；
+`libproot.so` 的 DT_NEEDED 必须已改名为 `libtalloc.so`；manifest 的 sha256/bytes 与实际归档一致。

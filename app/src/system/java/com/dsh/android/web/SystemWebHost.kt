@@ -433,37 +433,86 @@ class SystemWebHost(
                 popup.settings.apply {
                     javaScriptEnabled = true
                     domStorageEnabled = true
-                    // 授权页可能弹 cookie 同意/第三方跳转，保持与主视图一致。
                     mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
+                    javaScriptCanOpenWindowsAutomatically = true
+                    setSupportMultipleWindows(true)
                 }
-                // 授权过程会依次跳到 DeepSeek 的多个域，最后回到本地引擎完成登录。
-                // 在这里**不拦 URL**（拦了就会把授权链打断），只做跳转放行。
+                // 1x1 透明容器：只为让内核有一个**真实窗口**可以调度导航。
+                // 不显示任何 UI —— 授权页要交给默认浏览器打开（与桌面端
+                // `shell.openExternal(platformLoginUrl(...))` 同一条路）。
+                val activity = popupActivityOf(parent.context)
+                var holder: android.widget.FrameLayout? = null
+                fun detach() {
+                    runCatching {
+                        holder?.let { h ->
+                            (h.parent as? android.view.ViewGroup)?.removeView(h)
+                            h.removeAllViews()
+                        }
+                        popup.stopLoading()
+                        popup.destroy()
+                    }
+                    holder = null
+                }
                 popup.webViewClient = object : WebViewClient() {
                     override fun shouldOverrideUrlLoading(
                         v: WebView,
                         request: WebResourceRequest,
                     ): Boolean {
                         val u = request.url.toString()
-                        // 回到本地引擎 = 授权回调已经完成，关掉这个窗口免得留在后台。
+                        Log.i(DshApplication.TAG, "登录弹窗导航: ${u.take(120)}")
                         if (u.startsWith(LOCAL_ENGINE_PREFIX)) {
                             Log.i(DshApplication.TAG, "登录授权已回到本地引擎，关闭弹窗")
-                            (v.parent as? android.view.ViewGroup)?.removeView(v)
-                            v.destroy()
+                            detach()
                             return true
                         }
-                        Log.i(DshApplication.TAG, "登录弹窗导航: ${u.take(100)}")
+                        // 授权页交给系统默认浏览器：与桌面端判断一致 ——
+                        // `attempt.phase=waiting-browser`，引擎自己轮询完成登录，
+                        // 不依赖这个 WebView 的 cookie。
+                        if (u.startsWith("http://") || u.startsWith("https://")) {
+                            Log.i(DshApplication.TAG, "登录授权转系统浏览器: ${u.take(120)}")
+                            detach()
+                            callbacks.onExternalUrl(u)
+                            return true
+                        }
                         return false
                     }
+
+                    override fun onPageFinished(view: WebView, url: String?) {
+                        super.onPageFinished(view, url)
+                        Log.i(DshApplication.TAG, "登录弹窗就绪: ${url?.take(120)}")
+                    }
+                }
+                if (activity != null) {
+                    val h = android.widget.FrameLayout(activity)
+                    h.alpha = 0f
+                    h.addView(
+                        popup,
+                        android.widget.FrameLayout.LayoutParams(1, 1),
+                    )
+                    val decor = activity.window?.decorView as? android.view.ViewGroup
+                    decor?.addView(
+                        h,
+                        android.view.ViewGroup.LayoutParams(1, 1),
+                    )
+                    holder = h
                 }
                 transport.webView = popup
-                // ⚠️ `transport.webView = popup` **之后**才能回 true：
-                //   内核在收到 true 时立刻读 `transport.webView`，赋值晚一步就是白窗口。
                 Log.i(DshApplication.TAG, "window.open 已建空白窗口（等待页面自行导航）")
                 true
             } catch (t: Throwable) {
                 Log.w(DshApplication.TAG, "建 window.open 窗口失败: ${t.message}")
                 false
             }
+        }
+
+        /** 把 WebView 的 Context 解到 Activity（可能是 ContextThemeWrapper）。 */
+        private fun popupActivityOf(context: android.content.Context): android.app.Activity? {
+            var c: android.content.Context? = context
+            while (c is android.content.ContextWrapper) {
+                if (c is android.app.Activity) return c
+                c = c.baseContext
+            }
+            return null
         }
 
 

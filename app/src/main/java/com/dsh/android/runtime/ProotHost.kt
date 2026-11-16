@@ -1,26 +1,25 @@
 package com.dsh.android.runtime
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Environment
 import android.system.Os
 import android.system.OsConstants
 import android.util.Log
-import java.io.BufferedReader
+import com.dsh.android.engine.ProcPid
 import java.io.File
-import java.io.InputStreamReader
 import java.net.HttpURLConnection
-import java.net.ServerSocket
 import java.net.URL
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.util.Collections
+import java.util.TimeZone
+import java.util.UUID
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
-/**
- * PRoot/glibc 启动器：按 manifest 模板拼 argv、抓 token、按约定停进程。
- *
- * 约定都来自 manifest：
- *  · {NATIVE_LIB_DIR} / {ROOTFS} / {TMP} / {PORT} 由这里替换；
- *  · {GUEST_ENV} 是独立元素，展开成 0..N 个 KEY=VALUE；
- *  · 绑定目录插在 /usr/bin/env 之前；
- *  · 停止 = SIGTERM 给 pidfile 里的 node，兜底 SIGQUIT 给 proot。
- */
+/** One launch contract for production, rescue, try-boot and one-shot Node commands. */
 class ProotHost(
     private val context: Context,
     private val manifest: RuntimeManifest,
@@ -28,48 +27,110 @@ class ProotHost(
     private val nativeLibDir: String = context.applicationInfo.nativeLibraryDir,
     private val tmpDir: File = File(context.cacheDir, "proot-tmp"),
     private val dshHome: File = File(context.filesDir, "home/.dsh"),
+    private val workspace: File = File(context.filesDir, "workspace"),
+    private val phoneStorage: File? = defaultPhoneStorage(context),
 ) {
-    private var process: Process? = null
+    @Volatile private var process: Process? = null
     private var pump: Thread? = null
-
-    @Volatile
-    private var tokenUrl: String? = null
-
+    @Volatile private var tokenUrl: String? = null
+    @Volatile private var outputClosed = false
+    private var readyOrEof = CountDownLatch(1)
     private val lastLines: MutableList<String> = Collections.synchronizedList(ArrayList())
+    private val runId = UUID.randomUUID().toString()
+    private val envFile: File get() = File(dshHome, ".proot-env-$runId")
+    private val originalPidFile: File get() = File(
+        manifest.stopPidFile.replace("{ROOTFS}", rootfs.canonicalPath).replace("{TMP}", tmpDir.absolutePath)
+    )
+    private val pidFile: File get() = File(originalPidFile.parentFile, "${originalPidFile.nameWithoutExtension}-$runId.pid")
+    private val guestPidFile: String get() = "/" + pidFile.relativeTo(rootfs.canonicalFile).invariantSeparatorsPath
 
-    fun start(extraEnv: Map<String, String>): Process {
-        require(rootfs.isDirectory) { "rootfs 不存在：$rootfs" }
-        require(File(rootfs, "usr/bin/node").isFile) { "rootfs 缺 node" }
-        tmpDir.mkdirs()
-        dshHome.mkdirs()
+    fun start(
+        extraEnv: Map<String, String>,
+        overlays: List<File> = emptyList(),
+        profile: String = "web",
+        onLine: (String) -> Unit = {},
+    ): Process {
+        val p = launch(extraEnv, overlays, profile, null, true)
+        pump = Thread({ drain(p, onLine) }, "proot-pump-$runId").apply { isDaemon = true; start() }
+        return p
+    }
 
-        val port = ServerSocket(0).use { it.localPort }
+    /** The caller owns both streams. stop() still owns this command's complete process tree. */
+    fun startCommand(
+        command: List<String>,
+        extraEnv: Map<String, String> = emptyMap(),
+        mergeError: Boolean = true,
+    ): Process = launch(extraEnv, emptyList(), "web", command, mergeError)
+
+    private fun launch(
+        extraEnv: Map<String, String>, overlays: List<File>, profile: String,
+        command: List<String>?, mergeError: Boolean,
+    ): Process {
+        check(process?.isAlive != true) { "Host already running" }
+        require(rootfs.isDirectory) { "rootfs missing" }
+        require(RuntimeFiles.missingCriticalFiles(rootfs).isEmpty()) { "rootfs critical files missing" }
+        require(RuntimeFiles.contains(rootfs, originalPidFile)) { "pidfile outside rootfs" }
+        tmpDir.mkdirs(); dshHome.mkdirs(); workspace.mkdirs()
+        pidFile.parentFile?.mkdirs()
+        Files.deleteIfExists(pidFile.toPath())
+        tokenUrl = null; outputClosed = false; readyOrEof = CountDownLatch(1)
+        synchronized(lastLines) { lastLines.clear() }
         val vars = mapOf(
-            "{NATIVE_LIB_DIR}" to nativeLibDir,
-            "{ROOTFS}" to rootfs.canonicalPath,
-            "{TMP}" to tmpDir.absolutePath,
-            "{PORT}" to port.toString(),
+            "{NATIVE_LIB_DIR}" to nativeLibDir, "{ROOTFS}" to rootfs.canonicalPath,
+            "{TMP}" to tmpDir.absolutePath, "{PORT}" to "0",
         )
-        fun expand(s: String) = vars.entries.fold(s) { acc, (k, v) -> acc.replace(k, v) }
-
+        fun expand(value: String) = vars.entries.fold(value) { s, (k, v) -> s.replace(k, v) }
+        // Secrets go to a 0600 file inside the already-bound $DSH_HOME, not into argv.
+        val envFile = this.envFile.apply {
+            delete()
+            writeText(ProotLaunch.envFileLines(extraEnv).joinToString("\n", postfix = "\n"))
+            setReadable(false, false); setReadable(true, true)
+            setWritable(false, false); setWritable(true, true)
+        }
+        val guestEnvFile = envFile.canonicalPath  // $DSH_HOME 按原绝对路径绑定，guest 内逐字有效
+        val template = ProotLaunch.template(
+            manifest.launchArgv.map(::expand), profile,
+            "/" + originalPidFile.relativeTo(rootfs.canonicalFile).invariantSeparatorsPath,
+            guestPidFile, overlays.map { it.absolutePath }, command, guestEnvFile,
+        )
         val argv = ArrayList<String>()
-        var bindsPlaced = false
-        for (raw in manifest.launchArgv) {
-            val arg = expand(raw)
-            when {
-                !bindsPlaced && arg == "/usr/bin/env" -> {
-                    argv += "-b"
-                    argv += dshHome.canonicalPath + ":" + dshHome.canonicalPath
+        fun bind(f: File, guest: String = f.canonicalPath) {
+            argv += "-b"; argv += f.canonicalPath + ":" + guest
+        }
+        for (raw in template) {
+            when (val arg = raw) {
+                "/usr/bin/env" -> {
+                    bind(dshHome); bind(workspace)
+                    phoneStorage?.takeIf { it.isDirectory }?.let { bind(it, "/sdcard"); bind(it) }
+                    File(context.filesDir, "logs").mkdirs()
+                    File(context.filesDir, "devenv").mkdirs()
+                    listOf("dsh-android-shell.mjs", "dsh-android-root.mjs", "adbwire",
+                        "dsh-env.mjs", "check-devenv.mjs", "logs", "devenv").forEach { name ->
+                        File(context.filesDir, name).takeIf { it.exists() }?.let { bind(it) }
+                    }
                     argv += arg
-                    bindsPlaced = true
                 }
-                arg == "{GUEST_ENV}" -> extraEnv.forEach { (k, v) -> argv += "$k=$v" }
+                "{GUEST_ENV}" -> {
+                    // 只留非机密项：调用方传入的变量已写进 guest 侧 env 文件，
+                    // 不再出现在 argv（`ps -A` 对 shell/root 可见）里。
+                    val env = buildMap {
+                        put("DSH_HOME", dshHome.canonicalPath)
+                        put("TZ", TimeZone.getDefault().id)
+                        if (File(rootfs, "etc/ssl/certs/ca-certificates.crt").isFile) {
+                            put("SSL_CERT_FILE", "/etc/ssl/certs/ca-certificates.crt")
+                            put("CURL_CA_BUNDLE", "/etc/ssl/certs/ca-certificates.crt")
+                            put("REQUESTS_CA_BUNDLE", "/etc/ssl/certs/ca-certificates.crt")
+                        }
+                    }
+                    env.forEach { (k, v) -> argv += "$k=$v" }
+                }
                 else -> argv += arg
             }
         }
-        require(bindsPlaced) { "manifest 里没有 /usr/bin/env 锚点" }
-
-        val pb = ProcessBuilder(argv).directory(context.filesDir)
+        ensureGuestNetworkConfig()
+        val libs = File(context.filesDir, "proot-libs")
+        ensureProotLibs(libs)
+        val pb = ProcessBuilder(argv).directory(context.filesDir).redirectErrorStream(mergeError)
         pb.environment().apply {
             clear()
             put("PATH", "/system/bin:/system/xbin")
@@ -78,102 +139,179 @@ class ProotHost(
             put("ANDROID_ROOT", System.getenv("ANDROID_ROOT") ?: "/system")
             put("ANDROID_DATA", System.getenv("ANDROID_DATA") ?: "/data")
             manifest.launchEnv.forEach { (k, v) -> put(k, expand(v)) }
+            put("LD_LIBRARY_PATH", nativeLibDir + ":" + libs.absolutePath)
         }
-
-        Log.i(TAG, "launch: " + argv.joinToString(" "))
-        val p = pb.start()
-        process = p
-        pump = Thread({ drain(p) }, "proot-pump").apply {
-            isDaemon = true
-            start()
-        }
-        return p
+        // Environment values may be credentials; log structural facts only.
+        Log.i(TAG, "launch: profile=$profile patches=${overlays.size} pidFile=$guestPidFile command=${command?.firstOrNull() ?: "dsh"}")
+        return pb.start().also { process = it }
     }
 
-    private fun drain(p: Process) {
+    private fun ensureGuestNetworkConfig() {
+        runCatching {
+            val etc = File(rootfs, "etc")
+            if (!etc.isDirectory) return
+            File(etc, "resolv.conf").let { f ->
+                val text = runCatching { f.readText() }.getOrDefault("")
+                if (RuntimeFiles.needsPublicDns(text)) {
+                    f.writeText(RuntimeFiles.PUBLIC_DNS)
+                    Log.w(TAG, "guest resolv.conf 不可用，已重写为公共 DNS（原长度=${text.length}）")
+                }
+            }
+            File(etc, "hosts").let { f ->
+                if (!f.isFile || f.length() == 0L) f.writeText("127.0.0.1 localhost\n::1 localhost\n")
+            }
+        }.onFailure { Log.w(TAG, "Guest network config: ${it.message}") }
+    }
+
+    /** Atomic replacement avoids modifying a library mmap'ed by the other live host. */
+    private fun ensureProotLibs(dir: File) = synchronized(LIB_LOCK) {
+        dir.mkdirs()
+        for (name in listOf("libtalloc.so.2", "libandroid-shmem.so")) {
+            val bytes = context.assets.open("runtime/proot-libs/$name").use { it.readBytes() }
+            val out = File(dir, name)
+            if (out.isFile && out.readBytes().contentEquals(bytes)) continue
+            val staged = File(dir, "$name.$runId.tmp")
+            try {
+                staged.writeBytes(bytes)
+                staged.setReadable(true, false)
+                Files.move(staged.toPath(), out.toPath(), StandardCopyOption.REPLACE_EXISTING)
+            } finally { staged.delete() }
+        }
+    }
+
+    private fun drain(p: Process, onLine: (String) -> Unit) {
         try {
-            BufferedReader(InputStreamReader(p.inputStream)).use { r ->
-                r.lineSequence().forEach { line ->
+            p.inputStream.bufferedReader().useLines { seq ->
+                seq.forEach { line ->
                     synchronized(lastLines) {
                         lastLines.add(line)
-                        if (lastLines.size > 200) lastLines.removeAt(0)
+                        if (lastLines.size > 400) lastLines.removeAt(0)
                     }
-                    val m = manifest.tokenRegex.find(line)
-                    if (m != null) {
-                        tokenUrl = m.groupValues[1] + "?token=" + m.groupValues[2]
-                        Log.i(TAG, "token: " + tokenUrl)
+                    runCatching { onLine(line) }.onFailure { Log.w(TAG, "Output callback: ${it.message}") }
+                    if (tokenUrl == null) manifest.tokenRegex.find(line)?.let { m ->
+                        tokenUrl = m.groupValues[1] + "?token=" + m.groupValues.last()
+                        readyOrEof.countDown()
                     }
-                    Log.i(TAG, "[web] " + line)
+                    Log.i(TAG, "[web] $line")
                 }
             }
         } catch (t: Throwable) {
-            Log.w(TAG, "stdout 读取结束: " + t.message)
+            Log.w(TAG, "Output stream closed: ${t.message}")
+        } finally {
+            outputClosed = true
+            readyOrEof.countDown()
         }
     }
 
     fun awaitToken(timeoutMs: Long): String? {
-        val deadline = System.currentTimeMillis() + timeoutMs
-        while (System.currentTimeMillis() < deadline) {
-            tokenUrl?.let { return it }
-            if (process?.isAlive == false) return null
-            Thread.sleep(100)
+        val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMs)
+        while (System.nanoTime() < deadline) {
+            if (readyOrEof.await(100, TimeUnit.MILLISECONDS)) return tokenUrl
+            if (process?.isAlive == false) {
+                pump?.join(2000)
+                return tokenUrl
+            }
         }
         return tokenUrl
     }
 
-    /** 不带 cookie 请求根路径；服务活着时按 manifest 约定返回 401。 */
+    /** Reap first, drain second: exit codes and the final error line are both available. */
+    fun waitForExit(): Int {
+        val p = process ?: return -1
+        val code = p.waitFor()
+        pump?.join(2000)
+        return code
+    }
+
+    fun outputEnded(): Boolean = outputClosed
+    fun exitCode(): Int? = process?.let { runCatching { it.exitValue() }.getOrNull() }
+    fun recentLines(n: Int = 20): List<String> = synchronized(lastLines) { lastLines.takeLast(n) }
+    fun isAlive(): Boolean = process?.isAlive == true
+
     fun health(timeoutMs: Int = 3000): Int {
-        val url = tokenUrl?.substringBefore("?") ?: return -1
+        val endpoint = tokenUrl?.substringBefore("?") ?: return -1
+        val c = URL(endpoint).openConnection() as HttpURLConnection
         return try {
-            val c = URL(url).openConnection() as HttpURLConnection
-            c.connectTimeout = timeoutMs
-            c.readTimeout = timeoutMs
-            c.requestMethod = "GET"
-            c.instanceFollowRedirects = false
+            c.connectTimeout = timeoutMs; c.readTimeout = timeoutMs
+            c.requestMethod = "GET"; c.instanceFollowRedirects = false
             c.responseCode
         } catch (t: Throwable) {
-            Log.w(TAG, "health 失败: " + t.message)
-            -1
+            Log.w(TAG, "Health: ${t.message}"); -1
+        } finally { c.disconnect() }
+    }
+
+    private data class Pid(val value: Int, val parent: Int, val born: String)
+    private fun pidInfo(pid: Int): Pid? = runCatching {
+        val fields = File("/proc/$pid/stat").readText().substringAfterLast(") ").split(' ')
+        Pid(pid, fields[1].toInt(), fields[19])
+    }.getOrNull()
+    private fun descendants(parent: Int): List<Pid> {
+        val all = File("/proc").listFiles().orEmpty().mapNotNull { f -> f.name.toIntOrNull()?.let(::pidInfo) }
+        val ids = hashSetOf(parent)
+        while (true) {
+            val found = all.filter { it.parent in ids && it.value !in ids }
+            if (found.isEmpty()) break
+            ids.addAll(found.map { it.value })
         }
+        return all.filter { it.value in ids && it.value != parent }
+    }
+    private fun signal(pid: Pid, signal: Int) {
+        if (pid.value > 1 && pidInfo(pid.value)?.born == pid.born) runCatching { Os.kill(pid.value, signal) }
     }
 
-    fun recentLines(n: Int = 20): List<String> = synchronized(lastLines) {
-        lastLines.takeLast(n)
-    }
-
-    fun stop(): Boolean {
-        val pidFile = File(
-            manifest.stopPidFile
-                .replace("{ROOTFS}", rootfs.canonicalPath)
-                .replace("{TMP}", tmpDir.absolutePath)
-        )
+    /** Scoped shutdown: a try-boot host never scans-and-kills another host's Node. */
+    @Synchronized fun stop(): Boolean {
+        val p = process ?: return true
+        val prootPid = ProcPid.of(p)?.toInt()
+            ?: Regex("pid=(\\d+)").find(p.toString())?.groupValues?.get(1)?.toIntOrNull()
+        val parent = prootPid?.let(::pidInfo)
+        val owned = if (prootPid != null && p.isAlive) descendants(prootPid) else emptyList()
         val nodePid = runCatching { pidFile.readText().trim().toInt() }.getOrNull()
-        if (nodePid != null && nodePid > 0) {
-            runCatching { Os.kill(nodePid, OsConstants.SIGTERM) }
-                .onFailure { Log.w(TAG, "SIGTERM " + nodePid + " 失败: " + it.message) }
-            val deadline = System.currentTimeMillis() + 5000
-            while (System.currentTimeMillis() < deadline && File("/proc/" + nodePid).exists()) {
-                Thread.sleep(100)
+        owned.firstOrNull { it.value == nodePid }?.let { signal(it, OsConstants.SIGTERM) }
+        if (p.isAlive && nodePid != null) p.waitFor(3, TimeUnit.SECONDS)
+        if (p.isAlive) {
+            parent?.let { signal(it, OsConstants.SIGQUIT) }
+            if (!p.waitFor(5, TimeUnit.SECONDS)) {
+                owned.forEach { signal(it, OsConstants.SIGKILL) }
+                p.destroyForcibly()
+                p.waitFor(3, TimeUnit.SECONDS)
             }
         }
-        val p = process ?: return true
-        if (!p.isAlive) return true
-        // proot 忽略 SIGTERM；node 已死后 --kill-on-exit 会自行退出。
-        // Android 没暴露 Process.pid()，所以只做最后兜底。
-        if (!p.waitFor(8, java.util.concurrent.TimeUnit.SECONDS)) {
-            Log.w(TAG, "node 已停但 proot 未退，destroyForcibly")
-            p.destroyForcibly()
-            p.waitFor(3, java.util.concurrent.TimeUnit.SECONDS)
+        owned.forEach { signal(it, OsConstants.SIGKILL) }
+        pump?.takeIf { it !== Thread.currentThread() }?.join(2000)
+        val stopped = !p.isAlive
+        if (stopped) {
+            process = null
+            tokenUrl = null
+            runCatching { pidFile.delete() }
+            runCatching { envFile.delete() }   // 密钥文件只在本次运行期间存在
         }
-        pump?.interrupt()
-        process = null
-        runCatching { pidFile.delete() }
-        return !p.isAlive
+        return stopped
     }
-
-    fun isAlive(): Boolean = process?.isAlive == true
 
     companion object {
         const val TAG = "ProotHost"
+        private val LIB_LOCK = Any()
+
+        /** The privileged helpers use exactly the same binds, env and loader as the engine. */
+        fun startNodeCommand(
+            context: Context,
+            commandArgs: List<String>,
+            extraEnv: Map<String, String> = emptyMap(),
+            dshHome: File = File(context.filesDir, "home/.dsh"),
+        ): Process {
+            val host = ProotHost(context, RootfsInstaller(context).readManifestFromAssets(), dshHome = dshHome)
+            val p = host.startCommand(listOf("/usr/local/bin/node") + commandArgs, extraEnv)
+            Thread({ runCatching { p.waitFor(); host.stop() } }, "proot-command-reaper").apply {
+                isDaemon = true; start()
+            }
+            return p
+        }
+
+        private fun defaultPhoneStorage(context: Context): File? {
+            val dir = Environment.getExternalStorageDirectory() ?: return null
+            val granted = context.checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
+            return dir.takeIf { granted && it.isDirectory }
+        }
     }
 }

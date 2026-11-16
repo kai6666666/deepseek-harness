@@ -809,6 +809,12 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        // 调试包开 WebView 远程调试：移动端布局出问题时只能靠 CDP 读 computed style，
+        // 否则「为什么这块内容只有 200px 宽」只能靠猜（本次插件市场塌成窄列就是）。
+        // ⚠️ 只在 debug 构建开启；release 包保持关闭（默认值）。
+        if (BuildConfig.DEBUG) {
+            android.webkit.WebView.setWebContentsDebuggingEnabled(true)
+        }
 
         engine = EngineManager.get(this)
         loadImeHeight()   // 修复 65：把上次学到的键盘高度取回来（跨冷启动有效）
@@ -3817,10 +3823,20 @@ class MainActivity : AppCompatActivity() {
             dshHome = engine.dshHomeDir,
             scope = lifecycleScope,
             shell = { cmd ->
-                com.dsh.android.engine.PrivilegedRunner(filesDir, engine.dshHomeDir).run(cmd)
+                com.dsh.android.engine.PrivilegedRunner(
+                    filesDir,
+                    engine.dshHomeDir,
+                    applicationInfo.nativeLibraryDir,
+                    ShizukuChannel.socketName(applicationContext),
+                ).run(cmd)
             },
             screenshot = {
-                com.dsh.android.engine.PrivilegedRunner(filesDir, engine.dshHomeDir).screenshot()
+                com.dsh.android.engine.PrivilegedRunner(
+                    filesDir,
+                    engine.dshHomeDir,
+                    applicationInfo.nativeLibraryDir,
+                    ShizukuChannel.socketName(applicationContext),
+                ).screenshot()
             },
         )
     }

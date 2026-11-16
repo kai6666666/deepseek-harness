@@ -11,7 +11,6 @@ import com.dsh.android.log.LogContext
 import com.dsh.android.log.LogStore
 import com.dsh.android.log.LogUploader
 import com.dsh.android.log.RescueBoot
-import com.dsh.android.termux.TermuxBootstrap
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -24,10 +23,8 @@ import java.io.File
  * 为什么放在 Application 而不是 Activity：bootstrap 首次要解压 23 MB（约 1–2 秒），
  * 放在 Activity 里会随转屏重建反复触发。这里用 applicationScope 起一次，进程内共享。
  *
- * ⚠️ 三条都必须调用，且 [TermuxBootstrap.ensurePathsRewritten] /
- * [TermuxBootstrap.ensureMirrorsConfigured] **每次启动都要调**：
- * `install()` 有 `.bootstrap_done` 标记，升级安装的机器不会再进，新增的修复对老装机
- * 永远不生效。这是 kit 的 README §3.4 特意记下的坑。
+ * ⚠️ 0.5.0 起运行时改为 APK 内置的 PRoot rootfs：首启由 RootfsInstaller 解包，
+ * 这里不再解 Termux bootstrap。
  */
 class DshApplication : Application() {
 
@@ -39,7 +36,7 @@ class DshApplication : Application() {
      * 装在 `onCreate` 里会漏掉这些 —— 而它们恰恰是最需要现场的那一类。
      *
      * ⚠️ 这里**只做最少的事**：建目录、开文件、装崩溃处理器。任何耗时操作
-     * （解包、扫描、网络）都会拖慢启动，必须放到 [bootstrapTermux] 那条异步路径上。
+     * （解包、扫描、网络）都会拖慢启动，必须放到异步路径上。
      *
      * 顺序也不能换：
      *   ① [LogContext]  —— 后面所有组件都要靠它拿 `filesDir`
@@ -112,7 +109,6 @@ class DshApplication : Application() {
         // 只写日志、不弹窗 —— 没开它 App 照样能用，只是悬浮球不会避让键盘。
         runCatching { BubbleA11yService.logState(this) }
             .onFailure { DshLog.w(TAG, "检查键盘哨兵状态失败", it) }
-        bootstrapTermux()
         // 崩溃后留下的待传诊断包，在这里补传（不阻塞启动，见该方法注释）。
         uploadPendingBundles()
     }
@@ -150,34 +146,6 @@ class DshApplication : Application() {
         }
     }
 
-    private fun bootstrapTermux() {
-        applicationScope.launch {
-            val t0 = System.currentTimeMillis()
-            try {
-                val bootstrap = TermuxBootstrap(this@DshApplication)
-                if (!bootstrap.isReady) {
-                    bootstrap.install()
-                }
-                bootstrap.ensurePathsRewritten()
-                bootstrap.ensureMirrorsConfigured()
-                // Node 运行时单独一层：它在 bootstrap 之后铺入，标记也独立
-                val ok = bootstrap.installNodeRuntime()
-                bootstrap.ensureNodeRuntimePatched()
-                DshLog.i(
-                    TAG,
-                    "Termux 引导完成（${System.currentTimeMillis() - t0} ms），" +
-                        "node=${if (ok) bootstrap.nodeBinary.absolutePath else "不可用"}",
-                )
-                EventLog.record("termux.done", mapOf("ms" to (System.currentTimeMillis() - t0).toString()))
-            } catch (t: Throwable) {
-                // 引导失败不在这里崩溃：EngineManager 启动时会再检查一次并给出
-                // 带具体路径的报错，UI 上能看到，比进程直接挂掉好定位。
-                DshLog.e(TAG, "Termux 引导失败", t)
-                EventLog.record("termux.failed", mapOf("err" to (t.message ?: t.javaClass.simpleName)))
-            }
-        }
-    }
-
     companion object {
         const val TAG = "DSH"
 
@@ -194,8 +162,7 @@ class DshApplication : Application() {
          * - 初始化日志系统（多个进程**同时写同一个 `app.log`**，行内容交错）；
          * - 跑 `BootState.begin()`（把 `clean=false` 写进去 → 别的进程读到就以为
          *   「上次没正常退出」，`boot.previous-unclean` 被顶到 8 次，而实际只崩过 1 次）；
-         * - 跑 `bootstrapTermux()`（**并发解包同一个 prefix**，见
-         *   [com.dsh.android.termux.TermuxBootstrap.install] 的注释）。
+         * - 去解 PRoot rootfs（多个子进程**并发解包同一个 staging 目录**）。
          *
          * 真机证据：`20261014-010259-8fbc8515`（gecko）里 `app.onCreate` 出现 **15 次**、
          * `boot.previous-unclean` 在 4 秒内从 1 涨到 4，并伴随

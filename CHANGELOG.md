@@ -17,6 +17,59 @@
 
 ---
 
+## [0.5.0] — 2026-11-15
+vc=51
+
+### 变更
+- **单运行时 PRoot / glibc**：引擎、`bash`、uid 2000 特权通道、root 通道、沙箱 runner 全部
+  跑在 APK 内置的 Ubuntu 24.04 rootfs 里（node 24.22.1、pnpm 10.28.2、git、python3、curl）。
+  bionic 资产（`engine.bin`、`node-runtime.bin`、`bootstrap-*.zip`、原生 addon）已从 APK 删除。
+- **数据迁移**：`$DSH_HOME`（sessions / storages / profiles / skills / deskpet / 凭据）、
+  `workspace/`、`logs/` 原地保留；0.4.x 的 `engine/`、`usr/`、`termux/usr` 在首次健康启动后
+  改名进 `runtime/legacy-bionic/`（改名不删，`termux/home` 不动）。
+- **救援与自愈**：L2 救援 profile 与 `try-boot` 走 PRoot；rootfs 关键文件缺失或版本戳失效时
+  自动重新解包（约 80 s），用户数据不动；安全模式改为「标记 rootfs 重建」。
+- **进程治理**：每次启动独立 pidfile、按进程树作用域停止；试启动不再按 cmdline 全局清杀，
+  在跑的引擎不会被探测误杀。
+- **密钥不出现在命令行**：调用方环境变量写进 `$DSH_HOME/.proot-env-<runId>`（0600，退出即删），
+  `ps` 不再能看到 API key。
+- **镜像自带开发工具**：`git` / `python3` / `curl` 随 rootfs 下发，重解包不再丢 dev-env
+  （代价：APK 由 143 MB 增至 187 MB）。
+- **DNS 回归修复**：dev-tools 镜像步骤把构建机的 `resolv.conf`（`nameserver 127.0.0.53` +
+  `search *.compute.internal`）带进了 rootfs，导致设备上**所有域名解析失败**（登录显示
+  「账号资料暂不可用」、插件市场回退离线目录且提示 `fetch failed`）。构建期改为装完即还原
+  公共 DNS，`verify.py` 增加解析器硬断言，客户端对已知坏值就地自愈（老安装无需重装）。
+- **图片附件**：修复 `@img/colour` 被平台裁剪误删导致的 `Cannot find module`（发图必失败），
+  `verify.py` 增加硬断言。
+- **window.open 页面级接管（1.1.0-185）**：WebView 里 `window.open` 返回的弹窗不会
+  真的导航，登录授权页既不显示也不外跳。移动端插件在页面里接管 `window.open`：
+  真实 URL 直接走主框架导航（宿主 `shouldOverrideUrlLoading` 转 `ACTION_VIEW`），
+  `about:blank` 预开窗口返回带 `location.replace/assign` 的代理，同样落到默认浏览器。
+- **外链与登录统一走系统默认浏览器**：`window.open` 预开的 `about:blank`
+  窗口原先只交给内核、从未挂到任何窗口上，导致登录授权页既不渲染也不
+  导航（日志停在「已建空白窗口」）；插件市场里用 `window.open` 打开的
+  收录插件页同样静默失效。现在给 popup 挂一个 1×1 隐形宿主让内核能
+  调度导航，首个非本地 URL 立即交给系统默认浏览器（如 Chrome），
+  并回收宿主与 WebView。`onCreateWindow` 已知 URL 的情况保持直接外跳。
+- **移动端 UI `1.1.0-184`**：修复插件页 ⓘ 说明与 ▾ 添加方式按钮「点了没反应」。
+  触摸按下时重置宿主的兼容点击去重窗口，同一次手势只放行一个 click，连点两次仍能开、关；
+  插件说明气泡在触摸设备上重新可见并夹在视口内。
+  市场容器判据改为「前两个子节点是 DIV」，滚动过 300px 出现回顶按钮后布局适配不再整段失效；
+  分类栏与回顶按钮不再 sticky/fixed 错位，三个入口滚动时宽度、字号与内边距保持一致，
+  离开市场仍逐条还原原始样式。修复限定 `mobile-ui-plugin`，契约测试覆盖第三子节点、
+  sticky 归位与非 DIV 结构。
+- **移动端 UI `1.1.0-183`**：插件页按「标题 + 刷新/添加/下拉」「说明 + ⓘ + 更新状态」
+  「已安装 / 插件市场」三层排版；内置配置与实验性插件分组标题在上、列表在下，
+  「更多 ›」与实验性插件标题同行，窄屏自动换行。
+  三个市场入口（设置、插件标签页、侧栏面板）统一字号与内边距，挂载微任务内完成布局，
+  消除进场的缩放与宽度跳变；头部保留自然高度，列表独立承接触摸纵向滚动。
+  设置内保留标题栏、配置文件/关闭按钮与横向分类导航，修复重复标题；离开市场还原原样式。
+  修复代码限定 `mobile-ui-plugin`，新增布局契约回归测试与三入口真机帧级验收。
+  修正市场窄屏样式对宿主导航和宽度的覆盖；移除不可达的旧设置两级化代码，
+  仅用稳定属性与可还原的内联布局，切换分类/桌面尺寸时恢复宿主原有样式。
+- **移动端 UI `1.1.0-181`**：左侧栏图标与右侧栏同规（28×28 / `label-secondary` / 1px 描边），
+  关闭态 `visibility:hidden + contain:strict`，消除「工作区条飞出」与图标加粗。
+
 ## [0.4.4-test] — 2026-11-11
 vc=50
 

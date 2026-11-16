@@ -23,6 +23,9 @@ android {
     namespace = "com.dsh.android"
     compileSdk = 35
 
+    // 模拟器测试用：-PtargetAbi=x86_64 出 x64 包；发布仍只出 arm64。
+    val targetAbi = (project.findProperty("targetAbi") as String?) ?: "arm64-v8a"
+
     defaultConfig {
         applicationId = "com.dsh.android"
         minSdk = 26
@@ -32,7 +35,7 @@ android {
         // 全部包（node / bash / dpkg / python）都装在 filesDir 下的 $PREFIX 里，
         // 一升到 29 就会全线 Permission denied。Termux 官方 App 同样停在 28。
         targetSdk = 28
-        versionCode = 50
+        versionCode = 51
         // 后缀语义：`credperm` = 凭据文件权限修复（0.2.9 首发）；
         // `tooliso` = 工具插件注册失败的隔离（可选工具注册失败不再拖垮引擎启动）；
         // `rescue` = 坏插件不再让 App 打不开（四级降级阶梯 + AI 自助修复通道）。
@@ -262,11 +265,18 @@ android {
         //   ③ ⋯ 菜单里的「对话 / 轨迹」改为真开关：菜单不关闭即可连续来回切；
         //   ④ 悬浮气泡补 `showDetails / hideDetails` 中文词典，不再露出原始键名；
         //   ⑤ 开发环境分节补 10s 超时、错误态与重试，插件市场空态正常。
-        versionName = "0.4.4-test"
+        // ⚠️ 51（0.5.0）**换 versionName：0.4.4-test → 0.5.0，并升 vc 50 → 51**。
+        //    0.4.4-test 是 PRoot 改造的过渡包（引擎仍是 bionic 资产 + PRoot 探针），
+        //    0.5.0 才是**单运行时**：APK 里只有 rootfs（node + dsh + pnpm + git/python3/curl），
+        //    引擎、bash、特权通道、沙箱全部跑在 PRoot 里，bionic 资产已删除。
+        //    升级路径 0.4.3/0.4.4 → 0.5.0：`$DSH_HOME`、workspace、logs 原地保留（S6 已验，
+        //    数据 0 丢失），旧 `engine/`、`usr/`、`termux/usr` 首次健康启动后改名进
+        //    `runtime/legacy-bionic/`（改名不删）。
+        versionName = "0.5.0"
 
         // 只支持 arm64-v8a：内置的引擎资产与 Termux bootstrap 都是 arm64 架构
         ndk {
-            abiFilters += "arm64-v8a"
+            abiFilters += targetAbi
         }
 
         // Web 内核是不是**随 APK 打包**的（gecko flavor 覆盖成 true）。
@@ -324,6 +334,20 @@ android {
      */
 
     signingConfigs {
+        // 固定 debug 签名：用仓库里的 tools/dsh-debug.keystore。
+        // 不固定的话，CI 每个 runner 都会生成新的 ~/.android/debug.keystore，
+        // 每轮包都撞 INSTALL_FAILED_UPDATE_INCOMPATIBLE，只能卸载重装，
+        // 而卸载会清掉 filesDir 下的 PRoot rootfs 与 $DSH_HOME。
+        val repoDebugKs = rootProject.file("tools/dsh-debug.keystore")
+        if (repoDebugKs.exists()) {
+            getByName("debug") {
+                storeFile = repoDebugKs
+                storePassword = "android"
+                keyAlias = "androiddebugkey"
+                keyPassword = "android"
+            }
+        }
+
         // ⚠️ 这把钥匙是发行版的终身身份，与 debug 签名**互相独立**。
         // 一旦发出去就不能换：换签名 = 老用户撞 INSTALL_FAILED_UPDATE_INCOMPATIBLE，
         // 只能卸载重装，而卸载会清掉 filesDir 下的整个 Termux 环境与 $DSH_HOME。
@@ -369,8 +393,15 @@ android {
     // 于是运行期 openFd 按原名找不到。规避方式是资产名一律用中性后缀
     // （engine.bin / node-runtime.bin / bootstrap-aarch64.zip），不靠白名单。
 
-    // Node 改为 Termux 官方构建（随 assets 分发、解到 app 私有 $PREFIX），
-    // 不再往 jniLibs 塞可执行文件，因此无需 useLegacyPackaging / extractNativeLibs。
+    // proot 四件套以 jniLibs 分发（libproot.so / libproot-loader.so /
+    // libtalloc.so / libandroid-shmem.so）。系统只会把 lib*.so 解到
+    // nativeLibraryDir 并给可执行位，所以这里必须打开 useLegacyPackaging；
+    // 同时 manifests 里的 extractNativeLibs 由 AGP 按该开关生成。
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -393,12 +424,22 @@ android {
 }
 
 dependencies {
+    testImplementation("junit:junit:4.13.2")
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("androidx.lifecycle:lifecycle-service:2.8.7")
     implementation("com.google.android.material:material:1.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+
+    // ── 运行时解包（PRoot rootfs）──────────────────────────────────────
+    // rootfs 是 tar.xz（约 124 MB -> 1.0 GB）。Android 没有 xz/tar 命令，rootfs 里
+    // 也还没有，所以只能自己解。选 commons-compress + xz 而不是抄 dsh-Go 的
+    // ParallelXZInputStream：后者是 AGPL 代码，本仓库是 MIT。
+    //   commons-compress  Apache-2.0
+    //   xz (tukaani)     public domain
+    implementation("org.apache.commons:commons-compress:1.27.1")
+    implementation("org.tukaani:xz:1.10")
 
     // ── Shizuku：uid 2000 特权通道的第二条来源 ──────────────────────────
     //
