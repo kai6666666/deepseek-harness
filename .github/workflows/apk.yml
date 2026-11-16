@@ -273,9 +273,9 @@ jobs:
           echo "APK=$APK -> /tmp/$NAME size=$SIZE sha256=$SHA node=${NODE:-?} mobile-ui=${MUI:-?}"
           NOTES=$(printf 'engine @deepseek-ai/dsh@0.2.2-rc.1（PRoot 单运行时）\n\n- versionName **0.5.0** / versionCode **51**\n- apk size `%s` bytes\n- sha256 `%s`\n- runtime `%s`（rootfs: ubuntu 24.04 + node 24.22.1 + pnpm 10.28.2 + git/python3/curl）\n- mobile-ui `%s`\n- 单运行时：引擎 / bash / uid2000 / root / 沙箱全部跑在 PRoot 内，APK 不再含 bionic 资产\n- 数据迁移：`$DSH_HOME`、workspace、logs 原地保留；旧 engine//usr/termux/usr 改名进 runtime/legacy-bionic\n- 救援：L2 救援 profile 与 try-boot 走 PRoot，rootfs 损坏可自愈（重新解包，数据不动）\n' "$SIZE" "$SHA" "${NODE:-?}" "${MUI:-?}")
           if gh release view "$REL_TAG" >/dev/null 2>&1; then
-            gh release edit "$REL_TAG" --notes "$NOTES" || true
+            gh release edit "$REL_TAG" --notes "$NOTES" --prerelease || true
           else
-            gh release create "$REL_TAG" --title "DSH Android 0.5.0（PRoot 单运行时 / vc=51）" --notes "$NOTES"
+            gh release create "$REL_TAG" --title "DSH Android 调试包（$REL_TAG）" --notes "$NOTES" --prerelease
           fi
           gh release upload "$REL_TAG" "/tmp/$NAME" --clobber
           echo '--- assets ---'
