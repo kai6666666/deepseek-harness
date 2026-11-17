@@ -28,6 +28,8 @@ def main() -> int:
     ap.add_argument("--dsh-version", required=True)
     ap.add_argument("--patches", default="runtime/patches")
     ap.add_argument("--check", action="store_true")
+    ap.add_argument("--require-version", action="store_true",
+                    help="缺当前版本的 pin 即失败（构建必须失败，而不是静默 SKIP）")
     args = ap.parse_args()
 
     root = Path(args.prefix)
@@ -38,6 +40,8 @@ def main() -> int:
     for diff_name, by_ver in sorted(pins.items()):
         if args.dsh_version not in by_ver:
             print(f"[SKIP] {diff_name}: 没有 {args.dsh_version} 的 pin")
+            if args.require_version:
+                bad += 1
             continue
         for rel, pin in by_ver[args.dsh_version].items():
             f = root / rel

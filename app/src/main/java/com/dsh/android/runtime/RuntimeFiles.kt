@@ -19,7 +19,7 @@ internal object RuntimeFiles {
     }.getOrDefault(false)
 
     /** 解包预算：Ubuntu base + node + pnpm + dsh 约 1.0 GB，留 30% 余量。 */
-    const val ASSUME_UNPACKED_BYTES = 1_350L * 1024 * 1024
+    const val ASSUME_UNPACKED_BYTES = 3_400L * 1024 * 1024
 
     /**
      * 空间预检。`free <= 0` 表示系统读不到可用空间（不是「没空间」），放行 ——

@@ -35,9 +35,9 @@ case "$ABI" in
   *) echo "[rt][ERROR] 不支持的 ABI: $ABI" >&2; exit 2 ;;
 esac
 
-DSH_VERSION=${DSH_VERSION:-0.2.2-rc.1}
+DSH_VERSION=${DSH_VERSION:-$(tr -d ' \r\n' < "$HERE/../engine-version.txt")}
 NODE_VERSION=${NODE_VERSION:-24.22.1}
-PNPM_VERSION=${PNPM_VERSION:-10.28.2}
+PNPM_VERSION=${PNPM_VERSION:-11.28.5}
 CA_CERTS_VERSION=${CA_CERTS_VERSION:-20260816ubuntu0.24.04.2}
 CA_CERTS_SHA=${CA_CERTS_SHA:-f9fbacd417b515450b831032cc39d18059e9874e67525679a43c16071dabf9a0}
 UBUNTU_VERSION=${UBUNTU_VERSION:-24.04.5}
@@ -305,7 +305,7 @@ if [ "${DSH_RT_SKIP_ENGINE:-0}" != "1" ]; then
 
     log "apply patches ($DSH_VERSION)"
     python3 "$REPO_ROOT/tools/runtime/apply-patches.py" \
-      --prefix "$ROOTFS/opt/dsh" --dsh-version "$DSH_VERSION" \
+      --prefix "$ROOTFS/opt/dsh" --dsh-version "$DSH_VERSION" --require-version \
       --patches "$REPO_ROOT/runtime/patches"
   )
 else

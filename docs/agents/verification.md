@@ -1,5 +1,16 @@
 # 引擎包独立编译验证
 
+> ⚠️ **路径口径（2026-11-18 补记）**：本文大量出现的 `files/termux/usr/bin/node`、`files/engine` 属 **0.5.0 之前的 bionic 单 node 时代**，保留原样作为历史证据。
+> 0.5.0 起是 **PRoot 单运行时**：引擎与 node 都在 `files/runtime/rootfs` 内（`ProotHost.kt:26`），且 rootfs 的 `usr/bin/node` 是 **glibc** ELF，`run-as` 裸跑会 `ENOENT`（缺 `/lib/ld-linux-aarch64.so.1`）。
+> 因此凡「在设备上跑 node 脚本」的动作，一律改成经 debug 探针在 proot 内执行：
+>
+> ```bash
+> adb shell am start -n com.dsh.android/.runtime.ProotProbeActivity \
+>   --es run_script /data/local/tmp/<script>.mjs
+> adb shell "run-as com.dsh.android cat files/proot-probe.txt"
+> ```
+>
+> 逐条理由与改动清单见 [engine-0.2.2-rc.3-plan.md](engine-0.2.2-rc.3-plan.md) 的 B3。
 
 ## 📋 验收手册（一页版）
 
@@ -298,8 +309,10 @@ $N $D/dsh-env.mjs status --json | grep -o '"id":"rust.rustup"[^}]*"installed":[a
 cp tools/ui-regression-rc3.mjs /sdcard/Download/urc3.mjs
 adb push /sdcard/Download/urc3.mjs /data/local/tmp/urc3.mjs   # 或 shizuku 里 cp
 
-# 跑（必须 app 身份：读写 $DSH_HOME 下的探针文件）
-run-as com.dsh.android sh -c 'files/termux/usr/bin/node /data/local/tmp/urc3.mjs'
+# 跑（0.5.0+ 单运行时：必须经 proot 探针，rootfs 的 node 是 glibc ELF，不能 run-as 裸跑）
+adb shell am start -n com.dsh.android/.runtime.ProotProbeActivity \
+  --es run_script /data/local/tmp/ui-regression-rc3.mjs
+adb shell "run-as com.dsh.android cat files/proot-probe.txt"
 ```
 
 四条断言（全 PASS 才算 0；SKIP 不算失败）：

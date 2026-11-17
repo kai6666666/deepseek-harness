@@ -1,0 +1,85 @@
+name: 发布 APK 到 Release（手动）
+
+# 为什么单独一条 workflow：
+# `apk.yml` 在 main push 后**立刻**发布，早于任何真机验收（历史事故：PR 构建把
+# v0.4.4-test 的资产覆盖成 PR 代码）。这里把「出包」与「发布」拆开：
+#   G7 只出包（apk.yml，PUBLISH_FROM_APK 默认关闭）
+#   G8 人工验收通过后，用 run_id 指定那一次构建，再发布
+#
+# 用法：
+#   gh workflow run publish-apk.yml --ref main -f run_id=123456789 -f tag=v0.2.2-rc.3-debug
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: '要发布的 apk.yml 构建 run id'
+        required: true
+      tag:
+        description: 'Release tag（例如 v0.2.2-rc.3-debug）'
+        required: true
+      prerelease:
+        description: '1 = prerelease（默认）；0 = 正式版位'
+        required: false
+        default: '1'
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  publish:
+    name: publish-from-run
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 取指定 run 的 APK artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: dsh-system-debug
+          path: dist
+          run-id: ${{ inputs.run_id }}
+          github-token: ${{ github.token }}
+
+      - name: 校验产物与版本同源
+        run: |
+          set -e
+          APK=$(find dist -name '*.apk' | head -1)
+          [ -n "$APK" ] || { echo '::error::该 run 没有 APK artifact'; exit 1; }
+          V_NAME=$(grep '^versionName=' tools/app-version.txt | cut -d= -f2 | tr -d ' \r\n')
+          V_CODE=$(grep '^versionCode=' tools/app-version.txt | cut -d= -f2 | tr -d ' \r\n')
+          E_VER=$(tr -d ' \r\n' < tools/engine-version.txt)
+          echo "APK=$APK vName=$V_NAME vCode=$V_CODE engine=$E_VER tag=${{ inputs.tag }}"
+          # tag 必须与 versionName 对齐（tag 带 v，versionName 不带）
+          [ "${{ inputs.tag }}" = "v$V_NAME" ] || { echo "::error::tag 与 versionName 不一致"; exit 1; }
+          NAME="dsh-android-${V_NAME}-arm64.apk"
+          mkdir -p out
+          cp -f "$APK" "out/$NAME"
+          ( cd out && sha256sum "$NAME" > SHA256SUMS.txt )
+          cat out/SHA256SUMS.txt
+          echo "APK_NAME=$NAME" >> "$GITHUB_ENV"
+          echo "V_NAME=$V_NAME" >> "$GITHUB_ENV"
+          echo "V_CODE=$V_CODE" >> "$GITHUB_ENV"
+          echo "E_VER=$E_VER" >> "$GITHUB_ENV"
+
+      - name: 建 / 更新 prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          NOTE=$(printf 'engine @deepseek-ai/dsh@%s（PRoot 单运行时）\n\n- versionName **%s** / versionCode **%s**\n- sha256 见 SHA256SUMS.txt\n- 来源 run: %s\n' \
+            "$E_VER" "$V_NAME" "$V_CODE" "${{ inputs.run_id }}")
+          if gh release view "${{ inputs.tag }}" >/dev/null 2>&1; then
+            gh release edit "${{ inputs.tag }}" --notes "$NOTE" \
+              $( [ "${{ inputs.prerelease }}" = "1" ] && echo --prerelease || echo --latest )
+          else
+            gh release create "${{ inputs.tag }}" \
+              --title "DSH Android 调试包（${{ inputs.tag }}）" \
+              --notes "$NOTE" \
+              $( [ "${{ inputs.prerelease }}" = "1" ] && echo --prerelease || echo --latest )
+          fi
+          gh release upload "${{ inputs.tag }}" "out/$APK_NAME" out/SHA256SUMS.txt --clobber
+          gh release view "${{ inputs.tag }}" --json tagName,isPrerelease,assets \
+            -q '"\(.tagName) prerelease=\(.isPrerelease) assets=\([.assets[].name]|join(","))"'

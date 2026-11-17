@@ -23,6 +23,9 @@
 |---|---|---|
 |---|---|---|
 | [constraints.md](constraints.md) | 两条硬约束 | 包名 15 字符、targetSdk ≤ 28。改错不报错但真机必炸 |
+| [engine-0.2.2-rc.3-preflight.md](engine-0.2.2-rc.3-preflight.md) | **rc.1 → rc.3 升级预案（实测数据）** | 基础锚点 5/5；`IMG_TYPE` 需 GUARD+ANCHOR 同改（rc.3 已压缩为单行）；体积与空间峰值 |
+| [engine-0.2.2-rc.3-plan.md](engine-0.2.2-rc.3-plan.md) | **rc.3-debug 执行计划（第二版·待执行批准）** | 版本 0.2.2-rc.3-debug / vc53 / system 单 flavor；B1–B9 阻塞项、M1–M10 补充项、Gate -1→8 |
+| [engine-0.2.2-rc.3-review.md](engine-0.2.2-rc.3-review.md) | **第二版计划的审查报告** | 第一版哪 5 条被推翻、每条缺陷的文件:行证据、基线实测值 |
 | [build-and-ship.md](build-and-ship.md) | 构建、发行与发布 | gradle 任务、签名、夸克网盘上传与版本整理 |
 | [server-build-env.md](server-build-env.md) | 服务器构建环境 | 八壹云部署、GRADLE_USER_HOME / DSH_HOME 两处必须存在的绝对路径、一键发布脚本 |
 | [platform-android.md](platform-android.md) | android 平台适配总览 | 为什么 Node 在 Android 上是 android 而不是 linux |
@@ -69,9 +72,14 @@
 
 ```bash
 # 先解锁屏幕！熄屏时 dump 能返回坐标，但 tap 全被 keyguard 吃掉
-run-as com.dsh.android sh -c 'files/termux/usr/bin/node /data/local/tmp/urc3.mjs'
+adb shell am start -n com.dsh.android/.runtime.ProotProbeActivity \
+  --es run_script /data/local/tmp/ui-regression-rc3.mjs
+adb shell "run-as com.dsh.android cat files/proot-probe.txt"
 # 6 条：PREFLIGHT / D / R / F / E / G；退出码 0 = 全过
 ```
+
+> ⚠️ 0.5.0 起是 PRoot 单运行时，`files/termux/usr/bin/node` 已不存在；rootfs 里的 node 是 glibc ELF，不能 `run-as` 裸跑。
+> 设备侧脚本一律经 `ProotProbeActivity` 在 proot 内执行，见 [engine-0.2.2-rc.3-plan.md](engine-0.2.2-rc.3-plan.md) 的 B3。
 
 脚本源码：[tools/ui-regression-rc3.mjs](../../tools/ui-regression-rc3.mjs)；判据定义：[verification.md ⑥](verification.md)。
 

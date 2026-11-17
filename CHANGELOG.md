@@ -16,6 +16,34 @@
 > 正是靠 versionCode 区分同一 versionName 的不同构建。
 
 ---
+## [0.2.2-rc.3-debug] — 2026-11-18
+vc=53
+
+### 变更
+
+- 引擎 `@deepseek-ai/dsh` **0.2.2-rc.3**（显式版本；`latest` 仍指 rc.1，不写死版本会静默拉回旧版）。
+- versionName **0.2.2-rc.3-debug** / versionCode **53**；调试签名不变，`pm install -r` 覆盖升级，不卸载、不清数据。
+- 移动端 UI **1.1.0-186**。
+- **补丁语料按 rc.3 重建**：`IMG_TYPE_GUARD` / `IMG_TYPE_ANCHOR` 改为 rc.3 压缩后的单行 `isImageMediaType` 形态；`make-patches.py` 改为按版本合并 pin（不再覆盖 rc.1 记录）。
+- **构建期补丁门禁**：`apply-patches.py --require-version`，缺当前版本 pin 即构建失败；`build-runtime.sh` 的 `DSH_VERSION` 改读 `tools/engine-version.txt`，`PNPM_VERSION` 对齐 `11.28.5`。
+- **空间预检**：`ASSUME_UNPACKED_BYTES` `1_350` → `3_400` MiB（升级峰值 = 旧 rootfs + staging + 缓存归档）。
+- **CI**：`apk.yml` 注入 `DSH_VERSION`；`REL_TAG`、资产名与 Release 说明改为动态取值；发布步骤默认关闭（`vars.PUBLISH_FROM_APK`），改由 `publish-apk.yml` 手动派发；`verify-ci.py --workflow apk.yml`。
+- Office Kit 保留（`office_convert` / `office_render` / `office_recalculate`），未做重包裁剪。
+
+### 修复
+
+- **单运行时验收路径**：旧脚本仍指向 bionic 时代的 `files/termux/usr/bin/node` 与 `files/engine`。新增 `ProotProbeActivity --es run_script` 的 proot 执行通道与宿主侧 `tools/verify-rc3-device.sh`；rootfs 的 `usr/bin/node` 是 glibc ELF，不能 `run-as` 裸跑。
+- `verify-ci.py` 固定查询 `android-release.yml`，与 `apk.yml` 出包链路不符 → 支持 `--workflow`。
+
+### 验收
+
+```text
+sh tools/version.sh --check                        → VERSION PASS（vc=53 / engine=0.2.2-rc.3）
+node tools/check-engine-anchors.mjs /root/dsh-rc3  → 5/5，EXIT=0
+runtime/patches/pins.json                          → 6 个补丁 × {0.2.2-rc.1, 0.2.2-rc.3}
+tools/verify-rc3-device.sh                         → engine=0.2.2-rc.3 / patch-marks=5/5
+```
+
 ## [0.2.2-rc.1] — 2026-11-16
 vc=52
 ### 变更

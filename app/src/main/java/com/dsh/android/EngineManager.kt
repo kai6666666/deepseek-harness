@@ -7388,8 +7388,8 @@ class EngineManager private constructor(private val context: Context) {
          * 补丁会跳过并在日志里提示，不会让启动失败。见 [patchImageMediaType]。
          */
         private const val IMG_TYPE_GUARD =
-            "\t\t\treturn value === \"image/png\" || value === \"image/jpeg\" || " +
-                "value === \"image/webp\" || value === \"image/gif\";"
+            "function isImageMediaType(value){return value===`image/png`||value===`image/jpeg`||" +
+                "value===`image/webp`||value===`image/gif`}"
 
         /**
          * 放宽后的判断：任何 `image/` 前缀 + `image/jpg` 别名都放行。
@@ -7398,12 +7398,8 @@ class EngineManager private constructor(private val context: Context) {
          * 比在入口处一刀切拦住友好（见 [patchImageMediaType] 的表格）。
          */
         private const val IMG_TYPE_ANCHOR =
-            "\t\t\tif (typeof value !== \"string\") return false;\n" +
-                "\t\t\t/* DSH Android: 放宽到任何 image/ 前缀。原版只认 4 个精确值，\n" +
-                "\t\t\t   而 image/jpg、image/heic、image/avif、image/bmp 以及剪贴板粘贴\n" +
-                "\t\t\t   的空 type 都会被误拒，用户看到的是「仅支持 PNG、JPG、WebP、GIF」。\n" +
-                "\t\t\t   真正的解码能力由下游 sharp 判断，那里报错更准确。 */\n" +
-                "\t\t\treturn value.startsWith(\"image/\");"
+            "function isImageMediaType(value){if(typeof value!==`string`)return false;" +
+                "return value.startsWith(`image/`)}"
 
         /**
          * 凭据文件名（`dsh-credentials-local` 的 `CREDENTIALS_FILENAME`，写死，
@@ -8526,7 +8522,7 @@ class EngineManager private constructor(private val context: Context) {
           *      （99 → 100 / 33 → 34），否则会回退，设备上静默跑回没有这张卡的旧 UI。
           *      ⚠️ 两个戳都 bump（本常量 99 → 100，-CompatVersion 33 → 34）。
           */
-        private const val MOBILE_UI_VERSION = "1.1.0-185"
+        private const val MOBILE_UI_VERSION = "1.1.0-186"
         private const val MOBILE_UI_STAMP = ".mobile_ui_version"
 
         // ── 出厂默认设置 ─────────────────────────────────────────────

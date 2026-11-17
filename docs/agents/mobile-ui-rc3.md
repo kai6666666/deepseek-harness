@@ -3,6 +3,21 @@
 > 起因：rc3 新增了三处「更多」菜单（左侧栏面板列表 / 会话视图 / 右侧栏）。左侧栏的
 > 「更多」一打开，菜单就落到会话区中间。记录时间：2026-10-27，真机 Xiaomi 25104RADAC。
 
+## 历史状态与路径纠偏（2026-11-18 补记）
+
+- 本文记录的三个缺陷（菜单把抽屉收掉 / 菜单项点完不收抽屉 / 右栏创建插件不收回右栏）**均已在更早版本修复**。本文保留的是当时的诊断过程与真机证据，不是待办清单。
+- 本次 `0.2.2-rc.3-debug` 只做**回归**：`urc3.mjs` 的 6 条断言必须重新跑通；修复归属不写成 `1.1.0-186`。
+- ⚠️ **路径已过期**：本文所有 `files/termux/usr/bin/node` 都是 bionic 单 node 时代的写法。0.5.0 起是 PRoot 单运行时，rootfs 里的 `usr/bin/node` 是 **glibc** ELF，不能 `run-as` 裸跑（动态加载器 `/lib/ld-linux-aarch64.so.1` 在 Android 上不存在）。
+  正确方式：把 `urc3.mjs` 推到 `/data/local/tmp/`，用 debug 探针在 proot 内执行：
+
+  ```bash
+  adb shell am start -n com.dsh.android/.runtime.ProotProbeActivity \
+    --es run_script /data/local/tmp/ui-regression-rc3.mjs
+  adb shell "run-as com.dsh.android cat files/proot-probe.txt"
+  ```
+
+  详见 [`engine-0.2.2-rc.3-plan.md`](engine-0.2.2-rc.3-plan.md) 的 B3。
+
 ## 一、结论：不是菜单画错，是**抽屉被我们自己收掉了**
 
 rc3 的「更多」用的是 `Menu`（`packages/client/ui-primitives/src/Menu.tsx`）的 **portal 模式**：
@@ -232,7 +247,9 @@ D 会话视图：  更多操作[314,22] → menu 197,58 / 197,88 / 197,118（全
 四条用例不再手拼脚本，固化成一个文件，退出码 0/1：
 
 ```bash
-run-as com.dsh.android sh -c 'files/termux/usr/bin/node /data/local/tmp/urc3.mjs'
+adb shell am start -n com.dsh.android/.runtime.ProotProbeActivity \
+  --es run_script /data/local/tmp/ui-regression-rc3.mjs
+adb shell "run-as com.dsh.android cat files/proot-probe.txt"
 ```
 
 ### 脚本里踩到的三个真坑（都改在脚本/代码里了）
@@ -413,5 +430,7 @@ R 的判定细节：点「创建…」后 1.7s，`收起右侧边栏/退出全�
 
 ```bash
 input keyevent 224 && wm dismiss-keyguard
-run-as com.dsh.android sh -c 'files/termux/usr/bin/node /data/local/tmp/urc3.mjs'
+adb shell am start -n com.dsh.android/.runtime.ProotProbeActivity \
+  --es run_script /data/local/tmp/ui-regression-rc3.mjs
+adb shell "run-as com.dsh.android cat files/proot-probe.txt"
 ```

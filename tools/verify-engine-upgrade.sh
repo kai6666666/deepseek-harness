@@ -14,6 +14,11 @@
 #   --clean   ：配合 --llm/--llmtools，跑完删掉本次测试会话，只留 home/llm-evidence-<ts>.txt
 #   --tools 需要的 mockrun.sh / pick.js / mocktool.mjs 已内嵌：缺失时自动写入 /data/local/tmp，
 #   要强制刷新可用 VERIFY_HELPERS_REFRESH=1。
+# ── 单运行时路径说明 ──────────────────────────────────────────────
+# 0.5.0+ 是 PRoot 单运行时：引擎与 node 在 files/runtime/rootfs 内，
+# 且 rootfs 的 usr/bin/node 是 glibc ELF，不能在本脚本的 run-as 壳里裸跑。
+# 设备侧验收请用 tools/verify-rc3-device.sh（经 ProotProbeActivity 在 proot 内执行）。
+# 本脚本保留作 bionic 时代的历史入口，仅 version.sh 仍从这里读引擎断言字符串。
 R=/data/user/0/com.dsh.android/files
 N=$R/termux/usr/bin/node
 PASS=0; FAIL=0; SKIP=0
@@ -181,8 +186,8 @@ ok(){ PASS=$((PASS+1)); echo "PASS|$1" >> $RES; say "[PASS] $1"; true; }
 ng(){ FAIL=$((FAIL+1)); echo "FAIL|$1" >> $RES; say "[FAIL] $1"; true; }
 sk(){ SKIP=$((SKIP+1)); echo "SKIP|$1" >> $RES; say "[SKIP] $1"; true; }
 
-V=$(cat $R/engine/node_modules/@deepseek-ai/dsh/package.json 2>/dev/null | $N -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.parse(s).version)}catch{console.log("")}})')
-if [ "$V" = "0.2.2-rc.1" ]; then ok "引擎版本 $V"; else ng "引擎版本 ${V:-unknown}"; fi
+V=$(cat $R/runtime/rootfs/opt/dsh/node_modules/@deepseek-ai/dsh/package.json 2>/dev/null | $N -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.parse(s).version)}catch{console.log("")}})')
+if [ "$V" = "0.2.2-rc.3" ]; then ok "引擎版本 $V"; else ng "引擎版本 ${V:-unknown}"; fi
 
 if [ "$GUEST" = "1" ]; then sk "开发环境（guest 跳过）"
 else
@@ -204,7 +209,7 @@ if [ "$CNT" -le "$MAX" ]; then ok "会话索引干净（$CNT/$MAX 条）"; else 
 
 if [ "$GUEST" = "1" ]; then sk "引擎补丁标记（guest 跳过）"
 else
-PM=$($N /data/local/tmp/check-engine-patch-marks.mjs $R/engine 2>&1); PRC=$?
+PM=$($N /data/local/tmp/check-engine-patch-marks.mjs $R/runtime/rootfs/opt/dsh 2>&1); PRC=$?
 if [ $PRC -eq 0 ]; then ok "引擎补丁标记 $(echo "$PM" | tail -1)"; else ng "引擎补丁标记"; say "$(echo "$PM" | grep '❌')"; fi
 fi
 

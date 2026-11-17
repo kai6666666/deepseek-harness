@@ -1,4 +1,4 @@
-#!/data/data/com.dsh.android/files/termux/usr/bin/node
+#!/usr/bin/env node
 // ─────────────────────────────────────────────────────────────────────────────
 // rc3 三处「更多」菜单 + 遮罩的回归脚本（E / F / G / D 四条）
 //

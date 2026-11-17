@@ -1,6 +1,6 @@
 --- a/node_modules/@deepseek-ai/dsh-llm-pi-ai/lib/index.js
 +++ b/node_modules/@deepseek-ai/dsh-llm-pi-ai/lib/index.js
-@@ -1626,7 +1626,10 @@
+@@ -1637,7 +1637,10 @@
  			yield {
  				type: "tool-call-delta",
  				index: event.contentIndex,
@@ -12,7 +12,7 @@
  				...known?.name !== void 0 && known.name.length > 0 ? { name: known.name } : {},
  				argumentsDelta: event.delta
  			};
-@@ -1642,7 +1645,9 @@
+@@ -1653,7 +1656,9 @@
  				index: event.contentIndex,
  				block: {
  					type: "tool-call",
