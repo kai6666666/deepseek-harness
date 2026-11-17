@@ -260,7 +260,16 @@ done
 ln -sf "../lib/node_modules/pnpm/bin/pnpm.cjs" "$ROOTFS/usr/local/bin/pnpm"
 chmod 755 "$ROOTFS/usr/local/lib/node_modules/pnpm/bin/pnpm.cjs"
 # 裁剪 pnpm 里非当前平台（darwin / win32）的原生模块与 exe，避免 verify.py 拦截
-rm -f "$ROOTFS/usr/local/lib/node_modules/pnpm/dist"/reflink.darwin-*.node       "$ROOTFS/usr/local/lib/node_modules/pnpm/dist"/reflink.win32-*.node       "$ROOTFS/usr/local/lib/node_modules/pnpm/dist/vendor"/*.exe 2>/dev/null || true
+# ⚠️ pnpm 10 把 reflink 放在 `dist/reflink.<os>-<arch>.node`；
+#    pnpm 11 改成 `dist/node_modules/@reflink/reflink-<os>-<arch>/reflink.<os>-<arch>.node`。
+#    两条路径都要清，否则 4 个 darwin/win32 的 .node（Mach-O/PE，e_machine=None）
+#    会被 verify.py 判成「不是 AArch64」——CI 实测踩到（run 44143285309）。
+PNPM_DIST="$ROOTFS/usr/local/lib/node_modules/pnpm/dist"
+rm -f "$PNPM_DIST"/reflink.darwin-*.node "$PNPM_DIST"/reflink.win32-*.node "$PNPM_DIST"/vendor/*.exe 2>/dev/null || true
+if [ -d "$PNPM_DIST/node_modules/@reflink" ]; then
+  find "$PNPM_DIST/node_modules/@reflink" -mindepth 1 -maxdepth 1 -type d \
+    ! -name 'reflink-linux-*' -exec rm -rf {} + 2>/dev/null || true
+fi
 cat > "$ROOTFS/usr/local/bin/dsh" <<'SH'
 #!/bin/sh
 exec /usr/local/bin/node /opt/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js "$@"
