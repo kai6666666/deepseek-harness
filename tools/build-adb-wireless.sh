@@ -27,7 +27,8 @@ pick_mirror() {
     if curl -4 -fsS -L -m 90 --connect-timeout 12 -o "$WORK/Packages.bz2" \
          "$m/dists/stable/main/binary-aarch64/Packages.bz2" \
        && bzip2 -t "$WORK/Packages.bz2" 2>/dev/null; then
-      MIRROR="$m"; echo "  ✅ 使用镜像 $MIRROR" >&2; return 0
+      MIRROR="$m"; printf '%s\n' "$MIRROR" > "$WORK/mirror" 2>/dev/null || true
+      echo "  ✅ 使用镜像 $MIRROR" >&2; return 0
     fi
     rm -f "$WORK/Packages.bz2"
   done
@@ -60,6 +61,9 @@ PY
 
 fetch_deb() {
   local pkg="$1" rel f
+  # ⚠️ fetch_deb 跑在 $( ) 子 shell 里，deb_url 里 pick_mirror 的赋值传不回来；
+  #    所以镜像必须从 pick_mirror 落盘的文件里读（否则 $MIRROR 为空 → URL 无 host）。
+  [ -n "$MIRROR" ] || MIRROR="$(cat "$WORK/mirror" 2>/dev/null || true)"
   rel="$(deb_url "$pkg")"
   [ -n "$rel" ] || { echo "❌ $pkg 在 Packages 里没有 Filename" >&2; exit 1; }
   f="$WORK/$(basename "$rel")"
@@ -76,6 +80,7 @@ fetch_deb() {
   echo "$f"
 }
 
+pick_mirror || exit 1
 echo "== adb-wireless-arm64（Termux android-tools + 9 个依赖）"
 A="$WORK/adb"
 mkdir -p "$A"
