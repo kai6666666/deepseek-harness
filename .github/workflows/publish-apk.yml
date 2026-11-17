@@ -18,6 +18,10 @@ on:
       tag:
         description: 'Release tag（例如 v0.2.2-rc.3-debug）'
         required: true
+      src_ref:
+        description: '版本文件的来源分支（必须与 run_id 那次构建的 ref 一致，默认 main）'
+        required: false
+        default: 'main'
       prerelease:
         description: '1 = prerelease（默认）；0 = 正式版位'
         required: false
@@ -33,7 +37,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
+      # 版本文件必须来自**那次构建的分支**，否则 tag/versionName 断言会拿 main 的旧值
+      # （实测 run 44151465607：main 上仍是 0.2.2-rc.1，tag=v0.2.2-rc.3-debug 被判不一致）。
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.src_ref }}
 
       - name: 取指定 run 的 APK artifact
         uses: actions/download-artifact@v4
