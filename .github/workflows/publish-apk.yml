@@ -26,6 +26,10 @@ on:
         description: '1 = prerelease（默认）；0 = 正式版位'
         required: false
         default: '1'
+      artifact_name:
+        description: '取哪个 artifact（debug: dsh-system-debug；正式: dsh-system-release）'
+        required: false
+        default: 'dsh-system-debug'
 
 permissions:
   contents: write
@@ -46,7 +50,7 @@ jobs:
       - name: 取指定 run 的 APK artifact
         uses: actions/download-artifact@v4
         with:
-          name: dsh-system-debug
+          name: ${{ inputs.artifact_name }}
           path: dist
           run-id: ${{ inputs.run_id }}
           github-token: ${{ github.token }}
@@ -77,6 +81,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -e
+          TITLE=$( [ "${{ inputs.prerelease }}" = "1" ] && echo "DSH Android 调试包（${{ inputs.tag }}）" || echo "DSH Android ${{ inputs.tag }}（PRoot 单运行时）" )
           NOTE=$(printf 'engine @deepseek-ai/dsh@%s（PRoot 单运行时）\n\n- versionName **%s** / versionCode **%s**\n- sha256 见 SHA256SUMS.txt\n- 来源 run: %s\n' \
             "$E_VER" "$V_NAME" "$V_CODE" "${{ inputs.run_id }}")
           if gh release view "${{ inputs.tag }}" >/dev/null 2>&1; then
@@ -84,7 +89,7 @@ jobs:
               $( [ "${{ inputs.prerelease }}" = "1" ] && echo --prerelease || echo --latest )
           else
             gh release create "${{ inputs.tag }}" \
-              --title "DSH Android 调试包（${{ inputs.tag }}）" \
+              --title "$TITLE" \
               --notes "$NOTE" \
               $( [ "${{ inputs.prerelease }}" = "1" ] && echo --prerelease || echo --latest )
           fi
