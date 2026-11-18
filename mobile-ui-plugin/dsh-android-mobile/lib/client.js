@@ -4889,9 +4889,37 @@ mpWantedOpen = true;
 				try { mpDiagChainInstall(); } catch (e) { /* 诊断失败不影响功能 */ }
 				if (!more || more.dataset.mpMoreBound) return;
 				more.dataset.mpMoreBound = "1";
+				// ── 诊断 43D（临时打点，采集完即擒）──
+				function mpDiag43(){
+					try{
+						if(!window.__mpDiag43Evt){
+							window.__mpDiag43Evt=1;
+							["pointerdown","touchstart","click"].forEach(function(n){
+								document.addEventListener(n,function(e){
+									try{var c=(e.target&&e.target.className||"").toString().slice(0,40);diag("d43 "+n+" dp="+e.defaultPrevented+" c="+c)}catch(_){}
+								},{capture:true,passive:true});
+							});
+						}
+						var f=0; var t0=performance.now();
+						function step(){
+							try{
+								var ls=[].slice.call(document.querySelectorAll('[role="menu"], [class*="_list_"]'));
+								var L=null;
+								for(var i=0;i<ls.length;i++){var x=ls[i];if(!x.getClientRects().length)continue;var tx=x.textContent||"";if(tx.indexOf("Session 日志")<0&&tx.indexOf("Session日志")<0)continue;L=x;break}
+								var n=L?L.querySelectorAll('[role="menuitem"]').length:-1;
+								var tt=L?(L.textContent||"").replace(/\s+/g,"").slice(0,44):"-";
+								diag("d43f f="+f+" ms="+Math.round(performance.now()-t0)+" n="+n+" t="+tt);
+						}catch(_){}
+							f++; if(f<45) requestAnimationFrame(step);
+						}
+						requestAnimationFrame(step);
+					}catch(_){}
+				}
+
 				// 修复 43：不在点击帧里改 DOM（会把 React 的开合与我们的 append 撞在一起，
 				//   表现为“点 ⋯ 概率没反应”）。只读监听，注入延后到菜单稳定后。
 				more.addEventListener("click", () => {
+					try { mpDiag43(); } catch (e) { /* 静默 */ }
 					setTimeout(() => { try { mpEnsureRefreshItem(); } catch (e) { /* 静默 */ } }, 120);
 				}, { passive: true });
 			}
