@@ -4725,11 +4725,19 @@ mpWantedOpen = true;
 				//   误注入「刷新」（啾灵实测：点会话行 3 个点、权限切换卡片都弹出刷新）。
 				const list = mpMoreMenuList();
 				if (!list) return;
-				// 修复 43：等官方项齐（含「反馈」）再注入。
-				//   官方菜单首帧只渲染已就绪的 actions，「浏览更多插件 / 创建你的插件」依赖异步
-				//   entry-actions，晚一帧补齐；若我们在首帧就 append，会逼 React diff 一次，
-				//   那两项就被挤到第二帧才出现 —— 肉眼即「极快地从没有到出现」。
-				if (!(list.textContent || "").includes("反馈")) return;
+				// 修复 45：官方项未齐时把容器先藏起来，彻底消掉“浏览更多插件/创建你的插件”
+				//   从无到有的中间态。官方菜单是两段式渲染（本地 action 先到、entry-actions 后补），
+				//   我们只负责不让用户看见第一段：最多藏 140 ms，超时必亮，绝不把菜单卡死。
+				if (!(list.textContent || "").includes("反馈")) {
+					if (!list.dataset.mpHideGate) {
+						list.dataset.mpHideGate = "1";
+						list.style.visibility = "hidden";
+						setTimeout(function(){
+							try { list.style.visibility = ""; delete list.dataset.mpHideGate; } catch (_) {}
+						}, 140);
+					}
+					return;
+				}
 				// 修复 30 / 33：对话⇄轨迹切换入口并入 ⋯ 菜单（官方 tabs 行已在移动端隐藏）。
 				//   ⚠️ 必须放在「刷新项已存在就 return」之前：本函数会被 observer 反复调用，
 				//   一旦早退就会连带跳过视图切换项的标签刷新（切了视图菜单仍显示旧项）。
