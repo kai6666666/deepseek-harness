@@ -4695,6 +4695,23 @@ mpWantedOpen = true;
 			// 只把「刷新」按官方同样的 DOM/类名插进去（观感、间距、hover 全一致）。
 			// ⚠️ 幂等：官方每次打开菜单会重建 DOM，故按 data-mp-item 去重；
 			//    同时用 observer 兜住「菜单已开时 React 又重渲染」的情况。
+			// ⚠️ 修复 41：只认“会话 ⋯ 菜单”，不认其它 dense 菜单。
+			//   旧实现在文档级用 `[class*="_list_"][class*="_denseList_"]` 取第一个匹配：
+			//   侧栏的「排序/筛选」菜单也是 dense 的 → 「对话/轨迹」与「刷新」被插进去，
+			//   下一帧官方重渲染又抹掉 ⇒ 侧面观察就是“闪 1–2 秒”；
+			//   而会话 ⋯ 菜单因为不是第一个匹配，反而拿不到这两项 ⇒ “丢失”。
+			//   判据改用会话菜单独有的「下载 Session 日志」文本 + 可见性，跟 hash 无关。
+			function mpMoreMenuList() {
+				const lists = [...document.querySelectorAll('[class*="_denseList_"]')];
+				for (const l of lists) {
+					if (!l.getClientRects().length) continue;
+					const txt = (l.textContent || "");
+					if (!txt.includes("Session 日志") && !txt.includes("Session日志")) continue;
+					return l;
+				}
+				return null;
+			}
+
 			function mpEnsureRefreshItem() {
 				if (!mpIsMobile()) return; // 修复 40：仅移动端；桌面端完全走官方
 				// ⚠️ 修复 28：只认顶栏 ⋯ 菜单。官方这套 Menu 是全站通用组件——
@@ -4702,10 +4719,8 @@ mpWantedOpen = true;
 				//   会话行 ⋮、权限切换卡片等都是普通菜单（没有该类）。
 				//   旧版带了个 `div[class*="_list_"]` 兜底 → 任何官方下拉菜单都会被
 				//   误注入「刷新」（啾灵实测：点会话行 3 个点、权限切换卡片都弹出刷新）。
-				const list = document.querySelector('[class*="_list_"][class*="_denseList_"]');
+				const list = mpMoreMenuList();
 				if (!list) return;
-				// 只在菜单确实可见时注入
-				if (!list.offsetParent && list.getBoundingClientRect().height === 0) return;
 				// 修复 30 / 33：对话⇄轨迹切换入口并入 ⋯ 菜单（官方 tabs 行已在移动端隐藏）。
 				//   ⚠️ 必须放在「刷新项已存在就 return」之前：本函数会被 observer 反复调用，
 				//   一旦早退就会连带跳过视图切换项的标签刷新（切了视图菜单仍显示旧项）。
@@ -4815,10 +4830,16 @@ mpWantedOpen = true;
 			}
 			// ⋯ 按钮点击后立刻注入（不等 observer 的 300ms 节流，避免菜单先显示一项再补）
 			function mpBindMoreButton() {
-				const more = document.querySelector(".nL4_yW_moreButton");
+				// ⚠️ 修复 41：原先写死 `.nL4_yW_moreButton`（hash 类名），rc.3 换 hash 后
+				//   绑定不到 → “点 ⋯ 概率无反应”。改用语义选择器 + 前缀兜底。
+				const more = document.querySelector('button[class*="moreButton"]') ||
+					document.querySelector('button[aria-haspopup="menu"][class*="more"]');
 				if (!more || more.dataset.mpMoreBound) return;
 				more.dataset.mpMoreBound = "1";
-				more.addEventListener("click", () => { setTimeout(mpEnsureRefreshItem, 0); setTimeout(mpEnsureRefreshItem, 60); });
+				more.addEventListener("click", () => {
+					requestAnimationFrame(() => { try { mpEnsureRefreshItem(); } catch (e) { /* 静默 */ } });
+					setTimeout(mpEnsureRefreshItem, 80);
+				});
 			}
 
 			function bindTitleRename() {
