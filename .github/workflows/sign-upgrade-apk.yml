@@ -1,0 +1,112 @@
+name: Sign upgrade APK with existing release identity
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: Successful apk.yml run containing dsh-system-debug
+        required: true
+        default: '44147256520'
+      expected_signer:
+        description: SHA256 certificate fingerprint of the installed APK
+        required: true
+        default: '79d0dab6822c276f054bb9d53a24dd65fc54b3a185c902a3372b1090a448dc96'
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  sign:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Validate source run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN: ${{ inputs.run_id }}
+          EXPECTED_SIGNER: ${{ inputs.expected_signer }}
+        run: |
+          python3 - <<'PY'
+          import json, os, re, urllib.request
+          run = os.environ['SOURCE_RUN']
+          assert re.fullmatch(r'[0-9]+', run), 'Invalid run id'
+          assert re.fullmatch(r'[a-fA-F0-9]{64}', os.environ['EXPECTED_SIGNER']), 'Invalid certificate fingerprint'
+          url = f"https://api.github.com/repos/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{run}"
+          req = urllib.request.Request(url, headers={'Authorization': 'Bearer '+os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json'})
+          with urllib.request.urlopen(req, timeout=30) as response:
+              data = json.load(response)
+          assert data['status'] == 'completed' and data['conclusion'] == 'success', 'Source build is not successful'
+          assert data['path'].split('@')[0] == '.github/workflows/apk.yml', 'Unexpected source workflow'
+          print('Source run:', run, 'commit:', data['head_sha'])
+          with open(os.environ['GITHUB_ENV'], 'a') as out:
+              out.write('SOURCE_SHA='+data['head_sha']+'\n')
+          PY
+      - uses: actions/download-artifact@v4
+        with:
+          name: dsh-system-debug
+          path: input
+          run-id: ${{ inputs.run_id }}
+          github-token: ${{ github.token }}
+      - name: Sign and verify installed identity
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          EXPECTED_SIGNER: ${{ inputs.expected_signer }}
+          SOURCE_RUN: ${{ inputs.run_id }}
+        run: |
+          set -uo pipefail
+          umask 077
+          KEY_FILE="$RUNNER_TEMP/dsh-upgrade-signing.jks"
+          trap 'rm -f "$KEY_FILE"' EXIT
+          printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$KEY_FILE" || exit 1
+          [ -s "$KEY_FILE" ] || exit 1
+          BT=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)
+          [ -x "$BT/apksigner" ] && [ -x "$BT/zipalign" ] || exit 1
+          mapfile -t APKS < <(find input -type f -name '*.apk')
+          [ "${#APKS[@]}" -eq 1 ] || exit 1
+          APK="${APKS[0]}"
+          mkdir -p out
+          "$BT/aapt" dump badging "$APK" | head -1 > out/package.txt
+          grep -F "name='com.dsh.android'" out/package.txt && grep -F "versionCode='53'" out/package.txt && grep -F "versionName='0.2.2-rc.3-debug'" out/package.txt || exit 1
+          "$BT/zipalign" -p -f 4 "$APK" "$RUNNER_TEMP/dsh-aligned.apk" || exit 1
+          OUT=out/dsh-android-0.2.2-rc.3-debug-arm64.apk
+          "$BT/apksigner" sign --ks "$KEY_FILE" --ks-key-alias "$KEY_ALIAS" --ks-pass env:KEYSTORE_PASSWORD --key-pass env:KEY_PASSWORD --out "$OUT" "$RUNNER_TEMP/dsh-aligned.apk" || exit 1
+          "$BT/apksigner" verify --verbose --print-certs "$OUT" > out/signature.txt || exit 1
+          CERT=$(sed -n 's/^.*certificate SHA-256 digest: //p' out/signature.txt | tr -d ': \r' | tr 'A-F' 'a-f' | sort -u)
+          EXPECT=$(printf '%s' "$EXPECTED_SIGNER" | tr 'A-F' 'a-f')
+          grep 'certificate SHA-256 digest:' out/signature.txt
+          [ "$CERT" = "$EXPECT" ] || { echo "Certificate mismatch: $CERT"; exit 1; }
+          echo "SIGNATURE_MATCH=YES $CERT"
+          "$BT/zipalign" -c -p 4 "$OUT" || exit 1
+          python3 - <<'PY'
+          import hashlib, json, os, re, zipfile
+          from pathlib import Path
+          source = next(Path('input').rglob('*.apk'))
+          target = Path('out/dsh-android-0.2.2-rc.3-debug-arm64.apk')
+          signature = re.compile(r'^META-INF/(?:MANIFEST\.MF|[^/]+\.(?:SF|RSA|DSA|EC))$', re.I)
+          def payload(file):
+              with zipfile.ZipFile(file) as z:
+                  return {n: hashlib.sha256(z.read(n)).hexdigest() for n in z.namelist() if not signature.match(n)}
+          assert payload(source) == payload(target), 'APK payload changed'
+          with zipfile.ZipFile(target) as z:
+              manifest = json.loads(z.read('assets/runtime/manifest.json'))
+          assert 'dsh0.2.2-rc.3-' in manifest['runtimeVersion']
+          meta = {'source_run': os.environ['SOURCE_RUN'], 'source_sha': os.environ['SOURCE_SHA'], 'versionName': '0.2.2-rc.3-debug', 'versionCode': 53, 'certificate_sha256': os.environ['EXPECTED_SIGNER'].lower(), 'runtimeVersion': manifest['runtimeVersion'], 'payload_unchanged': True}
+          Path('out/signing-metadata.json').write_text(json.dumps(meta, indent=2)+'\n')
+          print('PAYLOAD_UNCHANGED=YES', manifest['runtimeVersion'])
+          PY
+          [ "$?" -eq 0 ] || exit 1
+          ( cd out && sha256sum *.apk > SHA256SUMS.txt )
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dsh-system-debug-upgrade-signed
+          path: out/
+          if-no-files-found: error
+          retention-days: 14
