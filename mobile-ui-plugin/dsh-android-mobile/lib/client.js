@@ -4702,7 +4702,11 @@ mpWantedOpen = true;
 			//   而会话 ⋯ 菜单因为不是第一个匹配，反而拿不到这两项 ⇒ “丢失”。
 			//   判据改用会话菜单独有的「下载 Session 日志」文本 + 可见性，跟 hash 无关。
 			function mpMoreMenuList() {
-				const lists = [...document.querySelectorAll('[class*="_denseList_"]')];
+				// 真机实测（rc.3）：菜单容器类名是 `_list_70kcw_*`，**没有 _denseList_**；
+				//   所以旧判据一个都匹配不到 → 两边都不插（侧栏不闪了、但会话也丢了）。
+				//   改为「可见的 role=menu / *_list_ 容器 + 含会话菜单独有项『下载 Session 日志』」，
+				//   与 hash、dense 均无关。
+				const lists = [...document.querySelectorAll('[role="menu"], [class*="_list_"]')];
 				for (const l of lists) {
 					if (!l.getClientRects().length) continue;
 					const txt = (l.textContent || "");
@@ -4832,8 +4836,10 @@ mpWantedOpen = true;
 			function mpBindMoreButton() {
 				// ⚠️ 修复 41：原先写死 `.nL4_yW_moreButton`（hash 类名），rc.3 换 hash 后
 				//   绑定不到 → “点 ⋯ 概率无反应”。改用语义选择器 + 前缀兜底。
-				const more = document.querySelector('button[class*="moreButton"]') ||
-					document.querySelector('button[aria-haspopup="menu"][class*="more"]');
+				// 真机实测：类名是 `..._headerMenuButton`（不含 moreButton）→ 三路兜底
+				const more = document.querySelector('button[class*="headerMenuButton"]') ||
+					document.querySelector('button[class*="moreButton"]') ||
+					document.querySelector('button[aria-haspopup="menu"]');
 				if (!more || more.dataset.mpMoreBound) return;
 				more.dataset.mpMoreBound = "1";
 				more.addEventListener("click", () => {
