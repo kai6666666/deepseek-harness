@@ -4725,6 +4725,11 @@ mpWantedOpen = true;
 				//   误注入「刷新」（啾灵实测：点会话行 3 个点、权限切换卡片都弹出刷新）。
 				const list = mpMoreMenuList();
 				if (!list) return;
+				// 修复 43：等官方项齐（含「反馈」）再注入。
+				//   官方菜单首帧只渲染已就绪的 actions，「浏览更多插件 / 创建你的插件」依赖异步
+				//   entry-actions，晚一帧补齐；若我们在首帧就 append，会逼 React diff 一次，
+				//   那两项就被挤到第二帧才出现 —— 肉眼即「极快地从没有到出现」。
+				if (!(list.textContent || "").includes("反馈")) return;
 				// 修复 30 / 33：对话⇄轨迹切换入口并入 ⋯ 菜单（官方 tabs 行已在移动端隐藏）。
 				//   ⚠️ 必须放在「刷新项已存在就 return」之前：本函数会被 observer 反复调用，
 				//   一旦早退就会连带跳过视图切换项的标签刷新（切了视图菜单仍显示旧项）。
@@ -4842,10 +4847,11 @@ mpWantedOpen = true;
 					document.querySelector('button[aria-haspopup="menu"]');
 				if (!more || more.dataset.mpMoreBound) return;
 				more.dataset.mpMoreBound = "1";
+				// 修复 43：不在点击帧里改 DOM（会把 React 的开合与我们的 append 撞在一起，
+				//   表现为“点 ⋯ 概率没反应”）。只读监听，注入延后到菜单稳定后。
 				more.addEventListener("click", () => {
-					requestAnimationFrame(() => { try { mpEnsureRefreshItem(); } catch (e) { /* 静默 */ } });
-					setTimeout(mpEnsureRefreshItem, 80);
-				});
+					setTimeout(() => { try { mpEnsureRefreshItem(); } catch (e) { /* 静默 */ } }, 120);
+				}, { passive: true });
 			}
 
 			function bindTitleRename() {
