@@ -104,7 +104,7 @@ jobs:
     env:
       ASSETS_TAG: ${{ github.event.inputs.assets_release || vars.ASSETS_RELEASE }}
       STRICT_ASSETS: ${{ github.event.inputs.strict_assets || '0' }}
-      REL_TAG: v0.2.2-rc.3-debug
+      REL_TAG: v0.2.2-rc.3
     steps:
       - uses: actions/checkout@v4
 
@@ -227,8 +227,24 @@ jobs:
       - name: 生成无线调试 adb 工具链（S5）
         run: bash tools/build-adb-wireless.sh
 
+      - name: 注入发行签名（release 变体）
+        env:
+          KS_B64: ${{ secrets.KEYSTORE_BASE64 }}
+          KS_PW: ${{ secrets.KEYSTORE_PASSWORD }}
+          KS_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KS_KEYPW: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          set -e
+          [ -n "$KS_B64" ] || { echo '::error::KEYSTORE_BASE64 缺失'; exit 1; }
+          echo "$KS_B64" | base64 -d > "$GITHUB_WORKSPACE/release.keystore"
+          { echo "storeFile=release.keystore"; echo "storePassword=$KS_PW"; echo "keyAlias=$KS_ALIAS"; echo "keyPassword=$KS_KEYPW"; } > keystore.properties
+          sed -n '1,4p' keystore.properties | sed 's/Password=.*/Password=***/'
+          keytool -list -v -keystore release.keystore -storepass "$KS_PW" | grep -E 'SHA256:|Alias name:' | head -4
+
       - name: 构建 APK
-        run: bash ./gradlew :app:assembleSystemDebug --console=plain --stacktrace
+        run: |
+          bash ./gradlew :app:assembleSystemDebug --console=plain --stacktrace
+          bash ./gradlew :app:assembleSystemRelease --console=plain --stacktrace
 
       - name: APK 资产断言（单运行时）
         run: |
@@ -255,6 +271,16 @@ jobs:
             app/build/outputs/apk/system/debug/output-metadata.json
           if-no-files-found: error
           retention-days: 14
+      - name: 上传 APK（system release，正式版候选）
+        uses: actions/upload-artifact@v4
+        with:
+          name: dsh-system-release
+          path: |
+            app/build/outputs/apk/system/release/*.apk
+            app/build/outputs/apk/system/release/output-metadata.json
+          if-no-files-found: error
+          retention-days: 14
+
 
       - name: 发布到 Release（公开可下）
         # 只有 main 的构建能发布。PR 构建也曾走到这里，把 v0.4.4-test 的资产
