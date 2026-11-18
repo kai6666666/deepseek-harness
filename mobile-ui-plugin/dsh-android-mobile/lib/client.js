@@ -4837,6 +4837,47 @@ mpWantedOpen = true;
 					crumb.setAttribute("tabindex", "-1");
 				}
 			}
+			// ══ 诊断 D（1.1.0-190 临时，跑完即撕）══
+			// ① ⋯ 的点击链在哪一环被吞：pointerdown/touchstart/mousedown/click 四个 capture 点
+			//    各记一次，再用 setTimeout(0) 回看 defaultPrevented 是否被上游置位。
+			// ② 菜单项是几帧到齐：click 后连续 40 帧记 mpMoreMenuList() 的子节点数（-1 = 菜单还没出现）。
+			// 只读：不 preventDefault、不 stopPropagation，唯一的写是把摘要塞进按钮 aria-label。
+			function mpDiagChainInstall() {
+				if (window.__mpDiagChain) return;
+				window.__mpDiagChain = 1;
+				var LOG = [];
+				var BTN = 'button[class*="headerMenuButton"],button[class*="moreButton"],button[aria-haspopup="menu"]';
+				function pick() { return document.querySelector(BTN); }
+				function countItems() {
+					try { var l = mpMoreMenuList(); return l ? l.children.length : -1; } catch (e) { return -2; }
+				}
+				function paint() {
+					var b = pick(); if (!b) return;
+					b.setAttribute("aria-label", "MPDIAG " + LOG.slice(-12).join(" ;; "));
+				}
+				function rec(kind, e) {
+					var t = e.target;
+					if (!t || !t.closest || !t.closest(BTN)) return false;
+					LOG.push(kind + ":def=" + (e.defaultPrevented ? 1 : 0) + ":t=" + Math.round(performance.now() % 100000));
+					if (LOG.length > 30) LOG.shift();
+					return true;
+				}
+				["pointerdown", "touchstart", "mousedown", "click"].forEach(function (k) {
+					document.addEventListener(k, function (e) {
+						if (!rec(k, e)) return;
+						var ev = e;
+						setTimeout(function () { if (ev.defaultPrevented) { LOG.push(k + ":AFTER_DEF=1"); paint(); } }, 0);
+						if (k === "click") {
+							var frames = [], n = 0;
+							(function tick() {
+								frames.push(countItems());
+								if (++n < 40) requestAnimationFrame(tick);
+								else { LOG.push("FRAMES=" + frames.join(",")); paint(); }
+							})();
+						}
+					}, true);
+				});
+			}
 			// ⋯ 按钮点击后立刻注入（不等 observer 的 300ms 节流，避免菜单先显示一项再补）
 			function mpBindMoreButton() {
 				// ⚠️ 修复 41：原先写死 `.nL4_yW_moreButton`（hash 类名），rc.3 换 hash 后
@@ -4845,6 +4886,7 @@ mpWantedOpen = true;
 				const more = document.querySelector('button[class*="headerMenuButton"]') ||
 					document.querySelector('button[class*="moreButton"]') ||
 					document.querySelector('button[aria-haspopup="menu"]');
+				try { mpDiagChainInstall(); } catch (e) { /* 诊断失败不影响功能 */ }
 				if (!more || more.dataset.mpMoreBound) return;
 				more.dataset.mpMoreBound = "1";
 				// 修复 43：不在点击帧里改 DOM（会把 React 的开合与我们的 append 撞在一起，
