@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// proot-verify-driver.mjs —— 在 PRoot guest 内跑的验收驱动（0.2.2-rc.3-debug）
+// ⚠️ 必须是 .cjs：Node 按扩展名决定模块系统，.mjs 会被当 ESM，require 直接 ReferenceError。
+// proot-verify-driver.cjs —— 在 PRoot guest 内跑的验收驱动（0.2.2-rc.3-debug）
 //
 // 为什么要它：rootfs 的 /usr/bin/node 是 glibc ELF，Android 侧没有
 // /lib/ld-linux-aarch64.so.1，`run-as sh -c '.../node x.mjs'` 必然 ENOENT。

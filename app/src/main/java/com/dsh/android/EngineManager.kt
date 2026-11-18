@@ -249,9 +249,22 @@ class EngineManager private constructor(private val context: Context) {
     var shellToolMounted = false
         private set
 
-    /** 引擎解包目录：filesDir/engine（0.4.x bionic 线；0.5.0 单运行时已不用） */
-    private val engineDir get() = File(context.filesDir, "engine")
-    /** 0.5.0 单运行时 rootfs；前端在 /opt/dsh/node_modules 下，不在 filesDir/engine。 */
+    /**
+     * 启动期补丁的模块根（含 `node_modules`）。
+     *
+     * ⚠️ 0.5.0 起是 PRoot 单运行时：引擎在 `files/runtime/rootfs/opt/dsh`，
+     * `files/engine` **不存在**。此处若仍返回 `files/engine`，则下面十几处
+     * `patchXxx()` / `ensureXxx()` 的 `File(engineDir, "node_modules/...")` 全部
+     * `!isFile` → 只 `Log.w` 静默跳过 —— 真机表现是 flock / terminal-shell /
+     * fail-loud / attachment-fsync 四个补丁一个都没打（patch-marks 2/5），
+     * 而日志里没有任何"失败"。
+     *
+     * 判决顺序：`files/engine` 存在（bionic 旧包/迁移期）就用它，否则用 rootfs。
+     */
+    private val engineDir: File
+        get() = File(context.filesDir, "engine").takeIf { it.isDirectory }
+            ?: File(rootfsDir, "opt/dsh")
+
     private val rootfsDir get() = File(context.filesDir, "runtime/rootfs")
     private val rootfsFrontendDist get() =
         File(rootfsDir, "opt/dsh/node_modules/@deepseek-ai/dsh-web-frontend/dist")
@@ -284,8 +297,8 @@ class EngineManager private constructor(private val context: Context) {
     /** 引擎工作目录（agent 的文件操作以此为根）。 */
     private val workspaceDir get() = File(context.filesDir, "workspace")
 
-    /** 版本戳：内容变化时触发重新解包。 */
-    private val stampFile get() = File(engineDir, ".stamp")
+    /** 版本戳：bionic 线固定在 filesDir/engine（单运行时下这条路径不参与，走 rootfs 自己的 .rootfs.stamp）。 */
+    private val stampFile get() = File(context.filesDir, "engine/.stamp")
 
     /**
      * 确保引擎资产已解包（幂等）。

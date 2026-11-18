@@ -16,9 +16,9 @@ set -uo pipefail
 ADB=${ADB:-adb}
 PKG=${PKG:-com.dsh.android}
 TIMEOUT=${TIMEOUT:-240}
-DRIVER_LOCAL="$(cd "$(dirname "$0")" && pwd)/proot-verify-driver.mjs"
+DRIVER_LOCAL="$(cd "$(dirname "$0")" && pwd)/proot-verify-driver.cjs"
 R="/data/user/0/$PKG/files"
-GUEST_DRIVER="$R/home/.dsh/proot-verify-driver.mjs"
+GUEST_DRIVER="$R/home/.dsh/proot-verify-driver.cjs"
 PROBE="$R/proot-probe.txt"
 
 say() { printf '%s\n' "$*"; }
@@ -33,9 +33,9 @@ SER=$($ADB devices | awk 'NR==2{print $1}')
 $ADB shell pm path "$PKG" >/dev/null 2>&1 || die "$PKG 未安装"
 
 say "== 1/4 推送 driver 到 guest 可见路径"
-$ADB push "$DRIVER_LOCAL" /data/local/tmp/proot-verify-driver.mjs >/dev/null || die "push 失败"
+$ADB push "$DRIVER_LOCAL" /data/local/tmp/proot-verify-driver.cjs >/dev/null || die "push 失败"
 # 走 stdin 重定向，避免 `run-as sh -c '...'` 的双层引号
-$ADB shell "run-as $PKG sh -c 'mkdir -p files/home/.dsh && cat > files/home/.dsh/proot-verify-driver.mjs'" \
+$ADB shell "run-as $PKG sh -c 'mkdir -p files/home/.dsh && cat > files/home/.dsh/proot-verify-driver.cjs'" \
   < "$DRIVER_LOCAL" || die "写入 $GUEST_DRIVER 失败"
 
 say "== 2/4 清理旧回执 + 触发探针"
