@@ -79,8 +79,9 @@ jobs:
           OUT=out/dsh-android-0.2.2-rc.3-debug-arm64.apk
           "$BT/apksigner" sign --ks "$KEY_FILE" --ks-key-alias "$KEY_ALIAS" --ks-pass env:KEYSTORE_PASSWORD --key-pass env:KEY_PASSWORD --out "$OUT" "$RUNNER_TEMP/dsh-aligned.apk" || exit 1
           "$BT/apksigner" verify --verbose --print-certs "$OUT" > out/signature.txt || exit 1
-          CERT=$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' out/signature.txt | tr -d ': \r\n' | tr 'A-F' 'a-f')
+          CERT=$(sed -n 's/^.*certificate SHA-256 digest: //p' out/signature.txt | tr -d ': \r' | tr 'A-F' 'a-f' | sort -u)
           EXPECT=$(printf '%s' "$EXPECTED_SIGNER" | tr 'A-F' 'a-f')
+          grep 'certificate SHA-256 digest:' out/signature.txt
           [ "$CERT" = "$EXPECT" ] || { echo "Certificate mismatch: $CERT"; exit 1; }
           echo "SIGNATURE_MATCH=YES $CERT"
           "$BT/zipalign" -c -p 4 "$OUT" || exit 1
