@@ -4879,50 +4879,52 @@ mpWantedOpen = true;
 				});
 			}
 			// ⋯ 按钮点击后立刻注入（不等 observer 的 300ms 节流，避免菜单先显示一项再补）
-			function mpBindMoreButton() {
-				// ⚠️ 修复 41：原先写死 `.nL4_yW_moreButton`（hash 类名），rc.3 换 hash 后
-				//   绑定不到 → “点 ⋯ 概率无反应”。改用语义选择器 + 前缀兜底。
-				// 真机实测：类名是 `..._headerMenuButton`（不含 moreButton）→ 三路兜底
-				const more = document.querySelector('button[class*="headerMenuButton"]') ||
-					document.querySelector('button[class*="moreButton"]') ||
-					document.querySelector('button[aria-haspopup="menu"]');
-				try { mpDiagChainInstall(); } catch (e) { /* 诊断失败不影响功能 */ }
-				if (!more || more.dataset.mpMoreBound) return;
-				more.dataset.mpMoreBound = "1";
-				// ── 诊断 43D（临时打点，采集完即擒）──
-				function mpDiag43(){
-					try{
-						if(!window.__mpDiag43Evt){
-							window.__mpDiag43Evt=1;
-							["pointerdown","touchstart","click"].forEach(function(n){
-								document.addEventListener(n,function(e){
-									try{var c=(e.target&&e.target.className||"").toString().slice(0,40);diag("d43 "+n+" dp="+e.defaultPrevented+" c="+c)}catch(_){}
-								},{capture:true,passive:true});
-							});
-						}
-						var f=0; var t0=performance.now();
-						function step(){
-							try{
-								var ls=[].slice.call(document.querySelectorAll('[role="menu"], [class*="_list_"]'));
-								var L=null;
-								for(var i=0;i<ls.length;i++){var x=ls[i];if(!x.getClientRects().length)continue;var tx=x.textContent||"";if(tx.indexOf("Session 日志")<0&&tx.indexOf("Session日志")<0)continue;L=x;break}
-								var n=L?L.querySelectorAll('[role="menuitem"]').length:-1;
-								var tt=L?(L.textContent||"").replace(/\s+/g,"").slice(0,44):"-";
-								diag("d43f f="+f+" ms="+Math.round(performance.now()-t0)+" n="+n+" t="+tt);
-						}catch(_){}
-							f++; if(f<45) requestAnimationFrame(step);
-						}
-						requestAnimationFrame(step);
-					}catch(_){}
-				}
-
-				// 修复 43：不在点击帧里改 DOM（会把 React 的开合与我们的 append 撞在一起，
-				//   表现为“点 ⋯ 概率没反应”）。只读监听，注入延后到菜单稳定后。
-				more.addEventListener("click", () => {
-					try { mpDiag43(); } catch (e) { /* 静默 */ }
-					setTimeout(() => { try { mpEnsureRefreshItem(); } catch (e) { /* 静默 */ } }, 120);
-				}, { passive: true });
-			}
+function mpBindMoreButton() {
+// 修复 44：document 级 capture 委托。
+//   旧做法把 click 绑在 `button.headerMenuButton` 节点上，而该节点每次
+//   会话/标题变化都会被 React 重建，dataset 随旧节点一起消失 →
+//   存在一段“按钮已换、监听未重绑”的窗口，点它就没有任何反应
+//   （啾灵实测：第一次点不开、第二次开、过一会又不开）。
+//   委托挂在 document 上，按钮重生多少次都不丢。
+if (window.__mpMoreDelegated) return;
+window.__mpMoreDelegated = 1;
+// ── 诊断 43D（临时打点，采集完即擒）──
+function mpDiag43(){
+try{
+if(!window.__mpDiag43Evt){
+window.__mpDiag43Evt=1;
+["pointerdown","touchstart","click"].forEach(function(n){
+document.addEventListener(n,function(e){
+try{var c=(e.target&&e.target.className||"").toString().slice(0,40);diag("d43 "+n+" dp="+e.defaultPrevented+" c="+c)}catch(_){}
+},{capture:true,passive:true});
+});
+}
+var f=0; var t0=performance.now();
+function step(){
+try{
+var ls=[].slice.call(document.querySelectorAll('[role="menu"], [class*="_list_"]'));
+var L=null;
+for(var i=0;i<ls.length;i++){var x=ls[i];if(!x.getClientRects().length)continue;var tx=x.textContent||"";if(tx.indexOf("Session 日志")<0&&tx.indexOf("Session日志")<0)continue;L=x;break}
+var n=L?L.querySelectorAll('[role="menuitem"]').length:-1;
+var tt=L?(L.textContent||"").replace(/\s+/g,"").slice(0,44):"-";
+diag("d43f f="+f+" ms="+Math.round(performance.now()-t0)+" n="+n+" t="+tt);
+}catch(_){}
+f++; if(f<45) requestAnimationFrame(step);
+}
+requestAnimationFrame(step);
+}catch(_){}
+}
+document.addEventListener("click", function(e) {
+var t = e.target;
+if (!t || !t.closest) return;
+var btn = t.closest('button[class*="headerMenuButton"]') ||
+          t.closest('button[class*="moreButton"]') ||
+          t.closest('button[aria-haspopup="menu"]');
+if (!btn) return;
+try { mpDiag43(); } catch (_) { /* 静默 */ }
+setTimeout(function(){ try { mpEnsureRefreshItem(); } catch (_) { /* 静默 */ } }, 120);
+}, { passive: true, capture: true });
+}
 
 			function bindTitleRename() {
 				if (!mpIsMobile()) return;
