@@ -544,12 +544,6 @@ window.__ModuleLoader__.load({
   align-items: center !important;
   justify-content: center !important;
   gap: 0 !important;
-  /* 修复 44：官方给 titleCluster 带负外边距（真机实测 margin:-4px -20px -4px -4px），
-     右侧 20px 直接探进 headerUtilities 的「⋯」地盘，形成**看不见的点击覆盖层**：
-     点按钮中心/左半边命中的是标题簇（顺带触发标题重命名），只有最右约 6px 才真的
-     落在按钮上 ⇒ 主观感受就是“第一次点打不开、点到边上才开、过一会又不开”。 */
-  margin: 0 !important;
-  box-sizing: border-box !important;
   /* 修复 57：由 max-width:72vw 改为「吃掉剩余空间并可收缩」，
      让两侧控件的真实宽度决定标题的可用区。 */
   flex: 1 1 0% !important;
@@ -601,14 +595,9 @@ window.__ModuleLoader__.load({
   top: max(50%, 20px) !important;
   transform: translateY(-50%) !important;
 }
-/* 修复 57：回到 flex 流内（原先 absolute + right:44px 是重叠的根因）。
-   修复 44：再抬一层 —— 单靠 flex 流内顺序赢不了命中测试（elementFromPoint 命中的是
-   后绘制/外溢的兄弟）。给 utilities 独立层叠上下文，并让宽度按内容撑开。 */
+/* 修复 57：回到 flex 流内（原先 absolute + right:44px 是重叠的根因）。 */
 [data-mobile] header[data-window-drag] [class*="headerUtilities"] {
-  position: relative !important;
-  z-index: 1 !important;
-  width: auto !important;
-  min-width: max-content !important;
+  position: static !important;
   right: auto !important;
   left: auto !important;
   top: auto !important;
@@ -4736,30 +4725,18 @@ mpWantedOpen = true;
 				//   误注入「刷新」（啾灵实测：点会话行 3 个点、权限切换卡片都弹出刷新）。
 				const list = mpMoreMenuList();
 				if (!list) return;
-				// 修复 44：把「官方项未齐」的判据钉在**内容槽**上。
-				//   真机逐帧实测（CDP rAF 采样，四次开合完全一致）：菜单是**三段**渲染——
-				//     f37  3 项：复制会话为 Markdown / 下载 Session 日志 / 反馈
-				//     f47  5 项：+ 轨迹 / 刷新（我们注入的）
-				//     f53  7 项：+ 浏览更多插件 / 创建你的插件（官方异步槽补齐）
-				//   那两项住在 `<div data-slot="contextMenu.content">` 里：槽先以空壳挂载，
-				//   内容晚两帧才进 DOM。修 43 拿「反馈」当判据，而反馈在**第一段**就有，
-				//   门等于没关 ⇒ 两项照旧从无到有。这里改为「内容槽里已出现『创建你的插件』」
-				//   才放行；200ms 兜底必亮，绝不把菜单卡死。
-				const contentSlot = list.querySelector('[data-slot="contextMenu.content"]');
-				const slotReady = !!contentSlot && /创建你的插件|Create your plugin/.test(contentSlot.textContent || "");
-				if (!slotReady) {
+				// 修复 45：官方项未齐时把容器先藏起来，彻底消掉“浏览更多插件/创建你的插件”
+				//   从无到有的中间态。官方菜单是两段式渲染（本地 action 先到、entry-actions 后补），
+				//   我们只负责不让用户看见第一段：最多藏 140 ms，超时必亮，绝不把菜单卡死。
+				if (!(list.textContent || "").includes("反馈")) {
 					if (!list.dataset.mpHideGate) {
 						list.dataset.mpHideGate = "1";
 						list.style.visibility = "hidden";
 						setTimeout(function(){
 							try { list.style.visibility = ""; delete list.dataset.mpHideGate; } catch (_) {}
-						}, 200);
+						}, 140);
 					}
 					return;
-				}
-				if (list.dataset.mpHideGate) {
-					// 槽补齐的这一刻立刻解禁（不等 200ms 兜底），少一帧空白
-					try { list.style.visibility = ""; delete list.dataset.mpHideGate; } catch (_) {}
 				}
 				// 修复 30 / 33：对话⇄轨迹切换入口并入 ⋯ 菜单（官方 tabs 行已在移动端隐藏）。
 				//   ⚠️ 必须放在「刷新项已存在就 return」之前：本函数会被 observer 反复调用，
@@ -4873,6 +4850,42 @@ mpWantedOpen = true;
 			//    各记一次，再用 setTimeout(0) 回看 defaultPrevented 是否被上游置位。
 			// ② 菜单项是几帧到齐：click 后连续 40 帧记 mpMoreMenuList() 的子节点数（-1 = 菜单还没出现）。
 			// 只读：不 preventDefault、不 stopPropagation，唯一的写是把摘要塞进按钮 aria-label。
+			function mpDiagChainInstall() {
+				if (window.__mpDiagChain) return;
+				window.__mpDiagChain = 1;
+				var LOG = [];
+				var BTN = 'button[class*="headerMenuButton"],button[class*="moreButton"],button[aria-haspopup="menu"]';
+				function pick() { return document.querySelector(BTN); }
+				function countItems() {
+					try { var l = mpMoreMenuList(); return l ? l.children.length : -1; } catch (e) { return -2; }
+				}
+				function paint() {
+					var b = pick(); if (!b) return;
+					b.setAttribute("aria-label", "MPDIAG " + LOG.slice(-12).join(" ;; "));
+				}
+				function rec(kind, e) {
+					var t = e.target;
+					if (!t || !t.closest || !t.closest(BTN)) return false;
+					LOG.push(kind + ":def=" + (e.defaultPrevented ? 1 : 0) + ":t=" + Math.round(performance.now() % 100000));
+					if (LOG.length > 30) LOG.shift();
+					return true;
+				}
+				["pointerdown", "touchstart", "mousedown", "click"].forEach(function (k) {
+					document.addEventListener(k, function (e) {
+						if (!rec(k, e)) return;
+						var ev = e;
+						setTimeout(function () { if (ev.defaultPrevented) { LOG.push(k + ":AFTER_DEF=1"); paint(); } }, 0);
+						if (k === "click") {
+							var frames = [], n = 0;
+							(function tick() {
+								frames.push(countItems());
+								if (++n < 40) requestAnimationFrame(tick);
+								else { LOG.push("FRAMES=" + frames.join(",")); paint(); }
+							})();
+						}
+					}, true);
+				});
+			}
 			// ⋯ 按钮点击后立刻注入（不等 observer 的 300ms 节流，避免菜单先显示一项再补）
 function mpBindMoreButton() {
 // 修复 44：document 级 capture 委托。
@@ -4883,6 +4896,32 @@ function mpBindMoreButton() {
 //   委托挂在 document 上，按钮重生多少次都不丢。
 if (window.__mpMoreDelegated) return;
 window.__mpMoreDelegated = 1;
+// ── 诊断 43D（临时打点，采集完即擒）──
+function mpDiag43(){
+try{
+if(!window.__mpDiag43Evt){
+window.__mpDiag43Evt=1;
+["pointerdown","touchstart","click"].forEach(function(n){
+document.addEventListener(n,function(e){
+try{var c=(e.target&&e.target.className||"").toString().slice(0,40);diag("d43 "+n+" dp="+e.defaultPrevented+" c="+c)}catch(_){}
+},{capture:true,passive:true});
+});
+}
+var f=0; var t0=performance.now();
+function step(){
+try{
+var ls=[].slice.call(document.querySelectorAll('[role="menu"], [class*="_list_"]'));
+var L=null;
+for(var i=0;i<ls.length;i++){var x=ls[i];if(!x.getClientRects().length)continue;var tx=x.textContent||"";if(tx.indexOf("Session 日志")<0&&tx.indexOf("Session日志")<0)continue;L=x;break}
+var n=L?L.querySelectorAll('[role="menuitem"]').length:-1;
+var tt=L?(L.textContent||"").replace(/\s+/g,"").slice(0,44):"-";
+diag("d43f f="+f+" ms="+Math.round(performance.now()-t0)+" n="+n+" t="+tt);
+}catch(_){}
+f++; if(f<45) requestAnimationFrame(step);
+}
+requestAnimationFrame(step);
+}catch(_){}
+}
 document.addEventListener("click", function(e) {
 var t = e.target;
 if (!t || !t.closest) return;
@@ -4890,6 +4929,7 @@ var btn = t.closest('button[class*="headerMenuButton"]') ||
           t.closest('button[class*="moreButton"]') ||
           t.closest('button[aria-haspopup="menu"]');
 if (!btn) return;
+try { mpDiag43(); } catch (_) { /* 静默 */ }
 setTimeout(function(){ try { mpEnsureRefreshItem(); } catch (_) { /* 静默 */ } }, 120);
 }, { passive: true, capture: true });
 }
