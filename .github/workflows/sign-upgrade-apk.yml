@@ -46,6 +46,10 @@ jobs:
           with open(os.environ['GITHUB_ENV'], 'a') as out:
               out.write('SOURCE_SHA='+data['head_sha']+'\n')
           PY
+      - uses: actions/checkout@v4
+        with:
+          # 版本号单一来源在 app/build.gradle.kts；断言不许写死 vc/versionName
+          ref: ${{ env.SOURCE_SHA }}
       - uses: actions/download-artifact@v4
         with:
           name: dsh-system-debug
@@ -74,7 +78,20 @@ jobs:
           APK="${APKS[0]}"
           mkdir -p out
           "$BT/aapt" dump badging "$APK" | head -1 > out/package.txt
-          grep -F "name='com.dsh.android'" out/package.txt && grep -F "versionCode='53'" out/package.txt && grep -F "versionName='0.2.2-rc.3-debug'" out/package.txt || exit 1
+          # 修复 44：断言改为「与 app/build.gradle.kts 一致」，不写死 vc / 后缀。
+          #   旧版硬编码 versionCode='53' + versionName='0.2.2-rc.3-debug'，
+          #   版本一推到 vc54 就必然红，与产物本身无关（这次就撞上了）。
+          python3 - <<'PY'
+          import pathlib, re, sys
+          gradle = pathlib.Path('app/build.gradle.kts').read_text(encoding='utf-8')
+          vn = re.search(r'versionName\s*=\s*"([^"]+)"', gradle).group(1)
+          vc = re.search(r'versionCode\s*=\s*(\d+)', gradle).group(1)
+          badging = pathlib.Path('out/package.txt').read_text(encoding='utf-8')
+          need = ["name='com.dsh.android'", f"versionCode='{vc}'", f"versionName='{vn}'"]
+          print('EXPECT', need)
+          missing = [x for x in need if x not in badging]
+          sys.exit('badging mismatch, missing=' + repr(missing)) if missing else print('BADGING_OK')
+          PY
           "$BT/zipalign" -p -f 4 "$APK" "$RUNNER_TEMP/dsh-aligned.apk" || exit 1
           OUT=out/dsh-android-0.2.2-rc.3-debug-arm64.apk
           "$BT/apksigner" sign --ks "$KEY_FILE" --ks-key-alias "$KEY_ALIAS" --ks-pass env:KEYSTORE_PASSWORD --key-pass env:KEY_PASSWORD --out "$OUT" "$RUNNER_TEMP/dsh-aligned.apk" || exit 1
