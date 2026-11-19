@@ -539,6 +539,10 @@ window.__ModuleLoader__.load({
   padding: 0 !important;
 }
 [data-mobile] .wSkVaW_titleCluster {
+  /* 修复 45a：官方 margin:-4px -20px -4px -4px 的右 20px 探进「⋯」按钮，
+     形成看不见的点击覆盖层 → 首击打不开。归零。 */
+  margin: 0 !important;
+  box-sizing: border-box !important;
   display: flex !important;
   flex-direction: column !important;
   align-items: center !important;
@@ -597,7 +601,10 @@ window.__ModuleLoader__.load({
 }
 /* 修复 57：回到 flex 流内（原先 absolute + right:44px 是重叠的根因）。 */
 [data-mobile] header[data-window-drag] [class*="headerUtilities"] {
-  position: static !important;
+  position: relative !important;
+  z-index: 1 !important;
+  width: auto !important;
+  min-width: max-content !important;
   right: auto !important;
   left: auto !important;
   top: auto !important;
@@ -4725,19 +4732,7 @@ mpWantedOpen = true;
 				//   误注入「刷新」（啾灵实测：点会话行 3 个点、权限切换卡片都弹出刷新）。
 				const list = mpMoreMenuList();
 				if (!list) return;
-				// 修复 45：官方项未齐时把容器先藏起来，彻底消掉“浏览更多插件/创建你的插件”
-				//   从无到有的中间态。官方菜单是两段式渲染（本地 action 先到、entry-actions 后补），
-				//   我们只负责不让用户看见第一段：最多藏 140 ms，超时必亮，绝不把菜单卡死。
-				if (!(list.textContent || "").includes("反馈")) {
-					if (!list.dataset.mpHideGate) {
-						list.dataset.mpHideGate = "1";
-						list.style.visibility = "hidden";
-						setTimeout(function(){
-							try { list.style.visibility = ""; delete list.dataset.mpHideGate; } catch (_) {}
-						}, 140);
-					}
-					return;
-				}
+				// 路线 1：门控已撤 —— 不隐藏、不写 inline style，直接注入。
 				// 修复 30 / 33：对话⇄轨迹切换入口并入 ⋯ 菜单（官方 tabs 行已在移动端隐藏）。
 				//   ⚠️ 必须放在「刷新项已存在就 return」之前：本函数会被 observer 反复调用，
 				//   一旦早退就会连带跳过视图切换项的标签刷新（切了视图菜单仍显示旧项）。
