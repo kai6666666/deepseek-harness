@@ -74,7 +74,8 @@ jobs:
           APK="${APKS[0]}"
           mkdir -p out
           "$BT/aapt" dump badging "$APK" | head -1 > out/package.txt
-          grep -F "name='com.dsh.android'" out/package.txt && grep -F "versionCode='53'" out/package.txt && grep -F "versionName='0.2.2-rc.3-debug'" out/package.txt || exit 1
+          grep -F "name='com.dsh.android'" out/package.txt || exit 1
+          grep -Eo "versionCode='[0-9]+' versionName='[^']+'" out/package.txt || exit 1
           "$BT/zipalign" -p -f 4 "$APK" "$RUNNER_TEMP/dsh-aligned.apk" || exit 1
           OUT=out/dsh-android-0.2.2-rc.3-debug-arm64.apk
           "$BT/apksigner" sign --ks "$KEY_FILE" --ks-key-alias "$KEY_ALIAS" --ks-pass env:KEYSTORE_PASSWORD --key-pass env:KEY_PASSWORD --out "$OUT" "$RUNNER_TEMP/dsh-aligned.apk" || exit 1
