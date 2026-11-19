@@ -539,6 +539,10 @@ window.__ModuleLoader__.load({
   padding: 0 !important;
 }
 [data-mobile] .wSkVaW_titleCluster {
+  /* 修复 45a：官方 margin:-4px -20px -4px -4px 的右 20px 探进「⋯」按钮，
+     形成看不见的点击覆盖层 → 首击打不开。归零。 */
+  margin: 0 !important;
+  box-sizing: border-box !important;
   display: flex !important;
   flex-direction: column !important;
   align-items: center !important;
@@ -597,7 +601,10 @@ window.__ModuleLoader__.load({
 }
 /* 修复 57：回到 flex 流内（原先 absolute + right:44px 是重叠的根因）。 */
 [data-mobile] header[data-window-drag] [class*="headerUtilities"] {
-  position: static !important;
+  position: relative !important;
+  z-index: 1 !important;
+  width: auto !important;
+  min-width: max-content !important;
   right: auto !important;
   left: auto !important;
   top: auto !important;
@@ -4695,6 +4702,27 @@ mpWantedOpen = true;
 			// 只把「刷新」按官方同样的 DOM/类名插进去（观感、间距、hover 全一致）。
 			// ⚠️ 幂等：官方每次打开菜单会重建 DOM，故按 data-mp-item 去重；
 			//    同时用 observer 兜住「菜单已开时 React 又重渲染」的情况。
+			// ⚠️ 修复 41：只认“会话 ⋯ 菜单”，不认其它 dense 菜单。
+			//   旧实现在文档级用 `[class*="_list_"][class*="_denseList_"]` 取第一个匹配：
+			//   侧栏的「排序/筛选」菜单也是 dense 的 → 「对话/轨迹」与「刷新」被插进去，
+			//   下一帧官方重渲染又抹掉 ⇒ 侧面观察就是“闪 1–2 秒”；
+			//   而会话 ⋯ 菜单因为不是第一个匹配，反而拿不到这两项 ⇒ “丢失”。
+			//   判据改用会话菜单独有的「下载 Session 日志」文本 + 可见性，跟 hash 无关。
+			function mpMoreMenuList() {
+				// 真机实测（rc.3）：菜单容器类名是 `_list_70kcw_*`，**没有 _denseList_**；
+				//   所以旧判据一个都匹配不到 → 两边都不插（侧栏不闪了、但会话也丢了）。
+				//   改为「可见的 role=menu / *_list_ 容器 + 含会话菜单独有项『下载 Session 日志』」，
+				//   与 hash、dense 均无关。
+				const lists = [...document.querySelectorAll('[role="menu"], [class*="_list_"]')];
+				for (const l of lists) {
+					if (!l.getClientRects().length) continue;
+					const txt = (l.textContent || "");
+					if (!txt.includes("Session 日志") && !txt.includes("Session日志")) continue;
+					return l;
+				}
+				return null;
+			}
+
 			function mpEnsureRefreshItem() {
 				if (!mpIsMobile()) return; // 修复 40：仅移动端；桌面端完全走官方
 				// ⚠️ 修复 28：只认顶栏 ⋯ 菜单。官方这套 Menu 是全站通用组件——
@@ -4702,10 +4730,9 @@ mpWantedOpen = true;
 				//   会话行 ⋮、权限切换卡片等都是普通菜单（没有该类）。
 				//   旧版带了个 `div[class*="_list_"]` 兜底 → 任何官方下拉菜单都会被
 				//   误注入「刷新」（啾灵实测：点会话行 3 个点、权限切换卡片都弹出刷新）。
-				const list = document.querySelector('[class*="_list_"][class*="_denseList_"]');
+				const list = mpMoreMenuList();
 				if (!list) return;
-				// 只在菜单确实可见时注入
-				if (!list.offsetParent && list.getBoundingClientRect().height === 0) return;
+				// 路线 1：门控已撤 —— 不隐藏、不写 inline style，直接注入。
 				// 修复 30 / 33：对话⇄轨迹切换入口并入 ⋯ 菜单（官方 tabs 行已在移动端隐藏）。
 				//   ⚠️ 必须放在「刷新项已存在就 return」之前：本函数会被 observer 反复调用，
 				//   一旦早退就会连带跳过视图切换项的标签刷新（切了视图菜单仍显示旧项）。
@@ -4813,13 +4840,94 @@ mpWantedOpen = true;
 					crumb.setAttribute("tabindex", "-1");
 				}
 			}
-			// ⋯ 按钮点击后立刻注入（不等 observer 的 300ms 节流，避免菜单先显示一项再补）
-			function mpBindMoreButton() {
-				const more = document.querySelector(".nL4_yW_moreButton");
-				if (!more || more.dataset.mpMoreBound) return;
-				more.dataset.mpMoreBound = "1";
-				more.addEventListener("click", () => { setTimeout(mpEnsureRefreshItem, 0); setTimeout(mpEnsureRefreshItem, 60); });
+			// ══ 诊断 D（1.1.0-190 临时，跑完即撕）══
+			// ① ⋯ 的点击链在哪一环被吞：pointerdown/touchstart/mousedown/click 四个 capture 点
+			//    各记一次，再用 setTimeout(0) 回看 defaultPrevented 是否被上游置位。
+			// ② 菜单项是几帧到齐：click 后连续 40 帧记 mpMoreMenuList() 的子节点数（-1 = 菜单还没出现）。
+			// 只读：不 preventDefault、不 stopPropagation，唯一的写是把摘要塞进按钮 aria-label。
+			function mpDiagChainInstall() {
+				if (window.__mpDiagChain) return;
+				window.__mpDiagChain = 1;
+				var LOG = [];
+				var BTN = 'button[class*="headerMenuButton"],button[class*="moreButton"],button[aria-haspopup="menu"]';
+				function pick() { return document.querySelector(BTN); }
+				function countItems() {
+					try { var l = mpMoreMenuList(); return l ? l.children.length : -1; } catch (e) { return -2; }
+				}
+				function paint() {
+					var b = pick(); if (!b) return;
+					b.setAttribute("aria-label", "MPDIAG " + LOG.slice(-12).join(" ;; "));
+				}
+				function rec(kind, e) {
+					var t = e.target;
+					if (!t || !t.closest || !t.closest(BTN)) return false;
+					LOG.push(kind + ":def=" + (e.defaultPrevented ? 1 : 0) + ":t=" + Math.round(performance.now() % 100000));
+					if (LOG.length > 30) LOG.shift();
+					return true;
+				}
+				["pointerdown", "touchstart", "mousedown", "click"].forEach(function (k) {
+					document.addEventListener(k, function (e) {
+						if (!rec(k, e)) return;
+						var ev = e;
+						setTimeout(function () { if (ev.defaultPrevented) { LOG.push(k + ":AFTER_DEF=1"); paint(); } }, 0);
+						if (k === "click") {
+							var frames = [], n = 0;
+							(function tick() {
+								frames.push(countItems());
+								if (++n < 40) requestAnimationFrame(tick);
+								else { LOG.push("FRAMES=" + frames.join(",")); paint(); }
+							})();
+						}
+					}, true);
+				});
 			}
+			// ⋯ 按钮点击后立刻注入（不等 observer 的 300ms 节流，避免菜单先显示一项再补）
+function mpBindMoreButton() {
+// 修复 44：document 级 capture 委托。
+//   旧做法把 click 绑在 `button.headerMenuButton` 节点上，而该节点每次
+//   会话/标题变化都会被 React 重建，dataset 随旧节点一起消失 →
+//   存在一段“按钮已换、监听未重绑”的窗口，点它就没有任何反应
+//   （啾灵实测：第一次点不开、第二次开、过一会又不开）。
+//   委托挂在 document 上，按钮重生多少次都不丢。
+if (window.__mpMoreDelegated) return;
+window.__mpMoreDelegated = 1;
+// ── 诊断 43D（临时打点，采集完即擒）──
+function mpDiag43(){
+try{
+if(!window.__mpDiag43Evt){
+window.__mpDiag43Evt=1;
+["pointerdown","touchstart","click"].forEach(function(n){
+document.addEventListener(n,function(e){
+try{var c=(e.target&&e.target.className||"").toString().slice(0,40);diag("d43 "+n+" dp="+e.defaultPrevented+" c="+c)}catch(_){}
+},{capture:true,passive:true});
+});
+}
+var f=0; var t0=performance.now();
+function step(){
+try{
+var ls=[].slice.call(document.querySelectorAll('[role="menu"], [class*="_list_"]'));
+var L=null;
+for(var i=0;i<ls.length;i++){var x=ls[i];if(!x.getClientRects().length)continue;var tx=x.textContent||"";if(tx.indexOf("Session 日志")<0&&tx.indexOf("Session日志")<0)continue;L=x;break}
+var n=L?L.querySelectorAll('[role="menuitem"]').length:-1;
+var tt=L?(L.textContent||"").replace(/\s+/g,"").slice(0,44):"-";
+diag("d43f f="+f+" ms="+Math.round(performance.now()-t0)+" n="+n+" t="+tt);
+}catch(_){}
+f++; if(f<45) requestAnimationFrame(step);
+}
+requestAnimationFrame(step);
+}catch(_){}
+}
+document.addEventListener("click", function(e) {
+var t = e.target;
+if (!t || !t.closest) return;
+var btn = t.closest('button[class*="headerMenuButton"]') ||
+          t.closest('button[class*="moreButton"]') ||
+          t.closest('button[aria-haspopup="menu"]');
+if (!btn) return;
+try { mpDiag43(); } catch (_) { /* 静默 */ }
+setTimeout(function(){ try { mpEnsureRefreshItem(); } catch (_) { /* 静默 */ } }, 120);
+}, { passive: true, capture: true });
+}
 
 			function bindTitleRename() {
 				if (!mpIsMobile()) return;
