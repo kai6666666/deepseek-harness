@@ -1,3 +1,16 @@
+## [0.3.0-refactor.0] — 2026-11-20
+vc=55
+
+### 变更
+- **重构基线包**：本版**不含重构改动**，代码与 `0.2.2-rc.3` 功能等价，仅版本号前移，用作 A/B 对照与「重构后是否回归」的判据。
+- versionName **0.3.0-refactor.0** / versionCode **55**；与 `0.2.2-rc.3`(vc54) 同签名，可覆盖安装。
+- 引擎 `@deepseek-ai/dsh` **0.2.2-rc.3**（PRoot 单运行时）；移动端 UI **1.1.0-194**。
+- 重构主线立项：[`docs/plan/refactor-single-host-purge.md`](docs/plan/refactor-single-host-purge.md)（P0–P6：单宿主 / 运行时去 Termux / 解除包名与 targetSdk 限制）。
+
+### 已知
+- targetSdk 仍为 28、包名仍为 `com.dsh.android`（P4/P5 才改）。
+- 构建期仍从 Termux deb 取 proot/talloc/shmem（P3 只归零运行时依赖）。
+
 ## [0.2.2-rc.3] — 2026-11-18
 vc=54
 ### 变更
