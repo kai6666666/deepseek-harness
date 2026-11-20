@@ -115,28 +115,29 @@ for d in "$PROOT_DEB" "$TALLOC_DEB" "$SHMEM_DEB"; do
 done
 mkdir -p "$JNI"
 TERMUX_USR=$WORK/deb/proot_${PROOT_VERSION}/data/data/com.termux/files/usr
+TALLOC_USR=$WORK/deb/libtalloc_${TALLOC_VERSION}/data/data/com.termux/files/usr
+SHMEM_USR=$WORK/deb/libandroid-shmem_${SHMEM_VERSION}/data/data/com.termux/files/usr
 # ⚠️ 不要 patchelf 改 proot 的 DT_NEEDED：LDPlayer x86_64 实测，改过的 proot
 # 在 --version 阶段就 SIGSEGV（原版 proot + 同一个 libtalloc 正常）。
-# Android 只抽取 lib*.so，所以 libtalloc.so.2 / libandroid-shmem.so 作为
-# **assets 原样**下发，ProotHost 解到 files/proot-libs 并放进 LD_LIBRARY_PATH。
+#
+# P1（0.3.0-refactor.1）：可执行体与它依赖的共享库**全部收进 jniLibs**，不再往
+# assets 里放 proot-libs。做法不是 patchelf，而是**等长改写 .dynstr**：proot 的
+# DT_NEEDED 是 dynstr 里的一个偏移，把 "libtalloc.so.2" 覆写成 "libtalloc.so\0\0"
+# 后偏移不变、文件大小不变 ⇒ 不会像 patchelf 那样改坏它。
+# Android 只抽取 lib*.so（且 extractNativeLibs/useLegacyPackaging 已开），
+# 所以文件必须叫 libtalloc.so / libandroid-shmem.so。
 cp "$TERMUX_USR/bin/proot"            "$JNI/libproot.so"
 cp "$TERMUX_USR/libexec/proot/loader" "$JNI/libproot-loader.so"
+cp "$TALLOC_USR/lib/libtalloc.so.2.5.0" "$JNI/libtalloc.so"
+cp "$SHMEM_USR/lib/libandroid-shmem.so" "$JNI/libandroid-shmem.so"
+python3 "$HERE/patch-dynstr.py" "$JNI/libproot.so" libtalloc.so.2 libtalloc.so
 chmod 755 "$JNI/libproot.so" "$JNI/libproot-loader.so"
+chmod 644 "$JNI/libtalloc.so" "$JNI/libandroid-shmem.so"
 log "jniLibs: $(ls -l "$JNI" | awk 'NR>1{printf "%s=%s ", $9, $5}')"
 # 产物侧也放一份，App 的 jniLibs 直接指向这里
 OUT_JNI=$OUT/$ABI/jniLibs/$ABI
 mkdir -p "$OUT_JNI"
 cp "$JNI"/*.so "$OUT_JNI"/
-
-# proot 运行期库：保持 deb 里的原名（libtalloc.so.2），由 ProotHost 解到
-# files/proot-libs 并放进 LD_LIBRARY_PATH。patchelf 改名会把这个 bionic
-# 二进制改坏（LDPlayer x86_64 实测 SIGSEGV）。
-PROOT_LIBS=$OUT/$ABI/assets/runtime/proot-libs
-mkdir -p "$PROOT_LIBS"
-cp "$WORK/deb/libtalloc_${TALLOC_VERSION}/data/data/com.termux/files/usr/lib/libtalloc.so.2.5.0" "$PROOT_LIBS/libtalloc.so.2"
-cp "$WORK/deb/libandroid-shmem_${SHMEM_VERSION}/data/data/com.termux/files/usr/lib/libandroid-shmem.so" "$PROOT_LIBS/libandroid-shmem.so"
-chmod 644 "$PROOT_LIBS/libtalloc.so.2" "$PROOT_LIBS/libandroid-shmem.so"
-log "proot-libs: $(ls -l "$PROOT_LIBS" | awk 'NR>1{printf "%s=%s ", $9, $5}')"
 
 # ---------- 3. rootfs ----------
 rm -rf "$ROOTFS"
