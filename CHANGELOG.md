@@ -1,3 +1,19 @@
+## [0.3.0-refactor.1] — 2026-11-20
+vc=56
+
+### 变更
+- **P1 · jniLibs 全面化**：`libtalloc.so` / `libandroid-shmem.so` 收进 jniLibs；`assets/runtime/proot-libs/` 与 `files/proot-libs` 彻底移除。
+- 新增 `tools/runtime/patch-dynstr.py`：对 `libproot.so` 的 `.dynstr` 做**等长原地改写**（`libtalloc.so.2` → `libtalloc.so`），不动节表、不改文件大小（patchelf 方案实测 SIGSEGV，故不用）。
+- `ProotHost`：删 `ensureProotLibs()` 与 `LIB_LOCK`，`LD_LIBRARY_PATH` 只保留 `nativeLibraryDir`。
+- 原生来源单一化：`nativeLibraryDir` 现有 4 个 `.so`（libproot / libproot-loader / libtalloc / libandroid-shmem）。
+
+### 判据
+- APK `lib/arm64-v8a/` 四件套齐全；设备 `runtime/manifest.json` 的 `jniLibs` 为 4 项。
+- 引擎照常起（token 行可解析）；`files/` 下无 `proot-libs`。
+
+### 已知
+- 本阶段未改 targetSdk / 包名（P4/P5）。
+
 ## [0.3.0-refactor.0] — 2026-11-20
 vc=55
 
