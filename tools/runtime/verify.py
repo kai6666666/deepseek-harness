@@ -42,7 +42,7 @@ REQUIRED = [
     "usr/bin/python3",
     "usr/bin/curl",
 ]
-REQUIRED_JNI = ["libproot.so", "libproot-loader.so"]
+REQUIRED_JNI = ["libproot.so", "libproot-loader.so", "libtalloc.so", "libandroid-shmem.so"]
 BAD_PKG_FRAGMENTS = {
     "arm64-v8a": ("linux-x64", "linux-x32", "win32-", "darwin-", "android-arm64"),
     "x86_64": ("linux-arm64", "linux-aarch64", "android-arm64", "win32-", "darwin-"),
@@ -216,10 +216,15 @@ def check_jni(dirpath, em):
     except Exception as e:  # noqa: BLE001
         bad("readelf 失败（跳过 DT_NEEDED 断言）：" + str(e))
         return
-    if "libtalloc.so.2" not in out:
-        bad("libproot.so 的 DT_NEEDED 不含 libtalloc.so.2（不应再 patchelf）")
+    # P1：libtalloc 进 jniLibs 后必须改名成 libtalloc.so（Android 只抽取 lib*.so），
+    # 所以这里断言的是**改名结果**：出现 libtalloc.so、且不残留 .so.2。
+    # 这不等于 patchelf —— patch-dynstr.py 只做等长 .dynstr 覆写，节表不动。
+    if "libtalloc.so" not in out:
+        bad("libproot.so 的 DT_NEEDED 缺 libtalloc.so（P1 未生效）")
+    elif "libtalloc.so.2" in out:
+        bad("libproot.so 仍引用 libtalloc.so.2（运行期会找不到库）")
     else:
-        ok("libproot.so 保持原始 DT_NEEDED libtalloc.so.2")
+        ok("libproot.so DT_NEEDED = libtalloc.so（P1 改名生效）")
 
 
 def main():
