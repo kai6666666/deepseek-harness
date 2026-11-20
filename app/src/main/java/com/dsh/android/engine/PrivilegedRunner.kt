@@ -51,7 +51,6 @@ class PrivilegedRunner(
         val loader = File(libDir, "libproot-loader.so")
         val tmpDir = File(filesDir.parentFile, "cache/proot-tmp").apply { mkdirs() }
         val l2sDir = File(rootfs, "root/.l2s").apply { mkdirs() }
-        val prootLibs = File(filesDir, "proot-libs")
         val emptyDir = File(rootfs, "var/lib/dsh-app/empty").apply { mkdirs() }
         val shmDir = File(rootfs, "var/lib/dsh-app/shm").apply { mkdirs() }
         val argv = mutableListOf(
@@ -89,7 +88,7 @@ class PrivilegedRunner(
                 environment()["PROOT_LOADER"] = loader.absolutePath
                 environment()["PROOT_TMP_DIR"] = tmpDir.absolutePath
                 environment()["PROOT_L2S_DIR"] = l2sDir.absolutePath
-                environment()["LD_LIBRARY_PATH"] = libDir + ":" + prootLibs.absolutePath
+                environment()["LD_LIBRARY_PATH"] = libDir
             }
             .start()
     }
