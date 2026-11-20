@@ -12,7 +12,6 @@ import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 import java.nio.file.Files
-import java.nio.file.StandardCopyOption
 import java.util.Collections
 import java.util.TimeZone
 import java.util.UUID
@@ -128,8 +127,8 @@ class ProotHost(
             }
         }
         ensureGuestNetworkConfig()
-        val libs = File(context.filesDir, "proot-libs")
-        ensureProotLibs(libs)
+        // jniLibs 是原生唯一来源：proot / loader / libtalloc / libandroid-shmem 全在
+        // nativeLibraryDir（P1）。这里不再解 assets 到 files/proot-libs。
         val pb = ProcessBuilder(argv).directory(context.filesDir).redirectErrorStream(mergeError)
         pb.environment().apply {
             clear()
@@ -139,7 +138,7 @@ class ProotHost(
             put("ANDROID_ROOT", System.getenv("ANDROID_ROOT") ?: "/system")
             put("ANDROID_DATA", System.getenv("ANDROID_DATA") ?: "/data")
             manifest.launchEnv.forEach { (k, v) -> put(k, expand(v)) }
-            put("LD_LIBRARY_PATH", nativeLibDir + ":" + libs.absolutePath)
+            put("LD_LIBRARY_PATH", nativeLibDir)
         }
         // Environment values may be credentials; log structural facts only.
         Log.i(TAG, "launch: profile=$profile patches=${overlays.size} pidFile=$guestPidFile command=${command?.firstOrNull() ?: "dsh"}")
@@ -161,22 +160,6 @@ class ProotHost(
                 if (!f.isFile || f.length() == 0L) f.writeText("127.0.0.1 localhost\n::1 localhost\n")
             }
         }.onFailure { Log.w(TAG, "Guest network config: ${it.message}") }
-    }
-
-    /** Atomic replacement avoids modifying a library mmap'ed by the other live host. */
-    private fun ensureProotLibs(dir: File) = synchronized(LIB_LOCK) {
-        dir.mkdirs()
-        for (name in listOf("libtalloc.so.2", "libandroid-shmem.so")) {
-            val bytes = context.assets.open("runtime/proot-libs/$name").use { it.readBytes() }
-            val out = File(dir, name)
-            if (out.isFile && out.readBytes().contentEquals(bytes)) continue
-            val staged = File(dir, "$name.$runId.tmp")
-            try {
-                staged.writeBytes(bytes)
-                staged.setReadable(true, false)
-                Files.move(staged.toPath(), out.toPath(), StandardCopyOption.REPLACE_EXISTING)
-            } finally { staged.delete() }
-        }
     }
 
     private fun drain(p: Process, onLine: (String) -> Unit) {
@@ -291,7 +274,6 @@ class ProotHost(
 
     companion object {
         const val TAG = "ProotHost"
-        private val LIB_LOCK = Any()
 
         /** The privileged helpers use exactly the same binds, env and loader as the engine. */
         fun startNodeCommand(
