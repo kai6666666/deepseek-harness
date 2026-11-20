@@ -74,9 +74,15 @@ jobs:
           APK="${APKS[0]}"
           mkdir -p out
           "$BT/aapt" dump badging "$APK" | head -1 > out/package.txt
-          grep -F "name='com.dsh.android'" out/package.txt && grep -F "versionCode='53'" out/package.txt && grep -F "versionName='0.2.2-rc.3-debug'" out/package.txt || exit 1
+          grep -F "name='com.dsh.android'" out/package.txt || exit 1
+          # 版本号从产物实读：写死会在每次改版本时把签名卡死（v0.3.0-refactor.0 已踩过一次）。
+          VC=$(sed -n "s/.*versionCode='\([0-9]*\)'.*/\1/p" out/package.txt)
+          VN=$(sed -n "s/.*versionName='\([^']*\)'.*/\1/p" out/package.txt)
+          [ -n "$VC" ] && [ -n "$VN" ] || { echo 'APK 版本号解析失败'; exit 1; }
+          echo "APK_VERSION versionCode=$VC versionName=$VN"
+          export APK_VC="$VC" APK_VN="$VN"
           "$BT/zipalign" -p -f 4 "$APK" "$RUNNER_TEMP/dsh-aligned.apk" || exit 1
-          OUT=out/dsh-android-0.2.2-rc.3-debug-arm64.apk
+          OUT=out/dsh-android-${VN}-arm64.apk
           "$BT/apksigner" sign --ks "$KEY_FILE" --ks-key-alias "$KEY_ALIAS" --ks-pass env:KEYSTORE_PASSWORD --key-pass env:KEY_PASSWORD --out "$OUT" "$RUNNER_TEMP/dsh-aligned.apk" || exit 1
           "$BT/apksigner" verify --verbose --print-certs "$OUT" > out/signature.txt || exit 1
           CERT=$(sed -n 's/^.*certificate SHA-256 digest: //p' out/signature.txt | tr -d ': \r' | tr 'A-F' 'a-f' | sort -u)
@@ -89,7 +95,7 @@ jobs:
           import hashlib, json, os, re, zipfile
           from pathlib import Path
           source = next(Path('input').rglob('*.apk'))
-          target = Path('out/dsh-android-0.2.2-rc.3-debug-arm64.apk')
+          target = next(Path('out').glob('*.apk'))
           signature = re.compile(r'^META-INF/(?:MANIFEST\.MF|[^/]+\.(?:SF|RSA|DSA|EC))$', re.I)
           def payload(file):
               with zipfile.ZipFile(file) as z:
@@ -98,7 +104,7 @@ jobs:
           with zipfile.ZipFile(target) as z:
               manifest = json.loads(z.read('assets/runtime/manifest.json'))
           assert 'dsh0.2.2-rc.3-' in manifest['runtimeVersion']
-          meta = {'source_run': os.environ['SOURCE_RUN'], 'source_sha': os.environ['SOURCE_SHA'], 'versionName': '0.2.2-rc.3-debug', 'versionCode': 53, 'certificate_sha256': os.environ['EXPECTED_SIGNER'].lower(), 'runtimeVersion': manifest['runtimeVersion'], 'payload_unchanged': True}
+          meta = {'source_run': os.environ['SOURCE_RUN'], 'source_sha': os.environ['SOURCE_SHA'], 'versionName': os.environ['APK_VN'], 'versionCode': int(os.environ['APK_VC']), 'certificate_sha256': os.environ['EXPECTED_SIGNER'].lower(), 'runtimeVersion': manifest['runtimeVersion'], 'payload_unchanged': True}
           Path('out/signing-metadata.json').write_text(json.dumps(meta, indent=2)+'\n')
           print('PAYLOAD_UNCHANGED=YES', manifest['runtimeVersion'])
           PY
