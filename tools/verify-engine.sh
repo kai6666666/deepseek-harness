@@ -60,8 +60,18 @@ if [ "$RC" -ne 0 ]; then
 fi
 
 COUNT=$(find "$OUT/com/dsh/android/engine" -name '*.class' 2>/dev/null | wc -l | tr -d ' ')
-if [ "${COUNT:-0}" -lt 60 ]; then
-  echo "产物数量异常：$COUNT 个 class（期望 > 60）"
+# 守卫的目的只有一个：防「编过了但没产物」（源码路径错、包名错）。
+# 纯数量阈值做不到这件事 —— P2 删掉 TermuxBionicHost / ProotGlbcHost /
+# EngineHostGate / RootfsProvisioner / VerifyC 后，类数从 ~70 自然降到 ~29。
+# 改成「关键类必须存在 + 数量下限」，删代码不会再撞假报警，真正的空产物仍会拦。
+for cls in PrivilegedRunner.class EngineHostException.class; do
+  if [ ! -f "$OUT/com/dsh/android/engine/$cls" ]; then
+    echo "产物缺关键类：$cls"
+    exit 1
+  fi
+done
+if [ "${COUNT:-0}" -lt 20 ]; then
+  echo "产物数量异常：$COUNT 个 class（期望 ≥ 20）"
   exit 1
 fi
 
