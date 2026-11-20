@@ -7120,54 +7120,6 @@ class EngineManager private constructor(private val context: Context) {
 
     fun recentLog(): String = synchronized(logLines) { logLines.joinToString("\n") }
 
-    /**
-     * 宿主可切换的启动入口（C 方案接线点）。
-     *
-     * 为什么用「回调注入 baseUrl」而不是改 `start()` 签名：
-     *   `start()` 被前台服务、救援、重开 App 至少四处调用，改返回值会波及一片；
-     *   这里保持它原样，把「bionic 跑完之后的端点」通过 [legacyEndpointProvider] 交回来。
-     *
-     * 调用方（MainActivity / Application）在 `start()` 完成后设置：
-     *   `manager.legacyEndpointProvider = { EngineEndpoint(url, pid, log) }`
-     * 未设置时用 `http://127.0.0.1:<spec.port>` 兜底 —— 与旧行为一致。
-     */
-    @Volatile
-    var legacyEndpointProvider: (() -> com.dsh.android.engine.EngineEndpoint)? = null
-
-    /**
-     * 启动引擎（宿主可切换）。
-     *
-     * 行为：
-     *   · `bionic`：走既有 [start]，行为与旧版逐字节一致；
-     *   · `proot` / `remote`：走新宿主；起不来**自动回落 bionic**（`degraded=true`）。
-     */
-    suspend fun bootWithHost(
-        prefs: android.content.SharedPreferences?,
-    ): com.dsh.android.engine.EngineBootGate.BootResult =
-        com.dsh.android.engine.EngineBootGate.boot(
-            filesDir = context.filesDir,
-            dshHome = dshHome,
-            workspace = workspaceDir,
-            prefs = prefs,
-            legacyLauncher = { spec ->
-                start()
-                // P3.2：锚点审计（失败写 anchor-miss.json + 发一条通知，不再静默）
-                runCatching {
-                    val misses = com.dsh.android.engine.AnchorAudit.audit(engineDir, dshHome)
-                    com.dsh.android.engine.AnchorAudit.report(context, misses)
-                }
-                legacyEndpointProvider?.invoke() ?: com.dsh.android.engine.EngineEndpoint(
-                    baseUrl = "http://127.0.0.1:${spec.port}",
-                    pid = com.dsh.android.engine.ProcPid.of(process),
-                    logFile = File(dshHome, "logs/engine.log"),
-                )
-            },
-            stopLegacy = { stop() },
-        )
-
-    /** 设置页用：只读宿主能力，不启动引擎（避免用户点开设置就起一次进程）。 */
-    fun hostCapabilities(mode: com.dsh.android.engine.HostMode) =
-        com.dsh.android.engine.EngineHosts.create(mode, context.filesDir).capabilities()
 
     companion object {
         private const val TAG = "DSH"
