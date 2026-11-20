@@ -1,3 +1,21 @@
+## [0.3.0-refactor.2] — 2026-11-20
+vc=57
+
+### 变更
+- **P2 · 单宿主化**：删除整条「宿主可选择」链路 —— `HostMode` 三值枚举、`TermuxBionicHost`、`ProotGlbcHost`、`EngineHost` 抽象、`EngineBootGate`（含必失败的 bionic 回落）、`HostSettingsSection`（零调用方的死 UI）。
+- `EngineManager`：删 `bootWithHost()` / `legacyEndpointProvider` / `hostCapabilities()` —— 三者均**零调用方**；本地启动只剩一条 `ProotHost` 路径。
+- `EngineHost.kt` 收敛为只剩 `EngineHostException`。
+- 效果：启动失败不再被「回落 bionic」覆盖成第二条错误，第一条真实原因直达日志与界面。
+
+### 判据
+- `grep -rn "HostMode|TermuxBionicHost|ProotGlbcHost|EngineHosts|EngineBootGate|HostSettingsSection" app/src` = 0
+- 启动日志 `宿主=proot`；破坏 rootfs 后首条错误即真因
+- 引擎照常起，菜单与会话不受影响
+
+### 已知
+- 远端引擎（原 `RemoteHost`）随之移除：它此前只被 `EngineHosts.create` 引用，而后者零调用方 ⇒ 功能上从未接通。要做远端作为独立功能另行立项，不进本阶段。
+- targetSdk 仍 28、包名仍 `com.dsh.android`（P4/P5）。
+
 ## [0.3.0-refactor.1] — 2026-11-20
 vc=56
 
