@@ -1,6 +1,6 @@
 # 重构计划：单宿主 + 去 Termux + 解除包名/targetSdk 限制
 
-> 状态：**已立项，待执行**
+> 状态：**执行中** — P0 ✅ / P1 ✅（`v0.3.0-refactor.0` 基线、`v0.3.0-refactor.1` P1），下一阶段 P2
 > 基线：`main` @ `ff20f6024f`（引擎 `@deepseek-ai/dsh@0.2.2-rc.3`，App `0.2.2-rc.3` / vc54，mobile-ui `1.1.0-194`）
 > 目标版本：`0.3.0-refactor.N`（versionCode 从 55 起递增），发布到 prerelease `v0.3.0-refactor.N`
 > 最后更新：2026-11-20
@@ -106,7 +106,7 @@ files/usr/bin/bash    -> /data/app/~~…/lib/arm64/libbash.so
 > 执行顺序：**P0 → P1 → P2 → P3 → P5 → P4 → P6**。
 > 改包名（P4）放最后，因为它会让现设备数据不继承；放在 targetSdk 验证通过之后，保证每一步都能覆盖安装、都能回滚。
 
-### P0 基线快照（可回滚点）
+### P0 基线快照（可回滚点）— ✅ 已完成（`.backup/refactor-20261120/`，111 文件）
 
 **动作**
 - 全量快照到 `.backup/refactor-20261120/`：`app/src/main/java/com/dsh/android`、`app/src/main/assets`、`tools/runtime`、`app/build.gradle.kts`、`app/src/main/AndroidManifest.xml`、`AGENTS.md`
@@ -118,7 +118,7 @@ files/usr/bin/bash    -> /data/app/~~…/lib/arm64/libbash.so
 
 ---
 
-### P1 jniLibs 全面化（风险最低、收益最大）
+### P1 jniLibs 全面化（风险最低、收益最大）— ✅ 已完成（v0.3.0-refactor.1）
 
 **动作（文件级）**
 
@@ -173,6 +173,7 @@ files/usr/bin/bash    -> /data/app/~~…/lib/arm64/libbash.so
 | `runtime/RuntimeFiles.kt:90-107` | `retireLegacy` → `purgeLegacy`：**删除** `engine`/`usr`/`termux/usr`（D5） |
 | `RootfsInstaller.kt:110-115` | `swapIn` 增加启动清扫：删所有 `rootfs.staging-*` 与遗留 `rootfs.old-*` |
 | `tools/dsh-env.sh`、`tools/env-smoke.sh` | 删除 |
+| `files/proot-libs`（升级安装遗留） | P1 已无生产者，但升级装机上目录仍在 ⇒ `purgeLegacy` 一并删除 |
 | `EngineManager.kt:4441` 段 | `adbwire/bin/adb` → jniLibs `libadb.so` + `files/adbwire/bin/adb` 符号链接（D6） |
 
 **判据**
