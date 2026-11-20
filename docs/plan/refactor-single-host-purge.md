@@ -1,6 +1,6 @@
 # 重构计划：单宿主 + 去 Termux + 解除包名/targetSdk 限制
 
-> 状态：**执行中** — P0 ✅ / P1 ✅（`v0.3.0-refactor.0` 基线、`v0.3.0-refactor.1` P1），下一阶段 P2
+> 状态：**执行中** — P0 ✅ / P1 ✅ / P2 ✅（`refactor.0` 基线、`refactor.1` P1、`refactor.2` P2），下一阶段 P3
 > 基线：`main` @ `ff20f6024f`（引擎 `@deepseek-ai/dsh@0.2.2-rc.3`，App `0.2.2-rc.3` / vc54，mobile-ui `1.1.0-194`）
 > 目标版本：`0.3.0-refactor.N`（versionCode 从 55 起递增），发布到 prerelease `v0.3.0-refactor.N`
 > 最后更新：2026-11-20
@@ -139,7 +139,7 @@ files/usr/bin/bash    -> /data/app/~~…/lib/arm64/libbash.so
 
 ---
 
-### P2 单宿主化（删死代码）
+### P2 单宿主化（删死代码）— ✅ 已完成（v0.3.0-refactor.2）
 
 **动作**
 
@@ -157,6 +157,20 @@ files/usr/bin/bash    -> /data/app/~~…/lib/arm64/libbash.so
 - 故意破坏 `rootfs` 后启动：**第一条**错误是 rootfs 缺失，而不是「回落 bionic 也失败」
 
 **回滚**：`git revert` 单提交；本阶段无数据面变化。
+
+**实测（2026-11-20，vc57）**
+- `grep -rn "HostMode|TermuxBionicHost|ProotGlbcHost|EngineHosts|EngineBootGate|HostSettingsSection" app/src` = 0
+- 启动：`engine.start.proot runtime=…-1f2f5ca4c472` → `dsh web http://127.0.0.1:43599` → `Web 内核已提交首帧`
+- `grep -c "回落 bionic" app.log` = **0**
+- 连带删除：`RootfsProvisioner.kt`、`VerifyC.kt`（C 方案装配/验收工具，零调用方，且 `RootfsProvisioner` 是唯一引用 `ProotManifest` 的地方）
+- 守卫改造：`tools/verify-engine.sh` 由「engine 包 >60 class」改为「关键类存在 + ≥20」
+  —— 删代码不再撞假报警，空产物仍会拦
+
+**P2 期间发现（转 P3 处理）**
+1. **失败注入手段要改**：移走整个 `runtime/rootfs` 时，`RootfsInstaller.isInstalled()` 判定未安装 → 直接走自愈重装（`runtime copy` 1.3 GB），
+   所以「首条错误即真因」不能这样验。P3 验收改用**破坏 rootfs 内关键文件**（删 `usr/bin/node`）来触发 `ProotHost.requireReady` 失败。
+2. **残留垃圾实测 797 MB**：`rootfs.staging-*`（102 MB + 695 MB 各一份）、`rootfs.old-*`（2×32 KB）。
+   P3 的启动清扫必须覆盖 staging，否则每次中断的安装都留一份接近满额的半成品。
 
 ---
 
