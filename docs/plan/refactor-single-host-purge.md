@@ -241,6 +241,12 @@ files/usr/bin/bash    -> /data/app/~~…/lib/arm64/libbash.so
 | 旧包 | `versionName=0.3.0-refactor.11`，`files/home/.dsh` 2.2 MB、sessions 1 个 —— 原样未动 |
 | 导入兼容 | `UserDataImporter.KNOWN_PACKAGES` 同时含新 2 个 id 与旧 2 个 id ⇒ 老备份仍可导入 |
 
+**解包进度与工作区选择（`refactor.15`~`.17`，真机）**
+- 进度三层修完：`State.Extracting` 接线（copy 0–30 / extract 30–98）、`CountingInput` 用 .xz 已读字节做分母、
+  通知权限推迟到 `UiStage.UiReady`（否则系统弹窗盖住解包进度）。
+- 真机日志：`10%(copy) → 20 → 30 → 40(extract) → 52 → 61 → 74 → 80 → 93 → 100%`，`engine.ready ms=112515`。
+- 工作区入口新增「下载」：`files/home` 下 `手机存储 → /sdcard`、`下载 → /sdcard/Download`、`应用目录 → filesDir`。
+
 **数据迁移演练（`refactor.14`，真机）**
 导出 → `pm clear` → 重启 → 导入 → 内容指纹核对：会话目录恢复为 `session-9bb9e914…` + `session-a97fddd5…`，
 `home/.dsh` 文件数回到 89。**演练暴露**：`pm clear` 会连 `Android/data/<包名>/files/Download/` 一起删，
