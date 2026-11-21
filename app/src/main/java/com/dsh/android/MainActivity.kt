@@ -2707,6 +2707,9 @@ class MainActivity : AppCompatActivity() {
     private var insetTopPx = 0
     private var insetBottomPx = 0
 
+    /** 上一次的 IME 高度（只在变化时打日志，避免刷新刷屏）。 */
+    private var lastImeBottom = 0
+
     /** 打开 edge-to-edge 并接管让位（必须在 `setContentView` 之后调用）。 */
     private fun enableEdgeToEdgeCompat() {
         WindowCompat.setDecorFitsSystemWindows(window, false)
@@ -2716,11 +2719,22 @@ class MainActivity : AppCompatActivity() {
             window.isNavigationBarContrastEnforced = false
         }
         ViewCompat.setOnApplyWindowInsetsListener(binding.root) { _, insets ->
-            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            // 挖孔/刘海必须并进顶部让位：只取 systemBars() 时，挖孔机型上
+            // 状态栏高度可能小于安全区，标题会钻进孔里。
+            val mask = WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
+            val bars = insets.getInsets(mask)
             val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
             // 键盘是 ime inset，不再靠 adjustResize（edge-to-edge 下它不生效）
             insetTopPx = bars.top
             insetBottomPx = maxOf(bars.bottom, ime.bottom)
+            if (ime.bottom != lastImeBottom) {
+                lastImeBottom = ime.bottom
+                Log.i(
+                    DshApplication.TAG,
+                    if (ime.bottom > 0) "键盘弹出：ime=${ime.bottom}px，底部让位=$insetBottomPx"
+                    else "键盘收起：底部让位=$insetBottomPx",
+                )
+            }
             applyContentInsets()
             insets
         }
