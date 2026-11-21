@@ -1,3 +1,12 @@
+## [Unreleased] — 收尾（无代码变更）
+
+- 包名最终决定：**`com.dsh.android`**（0.4.1 起），不再变更；
+- 工程进入**维护态**：只修 bug，不改身份与架构；
+- 文档对齐：`AGENTS.md` / `docs/agents/constraints.md` / `docs/plan/…`；
+- 设备侧清理：删除演练备份 `dsh-backup-drill.zip` 与 13 个历史 APK（约 2.4 GB）。
+
+**不发新版**：本批只有文档与文件清理。
+
 ## [0.4.1] — 2026-11-22
 vc=84
 
