@@ -390,8 +390,9 @@ android {
     // 三个资产都用 assets.open() 读取，压缩与否对调用方透明，所以**不需要**
     // noCompress 白名单（加上反而会让 APK 从 ~60MB 涨到 ~108MB）。
     // 唯一要防的是 AGP 按扩展名做格式推断：它会把 .tar.gz 自动解压并改名成 .tar，
-    // 于是运行期 openFd 按原名找不到。规避方式是资产名一律用中性后缀
-    // （engine.bin / node-runtime.bin / bootstrap-aarch64.zip），不靠白名单。
+    // 于是运行期 openFd 按原名找不到。规避方式是资产名一律用中性后缀（插件资产用 .zip，
+    // rootfs 走 assets 直读），不靠白名单。
+    // P6 之后 bionic 资产（engine.bin / node-runtime.bin / bootstrap-aarch64.zip）全部消失。
 
     // proot 四件套以 jniLibs 分发（libproot.so / libproot-loader.so /
     // libtalloc.so / libandroid-shmem.so）。系统只会把 lib*.so 解到
