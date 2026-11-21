@@ -52,6 +52,23 @@ jobs:
           V_CODE=$(grep '^versionCode=' tools/app-version.txt | cut -d= -f2 | tr -d ' \r\n')
           E_VER=$(tr -d ' \r\n' < tools/engine-version.txt)
           echo "APK=$APK vName=$V_NAME vCode=$V_CODE engine=$E_VER tag=${{ inputs.tag }}"
+          # ⚠️ versionCode 必须**严格递增**：防止把旧版本重新打 tag 覆盖线上产物。
+          # 取最近一个正式 release 的 versionCode 做比较（拿不到就跳过，不阻塞首次发布）。
+          V_CODE=$(grep '^versionCode=' tools/app-version.txt | cut -d= -f2 | tr -d ' \r\n')
+          PREV=$(gh api "repos/${{ github.repository }}/releases?per_page=20" \
+            --jq '[.[] | select(.prerelease == false)] | .[0].tag_name' 2>/dev/null || true)
+          if [ -n "$PREV" ] && [ "$PREV" != "null" ] && [ "$PREV" != "v$V_NAME" ]; then
+            PREV_CODE=$(gh api "repos/${{ github.repository }}/releases/tags/$PREV" \
+              --jq '.body' 2>/dev/null | grep -o 'versionCode [0-9]*' | head -1 | grep -o '[0-9]*' || true)
+            if [ -n "$PREV_CODE" ]; then
+              echo "上一个正式版 $PREV 的 versionCode=$PREV_CODE，本次=$V_CODE"
+              [ "$V_CODE" -gt "$PREV_CODE" ] || { echo "::error::versionCode 必须大于上一个正式版（$PREV_CODE）"; exit 1; }
+            else
+              echo "上一个正式版 $PREV 的 versionCode 读不到，跳过递增校验"
+            fi
+          else
+            echo "没有可比较的历史正式版，跳过递增校验"
+          fi
           # tag 必须与 versionName 对齐（tag 带 v，versionName 不带）
           [ "${{ inputs.tag }}" = "v$V_NAME" ] || { echo "::error::tag 与 versionName 不一致"; exit 1; }
           NAME="dsh-android-${V_NAME}-arm64.apk"
