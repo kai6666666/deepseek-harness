@@ -88,6 +88,12 @@
     -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
+    <!-- targetSdk 30+ 的包可见性：Shizuku 的 Manager 必须显式声明才查得到，
+         否则 ShizukuChannel 的 getPackageInfo 抛 NameNotFound，特权通道静默降级。 -->
+    <queries>
+        <package android:name="moe.shizuku.privileged.api" />
+    </queries>
+
     <application
         android:name=".DshApplication"
         android:allowBackup="false"
