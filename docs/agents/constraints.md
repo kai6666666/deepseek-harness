@@ -15,6 +15,10 @@
 | 宿主 | **只有 PRoot 一条**（`ProotHost`），无枚举、无 bionic 回落 | P2 |
 | 运行时前缀 | guest 内 `/usr`；宿主 `files/` 下不得出现 `usr` / `termux` / `proot-libs` | P3（`purgeLegacy` + 启动 `sweepStale`） |
 
+**30+ 的存储**：`requestLegacyExternalStorage` 被忽略，`READ/WRITE_EXTERNAL_STORAGE` 不再授予真 `/sdcard`；
+要么让用户授予「所有文件访问」（`MANAGE_EXTERNAL_STORAGE`），要么走回退：guest 的 `/sdcard` 绑到
+`Android/data/<包名>/files/sdcard`。回退下功能可用，但**路径不同**（`AndroidOpenWith` 的 `/sdcard` 归一化在这种状态下指不到真实文件）。
+
 ⚠️ 改包名仍有一件事要做：**换包名 = 新安装**，会话 / 凭据 / rootfs 都不继承，必须先 `UserDataExporter` 导出再导入。
 
 
