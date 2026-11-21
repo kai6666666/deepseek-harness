@@ -1,3 +1,24 @@
+## [0.3.0-refactor.16] — 2026-11-21
+vc=71
+
+### 修复（续）：解包进度仍看不见 —— 真因是**通知权限弹窗盖住了**
+vc70 把进度接到了 `State.Extracting`，但真机复测仍然看不到百分比：
+`POST_NOTIFICATIONS` 是在 `ensureStorageAccess()` 里、**解包开始之前**申请的，
+系统弹窗（「允许"DSH"发送通知？」）停在整个解包过程之上 —— uiautomator 只能看到那个弹窗。
+
+**改法**
+- `storagePermissionLauncher` 回调里不再立刻申请通知权限（只记日志）。
+- `ensureStorageAccess()` 的早返回路径同样不再申请。
+- 新增幂等包装 `ensureNotificationAccessAfterUiReady()`，在 **`UiStage.UiReady`**（界面可用）时申请一次。
+
+效果：解包全程只有 App 自己的覆盖层，`正在解包引擎 N%` 可见；权限弹窗出现在界面可用之后。
+
+### 判据
+```text
+pm clear 后首启：解包期间 uiautomator 能读到「首次启动，正在解包引擎 N%」且 N 增长
+界面可用后才出现通知权限弹窗
+```
+
 ## [0.3.0-refactor.15] — 2026-11-21
 vc=70
 
