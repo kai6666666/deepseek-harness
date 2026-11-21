@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""CI 终验（Linux 侧）：读最近一次 android-release 的结论与产物，一行判定。
+"""CI 终验（Linux 侧）：读最近一次 apk 的结论与产物，一行判定。
 
 用法：python3 tools/verify-ci.py
 """
