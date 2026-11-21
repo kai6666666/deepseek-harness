@@ -335,7 +335,18 @@ object BackupDialog {
         "导出失败（详情见日志 BackupDialog）"
     } else {
         // ⚠️ 给**完整路径**：用户要用文件管理器找到它、或从聊天软件发出去
-        "已导出：${file.absolutePath}\n（${UserDataExporter.humanSize(file.length())}）"
+        val p = file.absolutePath
+        // ⚠️ 34 档没有「所有文件访问」时，导出会退到 app 专属目录
+        //   （Android/data/<包名>/files/Download）。那个目录会随「清除数据 / 卸载」一起消失
+        //   —— 真机实测：pm clear 之后，之前导出的两份 zip 全没了。
+        val privateish = p.contains("/Android/data/") || p.startsWith(context.filesDir.absolutePath)
+        buildString {
+            append("已导出：$p\n（${UserDataExporter.humanSize(file.length())}）")
+            if (privateish) {
+                append("\n⚠️ 这个位置在 App 专属目录里：卸载或「清除数据」会一起删掉。")
+                append("\n建议先复制到「下载」或发给自己；授予「所有文件访问」后导出会直接写到公共下载目录。")
+            }
+        }
     }
 
     /** 导入结果的提示文案。 */
