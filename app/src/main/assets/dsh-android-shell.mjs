@@ -1598,27 +1598,15 @@ function runWireless(adbBin, target, command) {
 /**
  * 在 app 自己的 uid 下执行（没有 uid 2000 时的兜底）。
  *
- * ⚠️ 2026-10-27 真机事故：这里原来只有一句
- *   `const shell = PREFIX ? path.join(PREFIX,'bin','bash') : 'bash'`
- *   spawn 直接报 `spawn bash EACCES`，日志里**没有路径、没有 errno**，
- *   而同一份 `$PREFIX/bin/bash` 用 `run-as … bash -c 'id -u'` 手跑是好的
- *   （`-rwx--x--x`，能执行）—— 于是只能靠猜。
+ * ⚠️ 2026-10-27 真机事故：这里原来只有一句 `spawn('bash')`，报 `spawn bash EACCES`
+ * 且日志里没有路径、没有 errno。之后改成候选表 + `stat`/`access(X_OK)` 预检 +
+ * 失败时把 `e.code`/`e.path` 打出来。
  *
- * 现在做三件事：
- *   1. 候选表：`$PREFIX/bin/bash` → `$PREFIX/bin/sh` → `/system/bin/sh`，
- *      前一个不可执行就换下一个（Termux 的 `sh` 是指向 dash 的软链，
- *      即使 bash 因为某个还没定位的原因不可 exec，dash 与系统 sh 仍能兜住）；
- *   2. 换之前先 `stat` + `access(X_OK)`，把 **mode 位**打进日志；
- *   3. 真失败就把 `e.code` / `e.path` / `PREFIX` 一起打出来 ——
- *      下一次真机日志直接能定位，不再是一句无信息的 EACCES。
+ * P3：候选表按「单运行时 guest」写死，不再看 `$PREFIX` —— guest 里 bash 就在
+ * `/bin/bash`（`/usr/bin/bash` 是同一份的另一条路径），系统 sh 只作最后兜底。
  */
 function runLocal(command) {
-  const cands = [];
-  if (process.env.PREFIX) {
-    cands.push(path.join(process.env.PREFIX, 'bin', 'bash'));
-    cands.push(path.join(process.env.PREFIX, 'bin', 'sh'));
-  }
-  cands.push('/system/bin/sh');
+  const cands = ['/bin/bash', '/usr/bin/bash', '/system/bin/sh'];
 
   return new Promise((resolve) => {
     const attempt = (i, lastErr) => {
@@ -1627,7 +1615,7 @@ function runLocal(command) {
           ? `${lastErr.code || ''} ${lastErr.path || ''} ${lastErr.message || ''}`.trim()
           : '没有可用的 shell';
         process.stderr.write(
-          `${TAG} 本地执行失败: ${why}（PREFIX=${process.env.PREFIX || '<unset>'}）\n`,
+          `${TAG} 本地执行失败: ${why}（shell 候选均不可执行）\n`,
         );
         resolve(127);
         return;
@@ -1640,7 +1628,7 @@ function runLocal(command) {
         probe = `mode=${(st.mode & 0o777).toString(8)}`;
       } catch (e) {
         process.stderr.write(
-          `${TAG} 跳过 ${shell}: ${e.code || e.message}（PREFIX=${process.env.PREFIX || '<unset>'}）\n`,
+          `${TAG} 跳过 ${shell}: ${e.code || e.message}（shell 候选均不可执行）\n`,
         );
         attempt(i + 1, e);
         return;
