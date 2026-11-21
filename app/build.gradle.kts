@@ -36,7 +36,12 @@ android {
         // P5 已逐档抬到 34：29（legacy 存储）→ 30（MANAGE_EXTERNAL_STORAGE + /sdcard 回退）
         // → 34（FGS 显式类型 + 包可见性）。每档都过了：首启解包 / /sdcard 可写 /
         // 悬浮球 + 无障碍 / 切后台 10 min 不断连。
-        targetSdk = 34
+        // P21（refactor.21）：34 → 35。
+        //   API 35 起系统**强制** edge-to-edge：`decorFitsSystemWindows` 恒为 false，
+        //   `statusBarColor` / `navigationBarColor` 的赋值被忽略。
+        //   应对见 MainActivity.enableEdgeToEdgeCompat()：真实 insets 加到
+        //   `webContainer` 的 padding，系统栏区域的底色由 window 背景提供。
+        targetSdk = 35
         versionCode = 75
         // 后缀语义：`credperm` = 凭据文件权限修复（0.2.9 首发）；
         // `tooliso` = 工具插件注册失败的隔离（可选工具注册失败不再拖垮引擎启动）；
