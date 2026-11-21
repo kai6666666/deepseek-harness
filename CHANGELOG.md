@@ -1,3 +1,43 @@
+## [0.3.0] — 2026-11-22
+vc=77
+
+**首个正式版**：`0.2.2-rc.1` 的 Android 移植完成单运行时架构重构后的定版。
+预发布线 `0.3.0-refactor.0` … `0.3.0-refactor.21` 的改动全部收在本版内。
+
+### 架构（P0–P6）
+
+| 阶段 | 结果 |
+|---|---|
+| P0 | 基线快照（111 文件 / 3.2 MB + SHA256SUMS） |
+| P1 | `libproot.so` / `libproot-loader.so` / `libtalloc.so` / `libandroid-shmem.so` 收进 jniLibs；`.dynstr` 等长原位改写（`patch-dynstr.py`），不用 patchelf |
+| P2 | 单宿主化：删 `EngineHosts` / `TermuxBionicHost` / `ProotGlbcHost` / `EngineBootGate`（全零调用方） |
+| P3 | 运行时去 Termux：13 处 `IS_PROOT` 双分支、`$PREFIX` 候选、三个前缀修补函数全删；`purgeLegacy`（删而不归档）+ `swapIn` 启动清扫 |
+| P4 | 包名 `com.dsh.android` → `io.github.ccch1mneyyy.dsh`（只改 `applicationId`，`namespace` 不动） |
+| P5 | targetSdk 29 → 30 → 34，逐档真机验；根治「`/data/user/0` 与 `/data/data` 两套前缀」 |
+| P6 | bionic 出包链清零（`android-release.yml` / 7 个构建脚本 / `bootstrap-required.txt`）；引擎版本改单一来源 `tools/engine-version.txt` |
+
+### 能力与修复
+
+- **targetSdk 35**：系统强制 edge-to-edge，改用 `setDecorFitsSystemWindows(false)` +
+  真实 `WindowInsets` 让位（`webContainer` padding），系统栏区域底色由 window 背景提供。
+- **解包进度可见**：`State.Extracting` 接线（copy 0–30% / extract 30–98%）、
+  `.xz` 已读字节做分母、通知权限推迟到 `UiStage.UiReady`（不再遮住进度）。
+- **冷启 `HTTP=-1`**：健康探测改 20 s 窗口重试，失败文案带「试了 N 次 / 最后错误」。
+- **工作区选择器**：`$HOME` 由宿主注入 `filesDir/home`、`home` 整体 bind、
+  `/root` 下建兼容入口 —— 对话框可见「手机存储 / 下载 / 应用目录」三行并可进入。
+- **数据迁移**：换包名后导出→清数据→导入实测通过；`exportResultText` 新增
+  「卸载或清除数据会一起删掉备份」告警。
+
+### 真机判据（全部实测）
+
+```text
+冷启          engine.ready × 3 连跑，engine.failed = 0
+edge-to-edge  内容让位 top=152 == dumpsys statusBars [0,0][1280,152]
+全面屏        top=0，--dsh-android-system-top = 47px（=152/3.2）
+解包进度      10%→30%(copy)→40→52→61→74→80→93→100%，112.5 s 到 ready
+选择器        ENTER_OK 手机存储=67 / 下载=32 / 应用目录=13
+```
+
 ## [0.3.0-refactor.21] — 2026-11-22
 vc=76
 
