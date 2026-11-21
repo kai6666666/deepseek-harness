@@ -11,15 +11,8 @@ on:
       - 'settings.gradle.kts'
       - '.github/workflows/apk.yml'
       - 'tools/ci-fetch-assets.sh'
-      - 'tools/build-engine-bin.sh'
-      - 'tools/node-runtime-wrap.sh'
-      - 'tools/build-native-assets.sh'
       - 'tools/build-plugin-assets.sh'
-      - 'tools/build-node-pty.sh'
-      - 'tools/build-extra-native.sh'
-      - 'tools/build-node-addon-system.sh'
       - 'tools/build-webview_compat.py'
-      - 'tools/build-node-addon-require-builtin.sh'
   pull_request:
     branches: [main]
   workflow_dispatch:
