@@ -16,6 +16,22 @@
 | 宿主 | **只有 PRoot 一条**（`ProotHost`），无枚举、无 bionic 回落 | P2 |
 | 运行时前缀 | guest 内 `/usr`；宿主 `files/` 下不得出现 `usr` / `termux` / `proot-libs` | P3（`purgeLegacy` + 启动 `sweepStale`） |
 
+**targetSdk 35 的 edge-to-edge（别再用资源高度硬推）**
+API 35 起系统强制 `decorFitsSystemWindows=false`，且 `statusBarColor` /
+`navigationBarColor` 的赋值被忽略。做法：
+
+```text
+WindowCompat.setDecorFitsSystemWindows(window, false)
+ViewCompat.setOnApplyWindowInsetsListener(binding.root) { … systemBars()/ime() … }
+applyContentInsets()   // padding 加到 webContainer：全面屏 0，否则真实 inset
+```
+
+⚠️ 让位值必须取 `WindowInsets` 的**实际高度**：vc19「顶栏整行下移」就是把
+`status_bar_height` 资源（物理像素）当 CSS 像素推给页面（36 变 108）。
+`statusBarHeightPx()` 现在首选 `insetTopPx`。
+⚠️ 系统栏区域的颜色现在由 **window 背景**提供（`applyPageBackground` 的
+`setBackgroundDrawable`），不再是 `window.statusBarColor`。
+
 **⚠️ `HOME` 有三处来源，`launch.argv` 里那条最容易被忘**：
 `runtime/manifest.json` 的 `launch.argv` 是 `/usr/bin/env -i HOME=/root …`，
 `env -i` 之后逐条 `KEY=VALUE` 是**后者覆盖前者** —— 所以 `ProotHost` 的 `{GUEST_ENV}`
