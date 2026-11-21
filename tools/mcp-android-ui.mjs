@@ -45,7 +45,7 @@ const PROBE_SRC = readFileSync(join(HERE, '..', 'app', 'src', 'main', 'assets', 
 const PROBE_VERSION = Number((PROBE_SRC.match(/var\s+VERSION\s*=\s*(\d+)/) || [])[1] ?? 0);
 
 const PORT = Number(process.env.ANDROID_UI_PORT ?? 19222);
-const APP_ID = process.env.ANDROID_UI_APP ?? 'io.github.ccch1mneyyy.dsh';
+const APP_ID = process.env.ANDROID_UI_APP ?? 'com.dsh.android';
 const DEVICE_ENV = process.env.ANDROID_UI_DEVICE ?? '';
 
 // ════════════════════════════════════════════════════════════════════════
