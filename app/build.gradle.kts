@@ -14,12 +14,12 @@ val keystoreProps = Properties().apply {
 }
 
 android {
-    // ⚠️ 必须是恰好 15 字符，且与 TermuxBootstrap.ELF_ROOT_REPLACEMENT 完全一致。
-    // 原因：Termux 官方二进制把 "/data/data/com.termux/files"（27 字节）烤进 ELF 的
-    // .dynstr，而 patchElfInPlace() 只能做等长原地覆盖，替换串形如
-    // "/data/data/<包名>/" = 12 + N 字节，等于 27 ⇒ N = 15。
-    // 改错不会编译报错，只会在真机上以「dpkg Permission denied」的形式炸掉。
-    // 改完请跑 termux-kit 的 tools/verify-kit.ps1 校验。
+    // 包名长度**不再是约束**（P1/P2 之后运行期不做任何 ELF 前缀重写）。
+    // 历史成因：旧 bionic 路线要把 Termux 二进制 .dynstr 里的 "/data/data/com.termux/files"
+    // 做等长原地覆盖，才要求 12 + N = 27 ⇒ N = 15；那条路（含 patchElfInPlace）已删除。
+    // 现在 libproot.so 里的 com.termux 只是默认值，被 PROOT_LOADER / PROOT_TMP_DIR /
+    // LD_LIBRARY_PATH 三个环境变量全覆盖，改包名只会影响新的安装（数据不继承）。
+    // 详见 docs/plan/refactor-single-host-purge.md。
     namespace = "com.dsh.android"
     compileSdk = 35
 
@@ -29,12 +29,12 @@ android {
     defaultConfig {
         applicationId = "com.dsh.android"
         minSdk = 26
-        // 🔴 必须是 28，不能升到 29+。Android 10（API 29）起，targetSdk ≥ 29 的
-        // 应用不允许 execve() 自身私有目录里的文件（W^X 限制，SELinux
-        // untrusted_app 域的 app_data_file 禁止 execute_no_trans）。而 Termux 的
-        // 全部包（node / bash / dpkg / python）都装在 filesDir 下的 $PREFIX 里，
-        // 一升到 29 就会全线 Permission denied。Termux 官方 App 同样停在 28。
-        targetSdk = 28
+        // targetSdk：API 29 起 `app_data_file` 禁止 `execute_no_trans`，但本 App 的
+        // 内核 exec 面只剩 `nativeLibraryDir/*.so`（该限制的官方例外）；rootfs 内的
+        // node / bash / dsh 全部经 proot loader mmap，不经过内核 execve。
+        // P5 起逐档抬（29 → 30 → 34），每档都要过：首启解包 / ·/sdcard 工作区可写 /
+        // 悬浮球 + 无障碍 / 切后台 10 min 不断连。当前档位见下方值。
+        targetSdk = 29
         versionCode = 59
         // 后缀语义：`credperm` = 凭据文件权限修复（0.2.9 首发）；
         // `tooliso` = 工具插件注册失败的隔离（可选工具注册失败不再拖垮引擎启动）；
