@@ -9,19 +9,21 @@
 ## 这是什么
 
 DSH for Android 把 [DSH](https://github.com/deepseek-ai)（DeepSeek Harness）桌面端引擎
-原样搬进手机：内置 Termux 环境跑一个 Node，在 Node 上跑 DSH 引擎，再用 WebView
-加载 DSH 自带的 Web GUI。
+原样搬进手机：内置一个 **PRoot + glibc 单运行时**（rootfs 自带 `/usr/bin/node`），
+Node 上跑 `@deepseek-ai/dsh` 引擎，再由 WebView 加载 DSH 自带的 Web GUI。
+
+**不再依赖 Termux**：`0.3.0` 起重构为「单宿主 PRoot」，运行期零 Termux 依赖。
 
 **它不自绘聊天界面。** UI 完全复用官方前端，只在窄屏下由内置插件做移动端适配 ——
 所以你得到的不是「手机版阉割界面」，而是**与桌面端同一个前端**，只是能装进口袋。
 
 ```
 APK
- ├─ Termux bootstrap        bash / dpkg / apt + 64 个 .so
- ├─ Node 运行时              Termux 官方 arm64 node 26.4.0
- ├─ DSH 引擎                 node_modules，完整解包到私有目录
- ├─ 原生插件（自编译）        require-builtin / flock / node-pty
- ├─ Web 内核（gecko 版）      GeckoView，不依赖系统 WebView
+APK
+ ├─ jniLibs 四件套          libproot.so / libproot-loader.so / libtalloc.so / libandroid-shmem.so
+ ├─ rootfs（arm64-v8a）      ubuntu 24.04 + glibc：/usr/bin/node + 引擎 /opt/dsh
+ ├─ 运行时资产               assets/runtime/{manifest.json, rootfs-arm64-v8a.tar.xz}
+ ├─ 原生层（可选 LD_PRELOAD） linkcompat / boosandbox（bash 工具沙箱）
  └─ 内置插件                 移动端适配 / 悬浮球 / UI 调试 / 日志 / 记忆 …
 ```
 
@@ -29,8 +31,8 @@ APK
 
 - **完整的 Agent 能力** —— `bash`、文件读写、`grep`/`glob`、终端 PTY 全部可用，
   不是只读聊天框。
-- **双 Web 内核** —— `system` 版用设备自带 WebView（小），`gecko` 版内置 GeckoView
-  （大一倍，但老设备、系统 WebView 被裁的设备也能用）。**两个包可同装一台机器。**
+- **单 Web 内核（system）** —— 主发行线自 `0.3.x` 起只出 `system` 包（用设备自带 WebView）。
+  `gecko` 变体（内置 GeckoView）最后一版是 `v0.4.2`，之后不再随包发布。
 - **移动端 UI 适配** —— 官方前端 + 窄屏适配插件，不是另写一套界面。
 - **悬浮球** —— 随时唤起，支持自定义外观、帧动画、视频图层。
 - **UI 调试工具** —— 让模型自己看屏幕、点按钮，实现端到端自测。
@@ -54,13 +56,13 @@ APK
 
 | 包 | applicationId | 适用 |
 |---|---|---|
-| `DSH<版本>.apk` | `com.dsh.android` | 绝大多数设备，体积小 |
-| `DSH<版本>-gecko.apk` | `com.dsh.webview` | 老设备 / 系统 WebView 不可用时 |
+| `DSH<版本>.apk` | `com.dsh.android` | 当前主发行线（`0.3.x` 起只出这个） |
+| `dsh-android-0.4.2-gecko-arm64.apk` | `com.dsh.android.webview` | 历史 gecko 变体（停于 `v0.4.2`） |
 
-两个包 **applicationId 不同，可以同时安装**，数据目录互相独立。
+gecko 变体的 `applicationId` 与 system 版不同，**两者可以同时安装**，数据目录互相独立。
 
-> ⚠️ **仅支持 arm64-v8a，且 targetSdk = 28。** 这是硬约束，不是疏忽 ——
-> 见下方[两条硬约束](#两条硬约束)。
+> ⚠️ **仅支持 arm64-v8a**（`minSdk 26` / `targetSdk 35`）。
+> 历史上「包名 15 字符」「targetSdk ≤ 28」两条硬约束**均已解除**，见下方[已解除的历史约束](#已解除的历史约束)。
 
 ### 从源码构建
 
@@ -76,52 +78,33 @@ $env:JAVA_HOME = "<你的 JDK 17 路径>"   # 必须显式设置
 
 **环境**：JDK 17 · AGP 8.8.2 · Kotlin 2.0.21 · Gradle 8.13 · compileSdk 35 · minSdk 26
 
-### ⚠️ 构建资产需要自备
+### ⚠️ 运行时资产不在仓库里
 
-`app/src/main/assets/` 下约 **135 MB** 的构建资产**不在本仓库**（`.gitignore` 排除，
-避免仓库臃肿）。**没有它们构建不出可用的 APK。**
+单运行时化之后，构建只依赖两类运行时资产，它们**都不入库**：
 
-| 资产 | 大小 | 来源 |
+| 资产 | 来源 | 说明 |
 |---|---|---|
-| `engine.bin` | 55 MB | DSH 引擎 `node_modules` 打包 |
-| `node-runtime.bin` | 30 MB | Termux 官方 arm64 node |
-| `bootstrap-aarch64.zip` | 23 MB | Termux bootstrap |
-| `webview-compat.zip` | 9.3 MB | 按 chrome73 降级编译的前端 bundle |
-| `pnpm-android-arm64.zip` | 5.6 MB | pnpm 11.28.3 纯 JS 版 |
-| `adb-wireless-arm64.zip` | 5.3 MB | Termux 官方 adb |
-| `sharp-wasm32.zip` | 3.5 MB | sharp 的 wasm32 变体 |
-| `ripgrep-android-arm64.zip` | 2.0 MB | 官方 linux-arm64 静态 rg |
-| 其余 24 个 | < 1 MB | 自编译 native 绑定 / 内置插件 zip |
+| `assets/runtime/rootfs-arm64-v8a.tar.xz` + `manifest.json` | CI 的 `runtime` job（`tools/runtime/build-runtime.sh`） | ubuntu 24.04 + node + `/opt/dsh`，**解包约 1.3 GB** |
+| `jniLibs/arm64-v8a/*.so`（四件套） | 同上 | `libproot.so` / `libproot-loader.so` / `libtalloc.so` / `libandroid-shmem.so` |
 
-**每个资产的来源、生成方式与校验方法**见
-[docs/agents/regen-assets.md](docs/agents/regen-assets.md)。
-其中 `keyinject.bin`（内置号池）是**可选的** —— 没有它 App 照常运行，只是不内置 API 账号。
+CI 里由 `apk.yml` 的 `runtime` job 构建后自动铺到 `app/src/main/{assets/runtime,jniLibs}`；
+本地要出包就先跑一次 `bash tools/runtime/build-runtime.sh`（需要 binfmt / proot 环境）。
 
-## 两条硬约束
+生成方式与校验见 [docs/agents/regen-assets.md](docs/agents/regen-assets.md)。
+旧的 Termux 时代资产（`engine.bin` / `node-runtime.bin` / `bootstrap-aarch64.zip` 等）**已全部删除**。
 
-这两条是**平台事实**，不是可以「优化掉」的设计。改动前必读。
+## 已解除的历史约束（勿再照旧规则改）
 
-### ① 包名必须恰好 15 字符
+这两条曾经是平台事实，`0.3.0` 的单宿主 PRoot 重构已把它们**全部解除**。
+保留这段只为防止有人照旧文改回去。
 
-`applicationId` = `com.dsh.android`（15 字符）。
+| 旧约束 | 曾经为什么成立 | 现在为什么不成立 |
+|---|---|---|
+| ① 包名必须恰好 15 字符 | `TermuxBootstrap.patchElfInPlace()` 对 ELF `.dynstr` 做**等长原地覆盖**，`/data/data/<包名>/` 必须等于 27 字节 ⇒ N = 15 | **该函数与 `TermuxBootstrap` 已从源码树删除**。可执行体改由 jniLibs 承载，rootfs 内 ELF 由 proot loader `mmap`，运行期不再重写任何 ELF 前缀 ⇒ `applicationId` 可任意取 |
+| ② targetSdk 必须 ≤ 28 | API 29 起禁止 `execve()` 应用私有目录里的文件（W^X / SELinux `untrusted_app`） | 内核 `execve` 面只剩 `nativeLibraryDir/*.so`（API 29 `execute_no_trans` 的官方例外）。当前 **`targetSdk = 35`**，29 → 30 → 34 → 35 各档均有真机数据 |
 
-Termux 官方二进制把 `/data/data/com.termux/files`（27 字节）烤进 ELF 的 `.dynstr`，
-而 `TermuxBootstrap.patchElfInPlace()` 只能做**等长原地覆盖**。替换串
-`/data/data/<包名>/` = 12 + N 字节 = 27 ⇒ **N = 15**。
-
-长度不等时该函数**静默 `return 0`**，不抛异常；症状是运行时
-`CANNOT LINK EXECUTABLE` 或 `dpkg: Permission denied`。
-
-### ② targetSdk 必须 ≤ 28
-
-**不能升到 29+。** Android 10（API 29）起，targetSdk ≥ 29 的应用不允许 `execve()`
-自身私有目录里的文件（W^X / SELinux `untrusted_app` 域禁止 `app_data_file`
-`execute_no_trans`）。
-
-而 node / bash / dpkg 全都装在 `filesDir` 下的 `$PREFIX` 里 —— 一升级就全线
-`Permission denied`。Termux 官方 App 同样停在 28。
-
-**代价**：只能侧载，无法上架 Google Play。
+**现在唯一的硬约束是 `arm64-v8a`**（运行时 rootfs 只构建这一个 ABI）。
+「只能侧载」仍然成立，但原因是自签分发，与 targetSdk 无关。
 
 ## 架构
 
@@ -140,7 +123,7 @@ MainActivity (WebView / GeckoView)
       └─ tool: ui/bubble → 原生桥（文件信箱）
       │
       ▼
-  $PREFIX（Termux 环境，filesDir 下）
+  PRoot rootfs（filesDir/runtime/rootfs：glibc + /usr/bin/node + /opt/dsh）
 ```
 
 ### 为什么需要这么多 native 层
@@ -155,19 +138,18 @@ Android 的 `process.platform` 是 `'android'` 而非 `'linux'`，而 DSH 官方
 |---|---|---|
 | `liblinkcompat.so` | SELinux 不给 `link()` 权限（`EACCES`/`EINVAL`） | [link-compat.md](docs/agents/link-compat.md) |
 | `boo-sandbox-run` + `libboosandbox.so` | Android 没有 bwrap/Landlock，但 `bash` 工具要求沙箱 | [sandbox.md](docs/agents/sandbox.md) |
-| `libkeyinject.so` | 内置 API 号池，密钥在 TLS 层替换，不落盘不进 JS | [key-pool.md](docs/agents/key-pool.md) |
 
 ## 目录结构
 
 ```
 app/src/main/java/com/dsh/android/     原生宿主（Kotlin）
 app/src/main/jni/                      native 层（C，LD_PRELOAD）
-app/src/main/assets/                   构建资产（⚠️ 不在仓库，见上）
-app/src/system/ · app/src/gecko/       两个 Web 内核的 flavor 源集
+app/src/main/assets/                   运行时资产（⚠️ 不入库，runtime job 自动铺）
+app/src/system/ · app/src/gecko/       两个 Web 内核的 flavor 源集（gecko 已停发）
 mobile-ui-plugin/                      内置插件源码（TypeScript/JS）
 remote-plugin/                         配对服务端 + 端到端测试
 tools/                                 构建与校验脚本
-docs/agents/                           开发文档（35 篇，按需检索）
+docs/agents/                           开发文档（60 篇，按需检索）
 ```
 
 ## 文档
@@ -189,16 +171,16 @@ docs/agents/                           开发文档（35 篇，按需检索）
 - **沙箱不隔离 PID 命名空间** —— `--unshare-pid` 需要 CAP_SYS_ADMIN，普通应用拿不到。
   文件写边界是完整的。
 - **仅 arm64-v8a** —— 没有 arm32 / x86 构建。
-- **只能侧载** —— targetSdk 28，上不了 Google Play（见硬约束②）。
-- **APK 较大** —— system 版约 137 MB，gecko 版约 216 MB（引擎与内核随包分发）。
-- **首次启动较慢** —— 要解包 Termux 环境与引擎，视设备约 10–60 秒。
+- **只能侧载** —— 自签分发（targetSdk 35，与上架无关，当前不上架）。
+- **APK 较大** —— 约 195 MB（rootfs + 引擎 + node 随包分发）。
+- **首次启动较慢** —— 要解包约 1.3 GB 的 rootfs，本机实测约 110 秒（之后冷启约 66 秒到 `engine.ready`）。
 
 完整清单见 [boundaries.md](docs/agents/boundaries.md)。
 
 ## 参与贡献
 
 欢迎 Issue 与 PR。动手前请读 [CONTRIBUTING.md](CONTRIBUTING.md) ——
-本项目有两条**改错不报错但真机必炸**的硬约束，以及「改了资产必须同步改版本戳」
+它记录了曾经的**两条硬约束**（现已解除，见上）与「改了资产必须同步改版本戳」
 这类静默失败陷阱。
 
 ## 致谢
@@ -206,8 +188,8 @@ docs/agents/                           开发文档（35 篇，按需检索）
 本项目站在这些项目的肩膀上：
 
 - [DSH / DeepSeek Harness](https://github.com/deepseek-ai) —— 引擎与 Web 前端
-- [Termux](https://github.com/termux) —— bootstrap、node、adb 运行时
-- [Mozilla GeckoView](https://wiki.mozilla.org/Mobile/GeckoView) —— 内置 Web 内核
+- [Termux](https://github.com/termux) —— **历史来源**：`0.3.0` 之前的 bootstrap / node / adb 二进制（现已全部移除）
+- [Mozilla GeckoView](https://wiki.mozilla.org/Mobile/GeckoView) —— 内置 Web 内核（gecko 变体停于 `v0.4.2`）
 - [DSHAPP](https://github.com/pht88888888/DSHAPP) —— 移动端集成与登录流程参考
 - [ripgrep](https://github.com/BurntSushi/ripgrep) · [sharp](https://github.com/lovell/sharp)
   · [pnpm](https://github.com/pnpm/pnpm) · [Shizuku](https://github.com/RikkaApps/Shizuku)

@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 # ci-fetch-assets.sh —— 给 CI 铺构建资产（幂等；没有 Release 也照样返回 0）
 #
-# 为什么资产不入库：engine.bin(96 MB) + node-runtime.bin + 十来个原生 zip 约 135 MB，
+# ⚠️ 已停用（0.3.0 起）：单运行时化之后 bionic 资产（engine.bin / node-runtime.bin /
+# bootstrap-aarch64.zip 等）全部消失，运行时资产改由 tools/runtime/build-runtime.sh
+# 构建（CI 侧是 apk.yml 的 runtime job）。本脚本仅作历史参考保留，CI 不再调用。
+
+# 为什么资产不入库：rootfs-arm64-v8a.tar.xz（解包约 1.3 GB）+ proot 四件套，
 # 二进制大文件进 git 会让每次 clone 都变慢，而它们都能从 Release 或构建脚本复现。
 #
 # 用法（CI 里由 workflow 调用；本地也能跑）：

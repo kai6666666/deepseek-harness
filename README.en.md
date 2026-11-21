@@ -9,8 +9,12 @@
 ## What is this
 
 DSH for Android brings the [DSH](https://github.com/deepseek-ai) (DeepSeek Harness)
-desktop engine to your phone as-is: a bundled Termux environment runs Node, Node runs
-the DSH engine, and a WebView loads DSH's own web GUI.
+desktop engine to your phone as-is: a single **PRoot + glibc runtime** (the rootfs ships
+`/usr/bin/node`), Node runs the `@deepseek-ai/dsh` engine, and a WebView loads DSH own
+web GUI.
+
+**No Termux dependency** — since `0.3.0` this is a single-host PRoot build with zero
+Termux at runtime.
 
 **It does not draw its own chat UI.** The interface is the official frontend, with
 mobile adaptation handled by a bundled plugin. What you get is not a stripped-down
@@ -18,11 +22,11 @@ mobile adaptation handled by a bundled plugin. What you get is not a stripped-do
 
 ```
 APK
- ├─ Termux bootstrap        bash / dpkg / apt + 64 shared libraries
- ├─ Node runtime            Termux official arm64 node 26.4.0
- ├─ DSH engine              node_modules, unpacked into private storage
- ├─ Native addons           self-built require-builtin / flock / node-pty
- ├─ Web engine (gecko)      GeckoView, independent of system WebView
+APK
+ ├─ jniLibs (4)             libproot.so / libproot-loader.so / libtalloc.so / libandroid-shmem.so
+ ├─ rootfs (arm64-v8a)      ubuntu 24.04 + glibc: /usr/bin/node + engine at /opt/dsh
+ ├─ Runtime assets          assets/runtime/{manifest.json, rootfs-arm64-v8a.tar.xz}
+ ├─ Native layer (opt-in)   linkcompat / boosandbox (bash sandbox)
  └─ Bundled plugins         mobile adaptation / floating bubble / UI probe / logs …
 ```
 
@@ -30,9 +34,9 @@ APK
 
 - **Full agent capability** — `bash`, file read/write, `grep`/`glob`, and a terminal PTY
   all work. Not just a read-only chat box.
-- **Two web engines** — `system` uses the device WebView (smaller); `gecko` bundles
-  GeckoView (twice the size, but works on old devices or where system WebView is
-  stripped). **Both can be installed on the same device.**
+- **Single web engine (system)** — since `0.3.x` the main line ships the `system`
+  flavour only (device WebView). The `gecko` variant (bundled GeckoView) was last
+  shipped in `v0.4.2`.
 - **Mobile UI adaptation** — official frontend plus a narrow-screen plugin, not a rewrite.
 - **Floating bubble** — summon the agent anytime; custom appearance, frame animation,
   video layers.
@@ -60,14 +64,14 @@ The **gecko variant** (bundled GeckoView, for old/broken system WebView) was las
 
 | Package | applicationId | For |
 |---|---|---|
-| `DSH<version>.apk` | `com.dsh.android` | Most devices, smaller |
-| `DSH<version>-gecko.apk` | `com.dsh.webview` | Old devices / system WebView unavailable |
+| `DSH<version>.apk` | `com.dsh.android` | Current main line (`0.3.x`+ ships this only) |
+| `dsh-android-0.4.2-gecko-arm64.apk` | `com.dsh.android.webview` | Historical gecko variant (stopped at `v0.4.2`) |
 
-The two packages have **different applicationIds and can coexist**, each with its own
-independent data directory.
+The gecko variant has a **different applicationId** and can coexist with the system
+build, each with its own data directory.
 
-> ⚠️ **arm64-v8a only, and targetSdk = 28.** These are hard constraints, not oversights —
-> see [Two hard constraints](#two-hard-constraints).
+> ⚠️ **arm64-v8a only** (`minSdk 26` / `targetSdk 35`).
+> The old 15-character package-name and targetSdk ≤ 28 constraints are **both lifted** — see [Lifted historical constraints](#lifted-historical-constraints).
 
 ### Build from source
 
@@ -83,57 +87,34 @@ $env:JAVA_HOME = "<path to your JDK 17>"   # must be set explicitly
 
 **Toolchain**: JDK 17 · AGP 8.8.2 · Kotlin 2.0.21 · Gradle 8.13 · compileSdk 35 · minSdk 26
 
-### ⚠️ Build assets are not included
+### ⚠️ Runtime assets are not in the repository
 
-Roughly **135 MB** of build assets under `app/src/main/assets/` are **not in this
-repository** (excluded by `.gitignore` to keep it lean). **Without them you cannot
-produce a working APK.**
+After the single-runtime refactor only two kinds of runtime asset are needed, and
+**neither is committed**:
 
-| Asset | Size | Source |
+| Asset | Produced by | Notes |
 |---|---|---|
-| `engine.bin` | 55 MB | DSH engine `node_modules`, packed |
-| `node-runtime.bin` | 30 MB | Termux official arm64 node |
-| `bootstrap-aarch64.zip` | 23 MB | Termux bootstrap |
-| `webview-compat.zip` | 9.3 MB | Frontend bundle compiled down to chrome73 |
-| `pnpm-android-arm64.zip` | 5.6 MB | pnpm 11.28.3, pure-JS build |
-| `adb-wireless-arm64.zip` | 5.3 MB | Termux official adb |
-| `sharp-wasm32.zip` | 3.5 MB | sharp wasm32 variant |
-| `ripgrep-android-arm64.zip` | 2.0 MB | Official linux-arm64 static rg |
-| 24 others | < 1 MB | Self-built native bindings / bundled plugin zips |
+| `assets/runtime/rootfs-arm64-v8a.tar.xz` + `manifest.json` | the CI `runtime` job (`tools/runtime/build-runtime.sh`) | ubuntu 24.04 + node + `/opt/dsh`, **~1.3 GB unpacked** |
+| `jniLibs/arm64-v8a/*.so` (four) | same | `libproot.so` / `libproot-loader.so` / `libtalloc.so` / `libandroid-shmem.so` |
 
-**Each asset's origin, build recipe, and verification method** are documented in
-[docs/agents/regen-assets.md](docs/agents/regen-assets.md).
-`keyinject.bin` (the built-in API key pool) is **optional** — the app runs fine without
-it, it just has no built-in API account.
+In CI the `runtime` job of `apk.yml` copies them into `app/src/main/{assets/runtime,jniLibs}`.
+To build locally, run `bash tools/runtime/build-runtime.sh` once (needs binfmt / proot).
 
-## Two hard constraints
+Recipes and verification: [docs/agents/regen-assets.md](docs/agents/regen-assets.md).
+The old Termux-era assets (`engine.bin` / `node-runtime.bin` / `bootstrap-aarch64.zip` and friends) are **gone**.
 
-These are **platform facts**, not design choices that can be "optimized away."
-Read before changing anything.
+## Lifted historical constraints (do not code against the old rules)
 
-### ① The package name must be exactly 15 characters
+Both were real platform facts once. The `0.3.0` single-host PRoot refactor lifted
+**all of them**. This section stays only so nobody re-introduces them from old docs.
 
-`applicationId` = `com.dsh.android` (15 characters).
+| Old rule | Why it used to hold | Why it no longer does |
+|---|---|---|
+| ① package name must be exactly 15 chars | `TermuxBootstrap.patchElfInPlace()` did an **equal-length in-place overwrite** of ELF `.dynstr`; `/data/data/<pkg>/` had to be 27 bytes ⇒ N = 15 | **That function and `TermuxBootstrap` are deleted.** Executables ship as jniLibs and rootfs ELFs are `mmap`ed by the proot loader, so no ELF prefix is rewritten at runtime ⇒ `applicationId` is free |
+| ② targetSdk must be ≤ 28 | Since API 29, `execve()` on files inside the app private dir is denied (W^X / SELinux `untrusted_app`) | The kernel `execve` surface is only `nativeLibraryDir/*.so` (API 29 `execute_no_trans` exemption). **`targetSdk = 35`** today, verified on device at 29 → 30 → 34 → 35 |
 
-Termux's official binaries have `/data/data/com.termux/files` (27 bytes) baked into
-their ELF `.dynstr`, and `TermuxBootstrap.patchElfInPlace()` can only do an
-**in-place overwrite of equal length**. The replacement string
-`/data/data/<package>/` is 12 + N bytes = 27 ⇒ **N = 15**.
-
-If the length differs, that function **silently returns 0** without throwing; the
-symptom is a runtime `CANNOT LINK EXECUTABLE` or `dpkg: Permission denied`.
-
-### ② targetSdk must be ≤ 28
-
-**Do not raise it to 29+.** Starting with Android 10 (API 29), apps with
-targetSdk ≥ 29 are not allowed to `execve()` files inside their own private
-directory (W^X / the SELinux `untrusted_app` domain forbids `app_data_file`
-`execute_no_trans`).
-
-But node / bash / dpkg all live in `$PREFIX` under `filesDir` — raising it causes
-blanket `Permission denied`. Termux's own app also stays at 28.
-
-**The cost**: sideload only, cannot ship on Google Play.
+**The only hard constraint left is `arm64-v8a`** (the runtime rootfs is built for that ABI only).
+Sideload-only still holds, but because we self-sign — not because of targetSdk.
 
 ## Architecture
 
@@ -152,7 +133,7 @@ MainActivity (WebView / GeckoView)
       └─ tool: ui/bubble  → native bridge (file mailbox)
       │
       ▼
-  $PREFIX (Termux environment, under filesDir)
+  PRoot rootfs (filesDir/runtime/rootfs: glibc + /usr/bin/node + /opt/dsh)
 ```
 
 ### Why so many native layers
@@ -169,19 +150,18 @@ worked around at the libc boundary via `LD_PRELOAD`:
 |---|---|---|
 | `liblinkcompat.so` | SELinux denies `link()` (`EACCES`/`EINVAL`) | [link-compat.md](docs/agents/link-compat.md) |
 | `boo-sandbox-run` + `libboosandbox.so` | No bwrap/Landlock on Android, yet `bash` requires a sandbox | [sandbox.md](docs/agents/sandbox.md) |
-| `libkeyinject.so` | Built-in API key pool; keys swapped at the TLS layer, never on disk or in JS | [key-pool.md](docs/agents/key-pool.md) |
 
 ## Project layout
 
 ```
 app/src/main/java/com/dsh/android/     native host (Kotlin)
 app/src/main/jni/                      native layer (C, LD_PRELOAD)
-app/src/main/assets/                   build assets (⚠️ not in repo, see above)
-app/src/system/ · app/src/gecko/       per-flavor sources for the two web engines
+app/src/main/assets/                   runtime assets (⚠️ not in repo, filled by the runtime job)
+app/src/system/ · app/src/gecko/       per-flavor sources for the two web engines (gecko no longer shipped)
 mobile-ui-plugin/                      bundled plugin sources (TypeScript/JS)
 remote-plugin/                         pairing server + end-to-end tests
 tools/                                 build and verification scripts
-docs/agents/                           developer docs (35 articles, look up as needed)
+docs/agents/                           developer docs (60 articles, look up as needed)
 ```
 
 ## Documentation
@@ -206,28 +186,27 @@ docs/agents/                           developer docs (35 articles, look up as n
 - **The sandbox does not isolate the PID namespace** — `--unshare-pid` needs
   CAP_SYS_ADMIN, which ordinary apps cannot get. File write boundaries are complete.
 - **arm64-v8a only** — no arm32 or x86 builds.
-- **Sideload only** — targetSdk 28, cannot ship on Google Play (see constraint ②).
-- **Large APKs** — the system build is ~137 MB, the gecko build ~216 MB (engine and
-  web engine ship inside the package).
-- **Slow first launch** — the Termux environment and engine must be unpacked;
-  roughly 10–60 seconds depending on the device.
+- **Sideload only** — self-signed distribution (targetSdk 35; unrelated to store listing).
+- **Large APK** — ~195 MB (rootfs + engine + node ship inside the package).
+- **Slow first launch** — a ~1.3 GB rootfs is unpacked (~110 s on our test device);
+  cold start afterwards is ~66 s to `engine.ready`.
 
 Full list: [boundaries.md](docs/agents/boundaries.md).
 
 ## Contributing
 
 Issues and PRs are welcome. Before you start, read [CONTRIBUTING.md](CONTRIBUTING.md) —
-this project has two **"wrong but compiles, then explodes on a real device"** hard
-constraints, plus silent-failure traps such as "changing an asset requires bumping its
-version stamp."
+it records the two **former** "wrong but compiles, then explodes on a real device"
+constraints (now lifted, see above), plus silent-failure traps such as "changing an
+asset requires bumping its version stamp."
 
 ## Acknowledgements
 
 This project stands on the shoulders of:
 
 - [DSH / DeepSeek Harness](https://github.com/deepseek-ai) — engine and web frontend
-- [Termux](https://github.com/termux) — bootstrap, node, and adb runtimes
-- [Mozilla GeckoView](https://wiki.mozilla.org/Mobile/GeckoView) — bundled web engine
+- [Termux](https://github.com/termux) — **historical source** of the pre-`0.3.0` bootstrap / node / adb binaries (all removed)
+- [Mozilla GeckoView](https://wiki.mozilla.org/Mobile/GeckoView) — bundled web engine (gecko variant stopped at `v0.4.2`)
 - [ripgrep](https://github.com/BurntSushi/ripgrep) · [sharp](https://github.com/lovell/sharp)
   · [pnpm](https://github.com/pnpm/pnpm) · [Shizuku](https://github.com/RikkaApps/Shizuku)
 
