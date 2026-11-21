@@ -42,7 +42,7 @@ android {
         //   应对见 MainActivity.enableEdgeToEdgeCompat()：真实 insets 加到
         //   `webContainer` 的 padding，系统栏区域的底色由 window 背景提供。
         targetSdk = 35
-        versionCode = 80
+        versionCode = 81
         // 后缀语义：`credperm` = 凭据文件权限修复（0.2.9 首发）；
         // `tooliso` = 工具插件注册失败的隔离（可选工具注册失败不再拖垮引擎启动）；
         // `rescue` = 坏插件不再让 App 打不开（四级降级阶梯 + AI 自助修复通道）。
@@ -279,7 +279,7 @@ android {
         //    升级路径 0.4.3/0.4.4 → 0.5.0：`$DSH_HOME`、workspace、logs 原地保留（S6 已验，
         //    数据 0 丢失），旧 `engine/`、`usr/`、`termux/usr` 首次健康启动后改名进
         //    `runtime/legacy-bionic/`（改名不删）。
-        versionName = "0.3.3"
+        versionName = "0.3.4"
         // 只支持 arm64-v8a：内置的引擎资产与 Termux bootstrap 都是 arm64 架构
         ndk {
             abiFilters += targetAbi
