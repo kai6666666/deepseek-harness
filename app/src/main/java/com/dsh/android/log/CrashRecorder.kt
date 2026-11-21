@@ -309,7 +309,7 @@ object CrashRecorder {
      * 记录**主线程卡死**（ANR 形态）。
      *
      * ⚠️ 拿不到系统 ANR 的完整堆栈（`ApplicationExitInfo` 需 API 30，本工程
-     * `targetSdk = 28`），所以这里记的是「主线程超过 N 秒没响应」这个**事实**，
+     * `targetSdk = 35`，ANR 判定与 targetSdk 无关），所以这里记的是「主线程超过 N 秒没响应」这个**事实**，
      * 外加**自建 watchdog 抓的一次快照**（主线程 Java 栈 + Looper 消息队列，
      * 见 [mainThreadStack]）。不要伪造成「系统 ANR 堆栈」—— 那是编造证据；
      * 快照里每一段都如实标注了它是谁抓的、以及抓不到时意味着什么。
