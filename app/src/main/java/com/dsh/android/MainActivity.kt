@@ -29,7 +29,9 @@ import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.lifecycleScope
 import com.dsh.android.backup.BackupDialog
@@ -874,6 +876,7 @@ class MainActivity : AppCompatActivity() {
         // 同上：AI 可能在 App 刚起、还没走到 onResume 时下发系统栏配色，
         // 不提前登记窗口宿主的话这一轮就只能落盘、看不到效果。
         SystemBarAppearance.attach(this)
+        enableEdgeToEdgeCompat()
         observeEngine()
         observeImeInsets()   // 修复 65：键盘高度自学习 + 预判交接
         // 前台服务要在引擎启动前拉起：它同时是「进程不被回收」和 WakeLock 的持有者，
@@ -2593,6 +2596,8 @@ class MainActivity : AppCompatActivity() {
         window.attributes = lp
         // 页面要让位才知道该留多少 —— 两个方向都推一次（关掉时推 0，页面恢复原样）。
         pushSystemBarInset(config.fullscreen)
+        // 容器让位与页面变量必须同步改：只改一边会得到「双份留白」或「压住内容」。
+        applyContentInsets()
     }
 
     /**
@@ -2677,11 +2682,65 @@ class MainActivity : AppCompatActivity() {
      *   系统资源是静态的，两种状态下取值一致。
      */
     private fun statusBarHeightPx(): Int {
+        // 首选运行期真实值（edge-to-edge 下由 WindowInsets 提供，含挖孔/手势区差异）
+        if (insetTopPx > 0) return insetTopPx
         val id = resources.getIdentifier("status_bar_height", "dimen", "android")
         val fromRes = if (id > 0) resources.getDimensionPixelSize(id) else 0
         if (fromRes > 0) return fromRes
         // 兜底：按密度折算 24dp（AOSP 默认值），至少不让页面完全不让位
         return (24 * resources.displayMetrics.density).toInt()
+    }
+
+    // ── Edge-to-edge（targetSdk 35 起系统强制）────────────────────────────
+    //
+    // API 35 上：`decorFitsSystemWindows` 被强制为 false，`statusBarColor` /
+    // `navigationBarColor` 的赋值**被忽略**。也就是说「内容自动避开系统栏」
+    // 这件事没有了 —— 页面会直接铺到时钟下面。所以必须自己做两件事：
+    //   ① 让位：把 **真实 insets** 加到 `webContainer` 的 padding 上；
+    //   ② 上色：系统栏区域的底色由 **window 背景** 提供（`applyPageBackground`
+    //      已经 `window.setBackgroundDrawable(color)`），因此看起来与改动前一致。
+    //
+    // ⚠️ 让位必须用 `WindowInsetsCompat` 的**实际值**，不能再像老代码那样读
+    //   `status_bar_height` 资源再 ÷ density —— 那条路在 vc19 出过「顶栏整行下移」
+    //   （把物理像素当 CSS 像素推给页面，36 变成 108）。
+    private var insetTopPx = 0
+    private var insetBottomPx = 0
+
+    /** 打开 edge-to-edge 并接管让位（必须在 `setContentView` 之后调用）。 */
+    private fun enableEdgeToEdgeCompat() {
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            // 系统默认会给手势条/导航栏加一层半透明 scrim，深色主题下会露出一条灰带
+            window.isStatusBarContrastEnforced = false
+            window.isNavigationBarContrastEnforced = false
+        }
+        ViewCompat.setOnApplyWindowInsetsListener(binding.root) { _, insets ->
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
+            // 键盘是 ime inset，不再靠 adjustResize（edge-to-edge 下它不生效）
+            insetTopPx = bars.top
+            insetBottomPx = maxOf(bars.bottom, ime.bottom)
+            applyContentInsets()
+            insets
+        }
+        binding.root.requestApplyInsets()
+        Log.i(DshApplication.TAG, "edge-to-edge 已启用（decorFitsSystemWindows=false）")
+    }
+
+    /**
+     * 把当前 insets 落到内容容器上。
+     *
+     * **全面屏时让位为 0**：那时内容本来就该铺到屏幕最顶/最底，
+     * 页面自己用 `--dsh-android-system-top` 留白（见 [pushSystemBarInset]）。
+     */
+    private fun applyContentInsets() {
+        val top = if (fullscreenApplied) 0 else insetTopPx
+        val bottom = if (fullscreenApplied) 0 else insetBottomPx
+        val v = binding.webContainer
+        if (v.paddingTop != top || v.paddingBottom != bottom) {
+            v.setPadding(v.paddingLeft, top, v.paddingRight, bottom)
+            Log.i(DshApplication.TAG, "内容让位：top=$top bottom=$bottom（fullscreen=$fullscreenApplied）")
+        }
     }
 
     /** 最近一次已应用到窗口的全面屏状态（见 [applyFullscreen] 的状态门）。 */
