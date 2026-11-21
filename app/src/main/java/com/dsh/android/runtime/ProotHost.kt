@@ -105,6 +105,12 @@ class ProotHost(
             when (val arg = raw) {
                 "/usr/bin/env" -> {
                     bind(dshHome); bind(workspace)
+                    // ⚠️ home 必须**整体**绑一次（canonical 路径）。
+                    //   只绑 dshHome(=home/.dsh) 与 files 的 **别名** 时，guest 里的
+                    //   `/data/data/<pkg>/files` 只是一个由 bind 目标路径凑出来的**骨架**，
+                    //   里面仅有 .dsh —— 目录选择器以 $HOME(=files/home) 为起点，看到的
+                    //   就是空列表（vc73 探针实测：只有 .dsh，三个入口链接全不可见）。
+                    bind(File(context.filesDir, "home"))
                     // ⚠️ 别名绑：guest 里同时提供 /data/user/0/<pkg>/files 这条路。
                     // 事实：assets 里的插件 overlay、以及 EngineManager 拼的很多路径用的是
                     // File.absolutePath（/data/user/0/...），而 proot 只按 canonicalPath
