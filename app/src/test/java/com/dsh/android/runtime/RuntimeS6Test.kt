@@ -101,17 +101,17 @@ class RuntimeS6Test {
             "logs/a", "termux/home/custom", "home/.dsh/profiles/web/package.json")
         protectedPaths.forEach { file(root, it) }
         listOf("engine/a", "usr/a", "termux/usr/a").forEach { file(root, it) }
-        assertEquals(listOf("engine", "usr", "termux/usr"), RuntimeFiles.retireLegacy(root))
+        assertEquals(listOf("engine", "usr", "termux"), RuntimeFiles.purgeLegacy(root))
         protectedPaths.forEach { assertEquals(it, File(root, it).readText()) }
         assertFalse(File(root, "usr").exists())
-        assertEquals(3, File(root, "runtime/legacy-bionic").listFiles()!!.size)
-        assertTrue(RuntimeFiles.retireLegacy(root).isEmpty())
+        assertFalse(File(root, "runtime/legacy-bionic").exists())
+        assertTrue(RuntimeFiles.purgeLegacy(root).isEmpty())
     }
     @Test fun legacySymlinkIsMovedWithoutTraversingUserData() {
         val root = tmp.newFolder()
         val data = file(root, "home/.dsh/sessions/a", "still here")
         Files.createSymbolicLink(File(root, "usr").toPath(), data.parentFile.toPath())
-        assertEquals(listOf("usr"), RuntimeFiles.retireLegacy(root))
+        assertEquals(listOf("usr"), RuntimeFiles.purgeLegacy(root))
         assertEquals("still here", data.readText())
     }
     @Test fun rescueSharesWebEnvironmentAndQuotesPatches() {
