@@ -1,3 +1,27 @@
+## [0.3.0-refactor.12] — 2026-11-21
+vc=67
+
+### 变更（P4：解除包名限制，换 applicationId）
+- `applicationId`：`com.dsh.android` → **`io.github.ccch1mneyyy.dsh`**；gecko flavor → **`io.github.ccch1mneyyy.dsh.webview`**。
+- **`namespace` 保持 `com.dsh.android`**：它是源码包（R / BuildConfig 的包），与安装包名无关；
+  改它要搬几百个文件与全部 import，收益为零。
+- `UserDataImporter.KNOWN_PACKAGES`：加入两个新 id，**保留两个旧 id** —— 老备份仍能导进来。
+- 工具脚本默认包名同步：`apply-clickfix.sh`（可用 `PKG=` 覆盖）、`mcp-android-ui.mjs`、
+  `dsh-sessions.sh`、`mockrun.sh`、`build-uiagent-screens.mjs`；mock 夹具里的插件绝对路径也一并改。
+- 文档：`AGENTS.md` / `docs/agents/constraints.md` 的约束表新增包名一行。
+
+### 数据迁移（换名 = 新安装，不继承）
+1. 旧包（`com.dsh.android`）里：设置页 →「导出数据」，选会话/凭据/工作区，存到 `/sdcard/Download`
+2. 安装新包（`io.github.ccch1mneyyy.dsh`）—— **两个包可以同时装着**，不冲突
+3. 新包里：设置页 →「导入数据」，选刚才的归档；导入器会把归档里旧包名的绝对路径改写成新包名
+
+### 判据
+```text
+aapt/dumpsys: 新包 applicationId = io.github.ccch1mneyyy.dsh，namespace 仍是 com.dsh.android
+新包首启：解包 rootfs → 引擎起 → 首帧
+旧包仍在、数据未动（可随时回退）
+```
+
 ## [0.3.0-refactor.11] — 2026-11-21
 vc=66
 
