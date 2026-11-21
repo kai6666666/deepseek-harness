@@ -74,7 +74,9 @@ jobs:
           APK="${APKS[0]}"
           mkdir -p out
           "$BT/aapt" dump badging "$APK" | head -1 > out/package.txt
-          grep -F "name='com.dsh.android'" out/package.txt || exit 1
+          # P4 之后包名是 io.github.ccch1mneyyy.dsh（gecko 带 .webview 后缀）；
+          # 旧包名仍接受，便于给历史产物重签。
+          grep -Eq "name='(io\.github\.ccch1mneyyy\.dsh(\.webview)?|com\.dsh\.(android|webview))'" out/package.txt || exit 1
           # 版本号从产物实读：写死会在每次改版本时把签名卡死（v0.3.0-refactor.0 已踩过一次）。
           VC=$(sed -n "s/.*versionCode='\([0-9]*\)'.*/\1/p" out/package.txt)
           VN=$(sed -n "s/.*versionName='\([^']*\)'.*/\1/p" out/package.txt)
