@@ -115,11 +115,16 @@ object UserDataImporter {
      * 两个 flavor 的 `applicationId`。
      *
      * ⚠️ **必须写死这两个值，不能猜。** 它们由 `build.gradle.kts` 的 flavor
-     *   决定（system = `com.dsh.android`、gecko = `com.dsh.webview`），
+     *   决定（P4 起 system = `io.github.ccch1mneyyy.dsh`、gecko = `io.github.ccch1mneyyy.dsh.webview`），
      *   而本函数要在**导入另一个 flavor 的备份**时把路径改写成当前包名。
      *   写死的代价只是「以后新增 flavor 要同步这里」，比正则瞎猜安全得多。
      */
-    private val KNOWN_PACKAGES = listOf("com.dsh.android", "com.dsh.webview")
+    private val KNOWN_PACKAGES = listOf(
+        // P4 之后的新包名（system / gecko）
+        "io.github.ccch1mneyyy.dsh", "io.github.ccch1mneyyy.dsh.webview",
+        // P4 之前的历史包名 —— 老备份仍要能导进来
+        "com.dsh.android", "com.dsh.webview",
+    )
 
     /**
      * 把配置文本里**指向另一个 flavor 私有目录**的绝对路径改写成当前包名。
