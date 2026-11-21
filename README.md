@@ -41,15 +41,16 @@ APK
 
 ### 安装
 
-直接下载最新发行版（**v0.4.2**，system 内核，arm64-v8a）：
+直接下载最新发行版（**v0.2.2-rc.3**，system 内核，arm64-v8a）：
 
 | 包 | applicationId | 下载 |
 |---|---|---|
-| `dsh-android-0.4.2-arm64.apk` | `com.dsh.android` | [点击下载](https://github.com/kai6666666/deepseek-harness/releases/download/v0.4.2/dsh-android-0.4.2-arm64.apk) |
-| `dsh-android-0.4.2-gecko-arm64.apk` | `com.dsh.webview` | [点击下载](https://github.com/kai6666666/deepseek-harness/releases/download/v0.4.2/dsh-android-0.4.2-gecko-arm64.apk) |
+| `dsh-android-0.2.2-rc.3-arm64.apk` | `com.dsh.android` | [点击下载](https://github.com/kai6666666/deepseek-harness/releases/download/v0.2.2-rc.3/dsh-android-0.2.2-rc.3-arm64.apk) |
 
-其余版本与历史记录见 [Releases](https://github.com/kai6666666/deepseek-harness/releases/latest)。
-`gecko` 版内置 GeckoView，系统 WebView 太旧或不可用时用它；两个包可以同时安装。
+其余版本与历史记录见 [Releases](https://github.com/kai6666666/deepseek-harness/releases)。
+
+**gecko 变体**（内置 GeckoView，系统 WebView 太旧或不可用时用）最后一版是 `v0.4.2`：
+`dsh-android-0.4.2-gecko-arm64.apk`（`com.dsh.webview`），可与 system 版并存；`0.3.x` 起主发行线只出 system 包。
 
 | 包 | applicationId | 适用 |
 |---|---|---|
