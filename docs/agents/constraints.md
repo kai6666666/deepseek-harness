@@ -16,6 +16,14 @@
 | 宿主 | **只有 PRoot 一条**（`ProotHost`），无枚举、无 bionic 回落 | P2 |
 | 运行时前缀 | guest 内 `/usr`；宿主 `files/` 下不得出现 `usr` / `termux` / `proot-libs` | P3（`purgeLegacy` + 启动 `sweepStale`） |
 
+**⚠️ `HOME` 有三处来源，`launch.argv` 里那条最容易被忘**：
+`runtime/manifest.json` 的 `launch.argv` 是 `/usr/bin/env -i HOME=/root …`，
+`env -i` 之后逐条 `KEY=VALUE` 是**后者覆盖前者** —— 所以 `ProotHost` 的 `{GUEST_ENV}`
+里必须再写一次 `HOME=`（`DSH_HOME` 早就这么覆盖了，`HOME` 曾经漏了，导致引擎进程
+`$HOME=/root`，目录选择器打开空白）。
+另外客户端会把上次浏览路径记在 localStorage，老用户升级后仍会跳 `/root`，
+所以 `/root` 下也建同一组入口做兼容。
+
 **⚠️ `$HOME` 必须 = `filesDir/home`，且 `home` 必须整体 bind 一次**：
 只绑 `home/.dsh` + `files` 的**别名**时，guest 里的 `/data/data/<pkg>/files`
 只是 proot 凑出来的骨架目录（只有 `.dsh`），选择器打开就是空列表（vc73 探针实测）。
