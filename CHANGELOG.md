@@ -1,3 +1,30 @@
+## [0.3.0-refactor.14] — 2026-11-21
+vc=69
+
+### 数据迁移演练（真机，新包 `io.github.ccch1mneyyy.dsh`）
+流程：**导出 → `pm clear` 清数据 → 重新启动 → 导入 → 内容指纹核对**
+
+| 阶段 | 实测 |
+|---|---|
+| 导出 | 2 个会话 + profiles/storages/skills，共 18 条目 / 56.0 KB；落点 `Android/data/<包名>/files/Download/dsh-backup-20261121-133626.zip` |
+| 清数据 | `pm clear` Success；rootfs 与 `home/.dsh` 全清，重启后引擎自造 1 个新会话 `session-9aa04eb6…` |
+| 导入 | 选 `dsh-backup-drill.zip` → 「开始恢复」 |
+| 核对 | 会话目录恢复为 **`session-9bb9e914…` + `session-a97fddd5…`**（正是备份里那两个），`home/.dsh` 文件数回到 **89** |
+
+### 演练暴露的真问题（本版修复）
+`pm clear` 会**连 app 专属外部目录一起删**：第一次导出的两份 zip 在
+`Android/data/<包名>/files/Download/` 里，清数据后全没了。
+
+- `BackupDialog.exportResultText()`：当导出位置在 `Android/data/**` 或 `filesDir` 下时，Toast 追加
+  「⚠️ 卸载或清除数据会一起删掉；建议先复制到「下载」/ 发给自己；授予「所有文件访问」后会直接写公共下载目录」。
+- `docs/agents/constraints.md` 新增「数据备份位置」一节。
+
+### 判据
+```text
+导出到 app 专属目录 → Toast 含「卸载或清除数据会一起删掉」
+有全盘权限时 → 直接写公共 Download，无该提示
+```
+
 ## [0.3.0-refactor.13] — 2026-11-21
 vc=68
 
