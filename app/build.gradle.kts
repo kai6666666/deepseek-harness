@@ -32,9 +32,10 @@ android {
         // targetSdk：API 29 起 `app_data_file` 禁止 `execute_no_trans`，但本 App 的
         // 内核 exec 面只剩 `nativeLibraryDir/*.so`（该限制的官方例外）；rootfs 内的
         // node / bash / dsh 全部经 proot loader mmap，不经过内核 execve。
-        // P5 起逐档抬（29 → 30 → 34），每档都要过：首启解包 / ·/sdcard 工作区可写 /
-        // 悬浮球 + 无障碍 / 切后台 10 min 不断连。当前档位见下方值。
-        targetSdk = 30
+        // P5 已逐档抬到 34：29（legacy 存储）→ 30（MANAGE_EXTERNAL_STORAGE + /sdcard 回退）
+        // → 34（FGS 显式类型 + 包可见性）。每档都过了：首启解包 / /sdcard 可写 /
+        // 悬浮球 + 无障碍 / 切后台 10 min 不断连。
+        targetSdk = 34
         versionCode = 63
         // 后缀语义：`credperm` = 凭据文件权限修复（0.2.9 首发）；
         // `tooliso` = 工具插件注册失败的隔离（可选工具注册失败不再拖垮引擎启动）；
