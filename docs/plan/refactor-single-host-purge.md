@@ -241,6 +241,11 @@ files/usr/bin/bash    -> /data/app/~~…/lib/arm64/libbash.so
 | 旧包 | `versionName=0.3.0-refactor.11`，`files/home/.dsh` 2.2 MB、sessions 1 个 —— 原样未动 |
 | 导入兼容 | `UserDataImporter.KNOWN_PACKAGES` 同时含新 2 个 id 与旧 2 个 id ⇒ 老备份仍可导入 |
 
+**数据迁移演练（`refactor.14`，真机）**
+导出 → `pm clear` → 重启 → 导入 → 内容指纹核对：会话目录恢复为 `session-9bb9e914…` + `session-a97fddd5…`，
+`home/.dsh` 文件数回到 89。**演练暴露**：`pm clear` 会连 `Android/data/<包名>/files/Download/` 一起删，
+导出到该目录等于「清数据就没了备份」——已在 `exportResultText` 加告警文案，并在 `constraints.md` 记录。
+
 **P4 撞到的两个隐性依赖（改包名必查）**
 1. `namespace` 与 `applicationId` 是两件事：`namespace` 决定 `R`/`BuildConfig` 的包，改它会波及所有 `import com.dsh.android.R` —— 只改 `applicationId` 即可。
 2. `.github/workflows/sign-upgrade-apk.yml` 里有一条**硬断言** `name='com.dsh.android'`，换名后签名直接判红（本次已改为同时接受新旧 id）。
