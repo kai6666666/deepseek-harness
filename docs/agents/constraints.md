@@ -16,6 +16,11 @@
 | 宿主 | **只有 PRoot 一条**（`ProotHost`），无枚举、无 bionic 回落 | P2 |
 | 运行时前缀 | guest 内 `/usr`；宿主 `files/` 下不得出现 `usr` / `termux` / `proot-libs` | P3（`purgeLegacy` + 启动 `sweepStale`） |
 
+⚠️ 顶部让位必须取 `systemBars() or displayCutout()` 的并集：只取 `systemBars()`
+时挖孔机上状态栏高度可能小于安全区，标题会钻进孔里。
+键盘走 `ime()`；底边取 `max(navigationBars.bottom, ime.bottom)`，高度变化打一行
+`键盘弹出/收起` 日志（便于真机排障）。
+
 **targetSdk 35 的 edge-to-edge（别再用资源高度硬推）**
 API 35 起系统强制 `decorFitsSystemWindows=false`，且 `statusBarColor` /
 `navigationBarColor` 的赋值被忽略。做法：
