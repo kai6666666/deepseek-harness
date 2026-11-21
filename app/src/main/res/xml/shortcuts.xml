@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  桌面长按图标的快捷方式。
+
+  为什么要有：全面屏（SystemBarAppearance.fullscreen）此前**只能**由模型通过
+  `statusbar` 工具打开 —— 用户想自己切一下没有任何入口。这里给两个最常用的动作，
+  长按图标即可（也可用 adb：
+    am start -a com.dsh.android.action.FULLSCREEN -n <pkg>/.MainActivity --ez enable true
+  ）。
+-->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutId="fullscreen_on"
+        android:shortcutLongLabel="@string/sc_fullscreen_on"
+        android:shortcutShortLabel="@string/sc_fullscreen_on">
+        <intent
+            android:action="com.dsh.android.action.FULLSCREEN"
+            android:targetClass="com.dsh.android.MainActivity"
+            android:targetPackage="io.github.ccch1mneyyy.dsh">
+            <extra
+                android:name="enable"
+                android:value="true" />
+        </intent>
+    </shortcut>
+    <shortcut
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutId="fullscreen_off"
+        android:shortcutLongLabel="@string/sc_fullscreen_off"
+        android:shortcutShortLabel="@string/sc_fullscreen_off">
+        <intent
+            android:action="com.dsh.android.action.FULLSCREEN"
+            android:targetClass="com.dsh.android.MainActivity"
+            android:targetPackage="io.github.ccch1mneyyy.dsh">
+            <extra
+                android:name="enable"
+                android:value="false" />
+        </intent>
+    </shortcut>
+</shortcuts>
