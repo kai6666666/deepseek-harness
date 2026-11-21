@@ -8,7 +8,7 @@
   1. 31 项运行期资产都在 APK 里，且非空
   2. 「容器型」资产做深度断言：bootstrap 必须提供 node 的 soname、node-runtime 必须带 libcares
   3. AndroidManifest 存在，包名恰好 15 字符（Termux ELF 原地改写的硬约束）
-  4. targetSdk ≤ 28（Android 10+ 禁止 execve 应用私有目录）
+  4. targetSdk ≥ 29 时：jniLibs 四件套齐备、且无 assets/runtime/proot-libs（exec 面只在 nativeLibraryDir）
 
 第 2 组是补的上一课的：清单里少了 bootstrap-aarch64.zip，28/28 依然全绿，
 真机却是 `FileNotFoundException: bootstrap-aarch64.zip` + `libz.so.1 not found`。
@@ -172,12 +172,20 @@ def main() -> int:
             pkg = m.group(1)
             print(f"包名 {pkg}（{len(pkg)} 字符）minSdk={sdk.group(1) if sdk else '?'} "
                   f"targetSdk={target.group(1) if target else '?'}")
-            if len(pkg) != 15:
-                errors.append(f"applicationId 必须恰好 15 字符（现 {len(pkg)}：{pkg}）")
+            # 包名长度不再是约束（P1/P2 之后运行期不做 ELF 前缀重写）；
+            # 这里只打印出来，方便对照 release 资产名与用户的 run-as 命令。
+            print(f"applicationId 长度 {len(pkg)}（已无 15 字符约束）")
         else:
             errors.append("aapt2 读不出 package 名")
-        if target and int(target.group(1)) > 28:
-            errors.append(f"targetSdk={target.group(1)} > 28（Android 10+ 禁止 execve 私有目录）")
+        # P5：targetSdk 可以 ≥ 29 了，但必须证明「内核 exec 面只在 nativeLibraryDir」：
+        # 四件套齐备、且不再有 assets 侧的 proot-libs（旧模型靠它 + LD_LIBRARY_PATH）。
+        if target and int(target.group(1)) >= 29:
+            jni_ok = all(f"lib/{abi}/{lib}" in names for lib in
+                         ("libproot.so", "libproot-loader.so", "libtalloc.so", "libandroid-shmem.so"))
+            if not jni_ok:
+                errors.append(f"targetSdk={target.group(1)} ≥ 29，但 jniLibs 四件套不全（exec 面必须在 nativeLibraryDir）")
+            if any(n.startswith("assets/runtime/proot-libs/") for n in names):
+                errors.append("targetSdk ≥ 29 时不应再有 assets/runtime/proot-libs（P1 已改为 jniLibs）")
     else:
         print("⚠️ 没找到 aapt2，跳过 manifest 数值断言")
 
