@@ -1,3 +1,27 @@
+## [0.3.0-refactor.9] — 2026-11-21
+vc=64
+
+### 变更（P5 第三档：targetSdk 30 → 34）
+- `targetSdk = 34`（P5 最后一档）。
+- `EngineService`：API 34+ 改用三参 `startForeground(..., FOREGROUND_SERVICE_TYPE_SPECIAL_USE)`，
+  与 manifest 的 `foregroundServiceType="specialUse"` + `PROPERTY_SPECIAL_USE_FGS_SUBTYPE` 对齐。
+- `AndroidManifest.xml`：新增 `<queries><package android:name="moe.shizuku.privileged.api"/></queries>`
+  —— targetSdk 30+ 的包可见性会让 `getPackageInfo` 抛 NameNotFound，Shizuku 特权通道会静默降级。
+- 检查结论（本档无需改动）：`PendingIntent` 已全部带 `FLAG_IMMUTABLE`（AdbPairing 的可变那条带 `FLAG_MUTABLE`）；
+  所有组件 `android:exported` 都已显式声明；全仓无 `registerReceiver`（34 的 receiver 导出标志要求不触发）。
+
+### 判据
+```text
+装机 targetSdk=34
+引擎起（token + 首帧）；前台服务通知在
+Shizuku 桥仍就绪（log：Shizuku 桥已就绪）
+无 EACCES / avc: denied / MissingForegroundServiceType
+```
+
+### 已知
+- 35（edge-to-edge 强制）**没做**：`SystemBarAppearance` 有 vc19 回归史，作为独立议题排期。
+- 下一步是 P4（包名）与 P6（收尾）。
+
 ## [0.3.0-refactor.8] — 2026-11-21
 vc=63
 
