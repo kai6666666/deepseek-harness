@@ -237,7 +237,7 @@ object EnvironmentSnapshot {
      *
      * 原先只做 `File("/proc/version").readText()`，`runCatching` 一兜底就返回 `""`。
      * 而 **Android 10（API 29）起 SELinux 把 `untrusted_app` 读 `/proc/version`
-     * 也拒了** —— 于是这个字段在 53 个诊断包里 **41 个是空串**，而它恰恰是硬约束②
+     * 也拒了** —— 于是这个字段在 53 个诊断包里 **41 个是空串**，而它恰恰是当年抬 targetSdk 的关键
      * （`execve` 能否用取决于内核 + SELinux）排查时要看的第一行。
      *
      * 真机证据（CDY-TN90 / Android 10 / `Enforcing`）。**最硬的一条是内核自己的
