@@ -7,7 +7,7 @@
 #      ./tools/verify-rc3-device.sh
 #    脚本保留仅作 0.4.x 现场复现的参考。
 # 用法：sh mockrun.sh <tool> '<json args>' [mockPatch.yml]
-R=/data/user/0/com.dsh.android/files
+R=/data/user/0/io.github.ccch1mneyyy.dsh/files
 N=$R/termux/usr/bin/node
 TOOL="$1"; ARGS="$2"; PATCH="${3:-mock4.patch.yml}"
 LOG=$R/home/mockrun.log
