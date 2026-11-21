@@ -28,7 +28,11 @@ android {
     defaultConfig {
         // P4：Android 包名（不是源码包）。换名 = 新安装，数据不继承 —— 迁移走
         // 设置页「导出数据 / 导入数据」（UserDataImporter 已把旧包名列入白名单）。
-        applicationId = "io.github.ccch1mneyyy.dsh"
+        // P22（0.4.0）：**决定回旧包名** —— 新包名 `io.github.ccch1mneyyy.dsh` 不再使用。
+        //   理由：老用户可无感升级（同包名 + 同签名即可覆盖），也不必再迁一次数据。
+        //   ⚠️ 覆盖安装的硬条件仍是「同包名 + 同签名」；历史包若不是本仓库证书签的，
+        //      装的时候仍会 UPDATE_INCOMPATIBLE，需先导出再卸载。
+        applicationId = "com.dsh.android"
         minSdk = 26
         // targetSdk：API 29 起 `app_data_file` 禁止 `execute_no_trans`，但本 App 的
         // 内核 exec 面只剩 `nativeLibraryDir/*.so`（该限制的官方例外）；rootfs 内的
@@ -313,7 +317,7 @@ android {
         }
         create("gecko") {
             dimension = "webengine"
-            applicationId = "io.github.ccch1mneyyy.dsh.webview"
+            applicationId = "com.dsh.android.webview"
             // 两个包会同时存在于设备上（applicationId 不同 ⇒ 可共存），
             // 版本号带后缀才能在系统「应用信息」里分辨出装的是哪一个。
             versionNameSuffix = "-gecko"
