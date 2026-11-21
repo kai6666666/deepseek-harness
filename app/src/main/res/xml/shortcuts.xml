@@ -2,11 +2,9 @@
 <!--
   桌面长按图标的快捷方式。
 
-  为什么要有：全面屏（SystemBarAppearance.fullscreen）此前**只能**由模型通过
-  `statusbar` 工具打开 —— 用户想自己切一下没有任何入口。这里给两个最常用的动作，
-  长按图标即可（也可用 adb：
-    am start -a com.dsh.android.action.FULLSCREEN -n <pkg>/.MainActivity --ez enable true
-  ）。
+  为什么要有：全面屏（SystemBarAppearance.fullscreen）此前只能由模型通过
+  statusbar 工具打开，用户想自己切一下没有任何入口。这里给两个最常用的动作，
+  长按图标即可（也可用 adb intent 触发，见 CHANGELOG 0.3.2 的命令示例）。
 -->
 <shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
     <shortcut
