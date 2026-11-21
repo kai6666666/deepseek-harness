@@ -1,6 +1,6 @@
 # 重构计划：单宿主 + 去 Termux + 解除包名/targetSdk 限制
 
-> 状态：**执行中** — P0 ✅ / P1 ✅ / P2 ✅ / P3 ✅ / **P5 全三档 ✅（29=`refactor.5` · 30=`refactor.8` · 34=`refactor.9`）**；剩余 P4 包名、P6 收尾
+> 状态：**执行中** — P0 ✅ / P1 ✅ / P2 ✅ / P3 ✅ / P5 全三档 ✅ / **P6 第一批 ✅（`refactor.10`）**；剩余 P6 第二批（bionic 构建脚本）、P4 包名
 > 基线：`main` @ `ff20f6024f`（引擎 `@deepseek-ai/dsh@0.2.2-rc.3`，App `0.2.2-rc.3` / vc54，mobile-ui `1.1.0-194`）
 > 目标版本：`0.3.0-refactor.N`（versionCode 从 55 起递增），发布到 prerelease `v0.3.0-refactor.N`
 > 最后更新：2026-11-20
@@ -315,6 +315,22 @@ guest 里就必然 `ENOENT`；表现还很误导——先是 `failed to read ove
 - 34 还要处理 FGS 类型与 edge-to-edge（`SystemBarAppearance` 有 vc19 回归史）。
 
 ---
+
+### P6 收尾与文档 — 第一批 ✅（v0.3.0-refactor.10）
+
+**已清（bionic 出包链）**
+- 删除 `.github/workflows/android-release.yml`（0.5.0 前的 bionic 出包链：现场造 `bootstrap-aarch64.zip` 并断言它在 APK 里）
+- 删除 `tools/build-bootstrap.sh`、`tools/bootstrap-required.txt`、`tools/build-node-runtime.sh`
+- 引用同步：`check-apk-assets.py`（去 bootstrap 深检）、`ci-fetch-assets.sh`（REQUIRED 去 bootstrap）、
+  `verify-ci.py`（默认工作流 → `apk`）、`apk.yml`（去 build-node-runtime 路径触发）、
+  `release-signing.md`（改现行三段式）、`ci-build.md`（node-runtime.bin 标注已删）、`build.gradle.kts`（注释）
+
+**判据实测（vc65）**：引擎 `dsh web http://127.0.0.1:44635` → `Web 内核已提交首帧`（11:39:22）；
+`tools/version.sh --check` → `VERSION PASS app=0.3.0-refactor.10 vc=65 engine=0.2.2-rc.3`。
+
+**第二批（未做）**：`build-engine-bin.sh` / `build-native-assets.sh` / `build-node-pty.sh` /
+`build-extra-native.sh` / `build-node-addon-*.sh` 与 `tools/version.sh` 耦合（version.sh 从这些脚本抓引擎版本串
+做一致性校验），删除必须同步改 `version.sh` 的 4 个取值点 + `ENG_*` 打印/断言表。
 
 ### P6 收尾与文档
 
