@@ -16,7 +16,7 @@
 #
 # 为什么不用 rm -rf：本机 shell 守卫会拦 "rm -rf"，改用 find -depth -delete，
 # 效果等价（自底向上删空目录），且不会误删项目根。
-R=${DSH_HOME_ROOT:-/data/user/0/com.dsh.android/files}
+R=${DSH_HOME_ROOT:-/data/user/0/io.github.ccch1mneyyy.dsh/files}
 SESS="$R/home/.dsh/sessions"
 CACHE="$R/home/.dsh/storages/session_projcache/sessions"
 WS="$R/home/.dsh/storages/workspace.json"
