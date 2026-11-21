@@ -100,7 +100,8 @@ object McpWiring {
         return bridge
     }
 
-    /** 直接发系统通知；targetSdk 28 下无需运行时通知权限。 */
+    /** 直接发系统通知。⚠️ targetSdk 33+ **需要** `POST_NOTIFICATIONS` 运行时授权
+     *  （本工程在 `UiStage.UiReady` 之后申请一次，见 MainActivity）。 */
     fun notify(context: Context, title: String, text: String): Map<String, Any?> {
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
