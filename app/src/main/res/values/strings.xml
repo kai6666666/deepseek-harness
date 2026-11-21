@@ -121,4 +121,6 @@
     -->
     <string name="bubble_a11y_label">DSH 键盘哨兵</string>
     <string name="bubble_a11y_desc">让后台运行的悬浮球知道输入法是否弹出、弹多高，从而自动避让键盘。只读取窗口位置与尺寸，不读取任何窗口内容、不记录按键或输入的文字。</string>
+    <string name="sc_fullscreen_on">全面屏：开</string>
+    <string name="sc_fullscreen_off">全面屏：关</string>
 </resources>
