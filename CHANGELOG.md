@@ -1,3 +1,32 @@
+## [0.3.0-refactor.3] — 2026-11-20
+vc=58
+
+### 变更（P3 · 运行时去 Termux）
+
+| 文件 | 改动 |
+|---|---|
+| `assets/dsh-env.mjs` | 删 `IS_PROOT` 双分支（13 处）、`termux/usr` 兜底、`$PREFIX` 候选；`PREFIX=/usr`、`HOME=/root` 固定；`DSH_FILES` 改为**必填**（缺失 `exit 2`），不再写死任何 applicationId |
+| 同上 | 删 `rewriteTermuxPaths` / `fixGradleLauncher` / `fixPrefixShims` 三个 Termux 专有修补 |
+| `assets/check-devenv.mjs` | 删 `files/termux/usr/bin/node` 兜底与写死包名；`NODE=/usr/local/bin/node` |
+| `assets/dsh-android-shell.mjs` | `runLocal` 候选表固定为 `/bin/bash` → `/usr/bin/bash` → `/system/bin/sh`，不再看 `$PREFIX`；错误文案不再打印 PREFIX |
+| `runtime/RuntimeFiles.kt` | `retireLegacy`（归档）→ `purgeLegacy`（**删除**）：`engine` / `usr` / `termux` / `proot-libs` / `runtime/legacy-bionic` |
+| 同上 | 新增 `sweepStale(runtimeDir)`：删 `rootfs.staging-*`、`rootfs.old-*` |
+| `runtime/RootfsInstaller.kt` | 安装前调用 `sweepStale` 并记日志 |
+| `EngineManager.kt` | 调用点改 `purgeLegacy`，事件名 `runtime.migration` → `runtime.purge` |
+| `app/src/test/.../RuntimeS6Test.kt` | 单测跟随删除语义 |
+| `tools/dsh-env.sh`、`tools/env-smoke.sh`、`tools/dsh-env.mjs`、`tools/check-devenv.mjs` | 删除（前两个 shebang/前缀指向 termux，后两个是 assets 的过期副本） |
+
+### 判据
+- `grep -rn "termux|Termux" app/src tools --include=*.mjs --include=*.sh` = 0
+- `grep -rn "IS_PROOT" app/src` = 0
+- 设备 `files/` 下无 `usr` / `termux` / `proot-libs`
+- 引擎照常起、`dsh-env.mjs status --json` 可用
+
+### 已知
+- Kotlin **文档注释**里仍有历史说明（`EngineManager` 顶部「为什么用 Termux 的 node 构建」等），P6 统一清扫
+- `docs/agents/dev-env.md` 等文档仍指向已删脚本，P6 同步
+- 无线调试的 `adb` 二进制保持不动：它在 **guest 内**由 runner spawn，走 proot loader，不占 API 29 的 exec 面（P5 再评估）
+
 ## [0.3.0-refactor.2] — 2026-11-20
 vc=57
 
