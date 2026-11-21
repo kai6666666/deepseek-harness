@@ -1,2 +1,2 @@
-versionName=0.4.1
-versionCode=84
+versionName=0.2.2-rc.3
+versionCode=85

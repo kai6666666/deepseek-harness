@@ -6,6 +6,15 @@
 - 设备侧清理：删除演练备份 `dsh-backup-drill.zip` 与 13 个历史 APK（约 2.4 GB）。
 
 **不发新版**：本批只有文档与文件清理。
+## [0.2.2-rc.3] — 2026-11-22
+vc=85
+### 重新发布（发布线重开）
+- **内容等于 `0.4.1`**（单宿主 PRoot / targetSdk 35 / 包名 `com.dsh.android` / 引擎 `@deepseek-ai/dsh@0.2.2-rc.3`），仅**改名重发**；
+- versionName **0.2.2-rc.3** / versionCode **85**；与 `0.4.1`（vc84）同签名，可覆盖安装；
+- 发布线收敛：Release 只保留 `v0.2.2-rc.1` / `v0.4.2` / `v0.4.3` / `v0.2.2-rc.3`，其余 26 个历史 Release 与 tag 已删除；
+- `v0.4.1` 已从 Release 下线，本机 `/sdcard/Download/dsh-rc3/upgrade/r041b.apk` 为唯一副本。
+### 已知
+- 历史 `0.2.2-rc.3`（vc54）已下线，同名 tag 重建指向本次提交（vc85）。
 
 ## [0.4.1] — 2026-11-22
 vc=84
@@ -746,7 +755,7 @@ vc=55
 - targetSdk 仍为 28、包名仍为 `com.dsh.android`（P4/P5 才改）。
 - 构建期仍从 Termux deb 取 proot/talloc/shmem（P3 只归零运行时依赖）。
 
-## [0.2.2-rc.3] — 2026-11-18
+## [0.2.2-rc.3]（vc54，已下线） — 2026-11-18
 vc=54
 ### 变更
 - 引擎 `@deepseek-ai/dsh` **0.2.2-rc.3**（正式版位，非 prerelease）。
