@@ -6803,7 +6803,24 @@ class EngineManager private constructor(private val context: Context) {
                 return
             }
         }
-        val health = host.health()
+        // ⚠️ 就绪检查必须**按窗口重试**，不能只探一次。
+        // 实测（vc66 冷启）：引擎已打印 token 行，紧接着的一次 GET 仍可能拿到 -1
+        // （PRoot 里 node 的 listen 刚建立、accept 队列还没就绪），单次探测就把整次启动判死。
+        // 现在在 HEALTH_WINDOW_MS 内每 HEALTH_INTERVAL_MS 探一次；进程一死立即停止重试。
+        val healthDeadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(HEALTH_WINDOW_MS)
+        var health = -1
+        var healthErr: String? = null
+        var healthAttempts = 0
+        while (true) {
+            healthAttempts++
+            val probe = host.healthProbe()
+            health = probe.first
+            healthErr = probe.second
+            if (health == manifest.unauthStatus) break
+            if (!host.isAlive()) break
+            if (System.nanoTime() >= healthDeadline) break
+            Thread.sleep(HEALTH_INTERVAL_MS)
+        }
         if (gateway == null && (health != manifest.unauthStatus || !host.isAlive())) {
             val code = host.exitCode()
             val failedTail = host.recentLines(MAX_LOG_LINES)
@@ -6811,7 +6828,12 @@ class EngineManager private constructor(private val context: Context) {
             synchronized(lifecycleLock) {
                 if (!currentStart(generation) || process !== proc) return
                 prootHost = null; process = null
-                failStart(generation, "引擎就绪检查失败：HTTP=$health", code, failedTail)
+                failStart(
+                    generation,
+                    "引擎就绪检查失败：HTTP=$health（试了 $healthAttempts 次 / ${HEALTH_WINDOW_MS}ms 窗口；最后错误：${healthErr ?: "无"}）",
+                    code,
+                    failedTail,
+                )
             }
             return
         }
@@ -7130,6 +7152,9 @@ class EngineManager private constructor(private val context: Context) {
         // 导致运行时按原名找不到。用中性后缀避免 AGP 的格式推断。
         private const val ASSET_NAME = "engine.bin"
         private const val READY_TIMEOUT_MS = 120_000L
+        /** 就绪检查的重试窗口：冷启时 PRoot 里的 listen 可能比 token 行晚几百毫秒才 accept。 */
+        private const val HEALTH_WINDOW_MS = 20_000L
+        private const val HEALTH_INTERVAL_MS = 400L
         private const val MAX_LOG_LINES = 400
 
         /**
