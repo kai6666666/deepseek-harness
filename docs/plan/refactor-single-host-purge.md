@@ -1,6 +1,6 @@
 # 重构计划：单宿主 + 去 Termux + 解除包名/targetSdk 限制
 
-> 状态：**全部阶段完成** — P0 ✅ / P1 ✅ / P2 ✅ / P3 ✅ / P5 29·30·34 ✅ / P6 两批 ✅ / **P4 包名 ✅（`refactor.12`）**；剩余为可选议题（35 edge-to-edge、冷启 `HTTP=-1` 偶发、历史文档清扫）
+> 状态：**已完成** — P0–P6 全部交付，定版 `0.3.0`（vc77）。衍生修复见 CHANGELOG。
 > 基线：`main` @ `ff20f6024f`（引擎 `@deepseek-ai/dsh@0.2.2-rc.3`，App `0.2.2-rc.3` / vc54，mobile-ui `1.1.0-194`）
 > 目标版本：`0.3.0-refactor.N`（versionCode 从 55 起递增），发布到 prerelease `v0.3.0-refactor.N`
 > 最后更新：2026-11-20
