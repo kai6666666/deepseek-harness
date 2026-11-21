@@ -37,6 +37,19 @@ applyContentInsets()   // padding 加到 webContainer：全面屏 0，否则真�
 ⚠️ 系统栏区域的颜色现在由 **window 背景**提供（`applyPageBackground` 的
 `setBackgroundDrawable`），不再是 `window.statusBarColor`。
 
+**包名（`applicationId`）可以回退，但要算清代价**
+`applicationId` 与 targetSdk、与「单运行时重构」**完全解耦** —— 换回去工程照样跑。
+真正的约束只有一条：**覆盖安装要求「同包名 + 同签名」**。
+
+| 场景 | 结果 |
+|---|---|
+| 旧包名 + 我方签名（与已装旧版不同） | `INSTALL_FAILED_UPDATE_INCOMPATIBLE` ⇒ 必须先卸载 ⇒ 旧数据全丢 |
+| 旧包名 + 与已装版本**同一签名** | 可覆盖升级，数据保留（最省事的路） |
+| 新包名（现状） | 与旧包可并存；代价是新安装，需导出→导入迁移 |
+
+⚠️ 若回退包名，**已发布 `0.3.x`（新包名）用户的数据**在 `/data/data/io.github.ccch1mneyyy.dsh/`，
+回退后不再被读取 —— 等于再迁移一次。`UserDataImporter.KNOWN_PACKAGES` 已含 4 个 id，可双向导入。
+
 **⚠️ `HOME` 有三处来源，`launch.argv` 里那条最容易被忘**：
 `runtime/manifest.json` 的 `launch.argv` 是 `/usr/bin/env -i HOME=/root …`，
 `env -i` 之后逐条 `KEY=VALUE` 是**后者覆盖前者** —— 所以 `ProotHost` 的 `{GUEST_ENV}`
