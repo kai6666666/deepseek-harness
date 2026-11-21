@@ -1,3 +1,34 @@
+## [0.3.0-refactor.15] — 2026-11-21
+vc=70
+
+### 修复：解包时进度条消失 / 没有百分比
+**根因**：`startProot()` 的 `installer.ensure(...)` 回调**只写日志**，从不更新 `State`；
+`State.Extracting` 只被 0.5.0 之前的 bionic 解包路径使用。于是 PRoot 解包 1.3 GB 期间，
+界面停在「正在启动引擎…」，用户看到的是「进度消失/卡死」。
+
+**改法**
+- `RootfsInstaller.extractXz()`：新增 `CountingInput` 统计 **.xz 已读字节**，把
+  `Progress("extract", done, total)` 的 `total` 从 `-1` 改成真实压缩包长度。
+- `EngineManager.startProot()`：按 **copy 0–30% / extract 30–98%** 加权，节流后写
+  `State.Extracting(pct)`；解包结束立刻回到 `State.Starting`。
+
+### 增强：新建工作区怎么选「其它文件夹」
+`ensurePickerRoots()` 在 `filesDir/home` 下建三个入口链接：
+
+```text
+手机存储 → /sdcard
+下载     → /sdcard/Download      ← 本次新增，最常用
+应用目录 → filesDir
+```
+
+对话框起点是 HOME，点进去即可浏览；面包屑「主目录」返回。
+
+### 判据
+```text
+清数据后首启：覆盖层出现「首次启动，正在解包引擎 N%」且 N 单调增长到 98→100
+文件选择器里能看到「手机存储 / 下载 / 应用目录」三行
+```
+
 ## [0.3.0-refactor.14] — 2026-11-21
 vc=69
 
