@@ -37,6 +37,15 @@ applyContentInsets()   // padding 加到 webContainer：全面屏 0，否则真�
 ⚠️ 系统栏区域的颜色现在由 **window 背景**提供（`applyPageBackground` 的
 `setBackgroundDrawable`），不再是 `window.statusBarColor`。
 
+**⚠️ 0.4.0 起包名回到 `com.dsh.android`**
+决定：**新包名 `io.github.ccch1mneyyy.dsh` 不再使用**。理由是老用户可无感升级
+（同包名 + 同签名即可覆盖），也不必再迁一次数据。
+代价与注意事项：
+- 覆盖安装的硬条件仍是「同包名 + 同签名」——历史包若不是本仓库证书签的，
+  仍会 `UPDATE_INCOMPATIBLE`，必须先「导出 → 卸载 → 安装 → 导入」；
+- 0.3.x（io.github…）那条线的数据要导回来：迁移向导现在**检测 `io.github.ccch1mneyyy.dsh`**；
+- `KNOWN_PACKAGES` 仍含 4 个 id，双向导入不受影响。
+
 **包名（`applicationId`）可以回退，但要算清代价**
 `applicationId` 与 targetSdk、与「单运行时重构」**完全解耦** —— 换回去工程照样跑。
 真正的约束只有一条：**覆盖安装要求「同包名 + 同签名」**。
