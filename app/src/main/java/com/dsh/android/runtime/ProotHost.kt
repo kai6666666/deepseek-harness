@@ -231,17 +231,27 @@ class ProotHost(
     fun recentLines(n: Int = 20): List<String> = synchronized(lastLines) { lastLines.takeLast(n) }
     fun isAlive(): Boolean = process?.isAlive == true
 
-    fun health(timeoutMs: Int = 3000): Int {
-        val endpoint = tokenUrl?.substringBefore("?") ?: return -1
+    /**
+     * 探测引擎健康：返回 (HTTP 码, 失败原因)。
+     *
+     * 为什么要把失败原因带出来：冷启阶段「打印了 URL 但监听还没 accept」会得到 -1，
+     * 只回一个 -1 无法区分「连接被拒」「超时」「DNS/端口没起来」。调用方需要这个字符串
+     * 才能把现场写进崩溃文件，而不是只留一句 HTTP=-1。
+     */
+    fun healthProbe(timeoutMs: Int = 3000): Pair<Int, String?> {
+        val endpoint = tokenUrl?.substringBefore("?") ?: return -1 to "no token line yet"
         val c = URL(endpoint).openConnection() as HttpURLConnection
         return try {
             c.connectTimeout = timeoutMs; c.readTimeout = timeoutMs
             c.requestMethod = "GET"; c.instanceFollowRedirects = false
-            c.responseCode
+            c.responseCode to null
         } catch (t: Throwable) {
-            Log.w(TAG, "Health: ${t.message}"); -1
+            Log.w(TAG, "Health: ${t.message}")
+            -1 to (t.javaClass.simpleName + ": " + (t.message ?: ""))
         } finally { c.disconnect() }
     }
+
+    fun health(timeoutMs: Int = 3000): Int = healthProbe(timeoutMs).first
 
     private data class Pid(val value: Int, val parent: Int, val born: String)
     private fun pidInfo(pid: Int): Pid? = runCatching {
