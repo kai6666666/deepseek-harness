@@ -7,15 +7,15 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 // P3（0.3.0-refactor.3）：单运行时，只剩 PRoot/glibc 一条路径。
-// 只有 PRoot/glibc 一条路径：DSH_FILES 必须由宿主（ProotHost）注入；缺失即失败，
-// 且不再写死任何 applicationId —— 换包名不需要改这个文件。
-const FILES = process.env.DSH_FILES;
-if (!FILES) {
-  console.error('dsh-env: 缺少 DSH_FILES（ProotHost 必须注入 filesDir 的宿主路径）');
-  process.exit(2);
-}
+// 只有 PRoot/glibc 一条路径。FILES 取值顺序：
+//   ① 宿主注入的 DSH_FILES；② 本脚本所在目录（EngineManager.ensureDevEnvScript 把它
+//      落在 filesDir 根，guest 里按原绝对路径可见）。
+// 两种情况都不涉及 applicationId —— 换包名不需要改这里。
+const SELF_DIR = path.dirname(fileURLToPath(import.meta.url));
+const FILES = process.env.DSH_FILES || SELF_DIR;
 const PREFIX = '/usr';
 const HOME = '/root';
 const STATE_FILE = path.join(FILES, 'devenv/env-state.json');
