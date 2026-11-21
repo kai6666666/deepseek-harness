@@ -1,3 +1,27 @@
+## [0.3.0-refactor.8] — 2026-11-21
+vc=63
+
+### 修复（vc61/vc62 引擎起不来的完整根因）
+两套前缀不一致，guest 里只存在一种：
+
+```text
+File.absolutePath  = /data/user/0/com.dsh.android/files/...   ← assets/overlay 里大量用它
+File.canonicalPath = /data/data/com.dsh.android/files/...     ← ProotHost 只绑了这条
+```
+
+vc62 只修了 `--patch` 的参数（改用 canonical），但 overlay **内容**里仍然写着
+`/data/user/0/.../agnes-multimodal/...` 之类的插件路径 ⇒ 14 个插件 `ERR_MODULE_NOT_FOUND`，引擎退出。
+
+本版一次性解决：在 guest 里为 `filesDir` **增加别名绑定**
+`-b <canonical filesDir>:<absolute filesDir>`，两套前缀都成立。
+既有资产、overlay、以及未来任何用 `absolutePath` 拼出来的 guest 路径都不会再 ENOENT。
+
+### 判据
+```text
+targetSdk=30；引擎打印 token 行 + 首帧
+0 个 failed to import
+```
+
 ## [0.3.0-refactor.7] — 2026-11-21
 vc=62
 
