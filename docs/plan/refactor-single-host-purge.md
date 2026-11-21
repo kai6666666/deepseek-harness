@@ -1,6 +1,6 @@
 # 重构计划：单宿主 + 去 Termux + 解除包名/targetSdk 限制
 
-> 状态：**执行中** — P0 ✅ / P1 ✅ / P2 ✅ / P3 ✅ / **P5 第一档（29）✅**；下一档 30 → 34，之后 P4 包名、P6 收尾
+> 状态：**执行中** — P0 ✅ / P1 ✅ / P2 ✅ / P3 ✅ / **P5 29 ✅ / 30 ✅**（`refactor.5` / `refactor.8`）；下一档 34，之后 P4 包名、P6 收尾
 > 基线：`main` @ `ff20f6024f`（引擎 `@deepseek-ai/dsh@0.2.2-rc.3`，App `0.2.2-rc.3` / vc54，mobile-ui `1.1.0-194`）
 > 目标版本：`0.3.0-refactor.N`（versionCode 从 55 起递增），发布到 prerelease `v0.3.0-refactor.N`
 > 最后更新：2026-11-20
@@ -233,7 +233,7 @@ files/usr/bin/bash    -> /data/app/~~…/lib/arm64/libbash.so
 
 ---
 
-### P5 targetSdk 提升（29 → 30 → 34，一档一验）— 29 ✅ 已完成（v0.3.0-refactor.5）
+### P5 targetSdk 提升（29 → 30 → 34，一档一验）— 29 ✅（refactor.5）· 30 ✅（refactor.8）
 
 **动作**
 
@@ -271,6 +271,31 @@ files/usr/bin/bash    -> /data/app/~~…/lib/arm64/libbash.so
 - 有效判据是系统状态：`appops get <pkg> | grep LEGACY_STORAGE` + `dumpsys package` 的 `PRIVATE_FLAG_REQUEST_LEGACY_EXTERNAL_STORAGE`。
 - `ProotProbeActivity --es run_script` 要求脚本落在**已绑定进 guest 的目录**（`home/.dsh`、`workspace`），
   传 app 私有根路径会 `MODULE_NOT_FOUND`；本次探针仍未拿到 stdout，后续要做「guest 内写 /sdcard」验证时另设通道。
+
+**30 档实测（2026-11-21，vc63 / `v0.3.0-refactor.8`）**
+| 项 | 实测 |
+|---|---|
+| 装机 | `versionCode=63 / targetSdk=30 / versionName=0.3.0-refactor.8` |
+| 全盘权限初始态 | `cmd appops get … MANAGE_EXTERNAL_STORAGE` → `Default mode: default` |
+| 引导 | `app.log`：`未授予「所有文件访问」，已引导一次（ok=true）` |
+| 引擎 | `dsh web http://127.0.0.1:42429` → `Web 内核已提交首帧`；本轮 `failed to import` = 0 |
+| 回退 | `defaultPhoneStorage()` 无全盘权限时绑 `Android/data/<包名>/files/sdcard`（`bind /sdcard ->` 有日志） |
+
+**⚠️ 30 档踩到的真 bug（vc61/vc62 连续两版引擎起不来）**
+`proot` 的 guest 路径是**字符串匹配**，而 App 里同一个目录有两套写法：
+
+```text
+File.absolutePath  = /data/user/0/<pkg>/files/...     ← assets/overlay 内容、EngineManager 大量拼路径
+File.canonicalPath = /data/data/<pkg>/files/...       ← ProotHost 原来只绑这一条
+```
+
+只要有一处把 `absolutePath` 塞进 guest 可见的东西（`--patch` 参数、overlay 里的插件路径），
+guest 里就必然 `ENOENT`；表现还很误导——先是 `failed to read overlay`，修完变成
+14 个插件 `ERR_MODULE_NOT_FOUND`。
+
+**结论**：`ProotHost` 现在对 `filesDir` 做**双前缀绑定**
+（`-b <canonical>:<canonical>` + `-b <canonical>:<absolute>`），两套写法都成立。
+以后新增任何 guest 路径时不需要再判断用哪种前缀。
 
 **30 档要注意**
 - API 30 起 `requestLegacyExternalStorage` 被忽略 ⇒ 必须上 `MANAGE_EXTERNAL_STORAGE`（`ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION`），
