@@ -134,6 +134,10 @@ class ProotHost(
                     // 不再出现在 argv（`ps -A` 对 shell/root 可见）里。
                     val env = buildMap {
                         put("DSH_HOME", dshHome.canonicalPath)
+                        // 用户主目录：目录选择器的起点就是 $HOME。
+                        // 必须与 ensurePickerRoots() 里建入口链接的位置一致，
+                        // 否则选择器打开是空列表（vc72 实测）。
+                        put("DSH_USER_HOME", File(context.filesDir, "home").canonicalPath)
                         put("TZ", TimeZone.getDefault().id)
                         if (File(rootfs, "etc/ssl/certs/ca-certificates.crt").isFile) {
                             put("SSL_CERT_FILE", "/etc/ssl/certs/ca-certificates.crt")
