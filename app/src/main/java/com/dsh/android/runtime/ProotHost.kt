@@ -3,6 +3,7 @@ package com.dsh.android.runtime
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Environment
 import android.system.Os
 import android.system.OsConstants
@@ -100,7 +101,14 @@ class ProotHost(
             when (val arg = raw) {
                 "/usr/bin/env" -> {
                     bind(dshHome); bind(workspace)
-                    phoneStorage?.takeIf { it.isDirectory }?.let { bind(it, "/sdcard"); bind(it) }
+                    val phone = phoneStorage?.takeIf { it.isDirectory }
+                    if (phone != null) {
+                        // 真机排障要看这一行：无「所有文件访问」时这里是
+                        // Android/data/<包名>/files/sdcard，而不是真的 /storage/emulated/0。
+                        Log.i(TAG, "bind /sdcard -> " + phone.absolutePath)
+                        bind(phone, "/sdcard")
+                        bind(phone)
+                    }
                     File(context.filesDir, "logs").mkdirs()
                     File(context.filesDir, "devenv").mkdirs()
                     listOf("dsh-android-shell.mjs", "dsh-android-root.mjs", "adbwire",
@@ -290,7 +298,26 @@ class ProotHost(
             return p
         }
 
+        /**
+         * 给 guest 的 `/sdcard` 选一个宿主目录。三级取源：
+         *
+         *   ① API 30+ 且已授予「所有文件访问」→ 真的 `/storage/emulated/0`
+         *   ② API 30+ 但没授予 → `Android/data/<包名>/files/sdcard`（app 专属外部目录，始终可写）
+         *   ③ API 29- → 老逻辑：有 READ_EXTERNAL 就给真 /sdcard
+         *
+         * 为什么要有 ②：API 30 起 `requestLegacyExternalStorage` 被系统忽略，
+         * `READ/WRITE_EXTERNAL_STORAGE` 不再授予真 `/sdcard` 的任意访问。没有 ② 的话，
+         * 用户没点「所有文件访问」时 guest 里 `/sdcard` 会直接 EACCES —— 插件读写全部失败，
+         * 而报错只会出现在 guest 的 node 栈里，宿主侧什么都看不到。
+         */
         private fun defaultPhoneStorage(context: Context): File? {
+            if (Build.VERSION.SDK_INT >= 30) {
+                if (Environment.isExternalStorageManager()) {
+                    return Environment.getExternalStorageDirectory()?.takeIf { it.isDirectory }
+                }
+                val dir = context.getExternalFilesDir(null) ?: return null
+                return File(dir, "sdcard").apply { mkdirs() }.takeIf { it.isDirectory }
+            }
             val dir = Environment.getExternalStorageDirectory() ?: return null
             val granted = context.checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
             return dir.takeIf { granted && it.isDirectory }
