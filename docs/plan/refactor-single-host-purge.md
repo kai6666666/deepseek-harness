@@ -1,6 +1,7 @@
 # 重构计划：单宿主 + 去 Termux + 解除包名/targetSdk 限制
 
-> 状态：**已完成** — P0–P6 全部交付，定版 `0.3.0`（vc77）。衍生修复见 CHANGELOG。
+> 状态：**已完成并进入维护态** — P0–P6 全部交付；发布线已到 `0.4.1`（vc84，包名回 `com.dsh.android`）。
+> 维护态含义：只修 bug，不再改身份与架构。历史阶段记录保留在下方。
 > 基线：`main` @ `ff20f6024f`（引擎 `@deepseek-ai/dsh@0.2.2-rc.3`，App `0.2.2-rc.3` / vc54，mobile-ui `1.1.0-194`）
 > 目标版本：`0.3.0-refactor.N`（versionCode 从 55 起递增），发布到 prerelease `v0.3.0-refactor.N`
 > 最后更新：2026-11-20
