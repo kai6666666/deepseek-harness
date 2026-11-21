@@ -1,3 +1,25 @@
+## [0.3.0-refactor.18] — 2026-11-21
+vc=73
+
+### 修复：新建工作区对话框里**一行都没有**
+**现象**（vc72 真机截图）：点「新建工作区」→「选择工作区目录」，标题是「主目录」，
+下面**空白**，看不到「手机存储 / 下载 / 应用目录」。
+
+**根因**：`dsh-host-directory-picker-auto` 的 browse 后端在没给路径时用 `homedir()` 当起点。
+`dsh-env.mjs` 在 P3（`refactor.3`，清退 Termux）时把 `HOME` 硬编码成 rootfs 的 **`/root`**，
+而入口链接建在 **`filesDir/home`** —— 起点走错了树，列表自然为空。
+
+**改法**
+- `ProotHost` 注入 `DSH_USER_HOME = filesDir/home`（canonicalPath，guest 内可见）。
+- `dsh-env.mjs` 的 `HOME` 改为读 `DSH_USER_HOME`，兜底 `/root`。
+- `docs/agents/constraints.md` 记下「`$HOME` 必须是 filesDir/home」。
+
+### 判据
+```text
+对话框打开即列出「手机存储 / 下载 / 应用目录」三行
+点「手机存储」可逐级进入并新建文件夹
+```
+
 ## [0.3.0-refactor.17] — 2026-11-21
 vc=72
 
