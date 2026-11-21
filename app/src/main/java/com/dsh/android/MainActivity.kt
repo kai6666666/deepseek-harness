@@ -2557,10 +2557,11 @@ class MainActivity : AppCompatActivity() {
      *
      * ## 为什么用 `LAYOUT_NO_LIMITS` 而不是 `setDecorFitsSystemWindows(false)`
      *
-     * 后者是 API 30+ 的现代写法，而本机是 **API 29**（硬约束②把 targetSdk 钉在 28，
-     * 但设备是 Android 10）。`WindowCompat.setDecorFitsSystemWindows` 在 API 29 上
-     * 走的是兼容分支，实测不生效。`LAYOUT_NO_LIMITS` 在 API 14+ 全版本可用，
-     * 是这个工程唯一能用的那条路。
+     * 历史原因：targetSdk 还钉在 28 时，`setDecorFitsSystemWindows(false)` 在 API 29 真机上
+     * 走兼容分支、实测不生效，所以当时只能用 `LAYOUT_NO_LIMITS`。
+     * ⚠️ P21（refactor.21，targetSdk 35）之后：全局 edge-to-edge **已经**用
+     * `setDecorFitsSystemWindows(false)` + 真实 insets 实现（见 `enableEdgeToEdgeCompat`），
+     * 这里的 `LAYOUT_NO_LIMITS` 只作为「全面屏」开关的**额外**手段保留。
      *
      * ⚠️ **关掉时要把 flag 摘干净**：只把颜色改回不透明、不摘 `LAYOUT_NO_LIMITS`
      *   的话，内容仍铺在系统栏下面（标题被状态栏压住），而颜色已不透明 ⇒
