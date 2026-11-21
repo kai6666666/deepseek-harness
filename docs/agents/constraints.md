@@ -16,6 +16,11 @@
 | 宿主 | **只有 PRoot 一条**（`ProotHost`），无枚举、无 bionic 回落 | P2 |
 | 运行时前缀 | guest 内 `/usr`；宿主 `files/` 下不得出现 `usr` / `termux` / `proot-libs` | P3（`purgeLegacy` + 启动 `sweepStale`） |
 
+**⚠️ `$HOME` 必须 = `filesDir/home`**：目录选择器的起点是 `homedir()`。
+P3 曾把它硬编码成 rootfs 的 `/root`，结果「选择工作区」对话框里**一行都没有**
+（入口链接在 `filesDir/home`，选择器走的是 `/root`）。
+现在由 `ProotHost` 注入 `DSH_USER_HOME`，`dsh-env.mjs` 读它；改这两处任一处都必须同步。
+
 **新建工作区选文件夹**：`ensurePickerRoots()` 在 `filesDir/home` 下建三个入口链接 ——
 `手机存储 → /sdcard`、`下载 → /sdcard/Download`、`应用目录 → filesDir`。
 对话框起点是 HOME，点这三个入口即可进入各自的树；面包屑「主目录」可返回。
