@@ -16,6 +16,10 @@
 | 宿主 | **只有 PRoot 一条**（`ProotHost`），无枚举、无 bionic 回落 | P2 |
 | 运行时前缀 | guest 内 `/usr`；宿主 `files/` 下不得出现 `usr` / `termux` / `proot-libs` | P3（`purgeLegacy` + 启动 `sweepStale`） |
 
+**启动就绪检查**：引擎打印 token 行之后仍可能短暂拿不到 HTTP 200/401（PRoot 里 listen 刚建立）。
+`EngineManager` 在 20 s 窗口内每 400 ms 重试一次；只有重试窗口耗尽或进程已死才判启动失败，
+失败信息里带「试了几次 / 最后错误」。
+
 **34+ 的前台服务**：`startForeground` 必须能对上 manifest 的 `foregroundServiceType`，
 `EngineService` 现在显式传 `FOREGROUND_SERVICE_TYPE_SPECIAL_USE`（API 34+ 分支），
 manifest 侧同时有 `specialUse` + `PROPERTY_SPECIAL_USE_FGS_SUBTYPE` 说明。
