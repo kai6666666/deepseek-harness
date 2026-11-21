@@ -8,7 +8,7 @@
 
 | Operit「环境配置」项 | DSH 现状 | 落地方式 |
 |---|---|---|
-| Node.js 环境 | ✅ **内建**（`node-runtime.bin`，v26.12.1） | `assets/node-runtime.bin` → `files/termux/usr/bin/node`，与 apt 无关 |
+| Node.js 环境 | ✅ **内建**（`node-runtime.bin`，v26.12.1） | rootfs 内 `/usr/bin/node`（guarded by `RootfsInstaller`），与 apt 无关 |
 | Python 环境 | ✅ 已装（Python 3.14.8 + pip 26.2.2） | `apt install python` |
 | SSH 工具 | ✅ 已装（OpenSSH 10.6p1 / OpenSSL 3.6.5） | `apt install openssh` |
 | Java 环境 | ✅ 已装（OpenJDK 17.0.21） | `apt install openjdk-17` |
@@ -34,7 +34,7 @@
 
 ```text
 ── DSH 环境体检 ──────────────────────────────
-PREFIX = /data/user/0/com.dsh.android/files/termux/usr
+PREFIX = /usr（guest 内；宿主侧无 prefix）
 磁盘   = 2.3G
 
 node     ✅ v26.12.1
@@ -46,7 +46,7 @@ rustc    ✅ rustc 1.99.1 (58cf8f9c3 2026-10-13)
 cargo    ✅ cargo 1.99.1 (5f94df478 2026-08-27)
 go       ✅ go version go1.27.3 android/arm64
 
-apt 源：deb https://mirrors.ustc.edu.cn/termux/apt/termux-main/ stable main
+apt 源：Ubuntu 24.04 ports（`ports.ubuntu.com`，arm64）
 ```
 
 编译运行冒烟（`tools/env-smoke.sh`，全部在设备上跑）：
@@ -64,15 +64,15 @@ apt 源：deb https://mirrors.ustc.edu.cn/termux/apt/termux-main/ stable main
 
 ```bash
 # 体检（只读，随时可跑）
-run-as com.dsh.android sh -c 'files/termux/usr/bin/bash files/dsh-env.sh status'
+run-as com.dsh.android sh -c 'files/runtime/rootfs/usr/bin/node files/dsh-env.mjs status'
 
 # 装单项 / 多项 / 全装
-run-as com.dsh.android sh -c 'files/termux/usr/bin/bash files/dsh-env.sh install python ssh'
-run-as com.dsh.android sh -c 'files/termux/usr/bin/bash files/dsh-env.sh install java rust go'
-run-as com.dsh.android sh -c 'files/termux/usr/bin/bash files/dsh-env.sh install all'
+run-as com.dsh.android sh -c 'files/runtime/rootfs/usr/bin/node files/dsh-env.mjs install python ssh'
+run-as com.dsh.android sh -c 'files/runtime/rootfs/usr/bin/node files/dsh-env.mjs install java rust'
+run-as com.dsh.android sh -c 'files/runtime/rootfs/usr/bin/node files/dsh-env.mjs install all'
 
 # 六项编译运行冒烟
-run-as com.dsh.android sh -c 'files/termux/usr/bin/bash files/env-smoke.sh'
+（`env-smoke.sh` 已随 P3 删除；冒烟改用 `node files/check-devenv.mjs`）
 ```
 
 两个脚本都在 `tools/`：`dsh-env.sh`（体检/安装）、`env-smoke.sh`（编译冒烟）。
@@ -85,7 +85,7 @@ run-as com.dsh.android sh -c 'files/termux/usr/bin/bash files/env-smoke.sh'
 | python (+llvm/clang 依赖) | 约 690 MB | Termux 的 `python` 依赖 `llvm`，这是最大的一块 |
 | openssh | 约 12 MB | |
 | openjdk-17 | 约 400 MB | |
-| rust (rustc + cargo) | 约 1.1 GB | 装完 `files/termux` 从 931 MB 涨到 2.3 GB |
+| rust (rustc + cargo) | 约 1.1 GB | 装完 rootfs 从约 1.3 GB 涨到约 2.6 GB |
 | golang | 约 200 MB | |
 
 ## 六、如果要把它做进设置页（未做的部分）
@@ -112,7 +112,7 @@ settings.section（client.js）
    ├─ GET  /api/dsh-android/devenv            -> { ok, status, job, logTail }
    └─ POST /api/dsh-android/devenv {action,id} -> 202 { job }
              ↓ （插件宿主半 lib/index.js，app uid）
-        spawn files/termux/usr/bin/node files/dsh-env.mjs <action> <id>
+        spawn /usr/bin/node files/dsh-env.mjs <action> <id>   # guest 内绝对路径
              ↓
         files/devenv-job.json   running/pid/exit（UI 每 2s 轮询）
         files/logs/devenv.log   任务输出尾部（UI 显示进度）
@@ -230,7 +230,6 @@ HTTP 批量 install [ssh.sshpass, java.gradle] → 202，job.ids 正确回显
 |---|---|---|
 | uv 走 pip | py3.14 无轮子 → 源码构建 → truststore 权限错 | 改 apt `uv`（0.13.5） |
 | Gradle 自下载 zip | 130 MB + 软链，慢且易断 | 改 apt `gradle`（9.8.2） |
-| Termux 前缀写死 | `$PREFIX/bin/*` 脚本里是 `/data/data/com.termux/files`，导致“装上了却找不到” | `fixPrefixShims()`：安装后把 bin 下小文本里的前缀改成 App 路径 |
 | gradle wrapper 缺 jar | `Unable to access jarfile …lib/gradle-gradle-cli-main-9.8.2.jar` | `fixGradleLauncher()`：软链 `bin/gradle → opt/gradle/bin/gradle`（实测 `gradle -v` 正常） |
 | rustup | `rustls-platform-verifier … panicked: Expect … to be initialized` | 标 `unsupported`，界面禁用勾选并写明原因 |
 | `window.confirm` | WebView 原生对话框阻塞 JS，自动化点不到「确定」 | 改页内确认条（第二次点「开始配置」才执行） |
