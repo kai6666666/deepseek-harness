@@ -20,14 +20,14 @@
         provider: mock
         model: mock-1
     - id: dsh-android-bubble
-      name: 'file:///data/user/0/io.github.ccch1mneyyy.dsh/files/home/.dsh/bubble-tool/dsh-android-bubble/lib/index.js'
+      name: 'file:///data/user/0/com.dsh.android/files/home/.dsh/bubble-tool/dsh-android-bubble/lib/index.js'
     - id: dsh-android-logs
-      name: 'file:///data/user/0/io.github.ccch1mneyyy.dsh/files/home/.dsh/logs-tool/dsh-android-logs/lib/index.js'
+      name: 'file:///data/user/0/com.dsh.android/files/home/.dsh/logs-tool/dsh-android-logs/lib/index.js'
     - id: dsh-android-statusbar
-      name: 'file:///data/user/0/io.github.ccch1mneyyy.dsh/files/home/.dsh/statusbar-tool/dsh-android-statusbar/lib/index.js'
+      name: 'file:///data/user/0/com.dsh.android/files/home/.dsh/statusbar-tool/dsh-android-statusbar/lib/index.js'
     - id: dsh-android-uiagent
-      name: 'file:///data/user/0/io.github.ccch1mneyyy.dsh/files/home/.dsh/uiagent-tool/dsh-android-uiagent/lib/index.js'
+      name: 'file:///data/user/0/com.dsh.android/files/home/.dsh/uiagent-tool/dsh-android-uiagent/lib/index.js'
     - id: dsh-android-browser
-      name: 'file:///data/user/0/io.github.ccch1mneyyy.dsh/files/home/.dsh/browser-tool/dsh-android-browser/lib/index.js'
+      name: 'file:///data/user/0/com.dsh.android/files/home/.dsh/browser-tool/dsh-android-browser/lib/index.js'
     - id: dsh-android-root
-      name: 'file:///data/user/0/io.github.ccch1mneyyy.dsh/files/home/.dsh/root-tool/dsh-android-root/lib/index.js'
+      name: 'file:///data/user/0/com.dsh.android/files/home/.dsh/root-tool/dsh-android-root/lib/index.js'
