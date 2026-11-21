@@ -1,5 +1,7 @@
 # 升级计划（第二版）：0.2.2-rc.1 → 0.2.2-rc.3-debug
 
+> ⚠️ 2026-11-22：本文提到的分支（`feat/proot-0.5.0-x64` / `rc3-debug` / `release/0.4.3-debug` 等）已全部删除，仓库现在只有 `main`。tip SHA 仍可用 `git fetch origin <sha>` 取到。
+
 > 状态：**G-1 / G0 / G1 / G2 / G7 / G8 已实测通过（2026-11-18）；G5 / G6 待真机**。Release `v0.2.2-rc.3-debug` 已上线（prerelease）。
 > 第一版被本轮只读审查推翻 5 处、补强 16 处，清单见 §3 / §4，结论级差异见
 > [`engine-0.2.2-rc.3-review.md`](engine-0.2.2-rc.3-review.md)。执行记录见 §13。

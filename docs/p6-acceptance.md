@@ -1,5 +1,7 @@
 # P6 收尾：引擎 0.2.2-alpha.2 → 0.2.2-rc.1 全量验收快照
 
+> ⚠️ 2026-11-22：本文提到的分支（`feat/proot-0.5.0-x64` / `rc3-debug` / `release/0.4.3-debug` 等）已全部删除，仓库现在只有 `main`。tip SHA 仍可用 `git fetch origin <sha>` 取到。
+
 设备：Xiaomi 25104RADAC / Android 16 / arm64-v8a / WebView 内核 156
 应用：`com.dsh.android` · `versionName=0.4.3-debug` · `versionCode=48`
 引擎：`@deepseek-ai/dsh@0.2.2-rc.1`（`.stamp = 0.2.2-rc.1-1`）

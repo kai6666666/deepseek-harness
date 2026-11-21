@@ -1,5 +1,7 @@
 # 换设备继续开发（交接手册）
 
+> ⚠️ 2026-11-22：本文提到的分支（`feat/proot-0.5.0-x64` / `rc3-debug` / `release/0.4.3-debug` 等）已全部删除，仓库现在只有 `main`。tip SHA 仍可用 `git fetch origin <sha>` 取到。
+
 > 更新：2026-11-13 · 当前分支 `feat/proot-0.5.0-x64`（PR #7，tip `9e52b1ba`，CI 全绿）
 > 主分支 `main` 仍是 0.4.4-test（`d5a3d6ec`），**没有合并**。所有 0.5.0 新代码都在 PR #7 的分支里。
 
