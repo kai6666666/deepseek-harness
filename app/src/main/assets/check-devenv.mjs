@@ -18,11 +18,7 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 
-const FILES = process.env.DSH_FILES;
-if (!FILES) {
-  console.error('check-devenv: 缺少 DSH_FILES（由 ProotHost 注入）');
-  process.exit(2);
-}
+const FILES = process.env.DSH_FILES || path.dirname(new URL(import.meta.url).pathname);
 const SCRIPT = path.join(FILES, 'dsh-env.mjs');
 const NODE = '/usr/local/bin/node';
 
