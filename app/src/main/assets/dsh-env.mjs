@@ -274,7 +274,7 @@ function sizeOf(item, state, snap) {
  * P3：原 bionic 前缀修补（rewritePrefixes / gradle wrapper 软链 / fixPrefixShims）
  * 已删除。单运行时下 $PREFIX 固定为 /usr，apt 包不再把前缀写死到包名路径。
  */
-item, state, say) {
+async function installApt(item, state, say) {
   const before = dpkgSnapshot();
   await ensureAptIndex(say);
   say(`apt-get install -y ${item.pkgs.join(' ')}`);
