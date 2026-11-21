@@ -1,5 +1,8 @@
 # AGENTS.md — DSH Android 客户端
 
+> 项目状态：**维护态（0.4.1 起）** —— 只修 bug，不改包名、不改单运行时架构。
+
+
 原生 Android App：内置 Termux 环境跑一个 Node，在 Node 上跑 DSH 引擎，然后用 WebView
 加载 DSH 自带的 Web GUI。**不自绘聊天界面**——UI 完全复用官方前端，只在窄屏下由内置插件
 做移动端适配。
