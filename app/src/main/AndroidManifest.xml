@@ -91,6 +91,11 @@
     <!-- targetSdk 30+ 的包可见性：Shizuku 的 Manager 必须显式声明才查得到，
          否则 ShizukuChannel 的 getPackageInfo 抛 NameNotFound，特权通道静默降级。 -->
     <queries>
+        <!-- 0.4.x：迁移向导要检测 0.3.x 那条线（io.github.ccch1mneyyy.dsh）。
+             targetSdk 30+ 有包可见性限制：不声明就 getPackageInfo() = NameNotFound，
+             向导会误判「旧版不在」从而完全不提示。 -->
+        <package android:name="io.github.ccch1mneyyy.dsh" />
+        <package android:name="com.dsh.android" />
         <package android:name="moe.shizuku.privileged.api" />
     </queries>
 
