@@ -1,3 +1,35 @@
+## [0.3.0-refactor.20] — 2026-11-21
+vc=75
+
+### 修复（第三层，最终）：引擎进程的 `$HOME` 一直是 `/root`
+vc74 截图：对话框路径框写着 **`/root/`**、下面空。查 `/proc/<proot pid>/cmdline`：
+
+```text
+HOME=/root
+DSH_USER_HOME=/data/data/io.github.ccch1mneyyy.dsh/files/home
+```
+
+**根因**：`runtime/manifest.json` 的 `launch.argv` 是
+
+```text
+/usr/bin/env -i HOME=/root USER=root … DSH_HOME=/root/.dsh … {GUEST_ENV}
+```
+
+`env -i` 之后逐条 `KEY=VALUE` **后者覆盖前者**。`DSH_HOME` 早就在 `{GUEST_ENV}` 里
+覆盖了（所以会话/凭据一直在 `files/home/.dsh`，没丢），但 **`HOME` 从没被覆盖** ——
+引擎进程的 `$HOME` 始终是 `/root`；`dsh-env.mjs` 只影响它 spawn 的子进程。
+
+**改法**
+1. `ProotHost` 的 `{GUEST_ENV}` 里补 `HOME=<filesDir/home>`。
+2. 兼容层：客户端把上次浏览路径记在 localStorage，老用户升级后**仍会跳 `/root`**，
+   所以在 `rootfs/root` 下也建同一组入口（`手机存储 / 下载 / 应用目录`），每次启动重建。
+
+### 判据
+```text
+/proc/<pid>/environ 里 HOME=/data/data/<pkg>/files/home
+对话框（无论从 /root 还是 files/home 进）都能看到三行入口
+```
+
 ## [0.3.0-refactor.19] — 2026-11-21
 vc=74
 
