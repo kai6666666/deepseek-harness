@@ -1,3 +1,27 @@
+## [0.3.5] — 2026-11-22
+vc=82
+
+### 修复：导出的备份可能落进「卸载即删」的私有目录
+`LogContext.publicExportDirOrNull()` 用 `WRITE_EXTERNAL_STORAGE` 判定能否写公共 Downloads ——
+但 targetSdk ≥ 29 且无 legacy 时，该权限在系统侧**恒为未授予**（本机实测 `granted=false`）。
+于是导出**永远**退到 `Android/data/<包名>/files/Download`，卸载/清数据即被删 ——
+这正是「备份随卸载消失」的真实成因。
+
+**改法**
+- API 30+ 用 `Environment.isExternalStorageManager()`（「所有文件访问」）判定；
+  低于 30 保留旧的 `WRITE_EXTERNAL_STORAGE` 判定。
+- 落点打一行日志：`导出落点：公共 Download…` / `导出落点：私有目录 <path>（卸载会删）`。
+- 启动时打 `存储态：isExternalStorageManager=true/false`，并注明 guest 的 `/sdcard`
+  是真手机存储还是 app 私有副本。
+
+### 判据
+```text
+未授予：日志「存储态：… false（guest /sdcard = app 私有副本）」
+        导出 → 「导出落点：私有目录 …（卸载会删）」
+已授予：日志「… true（guest /sdcard = 真手机存储）」
+        导出 → 「导出落点：公共 Download」，文件在 /sdcard/Download
+```
+
 ## [0.3.4] — 2026-11-22
 vc=81
 
