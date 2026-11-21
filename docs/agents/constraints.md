@@ -16,6 +16,11 @@
 | 宿主 | **只有 PRoot 一条**（`ProotHost`），无枚举、无 bionic 回落 | P2 |
 | 运行时前缀 | guest 内 `/usr`；宿主 `files/` 下不得出现 `usr` / `termux` / `proot-libs` | P3（`purgeLegacy` + 启动 `sweepStale`） |
 
+**⚠️ `$HOME` 必须 = `filesDir/home`，且 `home` 必须整体 bind 一次**：
+只绑 `home/.dsh` + `files` 的**别名**时，guest 里的 `/data/data/<pkg>/files`
+只是 proot 凑出来的骨架目录（只有 `.dsh`），选择器打开就是空列表（vc73 探针实测）。
+`ProotHost` 现在显式 `bind(filesDir/home)`。
+
 **⚠️ `$HOME` 必须 = `filesDir/home`**：目录选择器的起点是 `homedir()`。
 P3 曾把它硬编码成 rootfs 的 `/root`，结果「选择工作区」对话框里**一行都没有**
 （入口链接在 `filesDir/home`，选择器走的是 `/root`）。
