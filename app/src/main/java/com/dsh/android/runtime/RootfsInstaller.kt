@@ -63,6 +63,10 @@ class RootfsInstaller(private val context: Context) {
         }
 
         runtimeDir.mkdirs()
+        // P3：每次安装前清扫上次中断留下的 staging/old（真机曾累积 797 MB）。
+        runCatching { RuntimeFiles.sweepStale(runtimeDir) }
+            .onSuccess { if (it.isNotEmpty()) Log.i(TAG, "清扫中断残留：" + it.joinToString()) }
+            .onFailure { Log.w(TAG, "清扫残留失败：" + it.message) }
         val free = context.filesDir.usableSpace
         if (RuntimeFiles.insufficientSpace(free)) {
             throw IOException(
