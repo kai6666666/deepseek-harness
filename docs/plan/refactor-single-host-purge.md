@@ -213,7 +213,16 @@ files/usr/bin/bash    -> /data/app/~~…/lib/arm64/libbash.so
 
 ---
 
-### P4 包名解除
+#### 旧包消失（已归因，2026-11-21 确认）
+
+演练期间发现 `com.dsh.android` 连同 `/data/user/0/com.dsh.android` 消失、`pm list -u`
+也查不到。**已由用户确认：旧包是用户自己手动卸载的**，不是本工程任何清理逻辑所为
+（`purgeLegacy` 只动 `files/` 内的 runtime 目录，从不调用 `pm uninstall`）。
+被清掉的是 1 个会话 / 2.2 MB 测试数据。
+
+⚠️ 由此固化一条迁移常识：**换包名 = 新安装，旧包数据不继承**。删旧包前必须先导出。
+
+## P4 包名解除
 
 > 放在 P5 之后执行（覆盖安装连续性）。
 
