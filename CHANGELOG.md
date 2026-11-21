@@ -1,3 +1,16 @@
+## [0.3.0-refactor.4] — 2026-11-21
+vc=59
+
+### 变更（P3 修订）
+- **启动时也清扫**：`EngineManager` 在构造 `ProotHost` 之前调 `RuntimeFiles.sweepStale(runtime)`。
+  vc58 只在 `RootfsInstaller` 的安装路径里清扫，而「装到一半被杀」的残骸因为 `.rootfs.stamp`
+  仍然命中，永远不会再进安装路径 —— 真机实测就留下过 695 MB 的 `rootfs.staging-*`。
+- 其余与 `0.3.0-refactor.3` 相同（P3：运行时去 Termux）。
+
+### 判据
+- 人为造一个 `files/runtime/rootfs.staging-probe/`，重启 App 后该目录消失，日志出现「启动清扫残留：…」
+- 引擎照常起
+
 ## [0.3.0-refactor.3] — 2026-11-20
 vc=58
 
