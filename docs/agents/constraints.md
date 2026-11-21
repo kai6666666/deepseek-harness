@@ -16,6 +16,11 @@
 | 宿主 | **只有 PRoot 一条**（`ProotHost`），无枚举、无 bionic 回落 | P2 |
 | 运行时前缀 | guest 内 `/usr`；宿主 `files/` 下不得出现 `usr` / `termux` / `proot-libs` | P3（`purgeLegacy` + 启动 `sweepStale`） |
 
+**新建工作区选文件夹**：`ensurePickerRoots()` 在 `filesDir/home` 下建三个入口链接 ——
+`手机存储 → /sdcard`、`下载 → /sdcard/Download`、`应用目录 → filesDir`。
+对话框起点是 HOME，点这三个入口即可进入各自的树；面包屑「主目录」可返回。
+（链接只能建在 app 私有目录一侧：`/sdcard` 上 `symlink()` 返回 EPERM。）
+
 **数据备份位置**：`UserDataExporter` 优先写公共下载目录；targetSdk 34 且没有「所有文件访问」时
 会退到 `Android/data/<包名>/files/Download/` —— 该目录**随「清除数据 / 卸载」一起删除**。
 迁移前务必先把备份复制出 app 专属目录（或先授权全盘访问）。
