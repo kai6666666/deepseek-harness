@@ -1,3 +1,22 @@
+## [0.3.0-refactor.11] — 2026-11-21
+vc=66
+
+### 变更（P6 收尾第二批：删 bionic 构建脚本，version.sh 改单一来源）
+- **`tools/version.sh`**：引擎版本不再从四个 bionic 脚本里 `sed`，改为读 **`tools/engine-version.txt`** 单一来源；
+  `verify-engine-upgrade.sh` 的断言串若还在就作交叉校验（不一致才报错）。汇总行改用 `ENG_SRC`。
+- **删除 7 个 bionic 构建脚本**（0.5.0 单运行时后不产出任何东西，`apk.yml` 也不执行它们）：
+  `build-engine-bin.sh`、`build-native-assets.sh`、`build-node-pty.sh`、`build-extra-native.sh`、
+  `build-node-addon-system.sh`、`build-node-addon-require-builtin.sh`、`node-runtime-wrap.sh`。
+- `apk.yml`：去掉这 7 个脚本的路径触发。
+- `EngineManager`：注释里「由 `tools/build-engine-bin.sh` 生成」改为历史说明。
+
+### 判据
+```text
+tools/version.sh --check → VERSION PASS，且多出一行「引擎版本单一来源 0.2.2-rc.3」
+grep -rn "build-engine-bin|build-node-runtime|build-bootstrap" tools .github  → 0
+apk.yml 全绿，装机后引擎照常起
+```
+
 ## [0.3.0-refactor.10] — 2026-11-21
 vc=65
 
