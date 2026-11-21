@@ -18,9 +18,13 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 
-const FILES = process.env.DSH_FILES || '/data/user/0/com.dsh.android/files';
+const FILES = process.env.DSH_FILES;
+if (!FILES) {
+  console.error('check-devenv: 缺少 DSH_FILES（由 ProotHost 注入）');
+  process.exit(2);
+}
 const SCRIPT = path.join(FILES, 'dsh-env.mjs');
-const NODE = fs.existsSync('/usr/local/bin/node') ? '/usr/local/bin/node' : path.join(FILES, 'termux/usr/bin/node');
+const NODE = '/usr/local/bin/node';
 
 const r = spawnSync(NODE, [SCRIPT, 'status', '--json'], { encoding: 'utf8', timeout: 60000 });
 if (r.status !== 0) {
