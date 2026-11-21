@@ -1,3 +1,33 @@
+## [0.3.0-refactor.6] — 2026-11-21
+vc=61
+
+### 变更（P5 第二档：targetSdk 29 → 30）
+- `targetSdk = 30`。API 30 起 `requestLegacyExternalStorage` 被系统**忽略**，`READ/WRITE_EXTERNAL_STORAGE`
+  不再授予真 `/sdcard` 的任意访问 —— 本档必须处理存储模型。
+- `AndroidManifest.xml` 声明 `MANAGE_EXTERNAL_STORAGE`（`tools:ignore="ScopedStorage"`），并改写那段
+  「targetSdk=28 不必申请」的过期注释。
+- `MainActivity.ensureStorageAccess()`：30+ 且未授予「所有文件访问」时**引导一次**
+  （`ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION`，失败退 `ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION`），
+  `SharedPreferences` 记名，不反复弹设置页。
+- `ProotHost.defaultPhoneStorage()` 三级取源：
+  ① 30+ 且有全盘权限 → 真 `/storage/emulated/0`
+  ② 30+ 且无 → `Android/data/<包名>/files/sdcard`（app 专属，始终可写）
+  ③ 29- → 老逻辑（有 READ_EXTERNAL 就给真 /sdcard）
+- 绑定点加日志 `bind /sdcard -> <宿主绝对路径>`，真机排障一眼看出走哪一级。
+
+### 判据
+```text
+装机 targetSdk=30
+有全盘权限：guest /sdcard -> /storage/emulated/0
+无全盘权限：guest /sdcard -> Android/data/<包名>/files/sdcard，且写入成功
+引擎照常起，日志无 EACCES / avc: denied
+```
+
+### 已知
+- 回退状态下「路径不同」：`AndroidOpenWith` 把 `/sdcard/...` 归一化成 `primary:` 的 content URI，
+  这种状态下指不到真实文件。要彻底一致，必须让用户授予全盘访问。
+- 34 档还要处理 FGS 类型与 edge-to-edge（`SystemBarAppearance` 有 vc19 回归史）。
+
 ## [0.3.0-refactor.5] — 2026-11-21
 vc=60
 
