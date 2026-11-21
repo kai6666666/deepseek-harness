@@ -52,7 +52,18 @@ class EngineService : Service() {
         // 服务重建时清掉上一轮的状态，避免通知里残留旧会话的文案
         lastStatus = null
         try {
-            startForeground(NOTIFICATION_ID, buildNotification(this, null))
+            // API 34 起 startForeground 必须能对上 manifest 里的 foregroundServiceType；
+            // 2 参数版本靠 manifest 推断，34 上部分厂商 ROM 会抛 MissingForegroundServiceType。
+            // 这里显式传 specialUse（manifest 已声明 + 带 PROPERTY_SPECIAL_USE_FGS_SUBTYPE 说明）。
+            if (Build.VERSION.SDK_INT >= 34) {
+                startForeground(
+                    NOTIFICATION_ID,
+                    buildNotification(this, null),
+                    android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE,
+                )
+            } else {
+                startForeground(NOTIFICATION_ID, buildNotification(this, null))
+            }
         } catch (t: Throwable) {
             // Android 12+ 在后台启动前台服务可能抛异常；此时退化为普通服务
             Log.w(DshApplication.TAG, "startForeground 失败: ${t.message}")
