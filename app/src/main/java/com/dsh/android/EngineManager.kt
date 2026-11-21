@@ -6616,10 +6616,25 @@ class EngineManager private constructor(private val context: Context) {
         EventLog.record("engine.start.proot", mapOf("runtime" to manifest.runtimeVersion))
         val installer = RootfsInstaller(context)
         var phase = ""
+        var lastPercent = -1
         try {
+            // ⚠️ 必须把进度喂给 State.Extracting，否则 UI 在解包期间**没有百分比**：
+            //   原来这里只 Log.i，界面停在「正在启动引擎…」，用户以为卡死（vc69 实测反馈）。
+            //   两段加权：copy 占 0–30%，extract 占 30–98%（extract 的分母是 .xz 已读字节）。
             installer.ensure(manifest) { p ->
                 if (phase != p.phase) { phase = p.phase; Log.i(TAG, "runtime ${p.phase}: ${p.note}") }
+                val pct = when {
+                    p.phase == "copy" && p.total > 0 -> (p.done * 30 / p.total).toInt()
+                    p.phase == "extract" && p.total > 0 -> 30 + (p.done * 68 / p.total).toInt()
+                    p.phase == "done" || p.phase == "ready" -> 100
+                    else -> -1
+                }.coerceIn(0, 100)
+                if (pct >= 0 && pct != lastPercent) {
+                    lastPercent = pct
+                    _state.value = State.Extracting(pct.coerceAtMost(99))
+                }
             }
+            _state.value = State.Starting
             if (!currentStart(generation)) return
             val rescueProfileDir = ensureRescueProfile()
             rescueAvailable = rescueProfileDir != null
