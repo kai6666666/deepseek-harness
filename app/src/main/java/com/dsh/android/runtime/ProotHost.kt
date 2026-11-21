@@ -144,6 +144,14 @@ class ProotHost(
                         // 必须与 ensurePickerRoots() 里建入口链接的位置一致，
                         // 否则选择器打开是空列表（vc72 实测）。
                         put("DSH_USER_HOME", File(context.filesDir, "home").canonicalPath)
+                        // ⚠️ **必须在这里再覆盖一次 HOME**：
+                        //   runtime/manifest.json 的 launch.argv 里是
+                        //   `/usr/bin/env -i HOME=/root USER=root ... DSH_HOME=/root/.dsh`，
+                        //   而 `env -i` 之后逐条 KEY=VALUE **后者覆盖前者**。
+                        //   DSH_HOME 早就被这一段覆盖成 files/home/.dsh（所以会话没丢），
+                        //   但 HOME 一直没人覆盖 —— 引擎进程的 $HOME 始终是 /root，
+                        //   目录选择器（homedir() 起点）因此打开就是空的（vc74 截图）。
+                        put("HOME", File(context.filesDir, "home").canonicalPath)
                         put("TZ", TimeZone.getDefault().id)
                         if (File(rootfs, "etc/ssl/certs/ca-certificates.crt").isFile) {
                             put("SSL_CERT_FILE", "/etc/ssl/certs/ca-certificates.crt")
