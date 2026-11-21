@@ -1,3 +1,30 @@
+## [0.4.1] — 2026-11-22
+vc=84
+
+### 包名回到 `com.dsh.android`（新包名 `io.github.ccch1mneyyy.dsh` 不再使用）
+
+| 项 | 0.3.x | 0.4.1 |
+|---|---|---|
+| system `applicationId` | `io.github.ccch1mneyyy.dsh` | **`com.dsh.android`** |
+| gecko `applicationId` | `io.github.ccch1mneyyy.dsh.webview` | **`com.dsh.android.webview`** |
+| `namespace` | `com.dsh.android` | 不变 |
+
+**为什么能这样切**：包名与 targetSdk、与单运行时重构完全解耦 —— 只改 `applicationId`，
+代码与运行时一处都不用动。
+
+**代价（必须知道）**
+- 覆盖安装要求「同包名 + **同签名**」。历史旧包若不是本仓库证书（`79d0dab6…dc96`）签的，
+  装的时候仍会 `UPDATE_INCOMPATIBLE` —— 必须先「导出 → 卸载 → 安装 → 导入」。
+- 0.3.x 的数据在 `/data/data/io.github.ccch1mneyyy.dsh/`，要导回：
+  **迁移向导已改为检测该包名**，提示三步走。
+- `KNOWN_PACKAGES` 仍含 4 个 id，导出→导入两个方向都通。
+
+### 同步
+- `tools/` 下开发脚本与 `mockall*.patch.yml` 的包名一并切回；
+- `docs/agents/constraints.md` 记录决定与代价。
+
+> 版本号选 `0.4.1` 而不是 `0.4.0`：`CHANGELOG` 里已存在历史上的 `## [0.4.0] — 2026-10-23`，避免重名。
+
 ## [0.3.6] — 2026-11-22
 vc=83
 
