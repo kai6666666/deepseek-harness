@@ -16,6 +16,10 @@
 | 宿主 | **只有 PRoot 一条**（`ProotHost`），无枚举、无 bionic 回落 | P2 |
 | 运行时前缀 | guest 内 `/usr`；宿主 `files/` 下不得出现 `usr` / `termux` / `proot-libs` | P3（`purgeLegacy` + 启动 `sweepStale`） |
 
+**数据备份位置**：`UserDataExporter` 优先写公共下载目录；targetSdk 34 且没有「所有文件访问」时
+会退到 `Android/data/<包名>/files/Download/` —— 该目录**随「清除数据 / 卸载」一起删除**。
+迁移前务必先把备份复制出 app 专属目录（或先授权全盘访问）。
+
 **启动就绪检查**：引擎打印 token 行之后仍可能短暂拿不到 HTTP 200/401（PRoot 里 listen 刚建立）。
 `EngineManager` 在 20 s 窗口内每 400 ms 重试一次；只有重试窗口耗尽或进程已死才判启动失败，
 失败信息里带「试了几次 / 最后错误」。
