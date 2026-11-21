@@ -1,3 +1,24 @@
+## [0.3.0-refactor.21] — 2026-11-22
+vc=76
+
+### targetSdk 35：edge-to-edge 改造（系统强制，必须自己让位）
+API 35 起：`decorFitsSystemWindows` 恒为 false，`statusBarColor`/`navigationBarColor`
+的赋值**被忽略**。原实现依赖「系统自动避开系统栏」，失效后表现为标题被时钟压住。
+
+**改法**
+- `MainActivity.enableEdgeToEdgeCompat()`：`setDecorFitsSystemWindows(false)` +
+  `setOnApplyWindowInsetsListener(binding.root)`，`systemBars()` / `ime()` 的真实 insets
+  落到 `webContainer` 的 padding；**全面屏时让位为 0**。
+- 系统栏区域颜色改由 **window 背景** 提供（`applyPageBackground` 的 `setBackgroundDrawable`）。
+- `statusBarHeightPx()` 首选运行期 `insetTopPx`（根治 vc19「整行下移」的物理/CSS 像素混用）。
+- 键盘走 `ime` inset（edge-to-edge 下 `adjustResize` 不生效）。
+
+### 判据
+```text
+内容顶边 y == 状态栏高度；全面屏时 == 0
+键盘弹出：内容上移，输入框不被遮挡
+```
+
 ## [0.3.0-refactor.20] — 2026-11-21
 vc=75
 
