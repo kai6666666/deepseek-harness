@@ -1,6 +1,6 @@
 # 重构计划：单宿主 + 去 Termux + 解除包名/targetSdk 限制
 
-> 状态：**执行中** — P0 ✅ / P1 ✅ / P2 ✅（`refactor.0` 基线、`refactor.1` P1、`refactor.2` P2），下一阶段 P3
+> 状态：**执行中** — P0 ✅ / P1 ✅ / P2 ✅ / P3 ✅（`refactor.0` 基线 · `.1` P1 · `.2` P2 · `.3`+`.4` P3），下一阶段 P5
 > 基线：`main` @ `ff20f6024f`（引擎 `@deepseek-ai/dsh@0.2.2-rc.3`，App `0.2.2-rc.3` / vc54，mobile-ui `1.1.0-194`）
 > 目标版本：`0.3.0-refactor.N`（versionCode 从 55 起递增），发布到 prerelease `v0.3.0-refactor.N`
 > 最后更新：2026-11-20
@@ -174,7 +174,7 @@ files/usr/bin/bash    -> /data/app/~~…/lib/arm64/libbash.so
 
 ---
 
-### P3 运行时去 Termux
+### P3 运行时去 Termux — ✅ 已完成（v0.3.0-refactor.3 + .4 修订）
 
 **动作**
 
@@ -197,6 +197,19 @@ files/usr/bin/bash    -> /data/app/~~…/lib/arm64/libbash.so
 - 无线调试配对仍可用（若保留功能）
 
 **回滚**：资产类改动按 zip 级回滚；`purgeLegacy` 属破坏性动作，**必须**在 P0 快照 + 用户数据导出之后执行。
+
+**实测（2026-11-21，vc58→vc59）**
+- `grep -rn "termux|Termux|IS_PROOT" app/src/main/assets tools/*.mjs tools/*.sh` = 0（只剩 `tools/build-*.sh` 里的**构建期上游 URL**，见 D3）
+- 设备 `files/` 下无 `usr` / `termux` / `proot-libs` / `runtime/legacy-bionic`
+- 清扫实测：造 `files/runtime/rootfs.staging-probe/` → 重启 → 目录消失，日志 `启动清扫残留：rootfs.staging-probe`
+- 引擎：`dsh web http://127.0.0.1:41923` → `Web 内核已提交首帧`
+
+**P3 期间两条判断（都写进了代码注释）**
+1. **清扫必须挂在启动路径**，不能只挂在安装路径。`.rootfs.stamp` 命中时 `RootfsInstaller` 直接返回，
+   「装到一半被杀」的 `rootfs.staging-*` 永远不会被清 —— 所以 `EngineManager` 在构造 `ProotHost` 前先 `sweepStale()`（`.4` 修订）。
+2. **无限调试 adb 不动**。`files/adbwire/bin/adb` 是 bionic ELF，但它由 **guest 内**的 runner `spawn`，
+   走 proot loader（mmap），不经过内核 `execve` ⇒ 不占 API 29 的 `execute_no_trans` 面。P5 不因它受阻；
+   若将来要把它做成"纯 jniLibs"，属于可选清理，不是阻塞项。
 
 ---
 
