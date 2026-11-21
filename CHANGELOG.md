@@ -1,3 +1,28 @@
+## [0.3.0-refactor.19] — 2026-11-21
+vc=74
+
+### 修复（续）：选择器起点正确了，但目录里**只有 .dsh**
+vc73 把 `HOME` 改成 `filesDir/home`，探针（`ProotProbeActivity` 内跑 node）实测：
+
+```text
+os.homedir=/root                                   ← 探针进程本身，不经过 dsh-env
+DSH_USER_HOME=/data/data/<pkg>/files/home
+probe root=/data/data/<pkg>/files/home
+.dsh dir=true link=false  enterable=true          ← 只有 .dsh！
+```
+
+**根因**：`ProotHost` 只绑了 `home/.dsh` 与 `files` 的**别名**（`/data/user/0/...`），
+`/data/data/<pkg>/files` 在 guest 内只是 proot 为 bind 目标凑出来的**骨架目录**，
+所以 `files/home` 里只剩 `.dsh`，三个入口链接（手机存储/下载/应用目录）全部不可见。
+
+**改法**：`ProotHost` 显式 `bind(filesDir/home)`，让 canonical 侧的 `home` 也是**真目录**。
+
+### 判据（探针）
+```text
+.dsh / 下载 / 应用目录 / 手机存储 四行，全部 enterable=true
+ENTER_OK 手机存储 entries=...   ENTER_OK 下载 entries=...
+```
+
 ## [0.3.0-refactor.18] — 2026-11-21
 vc=73
 
