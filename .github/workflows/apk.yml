@@ -12,7 +12,6 @@ on:
       - '.github/workflows/apk.yml'
       - 'tools/ci-fetch-assets.sh'
       - 'tools/build-engine-bin.sh'
-      - 'tools/build-node-runtime.sh'
       - 'tools/node-runtime-wrap.sh'
       - 'tools/build-native-assets.sh'
       - 'tools/build-plugin-assets.sh'
