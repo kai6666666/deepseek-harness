@@ -91,7 +91,11 @@ class ProotHost(
         val template = ProotLaunch.template(
             manifest.launchArgv.map(::expand), profile,
             "/" + originalPidFile.relativeTo(rootfs.canonicalFile).invariantSeparatorsPath,
-            guestPidFile, overlays.map { it.absolutePath }, command, guestEnvFile,
+            guestPidFile,
+            // ⚠️ 必须是 canonicalPath：guest 里 dshHome 是按 canonicalPath 绑定的
+            // （/data/data/...），而 absolutePath 是 /data/user/0/...；两者的字符串
+            // 在 guest 内只存在前者，用 absolutePath 会让引擎 ENOENT 打不开 --patch。
+            overlays.map { it.canonicalPath }, command, guestEnvFile,
         )
         val argv = ArrayList<String>()
         fun bind(f: File, guest: String = f.canonicalPath) {
