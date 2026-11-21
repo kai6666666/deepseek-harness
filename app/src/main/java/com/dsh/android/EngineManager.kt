@@ -440,7 +440,7 @@ class EngineManager private constructor(private val context: Context) {
     /**
      * 用归档自带的 `MANIFEST.txt` 给解包结果对账。
      *
-     * 归档里那份由 `tools/build-engine-bin.sh` 生成，只有两行：
+     * 归档里那份由已删除的 bionic 构建脚本生成（P6 第二批），只有两行：
      *   node_modules_files=<普通文件数>
      *   node_modules_bytes=<这些文件的字节和>
      * 解包时 TarGz 边写边统计同样的两个值，**不一致就抛**（而不是打条 warning 继续）。
