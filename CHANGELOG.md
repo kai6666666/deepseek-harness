@@ -1,3 +1,27 @@
+## [0.3.0-refactor.10] — 2026-11-21
+vc=65
+
+### 变更（P6 收尾第一批：清 bionic 出包链）
+- **删除** `.github/workflows/android-release.yml`：0.5.0 之前的 bionic 出包链，会现场造
+  `bootstrap-aarch64.zip` 并断言它在 APK 里，与当前单运行时无关（且只手动触发，从不随 tag 跑）。
+- **删除** `tools/build-bootstrap.sh`、`tools/bootstrap-required.txt`。
+- `tools/check-apk-assets.py`：去掉 bootstrap 的 soname 深检（连同 `required_sonames()`）。
+- `tools/ci-fetch-assets.sh`：`REQUIRED` 去掉 `bootstrap-aarch64.zip`。
+- `tools/verify-ci.py`：默认查询的工作流 `android-release` → `apk`。
+- `docs/agents/release-signing.md`：CI 段改写为现行三段式（apk → sign → publish），并说明旧链已删。
+
+### 判据
+```text
+grep -rn "bootstrap" .github tools app/build.gradle.kts  → 只剩历史文档
+apk.yml / verify.py / check-apk-assets.py 全绿
+```
+
+### 已知（下一批）
+- 仍有 bionic 期构建脚本：`build-engine-bin.sh` / `build-node-runtime.sh` / `build-native-assets.sh`
+  / `build-node-pty.sh` / `build-extra-native.sh` / `build-node-addon-*.sh`。
+  它们与 `tools/version.sh` 有耦合（version.sh 会从 `build-engine-bin.sh` 等抓引擎版本串做一致性校验），
+  删除必须同时改 `version.sh`，因此单独一批处理。
+
 ## [0.3.0-refactor.9] — 2026-11-21
 vc=64
 
