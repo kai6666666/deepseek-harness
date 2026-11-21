@@ -247,6 +247,14 @@ files/usr/bin/bash    -> /data/app/~~…/lib/arm64/libbash.so
 - 真机日志：`10%(copy) → 20 → 30 → 40(extract) → 52 → 61 → 74 → 80 → 93 → 100%`，`engine.ready ms=112515`。
 - 工作区入口新增「下载」：`files/home` 下 `手机存储 → /sdcard`、`下载 → /sdcard/Download`、`应用目录 → filesDir`。
 
+**工作区选择器（`refactor.18`–`.19`，真机探针）**
+- 根因1：`dsh-env.mjs` 的 `HOME` 在 P3 被硬编码成 `/root`，而选择器起点是 `homedir()`
+  ⇒ 起点走错树。改为宿主注入 `DSH_USER_HOME=filesDir/home`。
+- 根因2：`files` 只以别名 `/data/user/0/...` 绑定，canonical 侧 `files/home` 是骨架目录（只剩 `.dsh`）
+  ⇒ `ProotHost` 显式 `bind(filesDir/home)`。
+- 探针（`ProotProbeActivity` 内跑 node）：三行入口全部 `enterable=true`，
+  `ENTER_OK 手机存储 entries=67 / 下载 entries=32 / 应用目录 entries=13`。
+
 **数据迁移演练（`refactor.14`，真机）**
 导出 → `pm clear` → 重启 → 导入 → 内容指纹核对：会话目录恢复为 `session-9bb9e914…` + `session-a97fddd5…`，
 `home/.dsh` 文件数回到 89。**演练暴露**：`pm clear` 会连 `Android/data/<包名>/files/Download/` 一起删，
