@@ -70,6 +70,16 @@ internal object MigrationWizard {
         }
         shownThisRun = true
         Log.i(TAG, "迁移向导：检测到旧包 $LEGACY_PACKAGE 仍安装，提示先导出")
+        // 文案跟着**真实存储态**走：给没给「所有文件访问」决定备份落哪、
+        // 以及「卸载会不会连备份一起删」——这句话不讲清，用户就会踩 .14 那次坑。
+        val allFiles = runCatching { android.os.Environment.isExternalStorageManager() }
+            .getOrDefault(false)
+        val exportHint = if (allFiles) {
+            "① 打开旧版 →「导出数据」（会存到 /sdcard/Download，卸载不删）"
+        } else {
+            "① 先在本版「设置 → 权限」里授予「所有文件访问」，再打开旧版 →「导出数据」\n" +
+                "   （未授予时备份会落在 Android/data 下，卸载旧包会把它一起删掉）"
+        }
         val activity = context as? android.app.Activity ?: return
         // ⚠️ 必须等窗口 attach 之后再弹：在 onCreate 里直接 show()，此时
         //   decorView 还没有 window token，部分 ROM（MIUI）会**静默丢弃**这个对话框
@@ -80,7 +90,7 @@ internal object MigrationWizard {
                 .setMessage(
                     "旧版（com.dsh.android）与本版是两个独立的 App，数据不通用。\n\n" +
                         "卸载旧版会连同它的会话 / 凭据 / 引擎数据一起删掉。建议按顺序做：\n\n" +
-                        "① 打开旧版 →「导出数据」\n" +
+                        exportHint + "\n" +
                         "② 回到本版 →「导入数据」选择刚导出的 zip\n" +
                         "③ 确认本版能看到会话后，再卸载旧版",
                 )
