@@ -56,7 +56,7 @@ ASSETS_RELEASE = assets-v1
 | 资产 | 构建方式 | 体积 / 耗时 |
 |---|---|---|
 | `engine.bin` | `tools/build-engine-bin.sh`（npm 装 rc.3 → 裁非 arm64 → zip） | ~96 MB / 3–6 min |
-| `node-runtime.bin` | `tools/build-node-runtime.sh`（Termux deb → `bin/node` + 9 库 + `LINKS.txt`） | 32 MB / 1–2 min |
+| ~~`node-runtime.bin`~~ | **P6 已删除**（bionic 期资产，脚本与产物一并移除） | — |
 
 仍未覆盖的是 26 个原生/插件 zip（pnpm、ripgrep、sharp、node-pty、各 tool 包……）：
 它们需要本机编译或私有构建产物，所以「完整可运行包」仍建议走 `ASSETS_RELEASE`。
@@ -321,7 +321,7 @@ APK app-system-debug.apk：173,355,943 字节，972 条目
 | 资产 | 脚本 | 来源 |
 |---|---|---|
 | `engine.bin` | `build-engine-bin.sh` | npm `@deepseek-ai/dsh@0.2.1-rc.3` → 裁剪 → zip |
-| `node-runtime.bin` | `build-node-runtime.sh` | Termux `nodejs` + `libicu/c-ares/libffi/libsqlite` |
+| ~~`node-runtime.bin`~~ | **P6 已删除** | — |
 | `pnpm-android-arm64.zip` | `build-native-assets.sh` | npm `pnpm@11.28.3` |
 | `boosandbox.bin` / `boo-sandbox-run.bin` / `linkcompat.bin` | `build-native-assets.sh` | 仓库 `app/src/main/jni/*.c` + NDK 27 |
 | 15 个插件 zip | `build-plugin-assets.sh` | 仓库各插件目录（带字节一致校验） |
