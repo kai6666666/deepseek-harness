@@ -92,7 +92,7 @@ files/usr/bin/bash    -> /data/app/~~…/lib/arm64/libbash.so
 
 | # | 决策 | 取值 | 理由 |
 |---|---|---|---|
-| D1 | 新包名 | `io.github.ccch1mneyyy.dsh` | 与 dsh-Go 同族、无 15 字符约束、语义清晰 |
+| D1 | 新包名 | `io.github.ccch1mneyyy.dsh` | ⚠️ 已被 0.4.1 推翻（回 `com.dsh.android`）｜与 dsh-Go 同族、无 15 字符约束、语义清晰 |
 | D2 | targetSdk 目标 | **34**（中间档 29 / 30 逐档验） | 与 Operit 对齐；不追 35，避开 edge-to-edge 强制首年回归 |
 | D3 | 构建期 Termux 来源 | **保留 deb 拉取** | Termux 仅作为 proot/talloc/shmem 的上游二进制来源；运行时零依赖。自编 proot 另立项 |
 | D4 | REMOTE 宿主 | **保留** | 它是连接方式不是宿主，与「单宿主」不冲突 |
@@ -221,6 +221,10 @@ files/usr/bin/bash    -> /data/app/~~…/lib/arm64/libbash.so
 被清掉的是 1 个会话 / 2.2 MB 测试数据。
 
 ⚠️ 由此固化一条迁移常识：**换包名 = 新安装，旧包数据不继承**。删旧包前必须先导出。
+
+> ⚠️ **P4 的包名决定已被 `0.4.1` 推翻**：`applicationId` 回到 `com.dsh.android`，
+> 新包名 `io.github.ccch1mneyyy.dsh` 不再使用（理由：老用户可无感覆盖升级）。
+> 下方 P4 章节保留作历史记录。
 
 ## P4 包名解除
 
