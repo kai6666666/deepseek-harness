@@ -59,7 +59,7 @@ if (map.source !== 'device' && !ALLOW_PC) {
   console.error('  内建它 ⇒ 真机上的 goto 会走到屏、但按表里的坐标/类名核对必然错。');
   console.error('');
   console.error('  正解（在设备上重采，约 10 分钟）：');
-  console.error('    adb shell pidof com.dsh.android');
+  console.error('    adb shell pidof io.github.ccch1mneyyy.dsh');
   console.error('    adb forward tcp:19222 localabstract:webview_devtools_remote_<pid>');
   console.error('    $env:UIMAP_CDP = "http://127.0.0.1:19222"');
   console.error('    node tools/ui-map-real-frontend.mjs "<真机 url（带 token）>"');
