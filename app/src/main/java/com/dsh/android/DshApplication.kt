@@ -100,7 +100,7 @@ class DshApplication : Application() {
         //   但都该在启动早期就确定状态。
         runCatching { AdbPairingNotifier.clearStaleOnStartup(this) }
             .onFailure { DshLog.w(TAG, "清理残留配对状态失败", it) }
-        // ⚠️ 启动早期就建出配对通知渠道。本 App `targetSdk = 28`，在 Android 13+
+        // ⚠️ 启动早期就建出配对通知渠道。本 App `targetSdk = 35`，在 Android 13+
         //   上走「旧应用」兼容路径 —— 系统只在**创建第一个通知渠道**时补弹一次
         //   通知权限框，错过就再也不问。原实现渠道要等用户点「配对」才建，
         //   于是首次打开 App 永远拿不到那个弹框，必须退出重进（见方法注释）。
