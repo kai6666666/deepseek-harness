@@ -1156,7 +1156,12 @@ class EngineManager private constructor(private val context: Context) {
         }
 
         // 名字会显示在对话框里、也会出现在所选工作区的路径中，用一眼能懂的词。
-        val roots = listOf("手机存储" to File("/sdcard"), "应用目录" to context.filesDir)
+        val roots = listOf(
+            "手机存储" to File("/sdcard"),
+            // 最常用的落点单独给一个入口：用户在对话框里少点两层
+            "下载" to File("/sdcard/Download"),
+            "应用目录" to context.filesDir,
+        )
         for ((name, target) in roots) {
             val link = File(home, name)
             try {
