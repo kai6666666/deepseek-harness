@@ -37,6 +37,10 @@ applyContentInsets()   // padding 加到 webContainer：全面屏 0，否则真�
 ⚠️ 系统栏区域的颜色现在由 **window 背景**提供（`applyPageBackground` 的
 `setBackgroundDrawable`），不再是 `window.statusBarColor`。
 
+**✅ 最终决定（0.4.1 起）：`com.dsh.android`，不再变更**
+本工程进入**维护态**：只修 bug，不再改身份（包名）、不再改架构（单运行时）。
+任何「换包名」的提议都要先读本文的代价小节 —— 它意味着用户再迁一次数据。
+
 **⚠️ 0.4.0 起包名回到 `com.dsh.android`**
 决定：**新包名 `io.github.ccch1mneyyy.dsh` 不再使用**。理由是老用户可无感升级
 （同包名 + 同签名即可覆盖），也不必再迁一次数据。
