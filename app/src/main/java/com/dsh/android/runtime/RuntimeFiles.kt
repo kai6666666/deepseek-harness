@@ -86,24 +86,44 @@ internal object RuntimeFiles {
         return old.takeIf { hadOld }
     }
 
-    /** Exact allowlist, rename only, after a healthy boot. termux/home stays in place. */
-    fun retireLegacy(filesDir: File): List<String> {
+    /**
+     * 删除 bionic 时代遗留（P3 起是**删除**，不再归档）。
+     *
+     * 精确 allowlist：只动下面这些名字；`home/`（会话与凭据）与 `workspace/` 绝不触碰。
+     * 为什么不搬到 `runtime/legacy-bionic`：归档会让每个升级装机永久多背一份几百 MB
+     * 的旧运行时，而它从 P1 之后已经没有任何读取方（`proot-libs` 同理）。
+     */
+    fun purgeLegacy(filesDir: File): List<String> {
         val base = filesDir.canonicalFile
-        val runtime = File(base, "runtime")
-        val archive = File(runtime, "legacy-bionic")
-        require(contains(filesDir, archive) && !Files.isSymbolicLink(runtime.toPath()) && !Files.isSymbolicLink(archive.toPath()))
-        val moved = ArrayList<String>()
-        for (relative in listOf("engine", "usr", "termux/usr")) {
+        require(base == filesDir.absoluteFile.canonicalFile)
+        val removed = ArrayList<String>()
+        for (relative in listOf("engine", "usr", "termux", "proot-libs", "runtime/legacy-bionic")) {
             val source = File(base, relative)
-            // A symlink in a parent could redirect the rename outside filesDir.
+            // 父目录若是符号链接，删除会越出 filesDir。
             if (source.parentFile.canonicalFile != source.parentFile.absoluteFile) continue
             if (!Files.exists(source.toPath(), NOFOLLOW_LINKS)) continue
-            if (!archive.mkdirs() && !archive.isDirectory) throw IOException("legacy archive mkdir failed")
-            val target = File(archive, relative.replace('/', '-') + "-${System.nanoTime()}")
-            if (!source.renameTo(target)) throw IOException("legacy rename failed: $relative")
-            moved += relative
+            deleteTree(source)
+            removed += relative
         }
-        return moved
+        return removed
+    }
+
+    /**
+     * 启动清扫：被中断的安装会留下接近满额的 `rootfs.staging-*` 与交换残留
+     * `rootfs.old-*`（真机实测曾累积 797 MB）。只扫 runtimeDir 下的一级目录。
+     */
+    fun sweepStale(runtimeDir: File): List<String> {
+        val dir = runtimeDir.canonicalFile
+        require(dir == runtimeDir.absoluteFile.canonicalFile)
+        val victims = (dir.listFiles() ?: emptyArray()).filter {
+            it.isDirectory && (it.name.startsWith("rootfs.staging-") || it.name.startsWith("rootfs.old-"))
+        }
+        val removed = ArrayList<String>()
+        for (v in victims) {
+            deleteTree(v)
+            removed += v.name
+        }
+        return removed
     }
 
     /** Guest diagnostic paths refer to rootfs files, not Android's /opt or /usr. */
