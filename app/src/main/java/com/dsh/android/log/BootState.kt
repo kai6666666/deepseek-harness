@@ -15,7 +15,7 @@ import java.util.Locale
  * ## 为什么不能靠系统
  *
  * API 30 才有 `ApplicationExitInfo`（系统给的退出原因 + 堆栈）。本工程
- * `targetSdk = 28`（硬约束②，见 AGENTS.md），`minSdk = 26` —— 真机跑在
+ * `targetSdk = 35`（P5/P21 抬升后），`minSdk = 26` —— 真机跑在
  * Android 10 上时**拿不到**这个 API。所以只能自己记。
  *
  * ## 判据
