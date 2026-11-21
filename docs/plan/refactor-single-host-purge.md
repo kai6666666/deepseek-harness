@@ -1,6 +1,6 @@
 # 重构计划：单宿主 + 去 Termux + 解除包名/targetSdk 限制
 
-> 状态：**执行中** — P0 ✅ / P1 ✅ / P2 ✅ / P3 ✅ / P5 全三档 ✅ / **P6 两批全 ✅（`refactor.10` + `refactor.11`）**；剩余 P4 包名
+> 状态：**全部阶段完成** — P0 ✅ / P1 ✅ / P2 ✅ / P3 ✅ / P5 29·30·34 ✅ / P6 两批 ✅ / **P4 包名 ✅（`refactor.12`）**；剩余为可选议题（35 edge-to-edge、冷启 `HTTP=-1` 偶发、历史文档清扫）
 > 基线：`main` @ `ff20f6024f`（引擎 `@deepseek-ai/dsh@0.2.2-rc.3`，App `0.2.2-rc.3` / vc54，mobile-ui `1.1.0-194`）
 > 目标版本：`0.3.0-refactor.N`（versionCode 从 55 起递增），发布到 prerelease `v0.3.0-refactor.N`
 > 最后更新：2026-11-20
@@ -230,6 +230,20 @@ files/usr/bin/bash    -> /data/app/~~…/lib/arm64/libbash.so
 
 **回滚**：改回包名即可（旧包仍留在设备上）。
 **数据**：改包名 = 新安装，**不继承**。执行前必须 `UserDataExporter` 导出 → 新包导入，并核对会话条数。
+
+**P4 实测（2026-11-21，vc67 / `v0.3.0-refactor.12`）**
+| 项 | 实测 |
+|---|---|
+| applicationId | system = `io.github.ccch1mneyyy.dsh`；gecko = `io.github.ccch1mneyyy.dsh.webview` |
+| `namespace` | **保持 `com.dsh.android`**（源码包名；改它要搬几百个文件 + 全部 import，收益为零） |
+| 共存 | `pm list packages` 同时有 `io.github.ccch1mneyyy.dsh` 与 `com.dsh.android` |
+| 新包首启 | 解包 rootfs 1.3 GB → 引擎 `dsh web http://127.0.0.1:46767` → JavaBridge 页面诊断已上报 |
+| 旧包 | `versionName=0.3.0-refactor.11`，`files/home/.dsh` 2.2 MB、sessions 1 个 —— 原样未动 |
+| 导入兼容 | `UserDataImporter.KNOWN_PACKAGES` 同时含新 2 个 id 与旧 2 个 id ⇒ 老备份仍可导入 |
+
+**P4 撞到的两个隐性依赖（改包名必查）**
+1. `namespace` 与 `applicationId` 是两件事：`namespace` 决定 `R`/`BuildConfig` 的包，改它会波及所有 `import com.dsh.android.R` —— 只改 `applicationId` 即可。
+2. `.github/workflows/sign-upgrade-apk.yml` 里有一条**硬断言** `name='com.dsh.android'`，换名后签名直接判红（本次已改为同时接受新旧 id）。
 
 ---
 
