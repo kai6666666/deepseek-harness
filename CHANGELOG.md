@@ -1,3 +1,26 @@
+## [0.3.0-refactor.5] — 2026-11-21
+vc=60
+
+### 变更（P5 第一档：targetSdk 28 → 29）
+- `targetSdk = 29`；`AndroidManifest.xml` 显式 `requestLegacyExternalStorage="true"`
+  （API 29 仍支持 legacy 存储模型，`/sdcard` 直读直写行为不变）。
+- **注释与文档修订**（旧文档仍在说「必须 15 字符 / 必须 28」，会误导下一次改动）：
+  `app/build.gradle.kts` 两段、`AGENTS.md`「两条硬约束」整节、`docs/agents/constraints.md`、
+  `docs/agents/dev-env.md`（11 处失效路径与已删脚本）、`EngineManager` 顶部架构注释、`DshApplication` 注释。
+
+### 判据（本档必须逐条过）
+```text
+首启解包（1.3 GB）成功
+工作区选 /sdcard/... 可读写
+悬浮球 + 无障碍 + 截图可用
+切后台 10 min 引擎不断连
+日志无 EACCES / avc: denied
+```
+
+### 已知
+- 下一档 30 需要 `MANAGE_EXTERNAL_STORAGE`（API 30 起 legacy 失效），届时 `READ/WRITE_EXTERNAL_STORAGE` 不再够用
+- 34 还要处理 FGS 类型与 edge-to-edge（`SystemBarAppearance` 有回归史）
+
 ## [0.3.0-refactor.4] — 2026-11-21
 vc=59
 
