@@ -1,3 +1,30 @@
+## [0.3.0-refactor.7] — 2026-11-21
+vc=62
+
+### 修复（vc61 起不来的真因）
+`ProotHost` 把 overlay 列表以 **`absolutePath`** 传给 guest 的 `--patch`，而 `dshHome` 是按
+**`canonicalPath`** 绑定进 guest 的：
+
+```text
+dshHome.absolutePath  = /data/user/0/com.dsh.android/files/home/.dsh   ← guest 里不存在
+dshHome.canonicalPath = /data/data/com.dsh.android/files/home/.dsh     ← guest 里唯一存在
+```
+
+引擎启动即 `ENOENT: failed to read overlay .../mobile-ui.patch.yml`，5 秒内退出。
+`envFile` 早在用 `canonicalPath`（注释写着「按原绝对路径绑定，guest 内逐字有效」），
+overlay 这条漏了。改为 `overlays.map { it.canonicalPath }`。
+
+### 同版包含
+- P5 第二档（targetSdk 30）：`MANAGE_EXTERNAL_STORAGE`、30+ 引导「所有文件访问」、
+  `/sdcard` 三级取源（全盘 → app 外部目录 → 老逻辑）、`bind /sdcard ->` 日志。
+
+### 判据
+```text
+引擎正常起（token 行 + 首帧）
+无 failed to read overlay
+targetSdk=30；logcat 见 bind / sdcard -> <路径>
+```
+
 ## [0.3.0-refactor.6] — 2026-11-21
 vc=61
 
