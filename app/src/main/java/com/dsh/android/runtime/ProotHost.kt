@@ -152,6 +152,12 @@ class ProotHost(
                         //   但 HOME 一直没人覆盖 —— 引擎进程的 $HOME 始终是 /root，
                         //   目录选择器（homedir() 起点）因此打开就是空的（vc74 截图）。
                         put("HOME", File(context.filesDir, "home").canonicalPath)
+                        // ⚠️ 必须注入 DSH_FILES：引擎内的插件（mobile-ui 等）靠它定位
+                        //   `dsh-env.mjs` / `devenv/` / `logs/`。宿主此前**没有**注入，
+                        //   插件只能用自己的兜底常量 —— 那个常量写死了旧包名
+                        //   `com.dsh.android`，P4 换包名后路径全部落空，
+                        //   表现为「设置 → 开发环境：无法获取状态（引擎插件未激活？）」。
+                        put("DSH_FILES", context.filesDir.canonicalPath)
                         put("TZ", TimeZone.getDefault().id)
                         if (File(rootfs, "etc/ssl/certs/ca-certificates.crt").isFile) {
                             put("SSL_CERT_FILE", "/etc/ssl/certs/ca-certificates.crt")
