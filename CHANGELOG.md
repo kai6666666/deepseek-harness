@@ -1,3 +1,34 @@
+## [0.3.2] — 2026-11-22
+vc=79
+
+### 新增：全面屏有了用户入口（桌面长按快捷方式）
+在此之前 `fullscreen` **只能**由模型调 `statusbar` 工具开启，用户想自己切一下没有任何
+入口。现在长按桌面图标有两个动作：
+
+```text
+全面屏：开   → SystemBarAppearance.fullscreen = true
+全面屏：关   → false
+```
+
+等价的命令行（验收用，也可自动化）：
+
+```bash
+adb shell am start -a com.dsh.android.action.FULLSCREEN \
+  -n io.github.ccch1mneyyy.dsh/com.dsh.android.MainActivity --ez enable true
+```
+
+实现：`res/xml/shortcuts.xml` 两个 shortcut（`singleTask` 下走 `onNewIntent`）→
+`MainActivity.handleFullscreenIntent()` → `SystemBarAppearance.apply(...)`，
+与 `statusbar` 工具改的是**同一个字段**（会落盘、重启仍生效）。
+
+### 判据
+```text
+am start -a com.dsh.android.action.FULLSCREEN … --ez enable true
+  → 日志「快捷方式：全面屏=true」+「内容让位：top=0」
+--ez enable false
+  → 「内容让位：top=<状态栏高度>」
+```
+
 ## [0.3.1] — 2026-11-22
 vc=78
 
