@@ -260,6 +260,11 @@ files/usr/bin/bash    -> /data/app/~~…/lib/arm64/libbash.so
   （`DSH_HOME` 覆盖了，所以数据没丢）⇒ 引擎进程 `$HOME=/root` ⇒ 选择器空列表。
 - 现在补 `HOME=<filesDir/home>`；并在 `rootfs/root` 建同一组入口，兼容客户端记住的旧路径。
 
+**targetSdk 35 / edge-to-edge（`refactor.21`，真机）**
+- `setDecorFitsSystemWindows(false)` + 真实 insets 加到 `webContainer` padding（全面屏 0）。
+- 真机：`内容让位 top=152` == `dumpsys statusBars frame=[0,0][1280,152]`；`engine.ready ms=51598`。
+- `statusBarHeightPx()` 首选 `insetTopPx`，根治 vc19 的物理/CSS 像素混用。
+
 **数据迁移演练（`refactor.14`，真机）**
 导出 → `pm clear` → 重启 → 导入 → 内容指纹核对：会话目录恢复为 `session-9bb9e914…` + `session-a97fddd5…`，
 `home/.dsh` 文件数回到 89。**演练暴露**：`pm clear` 会连 `Android/data/<包名>/files/Download/` 一起删，
