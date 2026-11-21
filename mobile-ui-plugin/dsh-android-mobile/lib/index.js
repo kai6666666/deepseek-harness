@@ -367,14 +367,21 @@ async function probe() {
 const DEV_ENV_ROUTE = '/api/dsh-android/devenv';
 
 /** app 私有目录：与 Kotlin 侧 `filesDir` 同一个路径（包名固定 com.dsh.android）。 */
-const DEV_ENV_FILES = process.env.DSH_FILES || '/data/user/0/com.dsh.android/files';
+// ⚠️ 不能写死包名：P4 把 applicationId 换成了 io.github.ccch1mneyyy.dsh，
+//   写死 com.dsh.android 会让脚本路径全部落空（「无法获取状态」的根因）。
+//   优先级：DSH_FILES（宿主注入）→ 由 DSH_HOME 推导（宿主的 DSH_HOME = <files>/home/.dsh）
+//   → 最后才用 cwd 兜底。
+function deriveFilesDir() {
+	if (process.env.DSH_FILES) return process.env.DSH_FILES;
+	const home = process.env.DSH_HOME;
+	if (home) return path.dirname(path.dirname(home));
+	return process.cwd();
+}
+const DEV_ENV_FILES = deriveFilesDir();
 const DEV_ENV_SCRIPT = path.join(DEV_ENV_FILES, 'dsh-env.mjs');
 // 0.5.0 PRoot Ubuntu 下 node 在 /usr/local/bin/node（或 process.execPath），不再是 termux/usr/bin/node
-const DEV_ENV_NODE = existsSync('/usr/local/bin/node')
-? '/usr/local/bin/node'
-: (existsSync(path.join(DEV_ENV_FILES, 'termux/usr/bin/node'))
-? path.join(DEV_ENV_FILES, 'termux/usr/bin/node')
-: process.execPath);
+// 单运行时（P3 之后）：只有 rootfs 里的 node，termux 分支已删除。
+const DEV_ENV_NODE = existsSync('/usr/local/bin/node') ? '/usr/local/bin/node' : process.execPath;
 const DEV_ENV_IS_PROOT = !DEV_ENV_NODE.includes('/termux/');
 const DEV_ENV_LOG = path.join(DEV_ENV_FILES, 'logs/devenv.log');
 const DEV_ENV_JOB = DEV_ENV_IS_PROOT
