@@ -75,7 +75,7 @@ internal object MigrationWizard {
             AlertDialog.Builder(activity)
                 .setTitle("检测到旧版 DSH")
                 .setMessage(
-                    "旧版（com.dsh.android）与本版是**两个独立应用**，数据不通用。\n\n" +
+                    "旧版（com.dsh.android）与本版是两个独立的 App，数据不通用。\n\n" +
                         "卸载旧版会连同它的会话 / 凭据 / 引擎数据一起删掉。建议按顺序做：\n\n" +
                         "① 打开旧版 →「导出数据」\n" +
                         "② 回到本版 →「导入数据」选择刚导出的 zip\n" +
