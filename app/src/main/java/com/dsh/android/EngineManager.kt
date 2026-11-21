@@ -34,22 +34,20 @@ import java.util.concurrent.TimeUnit
 /**
  * 管理内置 DSH 引擎的生命周期。
  *
- * 架构：
- *   $PREFIX/bin/node（Termux 官方 arm64 构建，随 APK 分发并由 TermuxBootstrap 铺入）
- *     └─ engine/node_modules/@deepseek-ai/dsh/lib/bin.js --profile web --no-open
- *          └─ 本地 HTTP 服务，打印带 token 的 URL
+ * 架构（0.5.0 起的单运行时）：
+ *   nativeLibraryDir/libproot.so（+ libproot-loader.so / libtalloc.so / libandroid-shmem.so）
+ *     └─ 挂载 filesDir/runtime/rootfs 为 guest 根
+ *          └─ guest 内 /usr/bin/node 跑 /opt/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js
+ *               └─ 本地 HTTP 服务，打印带 token 的 URL
  *
- * 引擎通过子进程运行，App 解析其 stdout 得到 URL 后交给 WebView 加载。
+ * 引擎跑在 PRoot 子进程里，App 解析其 stdout 得到 URL 后交给 WebView 加载。
  *
- * ## 为什么 Node 用 Termux 的构建而不是自编译
+ * ## 为什么可执行体全放 jniLibs
  *
- * node 与它的全部依赖（ICU / OpenSSL / libc++ …）都由 Termux 官方仓库针对 Android
- * bionic 构建，随 APK 内置即可离线可用。自编译需要交叉编译整个 V8，且要处理
- * `import.meta.main`（需 Node ≥ 24.2）等版本约束，成本与风险都高得多。
- *
- * ⚠️ 这条路线要求 `targetSdk ≤ 28`：Android 10 起 targetSdk ≥ 29 的应用不允许
- * `execve()` 自身私有目录里的文件（W^X / SELinux app_data_file 禁止 execute_no_trans），
- * 而 `$PREFIX/bin/node` 正落在私有目录里。详见 app/build.gradle.kts 的注释。
+ * 内核只允许 exec `nativeLibraryDir` 里的文件（API 29 起 app_data_file 被禁
+ * `execute_no_trans`），而 guest 内的 node / bash / dsh 由 proot loader mmap 装入，
+ * 根本不经内核 execve。所以 targetSdk 不再是硬约束（P5 逐档抬）。
+ * 详见 docs/plan/refactor-single-host-purge.md 与 app/build.gradle.kts 的注释。
  */
 class EngineManager private constructor(private val context: Context) {
 
