@@ -6635,6 +6635,9 @@ class EngineManager private constructor(private val context: Context) {
                     else -> -1
                 }.coerceIn(0, 100)
                 if (pct >= 0 && pct != lastPercent) {
+                    // 每跨 10% 打一行：锁屏/息屏时也能从日志证明进度在推进
+                    // （真机验收用；也让用户报「卡住」时能直接看出卡在哪一段）。
+                    if (pct / 10 != lastPercent / 10) Log.i(TAG, "runtime progress $pct% (${p.phase})")
                     lastPercent = pct
                     _state.value = State.Extracting(pct.coerceAtMost(99))
                 }
