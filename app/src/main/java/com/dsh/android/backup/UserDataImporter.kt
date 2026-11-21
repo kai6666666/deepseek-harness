@@ -120,10 +120,10 @@ object UserDataImporter {
      *   写死的代价只是「以后新增 flavor 要同步这里」，比正则瞎猜安全得多。
      */
     private val KNOWN_PACKAGES = listOf(
-        // P4 之后的新包名（system / gecko）
-        "io.github.ccch1mneyyy.dsh", "io.github.ccch1mneyyy.dsh.webview",
-        // P4 之前的历史包名 —— 老备份仍要能导进来
+        // 当前包名（0.4.0 起回到旧名）
         "com.dsh.android", "com.dsh.webview",
+        // P4~0.3.x 期间的包名 —— 现在要能**导回**旧包名，这四行必须都在
+        "io.github.ccch1mneyyy.dsh", "io.github.ccch1mneyyy.dsh.webview",
     )
 
     /**
