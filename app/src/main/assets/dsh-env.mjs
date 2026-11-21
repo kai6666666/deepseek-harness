@@ -17,7 +17,13 @@ import { fileURLToPath } from 'node:url';
 const SELF_DIR = path.dirname(fileURLToPath(import.meta.url));
 const FILES = process.env.DSH_FILES || SELF_DIR;
 const PREFIX = '/usr';
-const HOME = '/root';
+// ⚠️ HOME 必须是「用户主目录」，不能用 rootfs 里的 /root：
+//   目录选择器（dsh-host-directory-picker-auto 的 browse 后端）在没有传入路径时用
+//   `homedir()` 当起点。P3 清退 Termux 时把它硬编码成 '/root'，而入口链接
+//   （手机存储 / 下载 / 应用目录）建在 filesDir/home —— 于是选择器打开是**空的**
+//   （vc72 真机截图复现）。
+//   现在由宿主注入 DSH_USER_HOME（= filesDir/home 的 canonicalPath，guest 内可见）。
+const HOME = process.env.DSH_USER_HOME || '/root';
 const STATE_FILE = path.join(FILES, 'devenv/env-state.json');
 const BIN = path.join(PREFIX, 'bin');
 
