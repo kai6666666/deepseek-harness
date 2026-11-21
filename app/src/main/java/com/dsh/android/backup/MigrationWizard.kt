@@ -3,9 +3,7 @@ package com.dsh.android.backup
 import android.app.AlertDialog
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.provider.Settings
-import com.dsh.android.R
 import com.dsh.android.log.DshLog as Log
 
 /**
@@ -58,6 +56,10 @@ internal object MigrationWizard {
      */
     fun showIfNeeded(context: Context, force: Boolean = false) {
         if (shownThisRun && !force) return
+        // 用户点过「不再提示」就不再弹（除非 force）
+        val dismissed = context.getSharedPreferences("dsh_migration", Context.MODE_PRIVATE)
+            .getBoolean("dismissed", false)
+        if (dismissed && !force) return
         val legacy = legacyInstalled(context)
         if (!legacy && !force) return
         // 已经导入过数据（本版有会话目录）就不再打扰
