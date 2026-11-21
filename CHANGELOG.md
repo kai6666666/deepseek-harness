@@ -1,3 +1,38 @@
+## [0.3.4] — 2026-11-22
+vc=81
+
+### 修复：设置 → 开发环境 显示「无法获取状态（引擎插件未激活？）」
+**根因**（P4 换包名 + P3 去 Termux 的两处遗留叠加）：
+
+1. 宿主 `ProotHost` **从未注入 `DSH_FILES`**；
+2. 插件 `mobile-ui` 的兜底常量写死了旧包名 `com.dsh.android`。
+
+于是插件拼出的 `/data/user/0/com.dsh.android/files/dsh-env.mjs` 根本不存在，
+`spawn` 失败 → 返回 null → UI 显示「无法获取状态」。
+
+**真机对照**：在 guest 内直接跑 `dsh-env.mjs status --json` 是**成功**的
+（`exit=0`，返回完整 JSON，`builtin.node=v24.22.1`、`totalMb=363`）——
+说明脚本本身没问题，纯粹是插件定位不到它。
+
+**改法**
+- `ProotHost` 注入 `DSH_FILES=<filesDir canonicalPath>`；
+- 插件兜底改为 `DSH_FILES → dirname(dirname(DSH_HOME)) → cwd`，
+  并删除 `termux/usr/bin/node` 分支（P3 之后那条路已不存在）。
+
+### 工程化（B）
+`publish-apk.yml` 增加 **versionCode 严格递增**校验：与上一个正式 release 比较，
+不递增直接失败（防止旧版本被重新打 tag 覆盖线上产物）。读不到历史值时跳过，不阻塞首发布。
+
+### 文档（R3）
+`docs/agents/verification.md` 顶部加「历史文档（0.3.0 起不适用）」标注 ——
+bionic / Termux 双宿主时代的验收步骤已在 P2/P3 删除，只作历史对照。
+
+### 判据
+```text
+设置 → 开发环境：能看到 6 组（Node/Python/SSH/Java/Rust/Go）与「已用 N MB」
+日志不再出现 `devenv status 失败`
+```
+
 ## [0.3.3] — 2026-11-22
 vc=80
 
