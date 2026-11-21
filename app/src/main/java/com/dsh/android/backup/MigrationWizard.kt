@@ -35,7 +35,11 @@ internal object MigrationWizard {
     private const val TAG = "DSH"
 
     /** 旧包名（P4 之前的 `applicationId`）。 */
-    private const val LEGACY_PACKAGE = "com.dsh.android"
+    /**
+     * 0.4.0 起包名回到 `com.dsh.android`，所以「旧版」变成了 0.3.x 那条线
+     * `io.github.ccch1mneyyy.dsh` —— 检测到它就提示先导出再迁移。
+     */
+    private const val LEGACY_PACKAGE = "io.github.ccch1mneyyy.dsh"
 
     /** 本版是否已经提示过（进程级；重启 App 会再看一眼旧包在不在）。 */
     @Volatile
@@ -88,8 +92,8 @@ internal object MigrationWizard {
             AlertDialog.Builder(activity)
                 .setTitle("检测到旧版 DSH")
                 .setMessage(
-                    "旧版（com.dsh.android）与本版是两个独立的 App，数据不通用。\n\n" +
-                        "卸载旧版会连同它的会话 / 凭据 / 引擎数据一起删掉。建议按顺序做：\n\n" +
+                    "0.3.x 版（io.github.ccch1mneyyy.dsh）与本版是两个独立的 App，数据不通用。\n\n" +
+                        "卸载它会连同它的会话 / 凭据 / 引擎数据一起删掉。建议按顺序做：\n\n" +
                         exportHint + "\n" +
                         "② 回到本版 →「导入数据」选择刚导出的 zip\n" +
                         "③ 确认本版能看到会话后，再卸载旧版",
