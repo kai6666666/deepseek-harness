@@ -105,6 +105,14 @@ class ProotHost(
             when (val arg = raw) {
                 "/usr/bin/env" -> {
                     bind(dshHome); bind(workspace)
+                    // ⚠️ 别名绑：guest 里同时提供 /data/user/0/<pkg>/files 这条路。
+                    // 事实：assets 里的插件 overlay、以及 EngineManager 拼的很多路径用的是
+                    // File.absolutePath（/data/user/0/...），而 proot 只按 canonicalPath
+                    // （/data/data/...）绑定 —— 只挂后者时这些字符串在 guest 内全是 ENOENT，
+                    // 表现为「14 个插件 failed to import」甚至引擎直接退出。
+                    // 把 filesDir 再以绝对路径为 guest 路径绑一次，两套前缀都成立。
+                    val filesAlias = context.filesDir.absolutePath
+                    if (filesAlias != context.filesDir.canonicalPath) bind(context.filesDir, filesAlias)
                     val phone = phoneStorage?.takeIf { it.isDirectory }
                     if (phone != null) {
                         // 真机排障要看这一行：无「所有文件访问」时这里是
