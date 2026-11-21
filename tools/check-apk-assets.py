@@ -55,39 +55,10 @@ def required_for(abi: str) -> list[str]:
     ] + REQUIRED + abi_extra
 
 
-def required_sonames() -> list[str]:
-    """node 的 DT_NEEDED 里、由 bootstrap 提供的 soname（与生成脚本共用一份清单）。"""
-    p = Path(__file__).with_name("bootstrap-required.txt")
-    if not p.is_file():
-        return ["libz.so.1", "libssl.so.3", "libcrypto.so.3", "libc++_shared.so"]
-    return [ln.strip() for ln in p.read_text(encoding="utf-8").splitlines()
-            if ln.strip() and not ln.lstrip().startswith("#")]
-
-
 def check_nested(z: zipfile.ZipFile) -> list[str]:
     """拆开两个容器型资产看里面 —— 它们在，不等于它们齐。"""
     errs: list[str] = []
-    want = required_sonames()
-
-    key = "assets/bootstrap-aarch64.zip"
-    if key in z.namelist():
-        with zipfile.ZipFile(io.BytesIO(z.read(key))) as b:
-            names = b.namelist()
-            provided = {n[4:] for n in names if n.startswith("lib/")}
-            if "SYMLINKS.txt" not in names:
-                errs.append("bootstrap 缺 SYMLINKS.txt（libz.so.1 这类软链不会被重建）")
-            else:
-                sym = b.read("SYMLINKS.txt").decode("utf-8", "replace")
-                for line in sym.splitlines():
-                    if "←" in line:
-                        right = line.split("←", 1)[1].strip().replace("./", "").strip("/")
-                        provided.add(os.path.basename(right))
-            lack = [w for w in want if w not in provided]
-            if lack:
-                errs.append(f"bootstrap 缺必需 soname：{lack}")
-            else:
-                print(f"bootstrap：{len(names)} 条目，必需 soname 全在（{', '.join(want)}）")
-
+    # P6：bionic 时代的 bootstrap-aarch64.zip 已彻底删除，这里不再检查。
     key = "assets/node-runtime.bin"
     if key in z.namelist():
         with zipfile.ZipFile(io.BytesIO(z.read(key))) as n:
