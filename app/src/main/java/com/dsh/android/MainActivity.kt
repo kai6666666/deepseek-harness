@@ -937,7 +937,7 @@ class MainActivity : AppCompatActivity() {
         //   根因有两层：
     //     ① 本工程从未在代码里申请过 `POST_NOTIFICATIONS`（只在清单里声明了，
     //        靠系统在「创建第一个通知渠道」时自动补弹）—— 而那条自动弹框的时机
-    //        由系统定，本 App 的 `targetSdk = 28` 在 Android 13+ 上属于「旧应用」
+    //        由系统定，本 App 的 `targetSdk = 35` 在 Android 13+ 上属于「旧应用」
     //        路径，系统只在渠道创建时补问一次，错过就再也不会问；
     //     ② 于是首次启动时那一次自动弹框**被存储权限的框挤掉了**（同一时刻只能
     //        显示一个权限对话框），用户只看到存储权限。
@@ -1111,7 +1111,7 @@ class MainActivity : AppCompatActivity() {
      * `derive_gid`（底层文件的 gid 1015 被派生映射成视图的 gid 9997），就凭自带的
      * 9997 组读得到那个 `root:sdcard_rw 640` 的文件。
      *
-     * targetSdk = 28，系统仍走 legacy 存储模型（无分区存储），这两个权限在
+     * targetSdk = 35，系统仍走 legacy 存储模型（无分区存储），这两个权限在
      * Android 10 上照旧生效，不需要 MANAGE_EXTERNAL_STORAGE。
      */
     private fun ensureStorageAccess() {
@@ -4106,7 +4106,7 @@ class MainActivity : AppCompatActivity() {
         aiBrowser = null
         // ⚠️ **正常退出标记**：这是区分「崩溃」与「被系统杀掉」的唯一依据。
         //
-        // 本 App 的 `targetSdk = 28`，用不了 API 30 的 `ApplicationExitInfo`
+        // 本 App 的 `targetSdk = 35`，用不了 API 30 的 `ApplicationExitInfo`
         // （那个 API 能直接告诉你上次为什么死），所以只能自己记：能走到
         // onDestroy 且确实是在收尾（`isFinishing`）就说明是好好关掉的。
         //
