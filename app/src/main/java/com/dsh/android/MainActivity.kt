@@ -878,6 +878,7 @@ class MainActivity : AppCompatActivity() {
         SystemBarAppearance.attach(this)
         enableEdgeToEdgeCompat()
         handleFullscreenIntent(intent)
+        handleMigrationIntent(intent)
         observeEngine()
         observeImeInsets()   // 修复 65：键盘高度自学习 + 预判交接
         // 前台服务要在引擎启动前拉起：它同时是「进程不被回收」和 WakeLock 的持有者，
@@ -2691,6 +2692,22 @@ class MainActivity : AppCompatActivity() {
         if (fromRes > 0) return fromRes
         // 兜底：按密度折算 24dp（AOSP 默认值），至少不让页面完全不让位
         return (24 * resources.displayMetrics.density).toInt()
+    }
+
+    /**
+     * 迁移向导的调试入口（验收用）：
+     * `am start -n <pkg>/.MainActivity -a com.dsh.android.action.MIGRATION_HINT --ez force true`
+     */
+    private fun handleMigrationIntent(intent: Intent?) {
+        val action = intent?.action
+        if (action == "com.dsh.android.action.MIGRATION_HINT") {
+            val force = intent.getBooleanExtra("force", true)
+            com.dsh.android.backup.MigrationWizard.showIfNeeded(this, force)
+            intent.action = null
+            return
+        }
+        // 正常启动路径：旧包还在提示一次
+        com.dsh.android.backup.MigrationWizard.showIfNeeded(this)
     }
 
     /** 桌面快捷方式 / adb 用的全面屏动作（见 res/xml/shortcuts.xml）。 */
