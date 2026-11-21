@@ -283,7 +283,7 @@ android {
         //    升级路径 0.4.3/0.4.4 → 0.5.0：`$DSH_HOME`、workspace、logs 原地保留（S6 已验，
         //    数据 0 丢失），旧 `engine/`、`usr/`、`termux/usr` 首次健康启动后改名进
         //    `runtime/legacy-bionic/`（改名不删）。
-        versionName = "0.4.0"
+        versionName = "0.4.1"
         // 只支持 arm64-v8a：内置的引擎资产与 Termux bootstrap 都是 arm64 架构
         ndk {
             abiFilters += targetAbi
