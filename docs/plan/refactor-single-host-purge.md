@@ -255,6 +255,11 @@ files/usr/bin/bash    -> /data/app/~~…/lib/arm64/libbash.so
 - 探针（`ProotProbeActivity` 内跑 node）：三行入口全部 `enterable=true`，
   `ENTER_OK 手机存储 entries=67 / 下载 entries=32 / 应用目录 entries=13`。
 
+**工作区选择器第三层（`refactor.20`，真机）**
+- `launch.argv` 里 `/usr/bin/env -i HOME=/root …` 的 `HOME` 从未被 `{GUEST_ENV}` 覆盖
+  （`DSH_HOME` 覆盖了，所以数据没丢）⇒ 引擎进程 `$HOME=/root` ⇒ 选择器空列表。
+- 现在补 `HOME=<filesDir/home>`；并在 `rootfs/root` 建同一组入口，兼容客户端记住的旧路径。
+
 **数据迁移演练（`refactor.14`，真机）**
 导出 → `pm clear` → 重启 → 导入 → 内容指纹核对：会话目录恢复为 `session-9bb9e914…` + `session-a97fddd5…`，
 `home/.dsh` 文件数回到 89。**演练暴露**：`pm clear` 会连 `Android/data/<包名>/files/Download/` 一起删，
