@@ -877,6 +877,7 @@ class MainActivity : AppCompatActivity() {
         // 不提前登记窗口宿主的话这一轮就只能落盘、看不到效果。
         SystemBarAppearance.attach(this)
         enableEdgeToEdgeCompat()
+        handleFullscreenIntent(intent)
         observeEngine()
         observeImeInsets()   // 修复 65：键盘高度自学习 + 预判交接
         // 前台服务要在引擎启动前拉起：它同时是「进程不被回收」和 WakeLock 的持有者，
@@ -2692,6 +2693,23 @@ class MainActivity : AppCompatActivity() {
         return (24 * resources.displayMetrics.density).toInt()
     }
 
+    /** 桌面快捷方式 / adb 用的全面屏动作（见 res/xml/shortcuts.xml）。 */
+    private fun handleFullscreenIntent(intent: Intent?) {
+        if (intent?.action != ACTION_FULLSCREEN) return
+        val enable = intent.getBooleanExtra("enable", false)
+        // 复用同一套配置（会落盘 + 立即应用），与 statusbar 工具改的是同一个字段。
+        SystemBarAppearance.apply(this, "{\"fullscreen\":$enable}")
+        Log.i(DshApplication.TAG, "快捷方式：全面屏=" + enable)
+        // 防重入：intent 会被系统留着，避免 onNewIntent 重复处理同一动作
+        intent.action = null
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleFullscreenIntent(intent)
+    }
+
     // ── Edge-to-edge（targetSdk 35 起系统强制）────────────────────────────
     //
     // API 35 上：`decorFitsSystemWindows` 被强制为 false，`statusBarColor` /
@@ -2760,6 +2778,8 @@ class MainActivity : AppCompatActivity() {
 
     /** 最近一次已应用到窗口的全面屏状态（见 [applyFullscreen] 的状态门）。 */
     private var fullscreenApplied = false
+
+    private val ACTION_FULLSCREEN = "com.dsh.android.action.FULLSCREEN"
 
     /** 解析 `#RRGGBB` / `#AARRGGBB`；空串或非法时返回 null（调用方据此跳过这条栏）。 */
     private fun parseColorOrNull(hex: String): Int? {
