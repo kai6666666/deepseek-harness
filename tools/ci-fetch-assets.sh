@@ -22,7 +22,6 @@ WORK="${WORK:-/tmp/dsh-assets}"
 REQUIRED=(
   engine.bin
   node-runtime.bin
-  bootstrap-aarch64.zip
   boo-sandbox-run.bin
   boosandbox.bin
   linkcompat.bin
