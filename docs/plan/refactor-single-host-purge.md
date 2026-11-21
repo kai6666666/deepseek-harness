@@ -1,6 +1,6 @@
 # 重构计划：单宿主 + 去 Termux + 解除包名/targetSdk 限制
 
-> 状态：**执行中** — P0 ✅ / P1 ✅ / P2 ✅ / P3 ✅ / P5 全三档 ✅ / **P6 第一批 ✅（`refactor.10`）**；剩余 P6 第二批（bionic 构建脚本）、P4 包名
+> 状态：**执行中** — P0 ✅ / P1 ✅ / P2 ✅ / P3 ✅ / P5 全三档 ✅ / **P6 两批全 ✅（`refactor.10` + `refactor.11`）**；剩余 P4 包名
 > 基线：`main` @ `ff20f6024f`（引擎 `@deepseek-ai/dsh@0.2.2-rc.3`，App `0.2.2-rc.3` / vc54，mobile-ui `1.1.0-194`）
 > 目标版本：`0.3.0-refactor.N`（versionCode 从 55 起递增），发布到 prerelease `v0.3.0-refactor.N`
 > 最后更新：2026-11-20
@@ -317,6 +317,18 @@ guest 里就必然 `ENOENT`；表现还很误导——先是 `failed to read ove
 ---
 
 ### P6 收尾与文档 — 第一批 ✅（v0.3.0-refactor.10）
+
+**第二批 ✅（v0.3.0-refactor.11 / vc66）**
+- `tools/version.sh`：引擎版本改 **`tools/engine-version.txt` 单一来源**（以前从四个 bionic 脚本 sed），
+  保留 `verify-engine-upgrade.sh` 断言串作交叉校验；汇总行改 `engine=$ENG_SRC`，新增体检项「引擎版本单一来源」。
+- 删除 7 个 bionic 构建脚本：`build-engine-bin.sh`、`build-native-assets.sh`、`build-node-pty.sh`、
+  `build-extra-native.sh`、`build-node-addon-system.sh`、`build-node-addon-require-builtin.sh`、`node-runtime-wrap.sh`。
+- `apk.yml` 去掉这 7 个路径触发；`EngineManager` 注释改为历史说明。
+- 判据：`version.sh --check` → `VERSION PASS` + 「引擎版本单一来源 0.2.2-rc.3 OK」；
+  `grep build-engine-bin|build-node-runtime|build-bootstrap tools .github` = 0；vc66 真机首帧正常。
+
+**⚠️ 待查（非 P6 引入）**：安装后**首次**启动偶发 `引擎就绪检查失败：HTTP=-1`。vc66 实测第一次启动 59 s 命中，
+第二次启动 13 s 出首帧。P6 两批都没动运行时代码，怀疑是冷启动 + 健康检查窗口的竞态，留作独立议题。
 
 **已清（bionic 出包链）**
 - 删除 `.github/workflows/android-release.yml`（0.5.0 前的 bionic 出包链：现场造 `bootstrap-aarch64.zip` 并断言它在 APK 里）
