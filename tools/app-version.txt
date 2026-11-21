@@ -1,2 +1,2 @@
-versionName=0.3.0-refactor.6
-versionCode=61
+versionName=0.3.0-refactor.7
+versionCode=62
