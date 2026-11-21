@@ -1098,6 +1098,29 @@ class MainActivity : AppCompatActivity() {
      * Android 10 上照旧生效，不需要 MANAGE_EXTERNAL_STORAGE。
      */
     private fun ensureStorageAccess() {
+        // API 30+：legacy 存储模型被系统忽略，READ/WRITE 不再覆盖真 /sdcard。
+        // 这里**只引导一次**（SharedPreferences 记名），不反复弹设置页；
+        // 用户不给也不致命 —— ProotHost 会把 guest 的 /sdcard 绑到 app 专属外部目录。
+        if (Build.VERSION.SDK_INT >= 30 && !android.os.Environment.isExternalStorageManager()) {
+            val prefs = getSharedPreferences("dsh_storage", MODE_PRIVATE)
+            if (!prefs.getBoolean("allfiles_prompted", false)) {
+                prefs.edit().putBoolean("allfiles_prompted", true).apply()
+                val ok = runCatching {
+                    startActivity(
+                        Intent(
+                            Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                            Uri.parse("package:$packageName"),
+                        ),
+                    )
+                    true
+                }.getOrElse {
+                    runCatching {
+                        startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
+                    }.isSuccess
+                }
+                Log.i(DshApplication.TAG, "未授予「所有文件访问」，已引导一次（ok=$ok）；guest /sdcard 将回退到 app 外部目录")
+            }
+        }
         val needed = arrayOf(
             Manifest.permission.READ_EXTERNAL_STORAGE,
             Manifest.permission.WRITE_EXTERNAL_STORAGE,
