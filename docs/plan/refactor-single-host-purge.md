@@ -1,6 +1,6 @@
 # 重构计划：单宿主 + 去 Termux + 解除包名/targetSdk 限制
 
-> 状态：**执行中** — P0 ✅ / P1 ✅ / P2 ✅ / P3 ✅ / **P5 29 ✅ / 30 ✅**（`refactor.5` / `refactor.8`）；下一档 34，之后 P4 包名、P6 收尾
+> 状态：**执行中** — P0 ✅ / P1 ✅ / P2 ✅ / P3 ✅ / **P5 全三档 ✅（29=`refactor.5` · 30=`refactor.8` · 34=`refactor.9`）**；剩余 P4 包名、P6 收尾
 > 基线：`main` @ `ff20f6024f`（引擎 `@deepseek-ai/dsh@0.2.2-rc.3`，App `0.2.2-rc.3` / vc54，mobile-ui `1.1.0-194`）
 > 目标版本：`0.3.0-refactor.N`（versionCode 从 55 起递增），发布到 prerelease `v0.3.0-refactor.N`
 > 最后更新：2026-11-20
@@ -233,7 +233,7 @@ files/usr/bin/bash    -> /data/app/~~…/lib/arm64/libbash.so
 
 ---
 
-### P5 targetSdk 提升（29 → 30 → 34，一档一验）— 29 ✅（refactor.5）· 30 ✅（refactor.8）
+### P5 targetSdk 提升（29 → 30 → 34，一档一验）— 29 ✅（refactor.5）· 30 ✅（refactor.8）· 34 ✅（refactor.9）
 
 **动作**
 
@@ -296,6 +296,18 @@ guest 里就必然 `ENOENT`；表现还很误导——先是 `failed to read ove
 **结论**：`ProotHost` 现在对 `filesDir` 做**双前缀绑定**
 （`-b <canonical>:<canonical>` + `-b <canonical>:<absolute>`），两套写法都成立。
 以后新增任何 guest 路径时不需要再判断用哪种前缀。
+
+**34 档实测（2026-11-21，vc64 / `v0.3.0-refactor.9`）**
+| 项 | 实测 |
+|---|---|
+| 装机 | `versionCode=64 / targetSdk=34 / versionName=0.3.0-refactor.9` |
+| 引擎 | `dsh web http://127.0.0.1:35845` → `Web 内核已提交首帧` |
+| 前台服务 | 通知 `flags=FOREGROUND_SERVICE`；`startForeground 失败` = 0 |
+| Shizuku | `Shizuku 桥已就绪: manager=true binder=true granted=true`（`<queries>` 生效） |
+| 本档无需改的项 | `PendingIntent` 全带 IMMUTABLE/MUTABLE；组件 `exported` 全显式；全仓无 `registerReceiver` |
+
+**35 档（edge-to-edge 强制）刻意没做**：`SystemBarAppearance` 在 vc19 有过「顶栏整行下移」，
+要单独排期、单独验收，不能混在 targetSdk 抬档里做。
 
 **30 档要注意**
 - API 30 起 `requestLegacyExternalStorage` 被忽略 ⇒ 必须上 `MANAGE_EXTERNAL_STORAGE`（`ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION`），
