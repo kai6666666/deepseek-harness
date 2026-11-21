@@ -983,7 +983,7 @@ class MainActivity : AppCompatActivity() {
         }
         // ⚠️ **这里刻意不做任何「已经授权就早返回」的判断 —— 那正是原缺陷的成因。**
         //
-        //   本 App 的 `targetSdk = 28`（硬约束②，不能升），在 Android 13+ 上属于
+        //   本 App `targetSdk = 35`（P5/P21 抬升后），在 Android 13+ 上属于
         //   「旧应用」。这一档的权限语义有两个**互相矛盾**的读数，而它们都不可靠：
         //
         //   | 读数 | 对 `targetSdk < 33` 的行为 |
