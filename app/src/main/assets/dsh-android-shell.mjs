@@ -214,7 +214,7 @@ const EXIT_GRACE_MS = 5000;
  * TLS 1.3 的 external PSK 更是完全没暴露）。自己实现 SPAKE2 等于手写密码学，
  * 不可接受。
  *
- * 所以直接内置 Termux 官方的 `android-tools` 里的 `adb` 二进制 ——
+ * 所以直接内置上游 `android-tools` 里的 `adb` 二进制 ——
  * 复用 Google 自己的实现。它同时支持 legacy 与无线调试两条路。
  *
  * ## 端口从哪来：Kotlin 侧用 `NsdManager` 发现，写进文件
@@ -1453,7 +1453,7 @@ function readWirelessPort() {
  *
  * ⚠️ 三个变量缺一不可，都是踩过的坑：
  * - `HOME`：adb 在 `$HOME/.android/adbkey` 找密钥。指向别处会**静默自生成**一把新密钥。
- * - `LD_LIBRARY_PATH`：adb 是 Termux 的 ELF，要它的 `.so`。**只对 adb 需要** ——
+ * - `LD_LIBRARY_PATH`：adb 是 bionic ABI 的 ELF，要它的 `.so`。**只对 adb 需要** ——
  *   引擎进程绝不能设它（会毒化系统二进制，见 AGENTS.md）。
  * - `TMPDIR`：adb 硬编码往 `/tmp/adb.<pid>.log` 写启动日志，app 域无权写 `/tmp`
  *   （实测 `cannot open /tmp/adb.10535.log: Permission denied` → server 起不来）。
