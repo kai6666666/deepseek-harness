@@ -63,6 +63,10 @@ class RootfsInstaller(private val context: Context) {
         }
 
         runtimeDir.mkdirs()
+        // P3：每次安装前清扫上次中断留下的 staging/old（真机曾累积 797 MB）。
+        runCatching { RuntimeFiles.sweepStale(runtimeDir) }
+            .onSuccess { if (it.isNotEmpty()) Log.i(TAG, "清扫中断残留：" + it.joinToString()) }
+            .onFailure { Log.w(TAG, "清扫残留失败：" + it.message) }
         val free = context.filesDir.usableSpace
         if (RuntimeFiles.insufficientSpace(free)) {
             throw IOException(
@@ -143,9 +147,36 @@ class RootfsInstaller(private val context: Context) {
         }
     }
 
+    /**
+     * 统计「从 .xz 文件里读掉了多少字节」。
+     *
+     * 为什么需要它：解包阶段（xz → tar）**没有天然的总量**（tar 条目数未知、
+     * 解压后大小未知），原来只能报 `total = -1`，UI 就只能显示一个转圈。
+     * 而 `.xz` 文件本身的长度是已知的，压缩流读到哪里是线性推进的 ——
+     * 用它做分母，就能给出**真实**的百分比（真机实测 1.3 GB rootfs 读数线性）。
+     */
+    private class CountingInput(input: java.io.InputStream) : java.io.FilterInputStream(input) {
+        var count: Long = 0L
+            private set
+
+        override fun read(): Int {
+            val b = super.read()
+            if (b >= 0) count++
+            return b
+        }
+
+        override fun read(b: ByteArray, off: Int, len: Int): Int {
+            val n = super.read(b, off, len)
+            if (n > 0) count += n
+            return n
+        }
+    }
+
     private fun extractXz(xz: File, dest: File, onProgress: (Progress) -> Unit) {
         var done = 0L
-        XZInputStream(BufferedInputStream(FileInputStream(xz), 1 shl 20)).use { xzIn ->
+        val counted = CountingInput(BufferedInputStream(FileInputStream(xz), 1 shl 20))
+        val xzTotal = xz.length().coerceAtLeast(1)
+        XZInputStream(counted).use { xzIn ->
             TarArchiveInputStream(xzIn).use { tar ->
                 while (true) {
                     @Suppress("DEPRECATION")
@@ -232,7 +263,8 @@ class RootfsInstaller(private val context: Context) {
                         }
                     }
                     runCatching { target.setLastModified(entry.modTime.time) }
-                    onProgress(Progress("extract", done, -1, entry.name.takeLast(48)))
+                    // 分母用 .xz 已读字节（真实、线性），不再给 -1
+                    onProgress(Progress("extract", counted.count, xzTotal, entry.name.takeLast(48)))
                 }
             }
         }

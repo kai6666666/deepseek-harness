@@ -42,13 +42,10 @@ if [ -f "$CHANGELOG" ]; then
     CL_VER=$(grep -E '^## \[[0-9]' "$CHANGELOG" | head -1 | sed -e 's/^## \[//' -e 's/\].*//')
 fi
 
-# ---- 3. 引擎版本一致性 ----
+# ---- 3. 引擎版本：单一来源 tools/engine-version.txt ----
 ENG_ASSERT=$(sed -n 's/.*if \[ "\$V" = "\([^"]*\)".*/\1/p' tools/verify-engine-upgrade.sh 2>/dev/null | head -1)
-ENG_BUILD=$(sed -n 's/.*VER="\${VER:?.*\([0-9]\+\.[0-9]\+\.[0-9]\+[^ ]*\).*/\1/p' tools/build-engine-bin.sh 2>/dev/null | head -1)
-[ -z "$ENG_BUILD" ] && ENG_BUILD=$(grep -oE '[0-9]+\.[0-9]+\.[0-9]+-(alpha|beta|rc)\.[0-9]+' tools/build-engine-bin.sh 2>/dev/null | head -1)
-ENG_PROV=$(grep -oE '[0-9]+\.[0-9]+\.[0-9]+-(alpha|beta|rc)\.[0-9]+' tools/provision-glibc-host.sh 2>/dev/null | head -1)
-ENG_DIR1=$(grep -oE '[0-9]+\.[0-9]+\.[0-9]+-(alpha|beta|rc)\.[0-9]+' tools/build-node-addon-system.sh 2>/dev/null | head -1)
-ENG_DIR2=$(grep -oE '[0-9]+\.[0-9]+\.[0-9]+-(alpha|beta|rc)\.[0-9]+' tools/build-node-pty.sh 2>/dev/null | head -1)
+ENG_SRC=$(tr -d ' \r\n' < tools/engine-version.txt 2>/dev/null)
+[ -n "$ENG_SRC" ] || die "读不到 tools/engine-version.txt（引擎版本唯一来源）"
 
 ok() { printf '  %-34s %-22s %s\n' "$1" "$2" "OK"; }
 bad() { printf '  %-34s %-22s %s\n' "$1" "$2" "MISMATCH"; FAIL=1; }
@@ -58,9 +55,8 @@ printf '  %-34s %-22s\n' "来源" "值"
 printf '  %-34s %-22s\n' "app versionName" "$APP_VER"
 printf '  %-34s %-22s\n' "app versionCode" "$APP_VC"
 printf '  %-34s %-22s\n' "CHANGELOG 最新正式版" "${CL_VER:-<none>}"
+printf '  %-34s %-22s\n' "引擎 engine-version.txt" "${ENG_SRC:-<none>}"
 printf '  %-34s %-22s\n' "引擎断言 (verify-engine-upgrade)" "${ENG_ASSERT:-<none>}"
-printf '  %-34s %-22s\n' "引擎 build-engine-bin" "${ENG_BUILD:-<none>}"
-printf '  %-34s %-22s\n' "引擎 provision-glibc-host" "${ENG_PROV:-<none>}"
 echo ""
 
 if [ -n "$CL_VER" ]; then
@@ -91,22 +87,15 @@ if [ -n "$PREV_VC" ] && [ -n "$CL_VC" ]; then
     fi
 fi
 
-for pair in "build-engine-bin:$ENG_BUILD" "provision-glibc-host:$ENG_PROV" \
-            "build-node-addon-system:$ENG_DIR1" "build-node-pty:$ENG_DIR2"; do
-    name=${pair%%:*}
-    val=${pair#*:}
-    if [ -z "$val" ]; then
-        bad "引擎默认值 $name" "<none>"
-    elif [ "$val" = "$ENG_ASSERT" ]; then
-        ok "引擎默认值 $name" "$val"
-    else
-        bad "引擎默认值 $name" "$val vs $ENG_ASSERT"
-    fi
-done
 
+if [ -n "$ENG_ASSERT" ] && [ "$ENG_ASSERT" != "$ENG_SRC" ]; then
+    bad "引擎断言 = engine-version.txt" "$ENG_ASSERT vs $ENG_SRC"
+else
+    ok "引擎版本单一来源" "$ENG_SRC"
+fi
 echo ""
 if [ "$FAIL" -eq 0 ]; then
-    echo "---- VERSION PASS  app=$APP_VER vc=$APP_VC engine=$ENG_ASSERT"
+    echo "---- VERSION PASS  app=$APP_VER vc=$APP_VC engine=$ENG_SRC"
     exit 0
 fi
 echo "---- VERSION FAIL  （改版本号时请同步 CHANGELOG 与各构建脚本默认值）"

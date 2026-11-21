@@ -71,15 +71,29 @@ object LogContext {
     fun publicExportDirOrNull(): java.io.File? {
         val c = ctx ?: return null
         return try {
-            val granted = c.checkSelfPermission(android.Manifest.permission.WRITE_EXTERNAL_STORAGE) ==
-                android.content.pm.PackageManager.PERMISSION_GRANTED
+            // ⚠️ **不能再用 `WRITE_EXTERNAL_STORAGE` 判定**：targetSdk ≥ 29 且无 legacy 时
+            //   该权限在系统侧恒为「未授予」（本机实测 granted=false），于是永远退到
+            //   `Android/data/<包名>/files/Download` —— 那个目录**卸载/清数据即被删**，
+            //   正是 .14 那次「备份随卸载消失」的真实成因。
+            //   API 30+ 的正确判据是 `Environment.isExternalStorageManager()`。
+            val granted = if (android.os.Build.VERSION.SDK_INT >= 30) {
+                android.os.Environment.isExternalStorageManager()
+            } else {
+                c.checkSelfPermission(android.Manifest.permission.WRITE_EXTERNAL_STORAGE) ==
+                    android.content.pm.PackageManager.PERMISSION_GRANTED
+            }
             if (granted) {
                 @Suppress("DEPRECATION")
                 val pub = android.os.Environment
                     .getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
-                if (pub != null && (pub.isDirectory || pub.mkdirs())) return pub
+                if (pub != null && (pub.isDirectory || pub.mkdirs())) {
+                    android.util.Log.i("DSH", "导出落点：公共 Download（已授予所有文件访问）")
+                    return pub
+                }
             }
-            c.getExternalFilesDir(android.os.Environment.DIRECTORY_DOWNLOADS) ?: c.filesDir
+            val priv = c.getExternalFilesDir(android.os.Environment.DIRECTORY_DOWNLOADS) ?: c.filesDir
+            android.util.Log.i("DSH", "导出落点：私有目录 " + priv.absolutePath + "（未授予所有文件访问，卸载会删）")
+            priv
         } catch (t: Throwable) {
             // 崩溃路径/极早期调用：拿不到就退回私有目录，绝不能让导出整个失败。
             c.filesDir

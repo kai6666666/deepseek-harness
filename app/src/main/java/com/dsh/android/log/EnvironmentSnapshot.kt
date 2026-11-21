@@ -17,7 +17,7 @@ import java.io.File
  *
  * ## 为什么必须有
  *
- * 本项目大量故障是**设备相关**的：Android 版本决定硬约束②（`targetSdk ≤ 28`）
+ * 本项目大量故障是**设备相关**的：Android 版本决定`targetSdk`（历史上曾被迫 ≤ 28）
  * 能否满足、`filesDir` 能否 `execve`；WebView 内核版本决定前端 bundle 能不能跑；
  * 剩余空间决定解包会不会失败；内存决定会不会被 LMK 杀。
  *
@@ -70,7 +70,7 @@ object EnvironmentSnapshot {
                     put("sdkInt", Build.VERSION.SDK_INT)
                     put("previewSdk", Build.VERSION.PREVIEW_SDK_INT)
                     put("securityPatch", if (Build.VERSION.SDK_INT >= 23) Build.VERSION.SECURITY_PATCH else "")
-                    // ⚠️ 内核版本是硬约束②的判据之一（execve 能否用取决于内核+SELinux）
+                    // ⚠️ 内核版本曾是 targetSdk 抬档的判据之一（execve 能否用取决于内核+SELinux）
                     //   读不到时**显式记原因**，别让空串被误读成「采集逻辑漏了这个字段」。
                     val kv = kernelVersion()
                     put("kernel", kv)
@@ -237,7 +237,7 @@ object EnvironmentSnapshot {
      *
      * 原先只做 `File("/proc/version").readText()`，`runCatching` 一兜底就返回 `""`。
      * 而 **Android 10（API 29）起 SELinux 把 `untrusted_app` 读 `/proc/version`
-     * 也拒了** —— 于是这个字段在 53 个诊断包里 **41 个是空串**，而它恰恰是硬约束②
+     * 也拒了** —— 于是这个字段在 53 个诊断包里 **41 个是空串**，而它恰恰是当年抬 targetSdk 的关键
      * （`execve` 能否用取决于内核 + SELinux）排查时要看的第一行。
      *
      * 真机证据（CDY-TN90 / Android 10 / `Enforcing`）。**最硬的一条是内核自己的

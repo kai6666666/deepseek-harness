@@ -3,6 +3,12 @@
 > 本文是 [AGENTS.md](../../AGENTS.md) 的分册之一，
 索引见 [docs/agents/README.md](README.md)。
 
+## 历史状态（2026-11-18 补记）
+
+- **PR#9 的三个缺陷**（别名桥接误认领、`MP_LEGACY_HASHES` 未随引擎同步、单局部名豁免）**已在更早的 mobile-ui 版本修复**，本文档曾长时间未同步，读起来像是「仍未修」。
+- 本次 `0.2.2-rc.3-debug` 升级**只做回归**：不重开这三个缺陷，也不把修复归功于尚未发布的 `1.1.0-186`。`1.1.0-186` 的职责仅是「跟随 rc.3 的 CSS Module hash 与压缩产物形态」。
+- 回归判据仍以本文「别名桥接的判据」与 [mobile-ui-rc3.md](mobile-ui-rc3.md) 的 6 条断言为准。
+
 ## 移动端 UI 插件
 
 源码在 `mobile-ui-plugin/dsh-android-mobile/`，打包成 `assets/mobile-ui.zip`。

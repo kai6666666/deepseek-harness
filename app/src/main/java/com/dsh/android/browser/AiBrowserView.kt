@@ -496,7 +496,7 @@ class AiBrowserView(context: Context) : FrameLayout(context) {
      * 把一次下载交给系统的 `DownloadManager`。
      *
      * 落到 `Android/data/com.dsh.android/files/Download/` —— 这是 App 专属外部
-     * 目录，**不需要 `WRITE_EXTERNAL_STORAGE`**（targetSdk 28 下写公共
+     * 目录，**不需要 `WRITE_EXTERNAL_STORAGE`**（历史上 targetSdk 28 写公共
      * Download 目录是要权限的，而为了下一张图片去申请存储权限不值得）。
      */
     private fun enqueueDownload(

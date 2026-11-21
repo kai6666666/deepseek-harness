@@ -35,9 +35,9 @@ case "$ABI" in
   *) echo "[rt][ERROR] 不支持的 ABI: $ABI" >&2; exit 2 ;;
 esac
 
-DSH_VERSION=${DSH_VERSION:-0.2.2-rc.1}
+DSH_VERSION=${DSH_VERSION:-$(tr -d ' \r\n' < "$HERE/../engine-version.txt")}
 NODE_VERSION=${NODE_VERSION:-24.22.1}
-PNPM_VERSION=${PNPM_VERSION:-10.28.2}
+PNPM_VERSION=${PNPM_VERSION:-11.28.5}
 CA_CERTS_VERSION=${CA_CERTS_VERSION:-20260816ubuntu0.24.04.2}
 CA_CERTS_SHA=${CA_CERTS_SHA:-f9fbacd417b515450b831032cc39d18059e9874e67525679a43c16071dabf9a0}
 UBUNTU_VERSION=${UBUNTU_VERSION:-24.04.5}
@@ -115,28 +115,29 @@ for d in "$PROOT_DEB" "$TALLOC_DEB" "$SHMEM_DEB"; do
 done
 mkdir -p "$JNI"
 TERMUX_USR=$WORK/deb/proot_${PROOT_VERSION}/data/data/com.termux/files/usr
+TALLOC_USR=$WORK/deb/libtalloc_${TALLOC_VERSION}/data/data/com.termux/files/usr
+SHMEM_USR=$WORK/deb/libandroid-shmem_${SHMEM_VERSION}/data/data/com.termux/files/usr
 # ⚠️ 不要 patchelf 改 proot 的 DT_NEEDED：LDPlayer x86_64 实测，改过的 proot
 # 在 --version 阶段就 SIGSEGV（原版 proot + 同一个 libtalloc 正常）。
-# Android 只抽取 lib*.so，所以 libtalloc.so.2 / libandroid-shmem.so 作为
-# **assets 原样**下发，ProotHost 解到 files/proot-libs 并放进 LD_LIBRARY_PATH。
+#
+# P1（0.3.0-refactor.1）：可执行体与它依赖的共享库**全部收进 jniLibs**，不再往
+# assets 里放 proot-libs。做法不是 patchelf，而是**等长改写 .dynstr**：proot 的
+# DT_NEEDED 是 dynstr 里的一个偏移，把 "libtalloc.so.2" 覆写成 "libtalloc.so\0\0"
+# 后偏移不变、文件大小不变 ⇒ 不会像 patchelf 那样改坏它。
+# Android 只抽取 lib*.so（且 extractNativeLibs/useLegacyPackaging 已开），
+# 所以文件必须叫 libtalloc.so / libandroid-shmem.so。
 cp "$TERMUX_USR/bin/proot"            "$JNI/libproot.so"
 cp "$TERMUX_USR/libexec/proot/loader" "$JNI/libproot-loader.so"
+cp "$TALLOC_USR/lib/libtalloc.so.2.5.0" "$JNI/libtalloc.so"
+cp "$SHMEM_USR/lib/libandroid-shmem.so" "$JNI/libandroid-shmem.so"
+python3 "$HERE/patch-dynstr.py" "$JNI/libproot.so" libtalloc.so.2 libtalloc.so
 chmod 755 "$JNI/libproot.so" "$JNI/libproot-loader.so"
+chmod 644 "$JNI/libtalloc.so" "$JNI/libandroid-shmem.so"
 log "jniLibs: $(ls -l "$JNI" | awk 'NR>1{printf "%s=%s ", $9, $5}')"
 # 产物侧也放一份，App 的 jniLibs 直接指向这里
 OUT_JNI=$OUT/$ABI/jniLibs/$ABI
 mkdir -p "$OUT_JNI"
 cp "$JNI"/*.so "$OUT_JNI"/
-
-# proot 运行期库：保持 deb 里的原名（libtalloc.so.2），由 ProotHost 解到
-# files/proot-libs 并放进 LD_LIBRARY_PATH。patchelf 改名会把这个 bionic
-# 二进制改坏（LDPlayer x86_64 实测 SIGSEGV）。
-PROOT_LIBS=$OUT/$ABI/assets/runtime/proot-libs
-mkdir -p "$PROOT_LIBS"
-cp "$WORK/deb/libtalloc_${TALLOC_VERSION}/data/data/com.termux/files/usr/lib/libtalloc.so.2.5.0" "$PROOT_LIBS/libtalloc.so.2"
-cp "$WORK/deb/libandroid-shmem_${SHMEM_VERSION}/data/data/com.termux/files/usr/lib/libandroid-shmem.so" "$PROOT_LIBS/libandroid-shmem.so"
-chmod 644 "$PROOT_LIBS/libtalloc.so.2" "$PROOT_LIBS/libandroid-shmem.so"
-log "proot-libs: $(ls -l "$PROOT_LIBS" | awk 'NR>1{printf "%s=%s ", $9, $5}')"
 
 # ---------- 3. rootfs ----------
 rm -rf "$ROOTFS"
@@ -260,7 +261,16 @@ done
 ln -sf "../lib/node_modules/pnpm/bin/pnpm.cjs" "$ROOTFS/usr/local/bin/pnpm"
 chmod 755 "$ROOTFS/usr/local/lib/node_modules/pnpm/bin/pnpm.cjs"
 # 裁剪 pnpm 里非当前平台（darwin / win32）的原生模块与 exe，避免 verify.py 拦截
-rm -f "$ROOTFS/usr/local/lib/node_modules/pnpm/dist"/reflink.darwin-*.node       "$ROOTFS/usr/local/lib/node_modules/pnpm/dist"/reflink.win32-*.node       "$ROOTFS/usr/local/lib/node_modules/pnpm/dist/vendor"/*.exe 2>/dev/null || true
+# ⚠️ pnpm 10 把 reflink 放在 `dist/reflink.<os>-<arch>.node`；
+#    pnpm 11 改成 `dist/node_modules/@reflink/reflink-<os>-<arch>/reflink.<os>-<arch>.node`。
+#    两条路径都要清，否则 4 个 darwin/win32 的 .node（Mach-O/PE，e_machine=None）
+#    会被 verify.py 判成「不是 AArch64」——CI 实测踩到（run 44143285309）。
+PNPM_DIST="$ROOTFS/usr/local/lib/node_modules/pnpm/dist"
+rm -f "$PNPM_DIST"/reflink.darwin-*.node "$PNPM_DIST"/reflink.win32-*.node "$PNPM_DIST"/vendor/*.exe 2>/dev/null || true
+if [ -d "$PNPM_DIST/node_modules/@reflink" ]; then
+  find "$PNPM_DIST/node_modules/@reflink" -mindepth 1 -maxdepth 1 -type d \
+    ! -name 'reflink-linux-*' -exec rm -rf {} + 2>/dev/null || true
+fi
 cat > "$ROOTFS/usr/local/bin/dsh" <<'SH'
 #!/bin/sh
 exec /usr/local/bin/node /opt/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js "$@"
@@ -305,7 +315,7 @@ if [ "${DSH_RT_SKIP_ENGINE:-0}" != "1" ]; then
 
     log "apply patches ($DSH_VERSION)"
     python3 "$REPO_ROOT/tools/runtime/apply-patches.py" \
-      --prefix "$ROOTFS/opt/dsh" --dsh-version "$DSH_VERSION" \
+      --prefix "$ROOTFS/opt/dsh" --dsh-version "$DSH_VERSION" --require-version \
       --patches "$REPO_ROOT/runtime/patches"
   )
 else

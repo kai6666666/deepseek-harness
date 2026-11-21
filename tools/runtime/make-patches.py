@@ -142,12 +142,10 @@ def main() -> int:
             print(f"[WANT] {spec['name']}: 可应用")
             continue
         (OUT / f"{spec['name']}.diff").write_text(diff, encoding="utf-8")
-        pins["patches"][f"{spec['name']}.diff"] = {
-            args.version: {
-                spec["rel"]: {
-                    "before": hashlib.sha256(before.encode()).hexdigest(),
-                    "after": hashlib.sha256(after.encode()).hexdigest(),
-                }
+        pins["patches"].setdefault(f"{spec['name']}.diff", {})[args.version] = {
+            spec["rel"]: {
+                "before": hashlib.sha256(before.encode()).hexdigest(),
+                "after": hashlib.sha256(after.encode()).hexdigest(),
             }
         }
         print(f"[GEN]  {spec['name']}.diff  {len(diff)} B")

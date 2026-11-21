@@ -29,7 +29,9 @@ import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.lifecycleScope
 import com.dsh.android.backup.BackupDialog
@@ -874,6 +876,9 @@ class MainActivity : AppCompatActivity() {
         // 同上：AI 可能在 App 刚起、还没走到 onResume 时下发系统栏配色，
         // 不提前登记窗口宿主的话这一轮就只能落盘、看不到效果。
         SystemBarAppearance.attach(this)
+        enableEdgeToEdgeCompat()
+        handleFullscreenIntent(intent)
+        handleMigrationIntent(intent)
         observeEngine()
         observeImeInsets()   // 修复 65：键盘高度自学习 + 预判交接
         // 前台服务要在引擎启动前拉起：它同时是「进程不被回收」和 WakeLock 的持有者，
@@ -934,15 +939,17 @@ class MainActivity : AppCompatActivity() {
         //   根因有两层：
     //     ① 本工程从未在代码里申请过 `POST_NOTIFICATIONS`（只在清单里声明了，
     //        靠系统在「创建第一个通知渠道」时自动补弹）—— 而那条自动弹框的时机
-    //        由系统定，本 App 的 `targetSdk = 28` 在 Android 13+ 上属于「旧应用」
+    //        由系统定，本 App 的 `targetSdk = 35` 在 Android 13+ 上属于「旧应用」
     //        路径，系统只在渠道创建时补问一次，错过就再也不会问；
     //     ② 于是首次启动时那一次自动弹框**被存储权限的框挤掉了**（同一时刻只能
     //        显示一个权限对话框），用户只看到存储权限。
         //   两者叠加的后果正是用户说的：没有通知权限 ⇒ 配对引导横幅根本发不出来
         //   ⇒ 用户想设置特权权限却无处下手（横幅是唯一的交互出口）。
         //
-        //   现在显式申请、且**串行**接在存储权限之后，保证首次打开就能拿到结论。
-        ensureNotificationAccess()
+        //   P15（refactor.16）：**再往后挪一步** —— 通知权限改为等界面真正可用
+        //   （`UiStage.UiReady`）再申请。原因：首启时这个弹窗会盖住「正在解包 N%」，
+        //   用户看到的是「进度消失」。解包期间不能有任何系统弹窗。
+        Log.i(DshApplication.TAG, "通知权限推迟到界面可用后再申请")
     }
 
     /**
@@ -959,6 +966,18 @@ class MainActivity : AppCompatActivity() {
      *   直接拒绝开始配对并记日志，设置页据此提示用户 —— 但用户首次打开 App 时
      *   本该一次性把权限拿齐，而不是先撞一次墙。
      */
+    /**
+     * 只申请一次通知权限；**必须在界面可用之后调用**（`UiStage.UiReady`）。
+     *
+     * 早于解包结束调用会让系统弹窗盖住「正在解包 N%」，用户以为进度丢了。
+     */
+    private var notificationAsked = false
+    private fun ensureNotificationAccessAfterUiReady() {
+        if (notificationAsked) return
+        notificationAsked = true
+        ensureNotificationAccess()
+    }
+
     private fun ensureNotificationAccess() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
             // Android 13 以下没有这个运行时权限，通知默认可用。
@@ -966,7 +985,7 @@ class MainActivity : AppCompatActivity() {
         }
         // ⚠️ **这里刻意不做任何「已经授权就早返回」的判断 —— 那正是原缺陷的成因。**
         //
-        //   本 App 的 `targetSdk = 28`（硬约束②，不能升），在 Android 13+ 上属于
+        //   本 App `targetSdk = 35`（P5/P21 抬升后），在 Android 13+ 上属于
         //   「旧应用」。这一档的权限语义有两个**互相矛盾**的读数，而它们都不可靠：
         //
         //   | 读数 | 对 `targetSdk < 33` 的行为 |
@@ -1094,10 +1113,41 @@ class MainActivity : AppCompatActivity() {
      * `derive_gid`（底层文件的 gid 1015 被派生映射成视图的 gid 9997），就凭自带的
      * 9997 组读得到那个 `root:sdcard_rw 640` 的文件。
      *
-     * targetSdk = 28，系统仍走 legacy 存储模型（无分区存储），这两个权限在
+     * targetSdk = 35，系统仍走 legacy 存储模型（无分区存储），这两个权限在
      * Android 10 上照旧生效，不需要 MANAGE_EXTERNAL_STORAGE。
      */
     private fun ensureStorageAccess() {
+        // API 30+：legacy 存储模型被系统忽略，READ/WRITE 不再覆盖真 /sdcard。
+        // 这里**只引导一次**（SharedPreferences 记名），不反复弹设置页；
+        // 用户不给也不致命 —— ProotHost 会把 guest 的 /sdcard 绑到 app 专属外部目录。
+        if (Build.VERSION.SDK_INT >= 30) {
+            val manager = runCatching { android.os.Environment.isExternalStorageManager() }.getOrDefault(false)
+            Log.i(
+                DshApplication.TAG,
+                "存储态：isExternalStorageManager=" + manager +
+                    (if (manager) "（guest /sdcard = 真手机存储）" else "（guest /sdcard = app 私有副本）"),
+            )
+        }
+        if (Build.VERSION.SDK_INT >= 30 && !android.os.Environment.isExternalStorageManager()) {
+            val prefs = getSharedPreferences("dsh_storage", MODE_PRIVATE)
+            if (!prefs.getBoolean("allfiles_prompted", false)) {
+                prefs.edit().putBoolean("allfiles_prompted", true).apply()
+                val ok = runCatching {
+                    startActivity(
+                        Intent(
+                            Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                            Uri.parse("package:$packageName"),
+                        ),
+                    )
+                    true
+                }.getOrElse {
+                    runCatching {
+                        startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
+                    }.isSuccess
+                }
+                Log.i(DshApplication.TAG, "未授予「所有文件访问」，已引导一次（ok=$ok）；guest /sdcard 将回退到 app 外部目录")
+            }
+        }
         val needed = arrayOf(
             Manifest.permission.READ_EXTERNAL_STORAGE,
             Manifest.permission.WRITE_EXTERNAL_STORAGE,
@@ -1107,7 +1157,6 @@ class MainActivity : AppCompatActivity() {
             // ⚠️ **这条早返回路径必须也申请通知权限。** 否则「存储权限已就绪」的机器
             //   （例如重装后、或用户先前已给过存储权限）永远走不到那个 launcher 回调，
             //   通知权限就再也没人申请 —— 正是「必须退出重开才弹通知权限」的另一半成因。
-            ensureNotificationAccess()
             return
         }
         Log.i(DshApplication.TAG, "申请外部存储权限: ${needed.joinToString()}")
@@ -2518,10 +2567,11 @@ class MainActivity : AppCompatActivity() {
      *
      * ## 为什么用 `LAYOUT_NO_LIMITS` 而不是 `setDecorFitsSystemWindows(false)`
      *
-     * 后者是 API 30+ 的现代写法，而本机是 **API 29**（硬约束②把 targetSdk 钉在 28，
-     * 但设备是 Android 10）。`WindowCompat.setDecorFitsSystemWindows` 在 API 29 上
-     * 走的是兼容分支，实测不生效。`LAYOUT_NO_LIMITS` 在 API 14+ 全版本可用，
-     * 是这个工程唯一能用的那条路。
+     * 历史原因：targetSdk 还钉在 28 时，`setDecorFitsSystemWindows(false)` 在 API 29 真机上
+     * 走兼容分支、实测不生效，所以当时只能用 `LAYOUT_NO_LIMITS`。
+     * ⚠️ P21（refactor.21，targetSdk 35）之后：全局 edge-to-edge **已经**用
+     * `setDecorFitsSystemWindows(false)` + 真实 insets 实现（见 `enableEdgeToEdgeCompat`），
+     * 这里的 `LAYOUT_NO_LIMITS` 只作为「全面屏」开关的**额外**手段保留。
      *
      * ⚠️ **关掉时要把 flag 摘干净**：只把颜色改回不透明、不摘 `LAYOUT_NO_LIMITS`
      *   的话，内容仍铺在系统栏下面（标题被状态栏压住），而颜色已不透明 ⇒
@@ -2557,6 +2607,8 @@ class MainActivity : AppCompatActivity() {
         window.attributes = lp
         // 页面要让位才知道该留多少 —— 两个方向都推一次（关掉时推 0，页面恢复原样）。
         pushSystemBarInset(config.fullscreen)
+        // 容器让位与页面变量必须同步改：只改一边会得到「双份留白」或「压住内容」。
+        applyContentInsets()
     }
 
     /**
@@ -2641,6 +2693,8 @@ class MainActivity : AppCompatActivity() {
      *   系统资源是静态的，两种状态下取值一致。
      */
     private fun statusBarHeightPx(): Int {
+        // 首选运行期真实值（edge-to-edge 下由 WindowInsets 提供，含挖孔/手势区差异）
+        if (insetTopPx > 0) return insetTopPx
         val id = resources.getIdentifier("status_bar_height", "dimen", "android")
         val fromRes = if (id > 0) resources.getDimensionPixelSize(id) else 0
         if (fromRes > 0) return fromRes
@@ -2648,8 +2702,109 @@ class MainActivity : AppCompatActivity() {
         return (24 * resources.displayMetrics.density).toInt()
     }
 
+    /**
+     * 迁移向导的调试入口（验收用）：
+     * `am start -n <pkg>/.MainActivity -a com.dsh.android.action.MIGRATION_HINT --ez force true`
+     */
+    private fun handleMigrationIntent(intent: Intent?) {
+        val action = intent?.action
+        if (action == "com.dsh.android.action.MIGRATION_HINT") {
+            val force = intent.getBooleanExtra("force", true)
+            com.dsh.android.backup.MigrationWizard.showIfNeeded(this, force)
+            intent.action = null
+            return
+        }
+        // 正常启动路径：旧包还在提示一次
+        com.dsh.android.backup.MigrationWizard.showIfNeeded(this)
+    }
+
+    /** 桌面快捷方式 / adb 用的全面屏动作（见 res/xml/shortcuts.xml）。 */
+    private fun handleFullscreenIntent(intent: Intent?) {
+        if (intent?.action != ACTION_FULLSCREEN) return
+        val enable = intent.getBooleanExtra("enable", false)
+        // 复用同一套配置（会落盘 + 立即应用），与 statusbar 工具改的是同一个字段。
+        SystemBarAppearance.apply(this, "{\"fullscreen\":$enable}")
+        Log.i(DshApplication.TAG, "快捷方式：全面屏=" + enable)
+        // 防重入：intent 会被系统留着，避免 onNewIntent 重复处理同一动作
+        intent.action = null
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleFullscreenIntent(intent)
+    }
+
+    // ── Edge-to-edge（targetSdk 35 起系统强制）────────────────────────────
+    //
+    // API 35 上：`decorFitsSystemWindows` 被强制为 false，`statusBarColor` /
+    // `navigationBarColor` 的赋值**被忽略**。也就是说「内容自动避开系统栏」
+    // 这件事没有了 —— 页面会直接铺到时钟下面。所以必须自己做两件事：
+    //   ① 让位：把 **真实 insets** 加到 `webContainer` 的 padding 上；
+    //   ② 上色：系统栏区域的底色由 **window 背景** 提供（`applyPageBackground`
+    //      已经 `window.setBackgroundDrawable(color)`），因此看起来与改动前一致。
+    //
+    // ⚠️ 让位必须用 `WindowInsetsCompat` 的**实际值**，不能再像老代码那样读
+    //   `status_bar_height` 资源再 ÷ density —— 那条路在 vc19 出过「顶栏整行下移」
+    //   （把物理像素当 CSS 像素推给页面，36 变成 108）。
+    private var insetTopPx = 0
+    private var insetBottomPx = 0
+
+    /** 上一次的 IME 高度（只在变化时打日志，避免刷新刷屏）。 */
+    private var lastImeBottom = 0
+
+    /** 打开 edge-to-edge 并接管让位（必须在 `setContentView` 之后调用）。 */
+    private fun enableEdgeToEdgeCompat() {
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            // 系统默认会给手势条/导航栏加一层半透明 scrim，深色主题下会露出一条灰带
+            window.isStatusBarContrastEnforced = false
+            window.isNavigationBarContrastEnforced = false
+        }
+        ViewCompat.setOnApplyWindowInsetsListener(binding.root) { _, insets ->
+            // 挖孔/刘海必须并进顶部让位：只取 systemBars() 时，挖孔机型上
+            // 状态栏高度可能小于安全区，标题会钻进孔里。
+            val mask = WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
+            val bars = insets.getInsets(mask)
+            val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
+            // 键盘是 ime inset，不再靠 adjustResize（edge-to-edge 下它不生效）
+            insetTopPx = bars.top
+            insetBottomPx = maxOf(bars.bottom, ime.bottom)
+            if (ime.bottom != lastImeBottom) {
+                lastImeBottom = ime.bottom
+                Log.i(
+                    DshApplication.TAG,
+                    if (ime.bottom > 0) "键盘弹出：ime=${ime.bottom}px，底部让位=$insetBottomPx"
+                    else "键盘收起：底部让位=$insetBottomPx",
+                )
+            }
+            applyContentInsets()
+            insets
+        }
+        binding.root.requestApplyInsets()
+        Log.i(DshApplication.TAG, "edge-to-edge 已启用（decorFitsSystemWindows=false）")
+    }
+
+    /**
+     * 把当前 insets 落到内容容器上。
+     *
+     * **全面屏时让位为 0**：那时内容本来就该铺到屏幕最顶/最底，
+     * 页面自己用 `--dsh-android-system-top` 留白（见 [pushSystemBarInset]）。
+     */
+    private fun applyContentInsets() {
+        val top = if (fullscreenApplied) 0 else insetTopPx
+        val bottom = if (fullscreenApplied) 0 else insetBottomPx
+        val v = binding.webContainer
+        if (v.paddingTop != top || v.paddingBottom != bottom) {
+            v.setPadding(v.paddingLeft, top, v.paddingRight, bottom)
+            Log.i(DshApplication.TAG, "内容让位：top=$top bottom=$bottom（fullscreen=$fullscreenApplied）")
+        }
+    }
+
     /** 最近一次已应用到窗口的全面屏状态（见 [applyFullscreen] 的状态门）。 */
     private var fullscreenApplied = false
+
+    private val ACTION_FULLSCREEN = "com.dsh.android.action.FULLSCREEN"
 
     /** 解析 `#RRGGBB` / `#AARRGGBB`；空串或非法时返回 null（调用方据此跳过这条栏）。 */
     private fun parseColorOrNull(hex: String): Int? {
@@ -3021,6 +3176,7 @@ class MainActivity : AppCompatActivity() {
                         showOverlay("正在准备界面…", hint = "激活移动端适配插件")
                     }
                     is EngineManager.UiStage.UiReady -> {
+                        ensureNotificationAccessAfterUiReady()
                         // ⚠️ 这里**不能**直接收起 —— DOM 就绪 ≠ 像素上屏。
                         //
                         // 真机实测（CDP `Page.startScreencast` 抓 WebView 内部帧）：
@@ -4009,7 +4165,7 @@ class MainActivity : AppCompatActivity() {
         aiBrowser = null
         // ⚠️ **正常退出标记**：这是区分「崩溃」与「被系统杀掉」的唯一依据。
         //
-        // 本 App 的 `targetSdk = 28`，用不了 API 30 的 `ApplicationExitInfo`
+        // 本 App 的 `targetSdk = 35`，用不了 API 30 的 `ApplicationExitInfo`
         // （那个 API 能直接告诉你上次为什么死），所以只能自己记：能走到
         // onDestroy 且确实是在收尾（`isFinishing`）就说明是好好关掉的。
         //

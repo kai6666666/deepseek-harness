@@ -1,3 +1,762 @@
+## [Unreleased] — 收尾（无代码变更）
+
+- 包名最终决定：**`com.dsh.android`**（0.4.1 起），不再变更；
+- 工程进入**维护态**：只修 bug，不改身份与架构；
+- 文档对齐：`AGENTS.md` / `docs/agents/constraints.md` / `docs/plan/…`；
+- 设备侧清理：删除演练备份 `dsh-backup-drill.zip` 与 13 个历史 APK（约 2.4 GB）。
+
+**不发新版**：本批只有文档与文件清理。
+
+## [0.4.1] — 2026-11-22
+vc=84
+
+### 包名回到 `com.dsh.android`（新包名 `io.github.ccch1mneyyy.dsh` 不再使用）
+
+| 项 | 0.3.x | 0.4.1 |
+|---|---|---|
+| system `applicationId` | `io.github.ccch1mneyyy.dsh` | **`com.dsh.android`** |
+| gecko `applicationId` | `io.github.ccch1mneyyy.dsh.webview` | **`com.dsh.android.webview`** |
+| `namespace` | `com.dsh.android` | 不变 |
+
+**为什么能这样切**：包名与 targetSdk、与单运行时重构完全解耦 —— 只改 `applicationId`，
+代码与运行时一处都不用动。
+
+**代价（必须知道）**
+- 覆盖安装要求「同包名 + **同签名**」。历史旧包若不是本仓库证书（`79d0dab6…dc96`）签的，
+  装的时候仍会 `UPDATE_INCOMPATIBLE` —— 必须先「导出 → 卸载 → 安装 → 导入」。
+- 0.3.x 的数据在 `/data/data/io.github.ccch1mneyyy.dsh/`，要导回：
+  **迁移向导已改为检测该包名**，提示三步走。
+- `KNOWN_PACKAGES` 仍含 4 个 id，导出→导入两个方向都通。
+
+### 同步
+- `tools/` 下开发脚本与 `mockall*.patch.yml` 的包名一并切回；
+- `docs/agents/constraints.md` 记录决定与代价。
+
+> 版本号选 `0.4.1` 而不是 `0.4.0`：`CHANGELOG` 里已存在历史上的 `## [0.4.0] — 2026-10-23`，避免重名。
+
+## [0.3.6] — 2026-11-22
+vc=83
+
+### 迁移向导文案跟着**存储态**走
+`0.3.3` 的向导只说「打开旧版导出」，但没说导出会落到哪 ——
+在未授予「所有文件访问」时，备份落在 `Android/data/<包名>/files/Download`，
+**卸载旧包会把它一起删**（`.14` 的坑）。
+
+现在向导分两种文案：
+
+| 存储态 | 第 ① 步文案 |
+|---|---|
+| 已授予所有文件访问 | 打开旧版 →「导出数据」（会存到 `/sdcard/Download`，卸载不删） |
+| 未授予 | 先在本版授予「所有文件访问」再导出；否则备份会落在 `Android/data` 下，卸载旧包会一起删 |
+
+### 文档
+`docs/agents/constraints.md` 新增「**包名可以回退，但要算清代价**」：
+覆盖安装要求「同包名 + 同签名」；回退包名等于让 `0.3.x` 用户的数据再迁移一次
+（`KNOWN_PACKAGES` 已支持 4 个 id 双向导入）。
+
+### 判据
+```text
+未授予（默认）：urandom 触发向导 → 第①步含「先在本版授予「所有文件访问」」
+已授予：        第①步为「会存到 /sdcard/Download，卸载不删」
+```
+
+## [0.3.5] — 2026-11-22
+vc=82
+
+### 修复：导出的备份可能落进「卸载即删」的私有目录
+`LogContext.publicExportDirOrNull()` 用 `WRITE_EXTERNAL_STORAGE` 判定能否写公共 Downloads ——
+但 targetSdk ≥ 29 且无 legacy 时，该权限在系统侧**恒为未授予**（本机实测 `granted=false`）。
+于是导出**永远**退到 `Android/data/<包名>/files/Download`，卸载/清数据即被删 ——
+这正是「备份随卸载消失」的真实成因。
+
+**改法**
+- API 30+ 用 `Environment.isExternalStorageManager()`（「所有文件访问」）判定；
+  低于 30 保留旧的 `WRITE_EXTERNAL_STORAGE` 判定。
+- 落点打一行日志：`导出落点：公共 Download…` / `导出落点：私有目录 <path>（卸载会删）`。
+- 启动时打 `存储态：isExternalStorageManager=true/false`，并注明 guest 的 `/sdcard`
+  是真手机存储还是 app 私有副本。
+
+### 判据
+```text
+未授予：日志「存储态：… false（guest /sdcard = app 私有副本）」
+        导出 → 「导出落点：私有目录 …（卸载会删）」
+已授予：日志「… true（guest /sdcard = 真手机存储）」
+        导出 → 「导出落点：公共 Download」，文件在 /sdcard/Download
+```
+
+## [0.3.4] — 2026-11-22
+vc=81
+
+### 修复：设置 → 开发环境 显示「无法获取状态（引擎插件未激活？）」
+**根因**（P4 换包名 + P3 去 Termux 的两处遗留叠加）：
+
+1. 宿主 `ProotHost` **从未注入 `DSH_FILES`**；
+2. 插件 `mobile-ui` 的兜底常量写死了旧包名 `com.dsh.android`。
+
+于是插件拼出的 `/data/user/0/com.dsh.android/files/dsh-env.mjs` 根本不存在，
+`spawn` 失败 → 返回 null → UI 显示「无法获取状态」。
+
+**真机对照**：在 guest 内直接跑 `dsh-env.mjs status --json` 是**成功**的
+（`exit=0`，返回完整 JSON，`builtin.node=v24.22.1`、`totalMb=363`）——
+说明脚本本身没问题，纯粹是插件定位不到它。
+
+**改法**
+- `ProotHost` 注入 `DSH_FILES=<filesDir canonicalPath>`；
+- 插件兜底改为 `DSH_FILES → dirname(dirname(DSH_HOME)) → cwd`，
+  并删除 `termux/usr/bin/node` 分支（P3 之后那条路已不存在）。
+
+### 工程化（B）
+`publish-apk.yml` 增加 **versionCode 严格递增**校验：与上一个正式 release 比较，
+不递增直接失败（防止旧版本被重新打 tag 覆盖线上产物）。读不到历史值时跳过，不阻塞首发布。
+
+### 文档（R3）
+`docs/agents/verification.md` 顶部加「历史文档（0.3.0 起不适用）」标注 ——
+bionic / Termux 双宿主时代的验收步骤已在 P2/P3 删除，只作历史对照。
+
+### 判据
+```text
+设置 → 开发环境：能看到 6 组（Node/Python/SSH/Java/Rust/Go）与「已用 N MB」
+日志不再出现 `devenv status 失败`
+```
+
+## [0.3.3] — 2026-11-22
+vc=80
+
+### 新增：迁移向导（换包名不再「静默丢数据」）
+P4 换包名后，旧包 `com.dsh.android` 与本版是**两个独立应用**：数据不通用，
+卸载旧包会带走它的会话/凭据/引擎数据 —— 而此前界面上**没有任何提示**。
+
+启动时检测旧包是否还在，在且本版**还没有会话数据**时弹一次三步向导：
+
+```text
+① 打开旧版 →「导出数据」
+② 回到本版 →「导入数据」选刚导出的 zip
+③ 确认会话都在，再卸载旧版
+```
+
+按钮：`打开旧版` / `稍后` / `不再提示`（后者写 `dsh_migration.dismissed`）。
+本版已有 `home/.dsh/sessions` 时直接跳过，不打扰已迁移完成的用户。
+
+### 调试入口（验收用）
+```bash
+adb shell am start -n io.github.ccch1mneyyy.dsh/com.dsh.android.MainActivity \
+  -a com.dsh.android.action.MIGRATION_HINT --ez force true
+```
+
+### 判据
+```text
+有旧包 → 启动即弹「检测到旧版 DSH」，日志 migration 相关行
+无旧包 → 不弹（绝大多数用户）
+本版已有会话 → 不弹（日志「迁移向导跳过：本版已有会话数据」）
+```
+
+## [0.3.2] — 2026-11-22
+vc=79
+
+### 新增：全面屏有了用户入口（桌面长按快捷方式）
+在此之前 `fullscreen` **只能**由模型调 `statusbar` 工具开启，用户想自己切一下没有任何
+入口。现在长按桌面图标有两个动作：
+
+```text
+全面屏：开   → SystemBarAppearance.fullscreen = true
+全面屏：关   → false
+```
+
+等价的命令行（验收用，也可自动化）：
+
+```bash
+adb shell am start -a com.dsh.android.action.FULLSCREEN \
+  -n io.github.ccch1mneyyy.dsh/com.dsh.android.MainActivity --ez enable true
+```
+
+实现：`res/xml/shortcuts.xml` 两个 shortcut（`singleTask` 下走 `onNewIntent`）→
+`MainActivity.handleFullscreenIntent()` → `SystemBarAppearance.apply(...)`，
+与 `statusbar` 工具改的是**同一个字段**（会落盘、重启仍生效）。
+
+### 判据
+```text
+am start -a com.dsh.android.action.FULLSCREEN … --ez enable true
+  → 日志「快捷方式：全面屏=true」+「内容让位：top=0」
+--ez enable false
+  → 「内容让位：top=<状态栏高度>」
+```
+
+## [0.3.1] — 2026-11-22
+vc=78
+
+### edge-to-edge 加固
+- 顶部让位改为 `systemBars() or displayCutout()` 的**并集**：只取 `systemBars()` 时，
+  挖孔/刘海机型上状态栏高度可能小于安全区，页面标题会钻进孔里。
+- 键盘：`ime()` 高度变化时打一行日志（`键盘弹出：ime=…px，底部让位=…` / `键盘收起`），
+  真机上不接电脑也能从日志判读让位是否正确。
+
+### 文档
+- `docs/plan/…`：补「旧包 `com.dsh.android` 消失」的**归因结论** —— 用户手动卸载，
+  与本工程清理逻辑无关（`purgeLegacy` 只动 `files/` 内 runtime 目录，从不 `pm uninstall`）。
+  同时固化「换包名 = 新安装、旧数据不继承，删旧包前必须先导出」。
+- `docs/agents/constraints.md`：insets 取并集的规则 + 键盘日志约定。
+
+### 判据
+```text
+grep "键盘弹出" app.log   → ime>0 时出现一行，且底部让位 = ime（≥ 导航栏高度）
+挖孔机：内容顶边 ≥ 挖孔安全区高度
+```
+
+## [0.3.0] — 2026-11-22
+vc=77
+
+**首个正式版**：`0.2.2-rc.1` 的 Android 移植完成单运行时架构重构后的定版。
+预发布线 `0.3.0-refactor.0` … `0.3.0-refactor.21` 的改动全部收在本版内。
+
+### 架构（P0–P6）
+
+| 阶段 | 结果 |
+|---|---|
+| P0 | 基线快照（111 文件 / 3.2 MB + SHA256SUMS） |
+| P1 | `libproot.so` / `libproot-loader.so` / `libtalloc.so` / `libandroid-shmem.so` 收进 jniLibs；`.dynstr` 等长原位改写（`patch-dynstr.py`），不用 patchelf |
+| P2 | 单宿主化：删 `EngineHosts` / `TermuxBionicHost` / `ProotGlbcHost` / `EngineBootGate`（全零调用方） |
+| P3 | 运行时去 Termux：13 处 `IS_PROOT` 双分支、`$PREFIX` 候选、三个前缀修补函数全删；`purgeLegacy`（删而不归档）+ `swapIn` 启动清扫 |
+| P4 | 包名 `com.dsh.android` → `io.github.ccch1mneyyy.dsh`（只改 `applicationId`，`namespace` 不动） |
+| P5 | targetSdk 29 → 30 → 34，逐档真机验；根治「`/data/user/0` 与 `/data/data` 两套前缀」 |
+| P6 | bionic 出包链清零（`android-release.yml` / 7 个构建脚本 / `bootstrap-required.txt`）；引擎版本改单一来源 `tools/engine-version.txt` |
+
+### 能力与修复
+
+- **targetSdk 35**：系统强制 edge-to-edge，改用 `setDecorFitsSystemWindows(false)` +
+  真实 `WindowInsets` 让位（`webContainer` padding），系统栏区域底色由 window 背景提供。
+- **解包进度可见**：`State.Extracting` 接线（copy 0–30% / extract 30–98%）、
+  `.xz` 已读字节做分母、通知权限推迟到 `UiStage.UiReady`（不再遮住进度）。
+- **冷启 `HTTP=-1`**：健康探测改 20 s 窗口重试，失败文案带「试了 N 次 / 最后错误」。
+- **工作区选择器**：`$HOME` 由宿主注入 `filesDir/home`、`home` 整体 bind、
+  `/root` 下建兼容入口 —— 对话框可见「手机存储 / 下载 / 应用目录」三行并可进入。
+- **数据迁移**：换包名后导出→清数据→导入实测通过；`exportResultText` 新增
+  「卸载或清除数据会一起删掉备份」告警。
+
+### 真机判据（全部实测）
+
+```text
+冷启          engine.ready × 3 连跑，engine.failed = 0
+edge-to-edge  内容让位 top=152 == dumpsys statusBars [0,0][1280,152]
+全面屏        top=0，--dsh-android-system-top = 47px（=152/3.2）
+解包进度      10%→30%(copy)→40→52→61→74→80→93→100%，112.5 s 到 ready
+选择器        ENTER_OK 手机存储=67 / 下载=32 / 应用目录=13
+```
+
+## [0.3.0-refactor.21] — 2026-11-22
+vc=76
+
+### targetSdk 35：edge-to-edge 改造（系统强制，必须自己让位）
+API 35 起：`decorFitsSystemWindows` 恒为 false，`statusBarColor`/`navigationBarColor`
+的赋值**被忽略**。原实现依赖「系统自动避开系统栏」，失效后表现为标题被时钟压住。
+
+**改法**
+- `MainActivity.enableEdgeToEdgeCompat()`：`setDecorFitsSystemWindows(false)` +
+  `setOnApplyWindowInsetsListener(binding.root)`，`systemBars()` / `ime()` 的真实 insets
+  落到 `webContainer` 的 padding；**全面屏时让位为 0**。
+- 系统栏区域颜色改由 **window 背景** 提供（`applyPageBackground` 的 `setBackgroundDrawable`）。
+- `statusBarHeightPx()` 首选运行期 `insetTopPx`（根治 vc19「整行下移」的物理/CSS 像素混用）。
+- 键盘走 `ime` inset（edge-to-edge 下 `adjustResize` 不生效）。
+
+### 判据
+```text
+内容顶边 y == 状态栏高度；全面屏时 == 0
+键盘弹出：内容上移，输入框不被遮挡
+```
+
+## [0.3.0-refactor.20] — 2026-11-21
+vc=75
+
+### 修复（第三层，最终）：引擎进程的 `$HOME` 一直是 `/root`
+vc74 截图：对话框路径框写着 **`/root/`**、下面空。查 `/proc/<proot pid>/cmdline`：
+
+```text
+HOME=/root
+DSH_USER_HOME=/data/data/io.github.ccch1mneyyy.dsh/files/home
+```
+
+**根因**：`runtime/manifest.json` 的 `launch.argv` 是
+
+```text
+/usr/bin/env -i HOME=/root USER=root … DSH_HOME=/root/.dsh … {GUEST_ENV}
+```
+
+`env -i` 之后逐条 `KEY=VALUE` **后者覆盖前者**。`DSH_HOME` 早就在 `{GUEST_ENV}` 里
+覆盖了（所以会话/凭据一直在 `files/home/.dsh`，没丢），但 **`HOME` 从没被覆盖** ——
+引擎进程的 `$HOME` 始终是 `/root`；`dsh-env.mjs` 只影响它 spawn 的子进程。
+
+**改法**
+1. `ProotHost` 的 `{GUEST_ENV}` 里补 `HOME=<filesDir/home>`。
+2. 兼容层：客户端把上次浏览路径记在 localStorage，老用户升级后**仍会跳 `/root`**，
+   所以在 `rootfs/root` 下也建同一组入口（`手机存储 / 下载 / 应用目录`），每次启动重建。
+
+### 判据
+```text
+/proc/<pid>/environ 里 HOME=/data/data/<pkg>/files/home
+对话框（无论从 /root 还是 files/home 进）都能看到三行入口
+```
+
+## [0.3.0-refactor.19] — 2026-11-21
+vc=74
+
+### 修复（续）：选择器起点正确了，但目录里**只有 .dsh**
+vc73 把 `HOME` 改成 `filesDir/home`，探针（`ProotProbeActivity` 内跑 node）实测：
+
+```text
+os.homedir=/root                                   ← 探针进程本身，不经过 dsh-env
+DSH_USER_HOME=/data/data/<pkg>/files/home
+probe root=/data/data/<pkg>/files/home
+.dsh dir=true link=false  enterable=true          ← 只有 .dsh！
+```
+
+**根因**：`ProotHost` 只绑了 `home/.dsh` 与 `files` 的**别名**（`/data/user/0/...`），
+`/data/data/<pkg>/files` 在 guest 内只是 proot 为 bind 目标凑出来的**骨架目录**，
+所以 `files/home` 里只剩 `.dsh`，三个入口链接（手机存储/下载/应用目录）全部不可见。
+
+**改法**：`ProotHost` 显式 `bind(filesDir/home)`，让 canonical 侧的 `home` 也是**真目录**。
+
+### 判据（探针）
+```text
+.dsh / 下载 / 应用目录 / 手机存储 四行，全部 enterable=true
+ENTER_OK 手机存储 entries=...   ENTER_OK 下载 entries=...
+```
+
+## [0.3.0-refactor.18] — 2026-11-21
+vc=73
+
+### 修复：新建工作区对话框里**一行都没有**
+**现象**（vc72 真机截图）：点「新建工作区」→「选择工作区目录」，标题是「主目录」，
+下面**空白**，看不到「手机存储 / 下载 / 应用目录」。
+
+**根因**：`dsh-host-directory-picker-auto` 的 browse 后端在没给路径时用 `homedir()` 当起点。
+`dsh-env.mjs` 在 P3（`refactor.3`，清退 Termux）时把 `HOME` 硬编码成 rootfs 的 **`/root`**，
+而入口链接建在 **`filesDir/home`** —— 起点走错了树，列表自然为空。
+
+**改法**
+- `ProotHost` 注入 `DSH_USER_HOME = filesDir/home`（canonicalPath，guest 内可见）。
+- `dsh-env.mjs` 的 `HOME` 改为读 `DSH_USER_HOME`，兜底 `/root`。
+- `docs/agents/constraints.md` 记下「`$HOME` 必须是 filesDir/home」。
+
+### 判据
+```text
+对话框打开即列出「手机存储 / 下载 / 应用目录」三行
+点「手机存储」可逐级进入并新建文件夹
+```
+
+## [0.3.0-refactor.17] — 2026-11-21
+vc=72
+
+### 可观测性：解包进度每 10% 记一行日志
+真机验收时设备可能处于锁屏/息屏（AOD），uiautomator 抓不到界面。为了让「进度是否在推进」
+可被**离线证据**证明（也方便用户报「卡住」时定位卡在 copy 还是 extract），
+`EngineManager` 在进度回调里每跨 10% 打一行：
+
+```text
+runtime progress 30% (extract)
+runtime progress 40% (extract)
+...
+```
+
+### 判据
+```text
+pm clear → 启动 → grep "runtime progress" app.log
+应看到 0/10/…/90/100 递增，且 phase 从 copy 过渡到 extract
+```
+
+## [0.3.0-refactor.16] — 2026-11-21
+vc=71
+
+### 修复（续）：解包进度仍看不见 —— 真因是**通知权限弹窗盖住了**
+vc70 把进度接到了 `State.Extracting`，但真机复测仍然看不到百分比：
+`POST_NOTIFICATIONS` 是在 `ensureStorageAccess()` 里、**解包开始之前**申请的，
+系统弹窗（「允许"DSH"发送通知？」）停在整个解包过程之上 —— uiautomator 只能看到那个弹窗。
+
+**改法**
+- `storagePermissionLauncher` 回调里不再立刻申请通知权限（只记日志）。
+- `ensureStorageAccess()` 的早返回路径同样不再申请。
+- 新增幂等包装 `ensureNotificationAccessAfterUiReady()`，在 **`UiStage.UiReady`**（界面可用）时申请一次。
+
+效果：解包全程只有 App 自己的覆盖层，`正在解包引擎 N%` 可见；权限弹窗出现在界面可用之后。
+
+### 判据
+```text
+pm clear 后首启：解包期间 uiautomator 能读到「首次启动，正在解包引擎 N%」且 N 增长
+界面可用后才出现通知权限弹窗
+```
+
+## [0.3.0-refactor.15] — 2026-11-21
+vc=70
+
+### 修复：解包时进度条消失 / 没有百分比
+**根因**：`startProot()` 的 `installer.ensure(...)` 回调**只写日志**，从不更新 `State`；
+`State.Extracting` 只被 0.5.0 之前的 bionic 解包路径使用。于是 PRoot 解包 1.3 GB 期间，
+界面停在「正在启动引擎…」，用户看到的是「进度消失/卡死」。
+
+**改法**
+- `RootfsInstaller.extractXz()`：新增 `CountingInput` 统计 **.xz 已读字节**，把
+  `Progress("extract", done, total)` 的 `total` 从 `-1` 改成真实压缩包长度。
+- `EngineManager.startProot()`：按 **copy 0–30% / extract 30–98%** 加权，节流后写
+  `State.Extracting(pct)`；解包结束立刻回到 `State.Starting`。
+
+### 增强：新建工作区怎么选「其它文件夹」
+`ensurePickerRoots()` 在 `filesDir/home` 下建三个入口链接：
+
+```text
+手机存储 → /sdcard
+下载     → /sdcard/Download      ← 本次新增，最常用
+应用目录 → filesDir
+```
+
+对话框起点是 HOME，点进去即可浏览；面包屑「主目录」返回。
+
+### 判据
+```text
+清数据后首启：覆盖层出现「首次启动，正在解包引擎 N%」且 N 单调增长到 98→100
+文件选择器里能看到「手机存储 / 下载 / 应用目录」三行
+```
+
+## [0.3.0-refactor.14] — 2026-11-21
+vc=69
+
+### 数据迁移演练（真机，新包 `io.github.ccch1mneyyy.dsh`）
+流程：**导出 → `pm clear` 清数据 → 重新启动 → 导入 → 内容指纹核对**
+
+| 阶段 | 实测 |
+|---|---|
+| 导出 | 2 个会话 + profiles/storages/skills，共 18 条目 / 56.0 KB；落点 `Android/data/<包名>/files/Download/dsh-backup-20261121-133626.zip` |
+| 清数据 | `pm clear` Success；rootfs 与 `home/.dsh` 全清，重启后引擎自造 1 个新会话 `session-9aa04eb6…` |
+| 导入 | 选 `dsh-backup-drill.zip` → 「开始恢复」 |
+| 核对 | 会话目录恢复为 **`session-9bb9e914…` + `session-a97fddd5…`**（正是备份里那两个），`home/.dsh` 文件数回到 **89** |
+
+### 演练暴露的真问题（本版修复）
+`pm clear` 会**连 app 专属外部目录一起删**：第一次导出的两份 zip 在
+`Android/data/<包名>/files/Download/` 里，清数据后全没了。
+
+- `BackupDialog.exportResultText()`：当导出位置在 `Android/data/**` 或 `filesDir` 下时，Toast 追加
+  「⚠️ 卸载或清除数据会一起删掉；建议先复制到「下载」/ 发给自己；授予「所有文件访问」后会直接写公共下载目录」。
+- `docs/agents/constraints.md` 新增「数据备份位置」一节。
+
+### 判据
+```text
+导出到 app 专属目录 → Toast 含「卸载或清除数据会一起删掉」
+有全盘权限时 → 直接写公共 Download，无该提示
+```
+
+## [0.3.0-refactor.13] — 2026-11-21
+vc=68
+
+### 修复：冷启偶发「引擎就绪检查失败：HTTP=-1」
+**现象**：安装后首次启动，引擎已打印 `dsh web <url>?token=…`，但紧接着的健康检查拿到 `HTTP=-1`，
+整次启动被判失败（vc66 实测 59 s 时命中；第二次启动 13 s 正常出首帧）。
+
+**根因**：就绪判定只做**一次** 3 s HTTP 探测。PRoot 里 node 的 `listen` 建立与 `accept` 队列就绪
+之间有毫秒级间隙，单次探测正好撞上就得到 `-1`，而 `-1` 又不带原因，现场只剩一句「HTTP=-1」。
+
+**改法**
+- `ProotHost.healthProbe()` 取代 `health()`：返回 `(HTTP 码, 失败原因)`，`health()` 保留为薄包装。
+- `EngineManager`：token 到达后按 **20 s 窗口 / 400 ms 间隔**重试探测；`!host.isAlive()` 立即停。
+- 失败信息升级为：`HTTP=<code>（试了 N 次 / 20000ms 窗口；最后错误：<异常类型: 消息>）`。
+
+### 判据
+```text
+冷启（force-stop 后首启）：引擎起 → 首帧，无 HTTP=-1 误判
+人为把窗口压到 1ms 时：失败信息应包含「试了 N 次」「最后错误」
+```
+
+## [0.3.0-refactor.12] — 2026-11-21
+vc=67
+
+### 变更（P4：解除包名限制，换 applicationId）
+- `applicationId`：`com.dsh.android` → **`io.github.ccch1mneyyy.dsh`**；gecko flavor → **`io.github.ccch1mneyyy.dsh.webview`**。
+- **`namespace` 保持 `com.dsh.android`**：它是源码包（R / BuildConfig 的包），与安装包名无关；
+  改它要搬几百个文件与全部 import，收益为零。
+- `UserDataImporter.KNOWN_PACKAGES`：加入两个新 id，**保留两个旧 id** —— 老备份仍能导进来。
+- 工具脚本默认包名同步：`apply-clickfix.sh`（可用 `PKG=` 覆盖）、`mcp-android-ui.mjs`、
+  `dsh-sessions.sh`、`mockrun.sh`、`build-uiagent-screens.mjs`；mock 夹具里的插件绝对路径也一并改。
+- 文档：`AGENTS.md` / `docs/agents/constraints.md` 的约束表新增包名一行。
+
+### 数据迁移（换名 = 新安装，不继承）
+1. 旧包（`com.dsh.android`）里：设置页 →「导出数据」，选会话/凭据/工作区，存到 `/sdcard/Download`
+2. 安装新包（`io.github.ccch1mneyyy.dsh`）—— **两个包可以同时装着**，不冲突
+3. 新包里：设置页 →「导入数据」，选刚才的归档；导入器会把归档里旧包名的绝对路径改写成新包名
+
+### 判据
+```text
+aapt/dumpsys: 新包 applicationId = io.github.ccch1mneyyy.dsh，namespace 仍是 com.dsh.android
+新包首启：解包 rootfs → 引擎起 → 首帧
+旧包仍在、数据未动（可随时回退）
+```
+
+## [0.3.0-refactor.11] — 2026-11-21
+vc=66
+
+### 变更（P6 收尾第二批：删 bionic 构建脚本，version.sh 改单一来源）
+- **`tools/version.sh`**：引擎版本不再从四个 bionic 脚本里 `sed`，改为读 **`tools/engine-version.txt`** 单一来源；
+  `verify-engine-upgrade.sh` 的断言串若还在就作交叉校验（不一致才报错）。汇总行改用 `ENG_SRC`。
+- **删除 7 个 bionic 构建脚本**（0.5.0 单运行时后不产出任何东西，`apk.yml` 也不执行它们）：
+  `build-engine-bin.sh`、`build-native-assets.sh`、`build-node-pty.sh`、`build-extra-native.sh`、
+  `build-node-addon-system.sh`、`build-node-addon-require-builtin.sh`、`node-runtime-wrap.sh`。
+- `apk.yml`：去掉这 7 个脚本的路径触发。
+- `EngineManager`：注释里「由 `tools/build-engine-bin.sh` 生成」改为历史说明。
+
+### 判据
+```text
+tools/version.sh --check → VERSION PASS，且多出一行「引擎版本单一来源 0.2.2-rc.3」
+grep -rn "build-engine-bin|build-node-runtime|build-bootstrap" tools .github  → 0
+apk.yml 全绿，装机后引擎照常起
+```
+
+## [0.3.0-refactor.10] — 2026-11-21
+vc=65
+
+### 变更（P6 收尾第一批：清 bionic 出包链）
+- **删除** `.github/workflows/android-release.yml`：0.5.0 之前的 bionic 出包链，会现场造
+  `bootstrap-aarch64.zip` 并断言它在 APK 里，与当前单运行时无关（且只手动触发，从不随 tag 跑）。
+- **删除** `tools/build-bootstrap.sh`、`tools/bootstrap-required.txt`。
+- `tools/check-apk-assets.py`：去掉 bootstrap 的 soname 深检（连同 `required_sonames()`）。
+- `tools/ci-fetch-assets.sh`：`REQUIRED` 去掉 `bootstrap-aarch64.zip`。
+- `tools/verify-ci.py`：默认查询的工作流 `android-release` → `apk`。
+- `docs/agents/release-signing.md`：CI 段改写为现行三段式（apk → sign → publish），并说明旧链已删。
+
+### 判据
+```text
+grep -rn "bootstrap" .github tools app/build.gradle.kts  → 只剩历史文档
+apk.yml / verify.py / check-apk-assets.py 全绿
+```
+
+### 已知（下一批）
+- 仍有 bionic 期构建脚本：`build-engine-bin.sh` / `build-node-runtime.sh` / `build-native-assets.sh`
+  / `build-node-pty.sh` / `build-extra-native.sh` / `build-node-addon-*.sh`。
+  它们与 `tools/version.sh` 有耦合（version.sh 会从 `build-engine-bin.sh` 等抓引擎版本串做一致性校验），
+  删除必须同时改 `version.sh`，因此单独一批处理。
+
+## [0.3.0-refactor.9] — 2026-11-21
+vc=64
+
+### 变更（P5 第三档：targetSdk 30 → 34）
+- `targetSdk = 34`（P5 最后一档）。
+- `EngineService`：API 34+ 改用三参 `startForeground(..., FOREGROUND_SERVICE_TYPE_SPECIAL_USE)`，
+  与 manifest 的 `foregroundServiceType="specialUse"` + `PROPERTY_SPECIAL_USE_FGS_SUBTYPE` 对齐。
+- `AndroidManifest.xml`：新增 `<queries><package android:name="moe.shizuku.privileged.api"/></queries>`
+  —— targetSdk 30+ 的包可见性会让 `getPackageInfo` 抛 NameNotFound，Shizuku 特权通道会静默降级。
+- 检查结论（本档无需改动）：`PendingIntent` 已全部带 `FLAG_IMMUTABLE`（AdbPairing 的可变那条带 `FLAG_MUTABLE`）；
+  所有组件 `android:exported` 都已显式声明；全仓无 `registerReceiver`（34 的 receiver 导出标志要求不触发）。
+
+### 判据
+```text
+装机 targetSdk=34
+引擎起（token + 首帧）；前台服务通知在
+Shizuku 桥仍就绪（log：Shizuku 桥已就绪）
+无 EACCES / avc: denied / MissingForegroundServiceType
+```
+
+### 已知
+- 35（edge-to-edge 强制）**没做**：`SystemBarAppearance` 有 vc19 回归史，作为独立议题排期。
+- 下一步是 P4（包名）与 P6（收尾）。
+
+## [0.3.0-refactor.8] — 2026-11-21
+vc=63
+
+### 修复（vc61/vc62 引擎起不来的完整根因）
+两套前缀不一致，guest 里只存在一种：
+
+```text
+File.absolutePath  = /data/user/0/com.dsh.android/files/...   ← assets/overlay 里大量用它
+File.canonicalPath = /data/data/com.dsh.android/files/...     ← ProotHost 只绑了这条
+```
+
+vc62 只修了 `--patch` 的参数（改用 canonical），但 overlay **内容**里仍然写着
+`/data/user/0/.../agnes-multimodal/...` 之类的插件路径 ⇒ 14 个插件 `ERR_MODULE_NOT_FOUND`，引擎退出。
+
+本版一次性解决：在 guest 里为 `filesDir` **增加别名绑定**
+`-b <canonical filesDir>:<absolute filesDir>`，两套前缀都成立。
+既有资产、overlay、以及未来任何用 `absolutePath` 拼出来的 guest 路径都不会再 ENOENT。
+
+### 判据
+```text
+targetSdk=30；引擎打印 token 行 + 首帧
+0 个 failed to import
+```
+
+## [0.3.0-refactor.7] — 2026-11-21
+vc=62
+
+### 修复（vc61 起不来的真因）
+`ProotHost` 把 overlay 列表以 **`absolutePath`** 传给 guest 的 `--patch`，而 `dshHome` 是按
+**`canonicalPath`** 绑定进 guest 的：
+
+```text
+dshHome.absolutePath  = /data/user/0/com.dsh.android/files/home/.dsh   ← guest 里不存在
+dshHome.canonicalPath = /data/data/com.dsh.android/files/home/.dsh     ← guest 里唯一存在
+```
+
+引擎启动即 `ENOENT: failed to read overlay .../mobile-ui.patch.yml`，5 秒内退出。
+`envFile` 早在用 `canonicalPath`（注释写着「按原绝对路径绑定，guest 内逐字有效」），
+overlay 这条漏了。改为 `overlays.map { it.canonicalPath }`。
+
+### 同版包含
+- P5 第二档（targetSdk 30）：`MANAGE_EXTERNAL_STORAGE`、30+ 引导「所有文件访问」、
+  `/sdcard` 三级取源（全盘 → app 外部目录 → 老逻辑）、`bind /sdcard ->` 日志。
+
+### 判据
+```text
+引擎正常起（token 行 + 首帧）
+无 failed to read overlay
+targetSdk=30；logcat 见 bind / sdcard -> <路径>
+```
+
+## [0.3.0-refactor.6] — 2026-11-21
+vc=61
+
+### 变更（P5 第二档：targetSdk 29 → 30）
+- `targetSdk = 30`。API 30 起 `requestLegacyExternalStorage` 被系统**忽略**，`READ/WRITE_EXTERNAL_STORAGE`
+  不再授予真 `/sdcard` 的任意访问 —— 本档必须处理存储模型。
+- `AndroidManifest.xml` 声明 `MANAGE_EXTERNAL_STORAGE`（`tools:ignore="ScopedStorage"`），并改写那段
+  「targetSdk=28 不必申请」的过期注释。
+- `MainActivity.ensureStorageAccess()`：30+ 且未授予「所有文件访问」时**引导一次**
+  （`ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION`，失败退 `ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION`），
+  `SharedPreferences` 记名，不反复弹设置页。
+- `ProotHost.defaultPhoneStorage()` 三级取源：
+  ① 30+ 且有全盘权限 → 真 `/storage/emulated/0`
+  ② 30+ 且无 → `Android/data/<包名>/files/sdcard`（app 专属，始终可写）
+  ③ 29- → 老逻辑（有 READ_EXTERNAL 就给真 /sdcard）
+- 绑定点加日志 `bind /sdcard -> <宿主绝对路径>`，真机排障一眼看出走哪一级。
+
+### 判据
+```text
+装机 targetSdk=30
+有全盘权限：guest /sdcard -> /storage/emulated/0
+无全盘权限：guest /sdcard -> Android/data/<包名>/files/sdcard，且写入成功
+引擎照常起，日志无 EACCES / avc: denied
+```
+
+### 已知
+- 回退状态下「路径不同」：`AndroidOpenWith` 把 `/sdcard/...` 归一化成 `primary:` 的 content URI，
+  这种状态下指不到真实文件。要彻底一致，必须让用户授予全盘访问。
+- 34 档还要处理 FGS 类型与 edge-to-edge（`SystemBarAppearance` 有 vc19 回归史）。
+
+## [0.3.0-refactor.5] — 2026-11-21
+vc=60
+
+### 变更（P5 第一档：targetSdk 28 → 29）
+- `targetSdk = 29`；`AndroidManifest.xml` 显式 `requestLegacyExternalStorage="true"`
+  （API 29 仍支持 legacy 存储模型，`/sdcard` 直读直写行为不变）。
+- **注释与文档修订**（旧文档仍在说「必须 15 字符 / 必须 28」，会误导下一次改动）：
+  `app/build.gradle.kts` 两段、`AGENTS.md`「两条硬约束」整节、`docs/agents/constraints.md`、
+  `docs/agents/dev-env.md`（11 处失效路径与已删脚本）、`EngineManager` 顶部架构注释、`DshApplication` 注释。
+
+### 判据（本档必须逐条过）
+```text
+首启解包（1.3 GB）成功
+工作区选 /sdcard/... 可读写
+悬浮球 + 无障碍 + 截图可用
+切后台 10 min 引擎不断连
+日志无 EACCES / avc: denied
+```
+
+### 已知
+- 下一档 30 需要 `MANAGE_EXTERNAL_STORAGE`（API 30 起 legacy 失效），届时 `READ/WRITE_EXTERNAL_STORAGE` 不再够用
+- 34 还要处理 FGS 类型与 edge-to-edge（`SystemBarAppearance` 有回归史）
+
+## [0.3.0-refactor.4] — 2026-11-21
+vc=59
+
+### 变更（P3 修订）
+- **启动时也清扫**：`EngineManager` 在构造 `ProotHost` 之前调 `RuntimeFiles.sweepStale(runtime)`。
+  vc58 只在 `RootfsInstaller` 的安装路径里清扫，而「装到一半被杀」的残骸因为 `.rootfs.stamp`
+  仍然命中，永远不会再进安装路径 —— 真机实测就留下过 695 MB 的 `rootfs.staging-*`。
+- 其余与 `0.3.0-refactor.3` 相同（P3：运行时去 Termux）。
+
+### 判据
+- 人为造一个 `files/runtime/rootfs.staging-probe/`，重启 App 后该目录消失，日志出现「启动清扫残留：…」
+- 引擎照常起
+
+## [0.3.0-refactor.3] — 2026-11-20
+vc=58
+
+### 变更（P3 · 运行时去 Termux）
+
+| 文件 | 改动 |
+|---|---|
+| `assets/dsh-env.mjs` | 删 `IS_PROOT` 双分支（13 处）、`termux/usr` 兜底、`$PREFIX` 候选；`PREFIX=/usr`、`HOME=/root` 固定；`DSH_FILES` 改为「env 优先，否则取脚本自身所在目录」，不再写死任何 applicationId |
+| 同上 | 删 `rewriteTermuxPaths` / `fixGradleLauncher` / `fixPrefixShims` 三个 Termux 专有修补 |
+| `assets/check-devenv.mjs` | 删 `files/termux/usr/bin/node` 兜底与写死包名；`NODE=/usr/local/bin/node` |
+| `assets/dsh-android-shell.mjs` | `runLocal` 候选表固定为 `/bin/bash` → `/usr/bin/bash` → `/system/bin/sh`，不再看 `$PREFIX`；错误文案不再打印 PREFIX |
+| `runtime/RuntimeFiles.kt` | `retireLegacy`（归档）→ `purgeLegacy`（**删除**）：`engine` / `usr` / `termux` / `proot-libs` / `runtime/legacy-bionic` |
+| 同上 | 新增 `sweepStale(runtimeDir)`：删 `rootfs.staging-*`、`rootfs.old-*` |
+| `runtime/RootfsInstaller.kt` | 安装前调用 `sweepStale` 并记日志 |
+| `EngineManager.kt` | 调用点改 `purgeLegacy`，事件名 `runtime.migration` → `runtime.purge` |
+| `app/src/test/.../RuntimeS6Test.kt` | 单测跟随删除语义 |
+| `tools/dsh-env.sh`、`tools/env-smoke.sh`、`tools/dsh-env.mjs`、`tools/check-devenv.mjs` | 删除（前两个 shebang/前缀指向 termux，后两个是 assets 的过期副本） |
+
+### 判据
+- `grep -rn "termux|Termux" app/src tools --include=*.mjs --include=*.sh` = 0
+- `grep -rn "IS_PROOT" app/src` = 0
+- 设备 `files/` 下无 `usr` / `termux` / `proot-libs`
+- 引擎照常起、`dsh-env.mjs status --json` 可用
+
+### 已知
+- Kotlin **文档注释**里仍有历史说明（`EngineManager` 顶部「为什么用 Termux 的 node 构建」等），P6 统一清扫
+- `docs/agents/dev-env.md` 等文档仍指向已删脚本，P6 同步
+- 无线调试的 `adb` 二进制保持不动：它在 **guest 内**由 runner spawn，走 proot loader，不占 API 29 的 exec 面（P5 再评估）
+
+## [0.3.0-refactor.2] — 2026-11-20
+vc=57
+
+### 变更
+- **P2 · 单宿主化**：删除整条「宿主可选择」链路 —— `HostMode` 三值枚举、`TermuxBionicHost`、`ProotGlbcHost`、`EngineHost` 抽象、`EngineBootGate`（含必失败的 bionic 回落）、`HostSettingsSection`（零调用方的死 UI）。
+- `EngineManager`：删 `bootWithHost()` / `legacyEndpointProvider` / `hostCapabilities()` —— 三者均**零调用方**；本地启动只剩一条 `ProotHost` 路径。
+- `EngineHost.kt` 收敛为只剩 `EngineHostException`。
+- 效果：启动失败不再被「回落 bionic」覆盖成第二条错误，第一条真实原因直达日志与界面。
+
+### 判据
+- `grep -rn "HostMode|TermuxBionicHost|ProotGlbcHost|EngineHosts|EngineBootGate|HostSettingsSection" app/src` = 0
+- 启动日志 `宿主=proot`；破坏 rootfs 后首条错误即真因
+- 引擎照常起，菜单与会话不受影响
+
+### 已知
+- 远端引擎（原 `RemoteHost`）随之移除：它此前只被 `EngineHosts.create` 引用，而后者零调用方 ⇒ 功能上从未接通。要做远端作为独立功能另行立项，不进本阶段。
+- targetSdk 仍 28、包名仍 `com.dsh.android`（P4/P5）。
+
+## [0.3.0-refactor.1] — 2026-11-20
+vc=56
+
+### 变更
+- **P1 · jniLibs 全面化**：`libtalloc.so` / `libandroid-shmem.so` 收进 jniLibs；`assets/runtime/proot-libs/` 与 `files/proot-libs` 彻底移除。
+- 新增 `tools/runtime/patch-dynstr.py`：对 `libproot.so` 的 `.dynstr` 做**等长原地改写**（`libtalloc.so.2` → `libtalloc.so`），不动节表、不改文件大小（patchelf 方案实测 SIGSEGV，故不用）。
+- `ProotHost`：删 `ensureProotLibs()` 与 `LIB_LOCK`，`LD_LIBRARY_PATH` 只保留 `nativeLibraryDir`。
+- 原生来源单一化：`nativeLibraryDir` 现有 4 个 `.so`（libproot / libproot-loader / libtalloc / libandroid-shmem）。
+
+### 判据
+- APK `lib/arm64-v8a/` 四件套齐全；设备 `runtime/manifest.json` 的 `jniLibs` 为 4 项。
+- 引擎照常起（token 行可解析）；`files/` 下无 `proot-libs`。
+
+### 已知
+- 本阶段未改 targetSdk / 包名（P4/P5）。
+
+## [0.3.0-refactor.0] — 2026-11-20
+vc=55
+
+### 变更
+- **重构基线包**：本版**不含重构改动**，代码与 `0.2.2-rc.3` 功能等价，仅版本号前移，用作 A/B 对照与「重构后是否回归」的判据。
+- versionName **0.3.0-refactor.0** / versionCode **55**；与 `0.2.2-rc.3`(vc54) 同签名，可覆盖安装。
+- 引擎 `@deepseek-ai/dsh` **0.2.2-rc.3**（PRoot 单运行时）；移动端 UI **1.1.0-194**。
+- 重构主线立项：[`docs/plan/refactor-single-host-purge.md`](docs/plan/refactor-single-host-purge.md)（P0–P6：单宿主 / 运行时去 Termux / 解除包名与 targetSdk 限制）。
+
+### 已知
+- targetSdk 仍为 28、包名仍为 `com.dsh.android`（P4/P5 才改）。
+- 构建期仍从 Termux deb 取 proot/talloc/shmem（P3 只归零运行时依赖）。
+
+## [0.2.2-rc.3] — 2026-11-18
+vc=54
+### 变更
+- 引擎 `@deepseek-ai/dsh` **0.2.2-rc.3**（正式版位，非 prerelease）。
+- versionName **0.2.2-rc.3** / versionCode **54**；发行签名 `79d0dab6…dc96`，与 `0.2.2-rc.3-debug`(vc53) 同源，可直接覆盖升级。
+- 移动端 UI **1.1.0-189**（修复 43：官方项齐后才注入，「⋯」点击不再改 DOM）。
+- 构建变体：`system` + `release`（`assembleSystemRelease`），不走 debug 签名。
+
+### 已知
+- 「⋯」首次点击需点两次（待修 44）；插件市场两项为两段式渲染（待修 45）。
+
 # 更新日志
 
 本文件记录本项目所有值得注意的变更。
@@ -16,6 +775,34 @@
 > 正是靠 versionCode 区分同一 versionName 的不同构建。
 
 ---
+## [0.2.2-rc.3-debug] — 2026-11-18
+vc=53
+
+### 变更
+
+- 引擎 `@deepseek-ai/dsh` **0.2.2-rc.3**（显式版本；`latest` 仍指 rc.1，不写死版本会静默拉回旧版）。
+- versionName **0.2.2-rc.3-debug** / versionCode **53**；调试签名不变，`pm install -r` 覆盖升级，不卸载、不清数据。
+- 移动端 UI **1.1.0-186**。
+- **补丁语料按 rc.3 重建**：`IMG_TYPE_GUARD` / `IMG_TYPE_ANCHOR` 改为 rc.3 压缩后的单行 `isImageMediaType` 形态；`make-patches.py` 改为按版本合并 pin（不再覆盖 rc.1 记录）。
+- **构建期补丁门禁**：`apply-patches.py --require-version`，缺当前版本 pin 即构建失败；`build-runtime.sh` 的 `DSH_VERSION` 改读 `tools/engine-version.txt`，`PNPM_VERSION` 对齐 `11.28.5`。
+- **空间预检**：`ASSUME_UNPACKED_BYTES` `1_350` → `3_400` MiB（升级峰值 = 旧 rootfs + staging + 缓存归档）。
+- **CI**：`apk.yml` 注入 `DSH_VERSION`；`REL_TAG`、资产名与 Release 说明改为动态取值；发布步骤默认关闭（`vars.PUBLISH_FROM_APK`），改由 `publish-apk.yml` 手动派发；`verify-ci.py --workflow apk.yml`。
+- Office Kit 保留（`office_convert` / `office_render` / `office_recalculate`），未做重包裁剪。
+
+### 修复
+
+- **单运行时验收路径**：旧脚本仍指向 bionic 时代的 `files/termux/usr/bin/node` 与 `files/engine`。新增 `ProotProbeActivity --es run_script` 的 proot 执行通道与宿主侧 `tools/verify-rc3-device.sh`；rootfs 的 `usr/bin/node` 是 glibc ELF，不能 `run-as` 裸跑。
+- `verify-ci.py` 固定查询 `android-release.yml`，与 `apk.yml` 出包链路不符 → 支持 `--workflow`。
+
+### 验收
+
+```text
+sh tools/version.sh --check                        → VERSION PASS（vc=53 / engine=0.2.2-rc.3）
+node tools/check-engine-anchors.mjs /root/dsh-rc3  → 5/5，EXIT=0
+runtime/patches/pins.json                          → 6 个补丁 × {0.2.2-rc.1, 0.2.2-rc.3}
+tools/verify-rc3-device.sh                         → engine=0.2.2-rc.3 / patch-marks=5/5
+```
+
 ## [0.2.2-rc.1] — 2026-11-16
 vc=52
 ### 变更

@@ -214,7 +214,7 @@ const EXIT_GRACE_MS = 5000;
  * TLS 1.3 的 external PSK 更是完全没暴露）。自己实现 SPAKE2 等于手写密码学，
  * 不可接受。
  *
- * 所以直接内置 Termux 官方的 `android-tools` 里的 `adb` 二进制 ——
+ * 所以直接内置上游 `android-tools` 里的 `adb` 二进制 ——
  * 复用 Google 自己的实现。它同时支持 legacy 与无线调试两条路。
  *
  * ## 端口从哪来：Kotlin 侧用 `NsdManager` 发现，写进文件
@@ -1453,7 +1453,7 @@ function readWirelessPort() {
  *
  * ⚠️ 三个变量缺一不可，都是踩过的坑：
  * - `HOME`：adb 在 `$HOME/.android/adbkey` 找密钥。指向别处会**静默自生成**一把新密钥。
- * - `LD_LIBRARY_PATH`：adb 是 Termux 的 ELF，要它的 `.so`。**只对 adb 需要** ——
+ * - `LD_LIBRARY_PATH`：adb 是 bionic ABI 的 ELF，要它的 `.so`。**只对 adb 需要** ——
  *   引擎进程绝不能设它（会毒化系统二进制，见 AGENTS.md）。
  * - `TMPDIR`：adb 硬编码往 `/tmp/adb.<pid>.log` 写启动日志，app 域无权写 `/tmp`
  *   （实测 `cannot open /tmp/adb.10535.log: Permission denied` → server 起不来）。
@@ -1598,27 +1598,15 @@ function runWireless(adbBin, target, command) {
 /**
  * 在 app 自己的 uid 下执行（没有 uid 2000 时的兜底）。
  *
- * ⚠️ 2026-10-27 真机事故：这里原来只有一句
- *   `const shell = PREFIX ? path.join(PREFIX,'bin','bash') : 'bash'`
- *   spawn 直接报 `spawn bash EACCES`，日志里**没有路径、没有 errno**，
- *   而同一份 `$PREFIX/bin/bash` 用 `run-as … bash -c 'id -u'` 手跑是好的
- *   （`-rwx--x--x`，能执行）—— 于是只能靠猜。
+ * ⚠️ 2026-10-27 真机事故：这里原来只有一句 `spawn('bash')`，报 `spawn bash EACCES`
+ * 且日志里没有路径、没有 errno。之后改成候选表 + `stat`/`access(X_OK)` 预检 +
+ * 失败时把 `e.code`/`e.path` 打出来。
  *
- * 现在做三件事：
- *   1. 候选表：`$PREFIX/bin/bash` → `$PREFIX/bin/sh` → `/system/bin/sh`，
- *      前一个不可执行就换下一个（Termux 的 `sh` 是指向 dash 的软链，
- *      即使 bash 因为某个还没定位的原因不可 exec，dash 与系统 sh 仍能兜住）；
- *   2. 换之前先 `stat` + `access(X_OK)`，把 **mode 位**打进日志；
- *   3. 真失败就把 `e.code` / `e.path` / `PREFIX` 一起打出来 ——
- *      下一次真机日志直接能定位，不再是一句无信息的 EACCES。
+ * P3：候选表按「单运行时 guest」写死，不再看 `$PREFIX` —— guest 里 bash 就在
+ * `/bin/bash`（`/usr/bin/bash` 是同一份的另一条路径），系统 sh 只作最后兜底。
  */
 function runLocal(command) {
-  const cands = [];
-  if (process.env.PREFIX) {
-    cands.push(path.join(process.env.PREFIX, 'bin', 'bash'));
-    cands.push(path.join(process.env.PREFIX, 'bin', 'sh'));
-  }
-  cands.push('/system/bin/sh');
+  const cands = ['/bin/bash', '/usr/bin/bash', '/system/bin/sh'];
 
   return new Promise((resolve) => {
     const attempt = (i, lastErr) => {
@@ -1627,7 +1615,7 @@ function runLocal(command) {
           ? `${lastErr.code || ''} ${lastErr.path || ''} ${lastErr.message || ''}`.trim()
           : '没有可用的 shell';
         process.stderr.write(
-          `${TAG} 本地执行失败: ${why}（PREFIX=${process.env.PREFIX || '<unset>'}）\n`,
+          `${TAG} 本地执行失败: ${why}（shell 候选均不可执行）\n`,
         );
         resolve(127);
         return;
@@ -1640,7 +1628,7 @@ function runLocal(command) {
         probe = `mode=${(st.mode & 0o777).toString(8)}`;
       } catch (e) {
         process.stderr.write(
-          `${TAG} 跳过 ${shell}: ${e.code || e.message}（PREFIX=${process.env.PREFIX || '<unset>'}）\n`,
+          `${TAG} 跳过 ${shell}: ${e.code || e.message}（shell 候选均不可执行）\n`,
         );
         attempt(i + 1, e);
         return;

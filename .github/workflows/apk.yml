@@ -11,16 +11,8 @@ on:
       - 'settings.gradle.kts'
       - '.github/workflows/apk.yml'
       - 'tools/ci-fetch-assets.sh'
-      - 'tools/build-engine-bin.sh'
-      - 'tools/build-node-runtime.sh'
-      - 'tools/node-runtime-wrap.sh'
-      - 'tools/build-native-assets.sh'
       - 'tools/build-plugin-assets.sh'
-      - 'tools/build-node-pty.sh'
-      - 'tools/build-extra-native.sh'
-      - 'tools/build-node-addon-system.sh'
       - 'tools/build-webview_compat.py'
-      - 'tools/build-node-addon-require-builtin.sh'
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -78,6 +70,8 @@ jobs:
           DSH_RT_CACHE: ${{ runner.temp }}/rt-cache
           DSH_RT_OUT: ${{ github.workspace }}/_build/runtime/out
           CC: aarch64-linux-gnu-gcc
+          # 双保险：build-runtime.sh 也会读 tools/engine-version.txt
+          DSH_VERSION: 0.2.2-rc.3
         run: bash tools/runtime/build-runtime.sh
 
       - name: 硬断言
@@ -102,7 +96,7 @@ jobs:
     env:
       ASSETS_TAG: ${{ github.event.inputs.assets_release || vars.ASSETS_RELEASE }}
       STRICT_ASSETS: ${{ github.event.inputs.strict_assets || '0' }}
-      REL_TAG: v-debug
+      REL_TAG: v0.2.2-rc.3
     steps:
       - uses: actions/checkout@v4
 
@@ -225,8 +219,24 @@ jobs:
       - name: 生成无线调试 adb 工具链（S5）
         run: bash tools/build-adb-wireless.sh
 
+      - name: 注入发行签名（release 变体）
+        env:
+          KS_B64: ${{ secrets.KEYSTORE_BASE64 }}
+          KS_PW: ${{ secrets.KEYSTORE_PASSWORD }}
+          KS_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KS_KEYPW: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          set -e
+          [ -n "$KS_B64" ] || { echo '::error::KEYSTORE_BASE64 缺失'; exit 1; }
+          echo "$KS_B64" | base64 -d > "$GITHUB_WORKSPACE/release.keystore"
+          { echo "storeFile=release.keystore"; echo "storePassword=$KS_PW"; echo "keyAlias=$KS_ALIAS"; echo "keyPassword=$KS_KEYPW"; } > keystore.properties
+          sed -n '1,4p' keystore.properties | sed 's/Password=.*/Password=***/'
+          keytool -list -v -keystore release.keystore -storepass "$KS_PW" | grep -E 'SHA256:|Alias name:' | head -4
+
       - name: 构建 APK
-        run: bash ./gradlew :app:assembleSystemDebug --console=plain --stacktrace
+        run: |
+          bash ./gradlew :app:assembleSystemDebug --console=plain --stacktrace
+          bash ./gradlew :app:assembleSystemRelease --console=plain --stacktrace
 
       - name: APK 资产断言（单运行时）
         run: |
@@ -253,31 +263,47 @@ jobs:
             app/build/outputs/apk/system/debug/output-metadata.json
           if-no-files-found: error
           retention-days: 14
+      - name: 上传 APK（system release，正式版候选）
+        uses: actions/upload-artifact@v4
+        with:
+          name: dsh-system-release
+          path: |
+            app/build/outputs/apk/system/release/*.apk
+            app/build/outputs/apk/system/release/output-metadata.json
+          if-no-files-found: error
+          retention-days: 14
+
 
       - name: 发布到 Release（公开可下）
         # 只有 main 的构建能发布。PR 构建也曾走到这里，把 v0.4.4-test 的资产
         # 覆盖成 PR 代码（2026-11-12 实际发生），所以这里同时挡 event 与 ref。
-        if: success() && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        if: success() && github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && vars.PUBLISH_FROM_APK == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -e
           APK=$(find app/build/outputs/apk/system/debug -name '*.apk' | head -1)
           [ -n "$APK" ] || { echo "::error::no apk found"; exit 1; }
-          NAME="dsh-android-0.5.0-arm64.apk"
+          V_NAME=$(grep '^versionName=' tools/app-version.txt | cut -d= -f2 | tr -d ' \r\n')
+          V_CODE=$(grep '^versionCode=' tools/app-version.txt | cut -d= -f2 | tr -d ' \r\n')
+          E_VER=$(tr -d ' \r\n' < tools/engine-version.txt)
+          R_NODE=$(sed -n 's/^NODE_VERSION=${NODE_VERSION:-\([^}]*\)}.*/\1/p' tools/runtime/build-runtime.sh | head -1)
+          NAME="dsh-android-${V_NAME}-arm64.apk"
           cp -f "$APK" "/tmp/$NAME"
           SHA=$(sha256sum "/tmp/$NAME" | cut -d' ' -f1)
           SIZE=$(stat -c%s "/tmp/$NAME")
-          NODE=$(grep -oE 'NODE_EXECUTABLE_VERSION = "v[0-9.]+"' app/src/main/java/com/dsh/android/termux/TermuxBootstrap.kt | grep -oE 'v[0-9.]+' | head -1 || true)
+          NODE="v${R_NODE}"
           MUI=$(grep -oE 'MOBILE_UI_VERSION = "[0-9.]+-[0-9]+"' app/src/main/java/com/dsh/android/EngineManager.kt | grep -oE '[0-9.]+-[0-9]+' | head -1 || true)
           echo "APK=$APK -> /tmp/$NAME size=$SIZE sha256=$SHA node=${NODE:-?} mobile-ui=${MUI:-?}"
-          NOTES=$(printf 'engine @deepseek-ai/dsh@0.2.2-rc.1（PRoot 单运行时）\n\n- versionName **0.5.0** / versionCode **51**\n- apk size `%s` bytes\n- sha256 `%s`\n- runtime `%s`（rootfs: ubuntu 24.04 + node 24.22.1 + pnpm 10.28.2 + git/python3/curl）\n- mobile-ui `%s`\n- 单运行时：引擎 / bash / uid2000 / root / 沙箱全部跑在 PRoot 内，APK 不再含 bionic 资产\n- 数据迁移：`$DSH_HOME`、workspace、logs 原地保留；旧 engine//usr/termux/usr 改名进 runtime/legacy-bionic\n- 救援：L2 救援 profile 与 try-boot 走 PRoot，rootfs 损坏可自愈（重新解包，数据不动）\n' "$SIZE" "$SHA" "${NODE:-?}" "${MUI:-?}")
+          R_PNPM=$(sed -n 's/^PNPM_VERSION=${PNPM_VERSION:-\([^}]*\)}.*/\1/p' tools/runtime/build-runtime.sh | head -1)
+          NOTES=$(printf 'engine @deepseek-ai/dsh@%s（PRoot 单运行时）\n\n- versionName **%s** / versionCode **%s**\n- apk size `%s` bytes\n- sha256 `%s`\n- runtime `%s`（rootfs: ubuntu 24.04.5 + node %s + pnpm %s + git/python3/curl）\n- mobile-ui `%s`\n- 单运行时：引擎 / bash / uid2000 / root / 沙箱全部跑在 PRoot 内，APK 不再含 bionic 资产\n- 数据迁移：`$DSH_HOME`、workspace、logs 原地保留\n- 救援：L2 救援 profile 与 try-boot 走 PRoot，rootfs 损坏可自愈（重新解包，数据不动）\n' "$E_VER" "$V_NAME" "$V_CODE" "$SIZE" "$SHA" "${NODE:-?}" "${R_NODE:-?}" "${R_PNPM:-?}" "${MUI:-?}")
+          ( cd /tmp && sha256sum "$NAME" > SHA256SUMS.txt )
           if gh release view "$REL_TAG" >/dev/null 2>&1; then
             gh release edit "$REL_TAG" --notes "$NOTES" --prerelease || true
           else
             gh release create "$REL_TAG" --title "DSH Android 调试包（$REL_TAG）" --notes "$NOTES" --prerelease
           fi
-          gh release upload "$REL_TAG" "/tmp/$NAME" --clobber
+          gh release upload "$REL_TAG" "/tmp/$NAME" /tmp/SHA256SUMS.txt --clobber
           echo '--- assets ---'
           gh release view "$REL_TAG" --json assets -q '.assets[] | "\(.name) \(.size) \(.state)"'
 

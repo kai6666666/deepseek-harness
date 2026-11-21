@@ -18,13 +18,13 @@ import kotlinx.coroutines.launch
 import java.io.File
 
 /**
- * 应用入口：在后台把 Termux 环境准备好。
+ * 应用入口：在后台把 PRoot 运行时准备好。
  *
- * 为什么放在 Application 而不是 Activity：bootstrap 首次要解压 23 MB（约 1–2 秒），
+ * 为什么放在 Application 而不是 Activity：首启要解包 rootfs（约 1.3 GB，1–2 分钟），
  * 放在 Activity 里会随转屏重建反复触发。这里用 applicationScope 起一次，进程内共享。
  *
- * ⚠️ 0.5.0 起运行时改为 APK 内置的 PRoot rootfs：首启由 RootfsInstaller 解包，
- * 这里不再解 Termux bootstrap。
+ * ⚠️ 0.5.0 起运行时是 APK 内置的 PRoot rootfs：首启由 RootfsInstaller 解包，
+ * 这里不做任何解包（P3 之后也不再有任何 bionic 前缀）。
  */
 class DshApplication : Application() {
 
@@ -32,7 +32,7 @@ class DshApplication : Application() {
      * ⚠️ **日志系统必须在这里装，不能等到 `onCreate`。**
      *
      * `attachBaseContext` 比 `onCreate` 早一整个阶段，而本 App 的故障有相当一部分
-     * 发生在启动早期（Termux 环境损坏、资产缺失、插件把启动路径搞崩）。
+     * 发生在启动早期（rootfs 缺失/损坏、资产缺失、插件把启动路径搞崩）。
      * 装在 `onCreate` 里会漏掉这些 —— 而它们恰恰是最需要现场的那一类。
      *
      * ⚠️ 这里**只做最少的事**：建目录、开文件、装崩溃处理器。任何耗时操作
@@ -100,7 +100,7 @@ class DshApplication : Application() {
         //   但都该在启动早期就确定状态。
         runCatching { AdbPairingNotifier.clearStaleOnStartup(this) }
             .onFailure { DshLog.w(TAG, "清理残留配对状态失败", it) }
-        // ⚠️ 启动早期就建出配对通知渠道。本 App `targetSdk = 28`，在 Android 13+
+        // ⚠️ 启动早期就建出配对通知渠道。本 App `targetSdk = 35`，在 Android 13+
         //   上走「旧应用」兼容路径 —— 系统只在**创建第一个通知渠道**时补弹一次
         //   通知权限框，错过就再也不问。原实现渠道要等用户点「配对」才建，
         //   于是首次打开 App 永远拿不到那个弹框，必须退出重进（见方法注释）。

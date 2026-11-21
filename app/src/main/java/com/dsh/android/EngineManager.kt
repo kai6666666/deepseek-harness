@@ -34,22 +34,20 @@ import java.util.concurrent.TimeUnit
 /**
  * 管理内置 DSH 引擎的生命周期。
  *
- * 架构：
- *   $PREFIX/bin/node（Termux 官方 arm64 构建，随 APK 分发并由 TermuxBootstrap 铺入）
- *     └─ engine/node_modules/@deepseek-ai/dsh/lib/bin.js --profile web --no-open
- *          └─ 本地 HTTP 服务，打印带 token 的 URL
+ * 架构（0.5.0 起的单运行时）：
+ *   nativeLibraryDir/libproot.so（+ libproot-loader.so / libtalloc.so / libandroid-shmem.so）
+ *     └─ 挂载 filesDir/runtime/rootfs 为 guest 根
+ *          └─ guest 内 /usr/bin/node 跑 /opt/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js
+ *               └─ 本地 HTTP 服务，打印带 token 的 URL
  *
- * 引擎通过子进程运行，App 解析其 stdout 得到 URL 后交给 WebView 加载。
+ * 引擎跑在 PRoot 子进程里，App 解析其 stdout 得到 URL 后交给 WebView 加载。
  *
- * ## 为什么 Node 用 Termux 的构建而不是自编译
+ * ## 为什么可执行体全放 jniLibs
  *
- * node 与它的全部依赖（ICU / OpenSSL / libc++ …）都由 Termux 官方仓库针对 Android
- * bionic 构建，随 APK 内置即可离线可用。自编译需要交叉编译整个 V8，且要处理
- * `import.meta.main`（需 Node ≥ 24.2）等版本约束，成本与风险都高得多。
- *
- * ⚠️ 这条路线要求 `targetSdk ≤ 28`：Android 10 起 targetSdk ≥ 29 的应用不允许
- * `execve()` 自身私有目录里的文件（W^X / SELinux app_data_file 禁止 execute_no_trans），
- * 而 `$PREFIX/bin/node` 正落在私有目录里。详见 app/build.gradle.kts 的注释。
+ * 内核只允许 exec `nativeLibraryDir` 里的文件（API 29 起 app_data_file 被禁
+ * `execute_no_trans`），而 guest 内的 node / bash / dsh 由 proot loader mmap 装入，
+ * 根本不经内核 execve。所以 targetSdk 不再是硬约束（P5 逐档抬）。
+ * 详见 docs/plan/refactor-single-host-purge.md 与 app/build.gradle.kts 的注释。
  */
 class EngineManager private constructor(private val context: Context) {
 
@@ -442,7 +440,7 @@ class EngineManager private constructor(private val context: Context) {
     /**
      * 用归档自带的 `MANIFEST.txt` 给解包结果对账。
      *
-     * 归档里那份由 `tools/build-engine-bin.sh` 生成，只有两行：
+     * 归档里那份由已删除的 bionic 构建脚本生成（P6 第二批），只有两行：
      *   node_modules_files=<普通文件数>
      *   node_modules_bytes=<这些文件的字节和>
      * 解包时 TarGz 边写边统计同样的两个值，**不一致就抛**（而不是打条 warning 继续）。
@@ -1144,7 +1142,7 @@ class EngineManager private constructor(private val context: Context) {
      * 都 `enterable=true`，且经链接列目录（145 项）、建文件夹、写文件全部成功。
      *
      * ⚠️ 读得到 `/sdcard` 靠的是 manifest 里已申请的 `READ_EXTERNAL_STORAGE` /
-     * `WRITE_EXTERNAL_STORAGE`（targetSdk 28，legacy 存储模型）。用户拒绝该权限
+     * `WRITE_EXTERNAL_STORAGE`（历史：targetSdk 28 时代是 legacy 存储模型）。用户拒绝该权限
      * 时「手机存储」那一行 `stat()` 失败 ⇒ `directoryRow()` 返回 null ⇒
      * **该行不显示**（官方逻辑，不会崩），只剩「应用目录」可用。
      *
@@ -1158,7 +1156,33 @@ class EngineManager private constructor(private val context: Context) {
         }
 
         // 名字会显示在对话框里、也会出现在所选工作区的路径中，用一眼能懂的词。
-        val roots = listOf("手机存储" to File("/sdcard"), "应用目录" to context.filesDir)
+        // 兼容层：客户端会把上次浏览路径记在 localStorage 里。老版本起点是
+        // rootfs 的 /root，用户升级后对话框**仍会直接跳到 /root** —— 那里没有入口，
+        // 依旧是一片空白（vc74 真机截图）。所以在 /root 下再建同一组入口，
+        // 让「记住的旧路径」也能看到手机存储/下载/应用目录。
+        // /root 在 rootfs 里，重装 runtime 会被覆盖 —— 每次启动重建即可。
+        val legacyRoot = File(rootfsDir, "root")
+        if (legacyRoot.isDirectory) {
+            for ((name, target) in listOf("手机存储" to File("/sdcard"),
+                    "下载" to File("/sdcard/Download"),
+                    "应用目录" to context.filesDir)) {
+                val link = File(legacyRoot, name)
+                try {
+                    if (Files.isSymbolicLink(link.toPath())) continue
+                    if (link.exists()) continue
+                    Files.createSymbolicLink(link.toPath(), target.toPath())
+                    Log.i(TAG, "已建兼容入口（/root）: $name → ${target.absolutePath}")
+                } catch (t: Throwable) {
+                    Log.w(TAG, "建兼容入口失败（/root/$name）: ${t.message}")
+                }
+            }
+        }
+        val roots = listOf(
+            "手机存储" to File("/sdcard"),
+            // 最常用的落点单独给一个入口：用户在对话框里少点两层
+            "下载" to File("/sdcard/Download"),
+            "应用目录" to context.filesDir,
+        )
         for ((name, target) in roots) {
             val link = File(home, name)
             try {
@@ -6618,10 +6642,28 @@ class EngineManager private constructor(private val context: Context) {
         EventLog.record("engine.start.proot", mapOf("runtime" to manifest.runtimeVersion))
         val installer = RootfsInstaller(context)
         var phase = ""
+        var lastPercent = -1
         try {
+            // ⚠️ 必须把进度喂给 State.Extracting，否则 UI 在解包期间**没有百分比**：
+            //   原来这里只 Log.i，界面停在「正在启动引擎…」，用户以为卡死（vc69 实测反馈）。
+            //   两段加权：copy 占 0–30%，extract 占 30–98%（extract 的分母是 .xz 已读字节）。
             installer.ensure(manifest) { p ->
                 if (phase != p.phase) { phase = p.phase; Log.i(TAG, "runtime ${p.phase}: ${p.note}") }
+                val pct = when {
+                    p.phase == "copy" && p.total > 0 -> (p.done * 30 / p.total).toInt()
+                    p.phase == "extract" && p.total > 0 -> 30 + (p.done * 68 / p.total).toInt()
+                    p.phase == "done" || p.phase == "ready" -> 100
+                    else -> -1
+                }.coerceIn(0, 100)
+                if (pct >= 0 && pct != lastPercent) {
+                    // 每跨 10% 打一行：锁屏/息屏时也能从日志证明进度在推进
+                    // （真机验收用；也让用户报「卡住」时能直接看出卡在哪一段）。
+                    if (pct / 10 != lastPercent / 10) Log.i(TAG, "runtime progress $pct% (${p.phase})")
+                    lastPercent = pct
+                    _state.value = State.Extracting(pct.coerceAtMost(99))
+                }
             }
+            _state.value = State.Starting
             if (!currentStart(generation)) return
             val rescueProfileDir = ensureRescueProfile()
             rescueAvailable = rescueProfileDir != null
@@ -6752,6 +6794,11 @@ class EngineManager private constructor(private val context: Context) {
         RescueCommandBridge.start(dshHome)
         EventLog.record("engine.profile", mapOf("profile" to targetProfile, "generation" to generation.toString()))
         if (targetProfile == RESCUE_PROFILE_NAME) EventLog.record("engine.start.rescue", mapOf("profile" to targetProfile))
+        // P3：每次启动都清扫中断安装留下的 staging/old —— stamp 命中时不会再走安装路径，
+        // 只靠 RootfsInstaller 的清扫会让「装到一半被杀」的残骸永久留着（真机实测 695 MB）。
+        runCatching { RuntimeFiles.sweepStale(File(context.filesDir, "runtime")) }
+            .onSuccess { if (it.isNotEmpty()) Log.i(TAG, "启动清扫残留：" + it.joinToString()) }
+            .onFailure { Log.w(TAG, "启动清扫失败：" + it.message) }
         val host = ProotHost(context, manifest, dshHome = dshHome, workspace = workspaceDir)
         val proc = try {
             synchronized(lifecycleLock) {
@@ -6800,7 +6847,24 @@ class EngineManager private constructor(private val context: Context) {
                 return
             }
         }
-        val health = host.health()
+        // ⚠️ 就绪检查必须**按窗口重试**，不能只探一次。
+        // 实测（vc66 冷启）：引擎已打印 token 行，紧接着的一次 GET 仍可能拿到 -1
+        // （PRoot 里 node 的 listen 刚建立、accept 队列还没就绪），单次探测就把整次启动判死。
+        // 现在在 HEALTH_WINDOW_MS 内每 HEALTH_INTERVAL_MS 探一次；进程一死立即停止重试。
+        val healthDeadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(HEALTH_WINDOW_MS)
+        var health = -1
+        var healthErr: String? = null
+        var healthAttempts = 0
+        while (true) {
+            healthAttempts++
+            val probe = host.healthProbe()
+            health = probe.first
+            healthErr = probe.second
+            if (health == manifest.unauthStatus) break
+            if (!host.isAlive()) break
+            if (System.nanoTime() >= healthDeadline) break
+            Thread.sleep(HEALTH_INTERVAL_MS)
+        }
         if (gateway == null && (health != manifest.unauthStatus || !host.isAlive())) {
             val code = host.exitCode()
             val failedTail = host.recentLines(MAX_LOG_LINES)
@@ -6808,13 +6872,18 @@ class EngineManager private constructor(private val context: Context) {
             synchronized(lifecycleLock) {
                 if (!currentStart(generation) || process !== proc) return
                 prootHost = null; process = null
-                failStart(generation, "引擎就绪检查失败：HTTP=$health", code, failedTail)
+                failStart(
+                    generation,
+                    "引擎就绪检查失败：HTTP=$health（试了 $healthAttempts 次 / ${HEALTH_WINDOW_MS}ms 窗口；最后错误：${healthErr ?: "无"}）",
+                    code,
+                    failedTail,
+                )
             }
             return
         }
         if (health == manifest.unauthStatus && gateway == null) {
-            runCatching { RuntimeFiles.retireLegacy(context.filesDir) }
-                .onSuccess { moved -> EventLog.record("runtime.migration", mapOf("retired" to moved.joinToString(), "data" to "in-place")) }
+            runCatching { RuntimeFiles.purgeLegacy(context.filesDir) }
+                .onSuccess { gone -> EventLog.record("runtime.purge", mapOf("removed" to gone.joinToString(), "data" to "in-place")) }
                 .onFailure { Log.w(TAG, "旧运行时留待重试：${it.message}") }
         }
         synchronized(lifecycleLock) {
@@ -7120,54 +7189,6 @@ class EngineManager private constructor(private val context: Context) {
 
     fun recentLog(): String = synchronized(logLines) { logLines.joinToString("\n") }
 
-    /**
-     * 宿主可切换的启动入口（C 方案接线点）。
-     *
-     * 为什么用「回调注入 baseUrl」而不是改 `start()` 签名：
-     *   `start()` 被前台服务、救援、重开 App 至少四处调用，改返回值会波及一片；
-     *   这里保持它原样，把「bionic 跑完之后的端点」通过 [legacyEndpointProvider] 交回来。
-     *
-     * 调用方（MainActivity / Application）在 `start()` 完成后设置：
-     *   `manager.legacyEndpointProvider = { EngineEndpoint(url, pid, log) }`
-     * 未设置时用 `http://127.0.0.1:<spec.port>` 兜底 —— 与旧行为一致。
-     */
-    @Volatile
-    var legacyEndpointProvider: (() -> com.dsh.android.engine.EngineEndpoint)? = null
-
-    /**
-     * 启动引擎（宿主可切换）。
-     *
-     * 行为：
-     *   · `bionic`：走既有 [start]，行为与旧版逐字节一致；
-     *   · `proot` / `remote`：走新宿主；起不来**自动回落 bionic**（`degraded=true`）。
-     */
-    suspend fun bootWithHost(
-        prefs: android.content.SharedPreferences?,
-    ): com.dsh.android.engine.EngineBootGate.BootResult =
-        com.dsh.android.engine.EngineBootGate.boot(
-            filesDir = context.filesDir,
-            dshHome = dshHome,
-            workspace = workspaceDir,
-            prefs = prefs,
-            legacyLauncher = { spec ->
-                start()
-                // P3.2：锚点审计（失败写 anchor-miss.json + 发一条通知，不再静默）
-                runCatching {
-                    val misses = com.dsh.android.engine.AnchorAudit.audit(engineDir, dshHome)
-                    com.dsh.android.engine.AnchorAudit.report(context, misses)
-                }
-                legacyEndpointProvider?.invoke() ?: com.dsh.android.engine.EngineEndpoint(
-                    baseUrl = "http://127.0.0.1:${spec.port}",
-                    pid = com.dsh.android.engine.ProcPid.of(process),
-                    logFile = File(dshHome, "logs/engine.log"),
-                )
-            },
-            stopLegacy = { stop() },
-        )
-
-    /** 设置页用：只读宿主能力，不启动引擎（避免用户点开设置就起一次进程）。 */
-    fun hostCapabilities(mode: com.dsh.android.engine.HostMode) =
-        com.dsh.android.engine.EngineHosts.create(mode, context.filesDir).capabilities()
 
     companion object {
         private const val TAG = "DSH"
@@ -7175,6 +7196,9 @@ class EngineManager private constructor(private val context: Context) {
         // 导致运行时按原名找不到。用中性后缀避免 AGP 的格式推断。
         private const val ASSET_NAME = "engine.bin"
         private const val READY_TIMEOUT_MS = 120_000L
+        /** 就绪检查的重试窗口：冷启时 PRoot 里的 listen 可能比 token 行晚几百毫秒才 accept。 */
+        private const val HEALTH_WINDOW_MS = 20_000L
+        private const val HEALTH_INTERVAL_MS = 400L
         private const val MAX_LOG_LINES = 400
 
         /**
@@ -8535,7 +8559,7 @@ class EngineManager private constructor(private val context: Context) {
           *      （99 → 100 / 33 → 34），否则会回退，设备上静默跑回没有这张卡的旧 UI。
           *      ⚠️ 两个戳都 bump（本常量 99 → 100，-CompatVersion 33 → 34）。
           */
-        private const val MOBILE_UI_VERSION = "1.1.0-194"
+        private const val MOBILE_UI_VERSION = "1.1.0-195"
         private const val MOBILE_UI_STAMP = ".mobile_ui_version"
 
         // ── 出厂默认设置 ─────────────────────────────────────────────

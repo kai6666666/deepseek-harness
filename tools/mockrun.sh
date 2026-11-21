@@ -1,5 +1,11 @@
 #!/system/bin/sh
 # 设备侧：换 mock 工具 → 起 headless → 打印 tool_call/tool_result
+#
+# ⚠️ 历史入口（bionic 单 node 时代）：本脚本的 $N=$R/termux/usr/bin/node 与
+#    cd $R/engine 在 0.5.0+ 的 PRoot 单运行时下已不存在；rootfs 的 node 是 glibc ELF，
+#    不能在 run-as 里裸跑。0.2.2-rc.3 起请用宿主侧：
+#      ./tools/verify-rc3-device.sh
+#    脚本保留仅作 0.4.x 现场复现的参考。
 # 用法：sh mockrun.sh <tool> '<json args>' [mockPatch.yml]
 R=/data/user/0/com.dsh.android/files
 N=$R/termux/usr/bin/node

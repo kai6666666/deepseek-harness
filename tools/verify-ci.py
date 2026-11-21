@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""CI 终验（Linux 侧）：读最近一次 android-release 的结论与产物，一行判定。
+"""CI 终验（Linux 侧）：读最近一次 apk 的结论与产物，一行判定。
 
 用法：python3 tools/verify-ci.py
 """
@@ -10,6 +10,7 @@ from pathlib import Path
 
 API = 'https://api.github.com/repos/kai6666666/deepseek-harness'
 TOKEN = Path('/tmp/gh_token')
+WORKFLOW = 'apk.yml'
 HEAD = {'Accept': 'application/vnd.github+json', 'User-Agent': 'dsh-verify'}
 if TOKEN.exists():
     HEAD['Authorization'] = 'Bearer ' + TOKEN.read_text().strip()
@@ -20,15 +21,20 @@ def get(url):
 
 
 def main():
+    global WORKFLOW
+    if '--workflow' in sys.argv:
+        i = sys.argv.index('--workflow')
+        if i + 1 < len(sys.argv) and sys.argv[i + 1].strip():
+            WORKFLOW = sys.argv[i + 1].strip()
     try:
-        runs = get(API + '/actions/workflows/android-release.yml/runs?per_page=3')
+        runs = get(API + '/actions/workflows/' + WORKFLOW + '/runs?per_page=3')
     except Exception as e:
         print('---- CI UNKNOWN  (%s)' % type(e).__name__)
         return 2
 
     runs = runs.get('workflow_runs', [])
     if not runs:
-        print('---- CI UNKNOWN  (no android-release run yet)')
+        print('---- CI UNKNOWN  (no %s run yet)' % WORKFLOW)
         return 2
 
     r = runs[0]

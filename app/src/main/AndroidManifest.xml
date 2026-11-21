@@ -52,10 +52,13 @@
         换句话说：**授权是解开跨身份读取的唯一钥匙**，没有别的办法
         （`chmod` 改不动 sdcardfs 的属主）。
 
-        targetSdk = 28，系统仍走 legacy 存储模型（无分区存储），这两个权限在
-        Android 10 上照旧生效，不必申请 MANAGE_EXTERNAL_STORAGE。
+        targetSdk 30 起系统**忽略** legacy 存储模型：这两个权限只在 API 29 及以下
+        授予真 /sdcard 的任意访问。30+ 要么申请「所有文件访问」（MANAGE_EXTERNAL_STORAGE），
+        要么由 ProotHost 把 guest 的 /sdcard 绑到 app 专属外部目录（功能可用、路径不同）。
         用户拒绝时只是退回原状（跨身份交接需绕道 app 自己的外部目录），不影响其它功能。
     -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
+        tools:ignore="ScopedStorage" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
 
@@ -85,6 +88,17 @@
     -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
+    <!-- targetSdk 30+ 的包可见性：Shizuku 的 Manager 必须显式声明才查得到，
+         否则 ShizukuChannel 的 getPackageInfo 抛 NameNotFound，特权通道静默降级。 -->
+    <queries>
+        <!-- 0.4.x：迁移向导要检测 0.3.x 那条线（io.github.ccch1mneyyy.dsh）。
+             targetSdk 30+ 有包可见性限制：不声明就 getPackageInfo() = NameNotFound，
+             向导会误判「旧版不在」从而完全不提示。 -->
+        <package android:name="io.github.ccch1mneyyy.dsh" />
+        <package android:name="com.dsh.android" />
+        <package android:name="moe.shizuku.privileged.api" />
+    </queries>
+
     <application
         android:name=".DshApplication"
         android:allowBackup="false"
@@ -93,6 +107,7 @@
         android:label="@string/app_name"
         android:supportsRtl="true"
         android:theme="@style/Theme.DSH"
+        android:requestLegacyExternalStorage="true"
         android:usesCleartextTraffic="true"
         tools:targetApi="35">
 
@@ -102,6 +117,10 @@
             android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize|uiMode"
             android:launchMode="singleTask"
             android:windowSoftInputMode="adjustResize">
+            <!-- 桌面长按图标：全面屏开/关（见 res/xml/shortcuts.xml） -->
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

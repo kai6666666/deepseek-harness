@@ -14,12 +14,11 @@ val keystoreProps = Properties().apply {
 }
 
 android {
-    // ⚠️ 必须是恰好 15 字符，且与 TermuxBootstrap.ELF_ROOT_REPLACEMENT 完全一致。
-    // 原因：Termux 官方二进制把 "/data/data/com.termux/files"（27 字节）烤进 ELF 的
-    // .dynstr，而 patchElfInPlace() 只能做等长原地覆盖，替换串形如
-    // "/data/data/<包名>/" = 12 + N 字节，等于 27 ⇒ N = 15。
-    // 改错不会编译报错，只会在真机上以「dpkg Permission denied」的形式炸掉。
-    // 改完请跑 termux-kit 的 tools/verify-kit.ps1 校验。
+    // `namespace` 是**源码包名**（R / BuildConfig 的包），与 Android 的 applicationId 无关，
+    // P4 之后仍是 com.dsh.android —— 改它要搬几百个文件的目录与全部 import，收益为零。
+    // 包名长度**早已不是约束**（P1/P2 之后运行期不做任何 ELF 前缀重写）：
+    // 旧 bionic 路线才要求 12 + N = 27 ⇒ N = 15，那条路连同 patchElfInPlace 已删除。
+    // 详见 docs/plan/refactor-single-host-purge.md。
     namespace = "com.dsh.android"
     compileSdk = 35
 
@@ -27,15 +26,27 @@ android {
     val targetAbi = (project.findProperty("targetAbi") as String?) ?: "arm64-v8a"
 
     defaultConfig {
+        // P4：Android 包名（不是源码包）。换名 = 新安装，数据不继承 —— 迁移走
+        // 设置页「导出数据 / 导入数据」（UserDataImporter 已把旧包名列入白名单）。
+        // P22（0.4.0）：**决定回旧包名** —— 新包名 `io.github.ccch1mneyyy.dsh` 不再使用。
+        //   理由：老用户可无感升级（同包名 + 同签名即可覆盖），也不必再迁一次数据。
+        //   ⚠️ 覆盖安装的硬条件仍是「同包名 + 同签名」；历史包若不是本仓库证书签的，
+        //      装的时候仍会 UPDATE_INCOMPATIBLE，需先导出再卸载。
         applicationId = "com.dsh.android"
         minSdk = 26
-        // 🔴 必须是 28，不能升到 29+。Android 10（API 29）起，targetSdk ≥ 29 的
-        // 应用不允许 execve() 自身私有目录里的文件（W^X 限制，SELinux
-        // untrusted_app 域的 app_data_file 禁止 execute_no_trans）。而 Termux 的
-        // 全部包（node / bash / dpkg / python）都装在 filesDir 下的 $PREFIX 里，
-        // 一升到 29 就会全线 Permission denied。Termux 官方 App 同样停在 28。
-        targetSdk = 28
-        versionCode = 52
+        // targetSdk：API 29 起 `app_data_file` 禁止 `execute_no_trans`，但本 App 的
+        // 内核 exec 面只剩 `nativeLibraryDir/*.so`（该限制的官方例外）；rootfs 内的
+        // node / bash / dsh 全部经 proot loader mmap，不经过内核 execve。
+        // P5 已逐档抬到 34：29（legacy 存储）→ 30（MANAGE_EXTERNAL_STORAGE + /sdcard 回退）
+        // → 34（FGS 显式类型 + 包可见性）。每档都过了：首启解包 / /sdcard 可写 /
+        // 悬浮球 + 无障碍 / 切后台 10 min 不断连。
+        // P21（refactor.21）：34 → 35。
+        //   API 35 起系统**强制** edge-to-edge：`decorFitsSystemWindows` 恒为 false，
+        //   `statusBarColor` / `navigationBarColor` 的赋值被忽略。
+        //   应对见 MainActivity.enableEdgeToEdgeCompat()：真实 insets 加到
+        //   `webContainer` 的 padding，系统栏区域的底色由 window 背景提供。
+        targetSdk = 35
+        versionCode = 84
         // 后缀语义：`credperm` = 凭据文件权限修复（0.2.9 首发）；
         // `tooliso` = 工具插件注册失败的隔离（可选工具注册失败不再拖垮引擎启动）；
         // `rescue` = 坏插件不再让 App 打不开（四级降级阶梯 + AI 自助修复通道）。
@@ -195,7 +206,7 @@ android {
         //     ③ 导入先 `inspect()` 解析包内实际内容再让用户勾选，不假定七项都在；
         //        落地前把现有数据改名备份（`backup-before-import-<时间戳>/`），
         //        与安全模式同一套「改名不删」语义。
-        //     ④ **跨 flavor 互通**：两个包名不同（com.dsh.android / com.dsh.webview），
+        //     ④ **跨 flavor 互通**：两个包名不同（io.github.ccch1mneyyy.dsh / io.github.ccch1mneyyy.dsh.webview），
         //        备份包内部用相对路径所以天然通用，但用户层配置里的
         //        `file:///data/user/0/<包名>/...` 绝对路径要在导入时改写，
         //        否则插件指向另一个 App 的私有目录、必然加载失败。
@@ -272,8 +283,7 @@ android {
         //    升级路径 0.4.3/0.4.4 → 0.5.0：`$DSH_HOME`、workspace、logs 原地保留（S6 已验，
         //    数据 0 丢失），旧 `engine/`、`usr/`、`termux/usr` 首次健康启动后改名进
         //    `runtime/legacy-bionic/`（改名不删）。
-        versionName = "0.2.2-rc.1"
-
+        versionName = "0.4.1"
         // 只支持 arm64-v8a：内置的引擎资产与 Termux bootstrap 都是 arm64 架构
         ndk {
             abiFilters += targetAbi
@@ -296,8 +306,7 @@ android {
     //   `:app:assembleDebug` 变成 `:app:assembleSystemDebug` / `:app:assembleGeckoDebug`。
     //
     // ⚠️ **两个 flavor 的 applicationId 必须都恰好 15 字符**，原因见 defaultConfig
-    //   里那条注释（Termux ELF 的等长原地重写）。`com.dsh.android` 与
-    //   `com.dsh.webview` 都是 15 字符，对应 `/data/data/<包名>/` = 27 字节。
+    //   里那条注释（ELF 前缀的等长重写）—— 那条路已删除，包名长度不再受限。
     //   `TermuxBootstrap.ELF_ROOT_REPLACEMENT` 已改为从 `BuildConfig.APPLICATION_ID`
     //   派生，改这里不需要再同步改 Kotlin 常量。
     flavorDimensions += "webengine"
@@ -308,7 +317,7 @@ android {
         }
         create("gecko") {
             dimension = "webengine"
-            applicationId = "com.dsh.webview"
+            applicationId = "com.dsh.android.webview"
             // 两个包会同时存在于设备上（applicationId 不同 ⇒ 可共存），
             // 版本号带后缀才能在系统「应用信息」里分辨出装的是哪一个。
             versionNameSuffix = "-gecko"
@@ -390,8 +399,9 @@ android {
     // 三个资产都用 assets.open() 读取，压缩与否对调用方透明，所以**不需要**
     // noCompress 白名单（加上反而会让 APK 从 ~60MB 涨到 ~108MB）。
     // 唯一要防的是 AGP 按扩展名做格式推断：它会把 .tar.gz 自动解压并改名成 .tar，
-    // 于是运行期 openFd 按原名找不到。规避方式是资产名一律用中性后缀
-    // （engine.bin / node-runtime.bin / bootstrap-aarch64.zip），不靠白名单。
+    // 于是运行期 openFd 按原名找不到。规避方式是资产名一律用中性后缀（插件资产用 .zip，
+    // rootfs 走 assets 直读），不靠白名单。
+    // P6 之后 bionic 资产（engine.bin / node-runtime.bin / bootstrap-aarch64.zip）全部消失。
 
     // proot 四件套以 jniLibs 分发（libproot.so / libproot-loader.so /
     // libtalloc.so / libandroid-shmem.so）。系统只会把 lib*.so 解到
@@ -415,7 +425,7 @@ android {
     buildFeatures {
         viewBinding = true
         // TermuxBootstrap.ELF_ROOT_REPLACEMENT 从 BuildConfig.APPLICATION_ID 派生 ——
-        // 两个 flavor 的包名不同（com.dsh.android / com.dsh.webview），而 ELF 里的
+        // 两个 flavor 的包名不同（io.github.ccch1mneyyy.dsh / io.github.ccch1mneyyy.dsh.webview），而 ELF 里的
         // 替换串必须**恰好 27 字节**且与真实包名一致，写死一个就会让另一个 flavor
         // 静默跳过路径重写（症状是 dpkg/node 全线 Permission denied）。
         // AGP 8.0 起 buildConfig 默认为 false，必须显式打开。

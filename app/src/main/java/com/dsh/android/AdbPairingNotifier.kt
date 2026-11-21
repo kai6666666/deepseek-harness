@@ -397,7 +397,7 @@ object AdbPairingNotifier {
      *
      * ## ⚠️ 为什么必须由 App 启动时主动调（真机反馈修掉的缺陷）
      *
-     * 本 App 的 `targetSdk = 28`（硬约束②，不能升），在 Android 13+ 上属于
+     * 本 App `targetSdk = 35`（P5/P21 逐档抬升；历史上曾钉在 28），在 Android 13+ 上属于
      * **旧应用**：系统不会把 `POST_NOTIFICATIONS` 当成运行时权限去要，而是走
      * 「**创建第一个通知渠道时补弹一次**」的兼容路径。于是：
      *

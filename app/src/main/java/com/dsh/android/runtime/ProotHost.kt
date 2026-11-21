@@ -3,6 +3,7 @@ package com.dsh.android.runtime
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Environment
 import android.system.Os
 import android.system.OsConstants
@@ -12,7 +13,6 @@ import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 import java.nio.file.Files
-import java.nio.file.StandardCopyOption
 import java.util.Collections
 import java.util.TimeZone
 import java.util.UUID
@@ -91,7 +91,11 @@ class ProotHost(
         val template = ProotLaunch.template(
             manifest.launchArgv.map(::expand), profile,
             "/" + originalPidFile.relativeTo(rootfs.canonicalFile).invariantSeparatorsPath,
-            guestPidFile, overlays.map { it.absolutePath }, command, guestEnvFile,
+            guestPidFile,
+            // ⚠️ 必须是 canonicalPath：guest 里 dshHome 是按 canonicalPath 绑定的
+            // （/data/data/...），而 absolutePath 是 /data/user/0/...；两者的字符串
+            // 在 guest 内只存在前者，用 absolutePath 会让引擎 ENOENT 打不开 --patch。
+            overlays.map { it.canonicalPath }, command, guestEnvFile,
         )
         val argv = ArrayList<String>()
         fun bind(f: File, guest: String = f.canonicalPath) {
@@ -101,7 +105,28 @@ class ProotHost(
             when (val arg = raw) {
                 "/usr/bin/env" -> {
                     bind(dshHome); bind(workspace)
-                    phoneStorage?.takeIf { it.isDirectory }?.let { bind(it, "/sdcard"); bind(it) }
+                    // ⚠️ home 必须**整体**绑一次（canonical 路径）。
+                    //   只绑 dshHome(=home/.dsh) 与 files 的 **别名** 时，guest 里的
+                    //   `/data/data/<pkg>/files` 只是一个由 bind 目标路径凑出来的**骨架**，
+                    //   里面仅有 .dsh —— 目录选择器以 $HOME(=files/home) 为起点，看到的
+                    //   就是空列表（vc73 探针实测：只有 .dsh，三个入口链接全不可见）。
+                    bind(File(context.filesDir, "home"))
+                    // ⚠️ 别名绑：guest 里同时提供 /data/user/0/<pkg>/files 这条路。
+                    // 事实：assets 里的插件 overlay、以及 EngineManager 拼的很多路径用的是
+                    // File.absolutePath（/data/user/0/...），而 proot 只按 canonicalPath
+                    // （/data/data/...）绑定 —— 只挂后者时这些字符串在 guest 内全是 ENOENT，
+                    // 表现为「14 个插件 failed to import」甚至引擎直接退出。
+                    // 把 filesDir 再以绝对路径为 guest 路径绑一次，两套前缀都成立。
+                    val filesAlias = context.filesDir.absolutePath
+                    if (filesAlias != context.filesDir.canonicalPath) bind(context.filesDir, filesAlias)
+                    val phone = phoneStorage?.takeIf { it.isDirectory }
+                    if (phone != null) {
+                        // 真机排障要看这一行：无「所有文件访问」时这里是
+                        // Android/data/<包名>/files/sdcard，而不是真的 /storage/emulated/0。
+                        Log.i(TAG, "bind /sdcard -> " + phone.absolutePath)
+                        bind(phone, "/sdcard")
+                        bind(phone)
+                    }
                     File(context.filesDir, "logs").mkdirs()
                     File(context.filesDir, "devenv").mkdirs()
                     listOf("dsh-android-shell.mjs", "dsh-android-root.mjs", "adbwire",
@@ -115,6 +140,24 @@ class ProotHost(
                     // 不再出现在 argv（`ps -A` 对 shell/root 可见）里。
                     val env = buildMap {
                         put("DSH_HOME", dshHome.canonicalPath)
+                        // 用户主目录：目录选择器的起点就是 $HOME。
+                        // 必须与 ensurePickerRoots() 里建入口链接的位置一致，
+                        // 否则选择器打开是空列表（vc72 实测）。
+                        put("DSH_USER_HOME", File(context.filesDir, "home").canonicalPath)
+                        // ⚠️ **必须在这里再覆盖一次 HOME**：
+                        //   runtime/manifest.json 的 launch.argv 里是
+                        //   `/usr/bin/env -i HOME=/root USER=root ... DSH_HOME=/root/.dsh`，
+                        //   而 `env -i` 之后逐条 KEY=VALUE **后者覆盖前者**。
+                        //   DSH_HOME 早就被这一段覆盖成 files/home/.dsh（所以会话没丢），
+                        //   但 HOME 一直没人覆盖 —— 引擎进程的 $HOME 始终是 /root，
+                        //   目录选择器（homedir() 起点）因此打开就是空的（vc74 截图）。
+                        put("HOME", File(context.filesDir, "home").canonicalPath)
+                        // ⚠️ 必须注入 DSH_FILES：引擎内的插件（mobile-ui 等）靠它定位
+                        //   `dsh-env.mjs` / `devenv/` / `logs/`。宿主此前**没有**注入，
+                        //   插件只能用自己的兜底常量 —— 那个常量写死了旧包名
+                        //   `com.dsh.android`，P4 换包名后路径全部落空，
+                        //   表现为「设置 → 开发环境：无法获取状态（引擎插件未激活？）」。
+                        put("DSH_FILES", context.filesDir.canonicalPath)
                         put("TZ", TimeZone.getDefault().id)
                         if (File(rootfs, "etc/ssl/certs/ca-certificates.crt").isFile) {
                             put("SSL_CERT_FILE", "/etc/ssl/certs/ca-certificates.crt")
@@ -128,8 +171,8 @@ class ProotHost(
             }
         }
         ensureGuestNetworkConfig()
-        val libs = File(context.filesDir, "proot-libs")
-        ensureProotLibs(libs)
+        // jniLibs 是原生唯一来源：proot / loader / libtalloc / libandroid-shmem 全在
+        // nativeLibraryDir（P1）。这里不再解 assets 到 files/proot-libs。
         val pb = ProcessBuilder(argv).directory(context.filesDir).redirectErrorStream(mergeError)
         pb.environment().apply {
             clear()
@@ -139,7 +182,7 @@ class ProotHost(
             put("ANDROID_ROOT", System.getenv("ANDROID_ROOT") ?: "/system")
             put("ANDROID_DATA", System.getenv("ANDROID_DATA") ?: "/data")
             manifest.launchEnv.forEach { (k, v) -> put(k, expand(v)) }
-            put("LD_LIBRARY_PATH", nativeLibDir + ":" + libs.absolutePath)
+            put("LD_LIBRARY_PATH", nativeLibDir)
         }
         // Environment values may be credentials; log structural facts only.
         Log.i(TAG, "launch: profile=$profile patches=${overlays.size} pidFile=$guestPidFile command=${command?.firstOrNull() ?: "dsh"}")
@@ -161,22 +204,6 @@ class ProotHost(
                 if (!f.isFile || f.length() == 0L) f.writeText("127.0.0.1 localhost\n::1 localhost\n")
             }
         }.onFailure { Log.w(TAG, "Guest network config: ${it.message}") }
-    }
-
-    /** Atomic replacement avoids modifying a library mmap'ed by the other live host. */
-    private fun ensureProotLibs(dir: File) = synchronized(LIB_LOCK) {
-        dir.mkdirs()
-        for (name in listOf("libtalloc.so.2", "libandroid-shmem.so")) {
-            val bytes = context.assets.open("runtime/proot-libs/$name").use { it.readBytes() }
-            val out = File(dir, name)
-            if (out.isFile && out.readBytes().contentEquals(bytes)) continue
-            val staged = File(dir, "$name.$runId.tmp")
-            try {
-                staged.writeBytes(bytes)
-                staged.setReadable(true, false)
-                Files.move(staged.toPath(), out.toPath(), StandardCopyOption.REPLACE_EXISTING)
-            } finally { staged.delete() }
-        }
     }
 
     private fun drain(p: Process, onLine: (String) -> Unit) {
@@ -228,17 +255,27 @@ class ProotHost(
     fun recentLines(n: Int = 20): List<String> = synchronized(lastLines) { lastLines.takeLast(n) }
     fun isAlive(): Boolean = process?.isAlive == true
 
-    fun health(timeoutMs: Int = 3000): Int {
-        val endpoint = tokenUrl?.substringBefore("?") ?: return -1
+    /**
+     * 探测引擎健康：返回 (HTTP 码, 失败原因)。
+     *
+     * 为什么要把失败原因带出来：冷启阶段「打印了 URL 但监听还没 accept」会得到 -1，
+     * 只回一个 -1 无法区分「连接被拒」「超时」「DNS/端口没起来」。调用方需要这个字符串
+     * 才能把现场写进崩溃文件，而不是只留一句 HTTP=-1。
+     */
+    fun healthProbe(timeoutMs: Int = 3000): Pair<Int, String?> {
+        val endpoint = tokenUrl?.substringBefore("?") ?: return -1 to "no token line yet"
         val c = URL(endpoint).openConnection() as HttpURLConnection
         return try {
             c.connectTimeout = timeoutMs; c.readTimeout = timeoutMs
             c.requestMethod = "GET"; c.instanceFollowRedirects = false
-            c.responseCode
+            c.responseCode to null
         } catch (t: Throwable) {
-            Log.w(TAG, "Health: ${t.message}"); -1
+            Log.w(TAG, "Health: ${t.message}")
+            -1 to (t.javaClass.simpleName + ": " + (t.message ?: ""))
         } finally { c.disconnect() }
     }
+
+    fun health(timeoutMs: Int = 3000): Int = healthProbe(timeoutMs).first
 
     private data class Pid(val value: Int, val parent: Int, val born: String)
     private fun pidInfo(pid: Int): Pid? = runCatching {
@@ -291,7 +328,6 @@ class ProotHost(
 
     companion object {
         const val TAG = "ProotHost"
-        private val LIB_LOCK = Any()
 
         /** The privileged helpers use exactly the same binds, env and loader as the engine. */
         fun startNodeCommand(
@@ -308,7 +344,26 @@ class ProotHost(
             return p
         }
 
+        /**
+         * 给 guest 的 `/sdcard` 选一个宿主目录。三级取源：
+         *
+         *   ① API 30+ 且已授予「所有文件访问」→ 真的 `/storage/emulated/0`
+         *   ② API 30+ 但没授予 → `Android/data/<包名>/files/sdcard`（app 专属外部目录，始终可写）
+         *   ③ API 29- → 老逻辑：有 READ_EXTERNAL 就给真 /sdcard
+         *
+         * 为什么要有 ②：API 30 起 `requestLegacyExternalStorage` 被系统忽略，
+         * `READ/WRITE_EXTERNAL_STORAGE` 不再授予真 `/sdcard` 的任意访问。没有 ② 的话，
+         * 用户没点「所有文件访问」时 guest 里 `/sdcard` 会直接 EACCES —— 插件读写全部失败，
+         * 而报错只会出现在 guest 的 node 栈里，宿主侧什么都看不到。
+         */
         private fun defaultPhoneStorage(context: Context): File? {
+            if (Build.VERSION.SDK_INT >= 30) {
+                if (Environment.isExternalStorageManager()) {
+                    return Environment.getExternalStorageDirectory()?.takeIf { it.isDirectory }
+                }
+                val dir = context.getExternalFilesDir(null) ?: return null
+                return File(dir, "sdcard").apply { mkdirs() }.takeIf { it.isDirectory }
+            }
             val dir = Environment.getExternalStorageDirectory() ?: return null
             val granted = context.checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
             return dir.takeIf { granted && it.isDirectory }

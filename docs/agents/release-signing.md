@@ -35,9 +35,13 @@ SHA256   : 79:D0:DA:B6:82:2C:27:6F:05:4B:B9:D5:3A:24:DD:65:FC:54:B3:A1:85:C9:02:
 jks sha256: af0f5b65a401338f016696cbcd9f8946ba2e3a8636019fa42b067ac0298fddbe
 ```
 
-## ② CI 出包（`.github/workflows/android-release.yml`）
+## ② CI 出包（现行链路，三段式）
 
-手动触发 `android-release`，先配 4 个仓库 secret：
+```text
+apk.yml（出包） → sign-upgrade-apk.yml（原证书重签） → publish-apk.yml（上传 Release）
+```
+
+先配 4 个仓库 secret：
 
 | secret | 值 |
 |---|---|
@@ -46,7 +50,14 @@ jks sha256: af0f5b65a401338f016696cbcd9f8946ba2e3a8636019fa42b067ac0298fddbe
 | `KEY_ALIAS` | `dsh-release` |
 | `KEY_PASSWORD` | `keystore.properties` 里的 `keyPassword` |
 
-流程：解码 keystore → 写 `keystore.properties` → `./gradlew :app:assembleRelease` → `apksigner verify --print-certs` → `sha256sum` → 上传 artifact `dsh-release-apk`。
+- `apk.yml`：`workflow_dispatch`（inputs `assets_release` / `strict_assets`），artifact `dsh-system-debug`。
+- `sign-upgrade-apk.yml`：inputs `run_id` + `expected_signer`；从 APK **实读** vc/vn，只硬校验包名，
+  重签后再校验 payload 逐字节不变。
+- `publish-apk.yml`：inputs `run_id` / `tag` / `src_ref` / `prerelease` / `artifact_name`；
+  断言 `tag == v$versionName`（读 `tools/app-version.txt`）。
+
+> `android-release.yml` 已在 P6 删除：它是 0.5.0 之前的 bionic 出包链（现场造 `bootstrap-aarch64.zip`
+> 并断言它在 APK 里），与当前单运行时无关。
 
 ## ③ 本地校验
 
