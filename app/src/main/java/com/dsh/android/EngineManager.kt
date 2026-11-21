@@ -1156,6 +1156,27 @@ class EngineManager private constructor(private val context: Context) {
         }
 
         // 名字会显示在对话框里、也会出现在所选工作区的路径中，用一眼能懂的词。
+        // 兼容层：客户端会把上次浏览路径记在 localStorage 里。老版本起点是
+        // rootfs 的 /root，用户升级后对话框**仍会直接跳到 /root** —— 那里没有入口，
+        // 依旧是一片空白（vc74 真机截图）。所以在 /root 下再建同一组入口，
+        // 让「记住的旧路径」也能看到手机存储/下载/应用目录。
+        // /root 在 rootfs 里，重装 runtime 会被覆盖 —— 每次启动重建即可。
+        val legacyRoot = File(rootfsDir, "root")
+        if (legacyRoot.isDirectory) {
+            for ((name, target) in listOf("手机存储" to File("/sdcard"),
+                    "下载" to File("/sdcard/Download"),
+                    "应用目录" to context.filesDir)) {
+                val link = File(legacyRoot, name)
+                try {
+                    if (Files.isSymbolicLink(link.toPath())) continue
+                    if (link.exists()) continue
+                    Files.createSymbolicLink(link.toPath(), target.toPath())
+                    Log.i(TAG, "已建兼容入口（/root）: $name → ${target.absolutePath}")
+                } catch (t: Throwable) {
+                    Log.w(TAG, "建兼容入口失败（/root/$name）: ${t.message}")
+                }
+            }
+        }
         val roots = listOf(
             "手机存储" to File("/sdcard"),
             // 最常用的落点单独给一个入口：用户在对话框里少点两层
