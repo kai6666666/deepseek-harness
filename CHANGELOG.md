@@ -1,3 +1,23 @@
+## [0.3.0-refactor.17] — 2026-11-21
+vc=72
+
+### 可观测性：解包进度每 10% 记一行日志
+真机验收时设备可能处于锁屏/息屏（AOD），uiautomator 抓不到界面。为了让「进度是否在推进」
+可被**离线证据**证明（也方便用户报「卡住」时定位卡在 copy 还是 extract），
+`EngineManager` 在进度回调里每跨 10% 打一行：
+
+```text
+runtime progress 30% (extract)
+runtime progress 40% (extract)
+...
+```
+
+### 判据
+```text
+pm clear → 启动 → grep "runtime progress" app.log
+应看到 0/10/…/90/100 递增，且 phase 从 copy 过渡到 extract
+```
+
 ## [0.3.0-refactor.16] — 2026-11-21
 vc=71
 
