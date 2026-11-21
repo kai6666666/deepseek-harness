@@ -941,8 +941,10 @@ class MainActivity : AppCompatActivity() {
         //   两者叠加的后果正是用户说的：没有通知权限 ⇒ 配对引导横幅根本发不出来
         //   ⇒ 用户想设置特权权限却无处下手（横幅是唯一的交互出口）。
         //
-        //   现在显式申请、且**串行**接在存储权限之后，保证首次打开就能拿到结论。
-        ensureNotificationAccess()
+        //   P15（refactor.16）：**再往后挪一步** —— 通知权限改为等界面真正可用
+        //   （`UiStage.UiReady`）再申请。原因：首启时这个弹窗会盖住「正在解包 N%」，
+        //   用户看到的是「进度消失」。解包期间不能有任何系统弹窗。
+        Log.i(DshApplication.TAG, "通知权限推迟到界面可用后再申请")
     }
 
     /**
@@ -959,6 +961,18 @@ class MainActivity : AppCompatActivity() {
      *   直接拒绝开始配对并记日志，设置页据此提示用户 —— 但用户首次打开 App 时
      *   本该一次性把权限拿齐，而不是先撞一次墙。
      */
+    /**
+     * 只申请一次通知权限；**必须在界面可用之后调用**（`UiStage.UiReady`）。
+     *
+     * 早于解包结束调用会让系统弹窗盖住「正在解包 N%」，用户以为进度丢了。
+     */
+    private var notificationAsked = false
+    private fun ensureNotificationAccessAfterUiReady() {
+        if (notificationAsked) return
+        notificationAsked = true
+        ensureNotificationAccess()
+    }
+
     private fun ensureNotificationAccess() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
             // Android 13 以下没有这个运行时权限，通知默认可用。
@@ -1130,7 +1144,6 @@ class MainActivity : AppCompatActivity() {
             // ⚠️ **这条早返回路径必须也申请通知权限。** 否则「存储权限已就绪」的机器
             //   （例如重装后、或用户先前已给过存储权限）永远走不到那个 launcher 回调，
             //   通知权限就再也没人申请 —— 正是「必须退出重开才弹通知权限」的另一半成因。
-            ensureNotificationAccess()
             return
         }
         Log.i(DshApplication.TAG, "申请外部存储权限: ${needed.joinToString()}")
@@ -3044,6 +3057,7 @@ class MainActivity : AppCompatActivity() {
                         showOverlay("正在准备界面…", hint = "激活移动端适配插件")
                     }
                     is EngineManager.UiStage.UiReady -> {
+                        ensureNotificationAccessAfterUiReady()
                         // ⚠️ 这里**不能**直接收起 —— DOM 就绪 ≠ 像素上屏。
                         //
                         // 真机实测（CDP `Page.startScreencast` 抓 WebView 内部帧）：
