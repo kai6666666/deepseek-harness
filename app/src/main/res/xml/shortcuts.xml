@@ -18,7 +18,7 @@
         <intent
             android:action="com.dsh.android.action.FULLSCREEN"
             android:targetClass="com.dsh.android.MainActivity"
-            android:targetPackage="io.github.ccch1mneyyy.dsh">
+            android:targetPackage="${applicationId}">
             <extra
                 android:name="enable"
                 android:value="true" />
@@ -33,7 +33,7 @@
         <intent
             android:action="com.dsh.android.action.FULLSCREEN"
             android:targetClass="com.dsh.android.MainActivity"
-            android:targetPackage="io.github.ccch1mneyyy.dsh">
+            android:targetPackage="${applicationId}">
             <extra
                 android:name="enable"
                 android:value="false" />
