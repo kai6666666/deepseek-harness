@@ -71,7 +71,10 @@ internal object MigrationWizard {
         shownThisRun = true
         Log.i(TAG, "迁移向导：检测到旧包 $LEGACY_PACKAGE 仍安装，提示先导出")
         val activity = context as? android.app.Activity ?: return
-        activity.runOnUiThread {
+        // ⚠️ 必须等窗口 attach 之后再弹：在 onCreate 里直接 show()，此时
+        //   decorView 还没有 window token，部分 ROM（MIUI）会**静默丢弃**这个对话框
+        //   —— 日志打了「检测到旧包」，用户却什么也看不到（真机踩过）。
+        activity.window.decorView.post {
             AlertDialog.Builder(activity)
                 .setTitle("检测到旧版 DSH")
                 .setMessage(
