@@ -15,6 +15,11 @@
 | 宿主 | **只有 PRoot 一条**（`ProotHost`），无枚举、无 bionic 回落 | P2 |
 | 运行时前缀 | guest 内 `/usr`；宿主 `files/` 下不得出现 `usr` / `termux` / `proot-libs` | P3（`purgeLegacy` + 启动 `sweepStale`） |
 
+**34+ 的前台服务**：`startForeground` 必须能对上 manifest 的 `foregroundServiceType`，
+`EngineService` 现在显式传 `FOREGROUND_SERVICE_TYPE_SPECIAL_USE`（API 34+ 分支），
+manifest 侧同时有 `specialUse` + `PROPERTY_SPECIAL_USE_FGS_SUBTYPE` 说明。
+另外 targetSdk 30+ 的包可见性要求把 Shizuku Manager 写进 `<queries>`，否则特权通道会静默降级。
+
 **30+ 的存储**：`requestLegacyExternalStorage` 被忽略，`READ/WRITE_EXTERNAL_STORAGE` 不再授予真 `/sdcard`；
 要么让用户授予「所有文件访问」（`MANAGE_EXTERNAL_STORAGE`），要么走回退：guest 的 `/sdcard` 绑到
 `Android/data/<包名>/files/sdcard`。回退下功能可用，但**路径不同**（`AndroidOpenWith` 的 `/sdcard` 归一化在这种状态下指不到真实文件）。
