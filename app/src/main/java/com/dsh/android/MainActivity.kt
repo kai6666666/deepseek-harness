@@ -1120,6 +1120,14 @@ class MainActivity : AppCompatActivity() {
         // API 30+：legacy 存储模型被系统忽略，READ/WRITE 不再覆盖真 /sdcard。
         // 这里**只引导一次**（SharedPreferences 记名），不反复弹设置页；
         // 用户不给也不致命 —— ProotHost 会把 guest 的 /sdcard 绑到 app 专属外部目录。
+        if (Build.VERSION.SDK_INT >= 30) {
+            val manager = runCatching { android.os.Environment.isExternalStorageManager() }.getOrDefault(false)
+            Log.i(
+                DshApplication.TAG,
+                "存储态：isExternalStorageManager=" + manager +
+                    (if (manager) "（guest /sdcard = 真手机存储）" else "（guest /sdcard = app 私有副本）"),
+            )
+        }
         if (Build.VERSION.SDK_INT >= 30 && !android.os.Environment.isExternalStorageManager()) {
             val prefs = getSharedPreferences("dsh_storage", MODE_PRIVATE)
             if (!prefs.getBoolean("allfiles_prompted", false)) {
