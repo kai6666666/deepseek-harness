@@ -11,7 +11,7 @@
 # 所以不能改 polyfill 本身（会被覆盖）。这里改成插**额外的** dsh-clickfix.js +
 # index.html 里多一个 script 标签；引擎升级重解包 dist 后才会消失，
 # 届时 APK 侧 assets 已带同一段逻辑（见 tools/dsh-clickfix.js 头注释）。
-PKG=com.dsh.android
+PKG=${PKG:-io.github.ccch1mneyyy.dsh}
 D=files/engine/node_modules/@deepseek-ai/dsh-web-frontend/dist
 SRC=${1:-/data/local/tmp/dsh-clickfix.js}
 
