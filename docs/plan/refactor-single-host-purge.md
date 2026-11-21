@@ -1,6 +1,6 @@
 # 重构计划：单宿主 + 去 Termux + 解除包名/targetSdk 限制
 
-> 状态：**执行中** — P0 ✅ / P1 ✅ / P2 ✅ / P3 ✅（`refactor.0` 基线 · `.1` P1 · `.2` P2 · `.3`+`.4` P3），下一阶段 P5
+> 状态：**执行中** — P0 ✅ / P1 ✅ / P2 ✅ / P3 ✅ / **P5 第一档（29）✅**；下一档 30 → 34，之后 P4 包名、P6 收尾
 > 基线：`main` @ `ff20f6024f`（引擎 `@deepseek-ai/dsh@0.2.2-rc.3`，App `0.2.2-rc.3` / vc54，mobile-ui `1.1.0-194`）
 > 目标版本：`0.3.0-refactor.N`（versionCode 从 55 起递增），发布到 prerelease `v0.3.0-refactor.N`
 > 最后更新：2026-11-20
@@ -233,7 +233,7 @@ files/usr/bin/bash    -> /data/app/~~…/lib/arm64/libbash.so
 
 ---
 
-### P5 targetSdk 提升（29 → 30 → 34，一档一验）
+### P5 targetSdk 提升（29 → 30 → 34，一档一验）— 29 ✅ 已完成（v0.3.0-refactor.5）
 
 **动作**
 
@@ -254,6 +254,28 @@ files/usr/bin/bash    -> /data/app/~~…/lib/arm64/libbash.so
 **判据（每档都跑）**：装机 → 首启解包 → 引擎起 → WebView 正常 → 选工作区（`/sdcard` 可写）→ 截图/无障碍/悬浮球 → 切后台 10 min 不断连 → 日志无 `EACCES`/`avc: denied`。
 
 **回滚**：targetSdk 是单行改动，回退到上一档并保留代码分支判据。
+
+**29 档实测（2026-11-21，vc60）**
+| 判据 | 实测 |
+|---|---|
+| 装机 | `versionCode=60 / versionName=0.3.0-refactor.5 / targetSdk=29` |
+| legacy 存储模型 | `dumpsys package` 含 `PRIVATE_FLAG_REQUEST_LEGACY_EXTERNAL_STORAGE`；`appops` `LEGACY_STORAGE: allow`、`READ/WRITE_EXTERNAL_STORAGE: allow` |
+| 引擎 | 进程 `libproot.so` + `node`；`dsh web http://127.0.0.1:45801` → `Web 内核已提交首帧` |
+| 悬浮窗 | `SYSTEM_ALERT_WINDOW: allow` |
+| 权限错误 | `grep -c "EACCES|avc: denied" app.log` = 0 |
+| CI 契约 | `check-apk-assets.py` 去掉「15 字符 / targetSdk ≤ 28」，改为「≥29 时 jniLibs 四件套齐备、无 proot-libs」 |
+
+**⚠️ 测试方法教训（写下来免得下次再撞）**
+- `run-as` 跑在 **`runas_app`** SELinux 域，**天生访问不到 `/sdcard`**（`/sdcard → /storage/self/primary` 也读不了）。
+  所以「用 run-as 写 /sdcard 验证存储」是**无效判据**，只能证明 harness 的限制。
+- 有效判据是系统状态：`appops get <pkg> | grep LEGACY_STORAGE` + `dumpsys package` 的 `PRIVATE_FLAG_REQUEST_LEGACY_EXTERNAL_STORAGE`。
+- `ProotProbeActivity --es run_script` 要求脚本落在**已绑定进 guest 的目录**（`home/.dsh`、`workspace`），
+  传 app 私有根路径会 `MODULE_NOT_FOUND`；本次探针仍未拿到 stdout，后续要做「guest 内写 /sdcard」验证时另设通道。
+
+**30 档要注意**
+- API 30 起 `requestLegacyExternalStorage` 被忽略 ⇒ 必须上 `MANAGE_EXTERNAL_STORAGE`（`ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION`），
+  否则 `/sdcard` 工作区绑定失效。
+- 34 还要处理 FGS 类型与 edge-to-edge（`SystemBarAppearance` 有 vc19 回归史）。
 
 ---
 
