@@ -6813,8 +6813,8 @@ class EngineManager private constructor(private val context: Context) {
             return
         }
         if (health == manifest.unauthStatus && gateway == null) {
-            runCatching { RuntimeFiles.retireLegacy(context.filesDir) }
-                .onSuccess { moved -> EventLog.record("runtime.migration", mapOf("retired" to moved.joinToString(), "data" to "in-place")) }
+            runCatching { RuntimeFiles.purgeLegacy(context.filesDir) }
+                .onSuccess { gone -> EventLog.record("runtime.purge", mapOf("removed" to gone.joinToString(), "data" to "in-place")) }
                 .onFailure { Log.w(TAG, "旧运行时留待重试：${it.message}") }
         }
         synchronized(lifecycleLock) {
