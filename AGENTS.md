@@ -13,31 +13,18 @@
 .\gradlew.bat :app:assembleGeckoDebug  --console=plain   # → app\build\outputs\apk\gecko\debug\app-gecko-debug.apk
 ```
 
-## 两条硬约束（改动前必读，改错不报错但真机必炸）
+## 当前约束（2026-11-21 起；历史成因见 `docs/plan/refactor-single-host-purge.md`）
 
-### ① 包名必须恰好 15 字符
+| 约束 | 现状 | 依据 |
+|---|---|---|
+| 包名长度 | **已解除**，`applicationId` 可任意取 | P1/P2 之后运行期不再做任何 ELF 前缀重写（`patchElfInPlace` 已删）；`libproot.so` 里的 `com.termux` 只是默认值，被 `PROOT_LOADER` / `PROOT_TMP_DIR` / `LD_LIBRARY_PATH` 全覆盖 |
+| targetSdk | **可抬**，逐档验（29 → 30 → 34），当前值看 `app/build.gradle.kts` | 内核 `execve` 面只剩 `nativeLibraryDir/*.so`（API 29 `execute_no_trans` 的官方例外）；rootfs 内 ELF 由 proot loader mmap，不经内核 exec |
+| 可执行体位置 | jniLibs 四件套：`libproot.so` / `libproot-loader.so` / `libtalloc.so` / `libandroid-shmem.so` | P1；`assets/runtime/proot-libs` 已删除 |
+| 宿主 | **只有 PRoot 一条**（`ProotHost`），无枚举、无 bionic 回落 | P2 |
+| 运行时前缀 | guest 内 `/usr`；宿主 `files/` 下不得出现 `usr` / `termux` / `proot-libs` | P3（`purgeLegacy` + 启动 `sweepStale`） |
 
-`applicationId` / `namespace` = `com.dsh.android`（15 字符）。
+⚠️ 改包名仍有一件事要做：**换包名 = 新安装**，会话 / 凭据 / rootfs 都不继承，必须先 `UserDataExporter` 导出再导入。
 
-Termux 官方二进制把 `/data/data/com.termux/files`（27 字节）烤进 ELF 的 `.dynstr`，
-`TermuxBootstrap.patchElfInPlace()` 只能做**等长原地覆盖**，替换串
-`/data/data/<包名>/` = 12 + N 字节，等于 27 ⇒ **N = 15**。
-
-长度不等时该函数直接 `return 0` **静默跳过**，不抛异常；症状是运行时
-`CANNOT LINK EXECUTABLE` 或 `dpkg: Permission denied`。改包名必须同步改
-`TermuxBootstrap.ELF_ROOT_REPLACEMENT`，两处字符数必须一致。
-
-> `app/build.gradle.kts` 注释里提到的 `termux-kit/tools/verify-kit.ps1` **不在本仓库**，
-> 不必去找。校验方式就是数字符。
-
-### ② targetSdk 必须 ≤ 28
-
-**不能升到 29+。** Android 10（API 29）起，targetSdk ≥ 29 的应用不允许 `execve()`
-自身私有目录里的文件（W^X / SELinux `untrusted_app` 域禁止 `app_data_file`
-`execute_no_trans`），而 node / bash / dpkg 全都装在 `filesDir` 下的 `$PREFIX` 里，
-一升级就全线 Permission denied。Termux 官方 App 同样停在 28。
-
-**代价**：只能侧载，无法上架 Google Play。
 
 ## 构建
 
@@ -142,5 +129,6 @@ adb logcat -d -s DSH:I     # 引擎就绪 / 界面加载完成 / 各 ensureXxx �
    清单见 [asset-stamps.md](docs/agents/asset-stamps.md)。**这个失败是完全静默的。**
 2. **`assets/*.zip` 没有打包脚本，全是手打的** —— 改完源码必须**逐 zip 与源目录做字节比对**，
    不能靠"我记得打过了"。踩过一次六个里漏一个，从"改了哪几个文件"看不出来。
-3. **不要为了"修"报错去升 `targetSdk` / 改包名** —— 那是硬约束①②，升了就全线崩，
-   而且报错信息不会指向真正的原因。
+3. **改包名 / 抬 `targetSdk` 前先读 [`docs/plan/refactor-single-host-purge.md`](docs/plan/refactor-single-host-purge.md)**
+   —— 旧的「15 字符 / 必须 28」已解除；但抬 targetSdk 会牵动存储模型
+   （`MANAGE_EXTERNAL_STORAGE`）、FGS 类型与 edge-to-edge，必须**逐档验、每档出包**。
