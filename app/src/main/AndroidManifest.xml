@@ -52,10 +52,13 @@
         换句话说：**授权是解开跨身份读取的唯一钥匙**，没有别的办法
         （`chmod` 改不动 sdcardfs 的属主）。
 
-        targetSdk = 28，系统仍走 legacy 存储模型（无分区存储），这两个权限在
-        Android 10 上照旧生效，不必申请 MANAGE_EXTERNAL_STORAGE。
+        targetSdk 30 起系统**忽略** legacy 存储模型：这两个权限只在 API 29 及以下
+        授予真 /sdcard 的任意访问。30+ 要么申请「所有文件访问」（MANAGE_EXTERNAL_STORAGE），
+        要么由 ProotHost 把 guest 的 /sdcard 绑到 app 专属外部目录（功能可用、路径不同）。
         用户拒绝时只是退回原状（跨身份交接需绕道 app 自己的外部目录），不影响其它功能。
     -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
+        tools:ignore="ScopedStorage" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
 
