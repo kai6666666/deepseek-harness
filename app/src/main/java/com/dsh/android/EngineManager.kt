@@ -1142,7 +1142,7 @@ class EngineManager private constructor(private val context: Context) {
      * 都 `enterable=true`，且经链接列目录（145 项）、建文件夹、写文件全部成功。
      *
      * ⚠️ 读得到 `/sdcard` 靠的是 manifest 里已申请的 `READ_EXTERNAL_STORAGE` /
-     * `WRITE_EXTERNAL_STORAGE`（targetSdk 28，legacy 存储模型）。用户拒绝该权限
+     * `WRITE_EXTERNAL_STORAGE`（历史：targetSdk 28 时代是 legacy 存储模型）。用户拒绝该权限
      * 时「手机存储」那一行 `stat()` 失败 ⇒ `directoryRow()` 返回 null ⇒
      * **该行不显示**（官方逻辑，不会崩），只剩「应用目录」可用。
      *
