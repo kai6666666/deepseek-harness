@@ -5,7 +5,7 @@ vc=58
 
 | 文件 | 改动 |
 |---|---|
-| `assets/dsh-env.mjs` | 删 `IS_PROOT` 双分支（13 处）、`termux/usr` 兜底、`$PREFIX` 候选；`PREFIX=/usr`、`HOME=/root` 固定；`DSH_FILES` 改为**必填**（缺失 `exit 2`），不再写死任何 applicationId |
+| `assets/dsh-env.mjs` | 删 `IS_PROOT` 双分支（13 处）、`termux/usr` 兜底、`$PREFIX` 候选；`PREFIX=/usr`、`HOME=/root` 固定；`DSH_FILES` 改为「env 优先，否则取脚本自身所在目录」，不再写死任何 applicationId |
 | 同上 | 删 `rewriteTermuxPaths` / `fixGradleLauncher` / `fixPrefixShims` 三个 Termux 专有修补 |
 | `assets/check-devenv.mjs` | 删 `files/termux/usr/bin/node` 兜底与写死包名；`NODE=/usr/local/bin/node` |
 | `assets/dsh-android-shell.mjs` | `runLocal` 候选表固定为 `/bin/bash` → `/usr/bin/bash` → `/system/bin/sh`，不再看 `$PREFIX`；错误文案不再打印 PREFIX |
