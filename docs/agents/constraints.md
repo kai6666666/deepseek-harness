@@ -9,7 +9,7 @@
 
 | 约束 | 现状 | 依据 |
 |---|---|---|
-| 包名 | `applicationId` = `io.github.ccch1mneyyy.dsh`（gecko: `io.github.ccch1mneyyy.dsh.webview`）；`namespace` 仍是 `com.dsh.android`（源码包，与安装包名无关） |
+| 包名 | `applicationId` = **`com.dsh.android`**（gecko: `com.dsh.android.webview`）—— 0.4.1 起回到旧名，`io.github.ccch1mneyyy.dsh` 不再使用；`namespace` 仍是 `com.dsh.android` |
 | 包名长度 | **已解除**，`applicationId` 可任意取 | P1/P2 之后运行期不再做任何 ELF 前缀重写（`patchElfInPlace` 已删）；`libproot.so` 里的 `com.termux` 只是默认值，被 `PROOT_LOADER` / `PROOT_TMP_DIR` / `LD_LIBRARY_PATH` 全覆盖 |
 | targetSdk | **可抬**，逐档验（29 → 30 → 34），当前值看 `app/build.gradle.kts` | 内核 `execve` 面只剩 `nativeLibraryDir/*.so`（API 29 `execute_no_trans` 的官方例外）；rootfs 内 ELF 由 proot loader mmap，不经内核 exec |
 | 可执行体位置 | jniLibs 四件套：`libproot.so` / `libproot-loader.so` / `libtalloc.so` / `libandroid-shmem.so` | P1；`assets/runtime/proot-libs` 已删除 |
