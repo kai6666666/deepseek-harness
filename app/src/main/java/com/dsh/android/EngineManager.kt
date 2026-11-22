@@ -6649,12 +6649,14 @@ class EngineManager private constructor(private val context: Context) {
             //   两段加权：copy 占 0–30%，extract 占 30–98%（extract 的分母是 .xz 已读字节）。
             installer.ensure(manifest) { p ->
                 if (phase != p.phase) { phase = p.phase; Log.i(TAG, "runtime ${p.phase}: ${p.note}") }
-                val pct = when {
+                val pctRaw = when {
                     p.phase == "copy" && p.total > 0 -> (p.done * 30 / p.total).toInt()
                     p.phase == "extract" && p.total > 0 -> 30 + (p.done * 68 / p.total).toInt()
                     p.phase == "done" || p.phase == "ready" -> 100
                     else -> -1
                 }.coerceIn(0, 100)
+                // 单调兜底：分片并发时回调可能乱序，百分比绝不允许回头（vc90 实测 3X%↔6X%）。
+                val pct = if (pctRaw >= 0 && lastPercent >= 0 && pctRaw < lastPercent) lastPercent else pctRaw
                 if (pct >= 0 && pct != lastPercent) {
                     // 每跨 10% 打一行：锁屏/息屏时也能从日志证明进度在推进
                     // （真机验收用；也让用户报「卡住」时能直接看出卡在哪一段）。

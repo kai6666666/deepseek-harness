@@ -201,13 +201,23 @@ class LogViewerActivity : AppCompatActivity() {
         // 能看到东西，而不是一个空列表。
         val crashRows = if (source == "crash") crashEntries() else emptyList()
 
+        // 刷新前先记住视野：用户正在翻历史时，不能被新日志拽回底部（vc90 反馈）。
+        val oldCount = rows.size
+        val wasAtBottom = oldCount == 0 || list.lastVisiblePosition >= oldCount - 1
+        val anchorPos = list.firstVisiblePosition
+        val anchorTop = list.getChildAt(0)?.top ?: 0
+
         rows = crashRows + filtered
         adapter.notifyDataSetChanged()
 
         empty.visibility = if (rows.isEmpty()) View.VISIBLE else View.GONE
-        // 列表新 → 旧？不，内存缓冲是插入序（旧 → 新），最后一条最新。
-        // 滚到底部即最新（布局里 stackFromBottom=true 让它自然贴底）。
-        if (rows.isNotEmpty()) list.setSelection(rows.size - 1)
+        // 列表是插入序（旧 → 新），最后一条最新。
+        // ① 原本就在底部 → 继续跟随最新（stackFromBottom=true 让它自然贴底）；
+        // ② 正在翻历史 → 用锚点把原来那一行钉回原位，行数变化也不串位。
+        if (rows.isNotEmpty()) {
+            if (wasAtBottom) list.setSelection(rows.size - 1)
+            else list.setSelectionFromTop(anchorPos.coerceIn(0, rows.size - 1), anchorTop)
+        }
     }
 
     private fun matchesSource(e: LogStore.Entry): Boolean = when (source) {
@@ -620,6 +630,8 @@ class LogViewerActivity : AppCompatActivity() {
         override fun getCount(): Int = rows.size
         override fun getItem(position: Int): Any = rows[position]
         override fun getItemId(position: Int): Long = rows[position].seq
+        // 稳定 id：新日志插入时，历史行的滚动位置不会串位（配合锚点恢复）。
+        override fun hasStableIds(): Boolean = true
 
         override fun getView(position: Int, convertView: View?, parent: ViewGroup?): View {
             val v = convertView ?: layoutInflater.inflate(R.layout.item_log_line, parent, false)

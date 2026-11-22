@@ -1,6 +1,6 @@
 # 计划：体积、启动与增量更新（rc.5 之后）
 
-> 状态：**P-1 / P0 已实施**（`0.2.2-rc.5-debug.2` / vc87）；P1–P6 待批。
+> 状态：**P-1 / P0 / P3 / P3-bis / P3-c 已实施**（`0.2.2-rc.5-debug.6` / vc91）；P1 / P2 / P4–P6 待批。
 > 关系：本文是 [refactor-single-host-purge.md](refactor-single-host-purge.md) 完成后的**性能线**，不改身份与架构。
 
 ---
@@ -40,7 +40,10 @@ APK 185.8 MB / 解压总 194.7 MB / rootfs.tar.xz 170.4 MB
 | **P2** | engine 层 **per-file 内容寻址**（每文件一 chunk，sha256 索引 + 独立 zstd 块） | 升级下载 **185 MB → ~7 MB** | 只改一个文件时，下载量 ≈ 该文件大小 | 退回整层下载 |
 | **P3** ✅（实测 -9.6%，未达预期） | 构建期切分片（base / engine，可再切 4 片），运行期并行解 N 个归档 | 首启解包 **106 s → 30–45 s** | `stage extract` 日志下降 | 退单包 |
 | **P3-bis** ✅ | prune 删 `.d.ts`(16,196/51.3 MB) 与 `src/**/*.ts`(12,147/115.3 MB) —— 条目 -37% | 解包 77.4 s → 目标 ≤50 s | `stage extract(parts=4)` 下降 | 回滚两行 find |
-| **P4** | 抄 dsh-Go：`DirectLaunch.select(...)` — direct 可选、safe 强制 proot、失败写 `directFailed` 回退 | 冷启后半段 **66 s → 45–55 s**（待实测） | 两种路径都能 `engine.ready` | 固定 proot |
+| **P3-c** ✅ | 解包进度改「增量累加」（每线程只加自己的 delta）+ 百分比单调夹逼 | 进度条不再 3X% ↔ 6X% | 真机进度单向递增 | 回滚 2 处 |
+| **P4-a** | 仅「rootfs 已就绪后的再次启动」尝试 direct（`loader --library-path … --import=preload.mjs …/bin.js`），失败立即回 proot，日志打 `direct=on/off + fallbackReason` | 冷启后半段 **66 s → 45–55 s** | 冷启 3 次对照 `engine.ready` | 固定 proot |
+| **P4-b** | 补 4 个 shim（paths / dns / processes / modules），只在缺的时候兜底 | bash 工具 / `/sdcard` / apt / uid2000 全通 | 四项冒烟 | 删 shim |
+| **P4-c** | 默认开 direct；safe mode 强制 proot | 同 P4-a | 3 次冷启稳定 + 异常自动回退 | 关开关 |
 | **P5** | 自更新：`REQUEST_INSTALL_PACKAGES` + `FileProvider` + `PackageInstaller` + 分步引导；15 镜像探测（2.5 s / 256 KB 测速）+ Range 4 线程 + 断点 | 下载可用性/速度 | 断网重连续传成功；镜像全挂时回直连 | 关掉入口 |
 | **P-7** ✅ | `deleteTree` 先 chmod、删除失败兜底（旧 rootfs 不再残留） | 无 `rootfs.old-*` 残留 | 日志无 `启动清扫失败` | — |
 | **P6** | 双槽 rootfs（A/B）+ 空间预检 | 损坏秒回滚 | 手改 rootfs 后能回滚 | 单槽 |
@@ -76,7 +79,9 @@ P0  : app.log 出现 stage copy / stage sha256 / stage extract 三行
 P1  : manifest.layers 含 base+engine；只改 engine 时 base 不解包
 P2  : 单文件变更 → 下载量 ≈ 文件大小；sha256 校验通过
 P3  : stage extract 耗时下降（目标 ≤45 s）
-P4  : direct 与 proot 两种情况都能 engine.ready；safe 模式强制 proot
+P3-c: 进度条单向递增，不回头
+P4-a: direct=on/off 都能 engine.ready，fallbackReason 有据
+P4  : safe 模式强制 proot
 P5  : 断点续传 + 镜像择优可用；无 REQUEST_INSTALL_PACKAGES 时自更新入口隐藏
 ```
 

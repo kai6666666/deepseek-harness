@@ -8,6 +8,23 @@
 - 设备侧清理：删除演练备份 `dsh-backup-drill.zip` 与 13 个历史 APK（约 2.4 GB）。
 
 **不发新版**：本批只有文档与文件清理。
+## [0.2.2-rc.5-debug.6] — 2026-11-22
+vc=91
+
+### P3-c：解包进度单调（显示层 bug，vc89 引入）
+- 现象：进度条在 **3X% 与 6X% 之间反复横跳**。
+- 原因：`installParts` 四线程各自回报「已完成片之和 + **本线程**片内 `pr.done`」，线程交替上报时两个量互相打架。
+- 修法：每线程只把自己片内的**增量**累进共享 `AtomicLong`（并补尾部余量）；`EngineManager` 再把百分比夹成**单调不减**。
+- 影响面：**仅显示**，不影响解包结果与启动。
+
+### 运行日志界面：上滚不再被拽回底部
+- 现象：`LogViewerActivity` 每 2 s 刷新一次，刷新即 `setSelection(最后一条)`，用户翻历史时被反复拉回最新。
+- 修法：刷新前记 `wasAtBottom` 与锚点（`firstVisiblePosition` + 首行 `top`）；**原本在底部**才继续跟随，否则 `setSelectionFromTop` 把那一行钉回原位。
+- 配套：`LogAdapter.hasStableIds() = true`（`getItemId` 已是 `seq`），插入新行时历史行不串位。
+
+### 运维
+- 版本 `0.2.2-rc.5-debug.6` / vc91。
+
 ## [0.2.2-rc.5-debug.5] — 2026-11-22
 vc=90
 ### P3-bis：减条目（并行解包没达预期的正解）

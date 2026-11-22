@@ -158,6 +158,9 @@ class RootfsInstaller(private val context: Context) {
         RuntimeFiles.deleteTree(staging)
         if (!staging.mkdirs()) throw IOException("无法创建 staging：" + staging.absolutePath)
         val tExtract = System.currentTimeMillis()
+        // 进度必须是**全局单调量**：4 个线程各自上报自己片内的 pr.done，
+        // 若用「已完成片之和 + 本线程 pr.done」，线程交替上报会让百分比来回跳
+        // （vc90 实测：3X% ↔ 6X%）。这里每线程只把自己这片的增量累进共享计数。
         val doneXz = java.util.concurrent.atomic.AtomicLong(0)
         try {
             val pool = java.util.concurrent.Executors.newFixedThreadPool(minOf(4, xzFiles.size))
@@ -165,10 +168,16 @@ class RootfsInstaller(private val context: Context) {
             for ((i, f) in xzFiles.withIndex()) {
                 pool.execute {
                     try {
+                        var lastPart = 0L
                         extractXz(f, staging) { pr ->
-                            onProgress(Progress("extract", doneXz.get() + pr.done, totalXz, "p" + i + " " + pr.note))
+                            val delta = (pr.done - lastPart).coerceAtLeast(0L)
+                            lastPart = pr.done
+                            val done = doneXz.addAndGet(delta)
+                            onProgress(Progress("extract", done, totalXz, "p" + i + " " + pr.note))
                         }
-                        doneXz.addAndGet(f.length())
+                        // 压缩流尾部未必刚好回报到文件长度：补齐，保证终点=总量。
+                        val rest = (f.length() - lastPart).coerceAtLeast(0L)
+                        if (rest > 0L) doneXz.addAndGet(rest)
                     } catch (t: Throwable) {
                         errors.add(t)
                     }
