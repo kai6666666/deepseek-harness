@@ -8,6 +8,15 @@
 - 设备侧清理：删除演练备份 `dsh-backup-drill.zip` 与 13 个历史 APK（约 2.4 GB）。
 
 **不发新版**：本批只有文档与文件清理。
+## [0.2.2-rc.5-debug.3] — 2026-11-22
+vc=88
+### 修复
+- **P0 埋点落盘**：`RootfsInstaller` 用的是 `android.util.Log`（只进 logcat），而 app.log 只收 `DshLog` → vc87 的三段埋点在日志里**看不到**。本版改为 `DshLog.i("DSH", ...)`，日志与诊断包可直接读到 `stage copy / stage sha256 / stage extract`。
+
+### 附带实测（vc87 → vc88 基线）
+- APK **185.8 → 162.8 MB**（P-1 删除 apt 二进制缓存生效，`rootfs.tar.xz` 170.4 → 147.5 MB）。
+- 首启（含重解）`engine.ready` **161,994 → 147,052 ms**（-15 s，copy 少 23 MB、写盘少 100 MB）。
+- 已知遗留：`files/runtime/rootfs.old-*` 清理失败会在日志里报 `启动清扫失败`（体积很小但目录残留），留待 P6 双槽方案一并收。
 ## [0.2.2-rc.5-debug.2] — 2026-11-22
 vc=87
 ### 优化（首刀：零架构变更）
