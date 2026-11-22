@@ -1,6 +1,6 @@
 package com.dsh.android.runtime
 
-import android.util.Log
+import com.dsh.android.log.DshLog as Log
 import org.json.JSONArray
 import java.io.File
 import java.net.HttpURLConnection
