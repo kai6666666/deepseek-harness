@@ -36,11 +36,22 @@ internal object DirectLaunch {
         }
     }
 
-    /** 与 `unavailable()` 共用；ABI 不认识时返回 null。 */
-    fun loaderPath(rootfs: File, abi: String): File? = when (abi) {
-        "arm64-v8a" -> File(rootfs, "usr/lib/aarch64-linux-gnu/ld-linux-aarch64.so.1")
-        "x86_64" -> File(rootfs, "usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2")
-        else -> null
+    /**
+     * loader 的选择顺序（P4-a′ 的关键）：
+     * 1. `nativeLibraryDir/libld-linux.so` —— **唯一保证可执行的位置**（apk_data_file）；
+     *    Android 10+ 不允许 untrusted_app execve app data 目录里的文件，vc93 真机实测
+     *    `error=13, Permission denied`。
+     * 2. rootfs 里的那份 —— 只对探针/调试（adb shell 域）有意义，App 进程会用不到。
+     */
+    fun loaderPath(rootfs: File, abi: String, nativeLibDir: File? = null): File? {
+        nativeLibDir?.let { dir ->
+            File(dir, "libld-linux.so").takeIf { it.isFile }?.let { return it }
+        }
+        return when (abi) {
+            "arm64-v8a" -> File(rootfs, "usr/lib/aarch64-linux-gnu/ld-linux-aarch64.so.1")
+            "x86_64" -> File(rootfs, "usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2")
+            else -> null
+        }
     }
 
     private fun libraryPath(rootfs: File, abi: String): String {
@@ -54,8 +65,8 @@ internal object DirectLaunch {
     }
 
     /** 缺失原因；null = 可以直启。 */
-    fun unavailable(rootfs: File, abi: String): String? {
-        val loader = loaderPath(rootfs, abi) ?: return "unsupportedAbi"
+    fun unavailable(rootfs: File, abi: String, nativeLibDir: File? = null): String? {
+        val loader = loaderPath(rootfs, abi, nativeLibDir) ?: return "unsupportedAbi"
         if (!File(rootfs, "usr/bin/node").canExecute()) return "runtimeIncomplete"
         if (!loader.canExecute()) return "runtimeIncomplete"
         if (!File(rootfs, "opt/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js").isFile) return "runtimeUpdateRequired"
@@ -83,9 +94,10 @@ internal object DirectLaunch {
         overlays: List<File>,
         extraEnv: Map<String, String>,
         port: String = "0",
+        nativeLibDir: File? = null,
     ): Plan? {
-        if (unavailable(rootfs, abi) != null) return null
-        val loader = loaderPath(rootfs, abi) ?: return null
+        if (unavailable(rootfs, abi, nativeLibDir) != null) return null
+        val loader = loaderPath(rootfs, abi, nativeLibDir) ?: return null
         val node = File(rootfs, "usr/bin/node")
         val binJs = File(rootfs, "opt/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js")
         val home = File(filesDir, "home")

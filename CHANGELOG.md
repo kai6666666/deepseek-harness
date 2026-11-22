@@ -8,6 +8,23 @@
 - 设备侧清理：删除演练备份 `dsh-backup-drill.zip` 与 13 个历史 APK（约 2.4 GB）。
 
 **不发新版**：本批只有文档与文件清理。
+## [0.2.2-rc.5-debug.9] — 2026-11-22
+vc=94
+
+### P4-a′：loader 迁入 jniLibs（绕开 untrusted_app 的 exec 禁令）
+- 根因（vc93 真机）：App 进程 execve rootfs 里的 `ld-linux-aarch64.so.1` → `error=13, Permission denied`；
+  同机同 uid 的 `run-as` 探针却能跑，**差别只在 SELinux 域**（Android 10+ 不让 `untrusted_app`
+  执行 app data 目录里的文件）。
+- 做法：`build-runtime.sh` 把 rootfs 里的 loader 另存一份到 `jniLibs/<abi>/libld-linux.so`
+  （203,968 B，APK 仅 +0.2 MB）；`DirectLaunch.loaderPath()` 改为**优先**取
+  `nativeLibraryDir/libld-linux.so`，rootfs 那份只留给探针。
+- 原理：loader 是**解释器** —— 内核只 execve 它，`node` 由它 mmap 加载，因此 node 继续留在
+  rootfs（123 MB 不进 APK），也不会触发对 node 的 execve 检查。
+- 判据：`launch: direct=on` → `direct=on token ready in N ms` → `engine.ready runtime=direct`（health=401）。
+
+### 运维
+- 版本 `0.2.2-rc.5-debug.9` / vc94；`files/direct-enabled` 开关语义不变（默认关）。
+
 ## [0.2.2-rc.5-debug.8] — 2026-11-22
 vc=93
 

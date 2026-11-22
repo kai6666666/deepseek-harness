@@ -111,9 +111,11 @@ class ProotHost(
             } else if (DirectLaunch.failed(filesDir, manifest.runtimeVersion)) {
                 DshLog.i(TAG, "direct=off reason=directFailed")
             } else {
-                val reason = DirectLaunch.unavailable(rootfs, manifest.abi)
+                val libDir = File(nativeLibDir)
+                val reason = DirectLaunch.unavailable(rootfs, manifest.abi, libDir)
                 val plan = if (reason == null) {
-                    DirectLaunch.plan(rootfs, filesDir, manifest.abi, profile, overlays, extraEnv)
+                    DirectLaunch.plan(rootfs, filesDir, manifest.abi, profile, overlays, extraEnv,
+                        nativeLibDir = libDir)
                 } else null
                 if (reason != null) {
                     DshLog.w(TAG, "direct=off reason=$reason")

@@ -1,2 +1,2 @@
-versionName=0.2.2-rc.5-debug.8
-versionCode=93
+versionName=0.2.2-rc.5-debug.9
+versionCode=94

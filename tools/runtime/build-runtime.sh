@@ -133,6 +133,18 @@ cp "$SHMEM_USR/lib/libandroid-shmem.so" "$JNI/libandroid-shmem.so"
 python3 "$HERE/patch-dynstr.py" "$JNI/libproot.so" libtalloc.so.2 libtalloc.so
 chmod 755 "$JNI/libproot.so" "$JNI/libproot-loader.so"
 chmod 644 "$JNI/libtalloc.so" "$JNI/libandroid-shmem.so"
+# P4-a′：glibc loader 也进 jniLibs。
+# 为什么：Android 10+ **不允许 untrusted_app execve app data 里的文件**，所以从
+# rootfs 里直接 exec `usr/lib/.../ld-linux-aarch64.so.1` 会 error=13（vc93 真机实测）；
+# nativeLibraryDir 是唯一保证可执行的位置。loader 是**解释器**：内核只 execve 它，
+# node 由它 mmap 加载，因此 node 可以继续留在 rootfs（123 MB 不进 APK）。
+GLIBC_LOADER="$ROOTFS/usr/lib/aarch64-linux-gnu/ld-linux-aarch64.so.1"
+if [ -f "$GLIBC_LOADER" ]; then
+  cp "$GLIBC_LOADER" "$JNI/libld-linux.so"
+  chmod 755 "$JNI/libld-linux.so"
+else
+  log "⚠️ 没找到 $GLIBC_LOADER，direct 直启将不可用（P4 降级为 proot）"
+fi
 log "jniLibs: $(ls -l "$JNI" | awk 'NR>1{printf "%s=%s ", $9, $5}')"
 # 产物侧也放一份，App 的 jniLibs 直接指向这里
 OUT_JNI=$OUT/$ABI/jniLibs/$ABI
