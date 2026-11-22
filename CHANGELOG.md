@@ -8,6 +8,20 @@
 - 设备侧清理：删除演练备份 `dsh-backup-drill.zip` 与 13 个历史 APK（约 2.4 GB）。
 
 **不发新版**：本批只有文档与文件清理。
+## [0.2.2-rc.5-debug.12] — 2026-11-22
+vc=97
+
+### 「基础权限」卡：位置纠正 + 一条落盘诊断
+- 位置：从「当前状态」卡上方挪到**下方**、`S.stack` 首位（Shizuku / ADB / root 标签行之上），与截图标注一致。
+- 诊断：`readBasicPerm` 里加 `bridge.pageDiag("基础权限 base=<typeof> state=<raw>")`：
+  - `base=function state={…}` → 桥正常，问题在前端缓存；
+  - `base=undefined` → 桥没注入；
+  - 一行都没有 → 页面跑的还是旧 JS。
+- mobile-ui `1.1.0-196` → `1.1.0-197`。
+
+### 运维
+- 版本 `0.2.2-rc.5-debug.12` / vc97；缓存策略待定（本轮不动缓存）。
+
 ## [0.2.2-rc.5-debug.11] — 2026-11-22
 vc=96
 

@@ -7852,6 +7852,9 @@ setTimeout(function(){ try { mpEnsureRefreshItem(); } catch (_) { /* 静默 */ }
 				try {
 					const raw = bridge.basicPermState();
 					setBasicPerm(typeof raw === "string" ? JSON.parse(raw) : (raw || null));
+					// 诊断：把「桥有没有」与「拿到的状态」写进 App 日志（走现有 pageDiag 桥）。
+					// 卡片没显示时，一条日志就能分清「旧 JS 缓存」还是「桥缺失」。
+					try { bridge.pageDiag && bridge.pageDiag("基础权限 base=" + (typeof bridge.basicPermState) + " state=" + raw); } catch (e) { /* 诊断失败不影响渲染 */ }
 				} catch (err) {
 					console.warn("[dsh-android-mobile] 读基础权限失败:", err && err.message);
 					setBasicPerm(null);
@@ -8333,10 +8336,11 @@ setTimeout(function(){ try { mpEnsureRefreshItem(); } catch (_) { /* 静默 */ }
 
 				// 常驻结论条：无论切到哪个标签都看得见 —— 它是「现在到底能不能用」的
 				// 唯一答案，不该因为切了标签就消失。
-				basicCard,
-			head,
+				head,
 
 				e("div", { style: S.stack },
+					// 基础权限卡：放在「当前状态」卡下方、Shizuku/ADB/root 标签行上方。
+					basicCard,
 					e("div", { style: S.tabBar },
 						...tabs.map((item) => e("button", {
 							key: item.id,
