@@ -155,3 +155,27 @@ execve app data 目录里的文件**（只给 `nativeLibraryDir`/`apk_data_file`
 
 > 记账：`vc92`/`vc93` 的 direct 路径现在**恒不可用**（`files/direct-enabled` 一开就 EACCES，随后回退/失败）。
 > 开关默认关，所以对用户零影响；但 **P4-a 不能算完成**，要等 P4-a′ 用 jniLib loader 真机验过。
+
+### 7.7 第三条硬墙：**glibc 的依赖库也不在可执行位置**（vc94/vc95 真机）
+把 loader 换成 `nativeLibraryDir/libld-linux.so` 后，exec **通过了**：
+```text
+direct.spawn pid=? argv0=/data/app/~~…/lib/arm64/libld-linux.so      ← 路径正确
+direct 未就绪（alive=false, 2 ms）                                    ← loader 自己秒退
+```
+- 为什么秒退：loader 接下来要 mmap `rootfs/usr/lib/**/libc.so.6` 等 glibc 运行时，
+  而它们在 `app_data_file` 里 —— **`untrusted_app` 对 `app_data_file` 只有 read，没有 execute**，
+  `mmap(PROT_EXEC)` 被拒 → 进程当场死、stderr 一个字都没有。
+- 也就是说：**整套 glibc 运行时都得进 jniLibs**，而且要像 proot 当年那样用
+  `patch-dynstr.py` 等长改写 `DT_NEEDED`（`libc.so.6` → `libc.so`），因为系统只抽取 `lib*.so`。
+  实测代价：`libc.so.6 / libm / libpthread / libdl / libgcc_s / libstdc++ / libresolv / librt …` 十余个库
+  + 每版维护。
+
+#### P4 的净结论（三条路都验过）
+| 方案 | 结果 |
+|---|---|
+| rootfs 里的 loader | ❌ error=13（SELinux untrusted_app） |
+| jniLib loader + rootfs 的 glibc 库 | ❌ loader 秒退（依赖库无 execute） |
+| jniLib loader + **整套 glibc 进 jniLibs + dynstr 补丁** | 未做；成本 ≈ 再造一个 proot 级工程 |
+
+→ **收益 26 s（93.6 s → 约 67 s），但第 3 条路的工作量与长期维护成本远超一次性能优化**。
+建议：**P4 冻结在探针结论**（数据留档），把预算转向 **P1 分层 + P2 分块差分（185 MB → ~7 MB）**。
