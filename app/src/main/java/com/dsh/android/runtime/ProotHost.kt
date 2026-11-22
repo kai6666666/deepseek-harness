@@ -254,9 +254,11 @@ class ProotHost(
         val p = pb.start()
         process = p
         launchedDirect = true
+        // android 的 java.lang.Process 没有 pid()：复用本工程已有的 ProcPid（与 stop() 同一来源）。
         runCatching {
             plan.pidFile.parentFile?.mkdirs()
-            plan.pidFile.writeText(p.pid().toString() + "\n")
+            val hostPid = ProcPid.of(p)
+            if (hostPid != null && hostPid > 0) plan.pidFile.writeText(hostPid.toString() + "\n")
         }.onFailure { Log.w(TAG, "direct pidfile: ${it.message}") }
         return p
     }
