@@ -6892,9 +6892,11 @@ class EngineManager private constructor(private val context: Context) {
             if (!currentStart(generation) || process !== proc) return
             if (gateway == null) RescueBoot.clearFailure()
             EventLog.record("engine.ready", mapOf("ms" to (System.currentTimeMillis() - startMs).toString(),
-                "profile" to targetProfile, "health" to health.toString(), "runtime" to "proot"))
-            EventLog.record("engine.ready.proot", mapOf("profile" to targetProfile))
-            Log.i(TAG, "PRoot 引擎就绪：profile=$targetProfile health=$health")
+                "profile" to targetProfile, "health" to health.toString(),
+                "runtime" to (if (host.launchedDirect) "direct" else "proot")))
+            EventLog.record(if (host.launchedDirect) "engine.ready.direct" else "engine.ready.proot",
+                mapOf("profile" to targetProfile))
+                        Log.i(TAG, "引擎就绪：profile=$targetProfile health=$health runtime=" + (if (host.launchedDirect) "direct" else "proot"))
             _state.value = State.Ready(token)
         }
         Thread({

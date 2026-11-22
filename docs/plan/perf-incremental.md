@@ -41,7 +41,7 @@ APK 185.8 MB / 解压总 194.7 MB / rootfs.tar.xz 170.4 MB
 | **P3** ✅（实测 -9.6%，未达预期） | 构建期切分片（base / engine，可再切 4 片），运行期并行解 N 个归档 | 首启解包 **106 s → 30–45 s** | `stage extract` 日志下降 | 退单包 |
 | **P3-bis** ✅ | prune 删 `.d.ts`(16,196/51.3 MB) 与 `src/**/*.ts`(12,147/115.3 MB) —— 条目 -37% | 解包 77.4 s → 目标 ≤50 s | `stage extract(parts=4)` 下降 | 回滚两行 find |
 | **P3-c** ✅ | 解包进度改「增量累加」（每线程只加自己的 delta）+ 百分比单调夹逼 | 进度条不再 3X% ↔ 6X% | 真机进度单向递增 | 回滚 2 处 |
-| **P4-a** ✅探针 | 真机验证 loader 直启可行：`ld-linux-aarch64.so.1 --library-path … node …/bin.js web` → `dsh web` 就绪 **6,514 ms**（proot 同口径 32.6 s，**省 26.1 s**）；App 内实现仍未做 | 启动段 −26 s | 探针日志 + HTTP 401 | 不实现 |
+| **P4-a** ✅ | 探针 6,514 ms（vs proot 32.6 s）；**vc92 已落 App**：`DirectLaunch.kt` + `ProotHost` direct 分支 + 25 s 回退 + `direct-failed-<runtime>`；**默认关**（`files/direct-enabled` 开关） | 启动段 −26 s | `engine.ready runtime=direct` 且 health=401；回退路径也能 ready | 删开关文件 |
 | **P4-b** | 补 4 个 shim（paths / dns / processes / modules），只在缺的时候兜底 | bash 工具 / `/sdcard` / apt / uid2000 全通 | 四项冒烟 | 删 shim |
 | **P4-c** | 默认开 direct；safe mode 强制 proot | 同 P4-a | 3 次冷启稳定 + 异常自动回退 | 关开关 |
 | **P5** | 自更新：`REQUEST_INSTALL_PACKAGES` + `FileProvider` + `PackageInstaller` + 分步引导；15 镜像探测（2.5 s / 256 KB 测速）+ Range 4 线程 + 断点 | 下载可用性/速度 | 断网重连续传成功；镜像全挂时回直连 | 关掉入口 |

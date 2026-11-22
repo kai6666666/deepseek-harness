@@ -8,6 +8,23 @@
 - 设备侧清理：删除演练备份 `dsh-backup-drill.zip` 与 13 个历史 APK（约 2.4 GB）。
 
 **不发新版**：本批只有文档与文件清理。
+## [0.2.2-rc.5-debug.7] — 2026-11-22
+vc=92
+
+### P4-a：direct（免 proot）直启落地 —— **默认关，需开关**
+- 新增 `runtime/DirectLaunch.kt`（149 行，纯 JVM）：`enabled / failed / markFailed / loaderPath / unavailable / plan`。
+- `ProotHost`：`launch()` 新增 direct 分支（仅 `profile=web` 且 `command=null`）；`spawnDirect()` 用
+  `ld-linux-*.so.* --library-path … node …/bin.js --profile web [--patch …] web --host 127.0.0.1 --port 0 --no-open`。
+- `start()` 新增回退：25 s 宽限内拿不到 token 行 → `destroyForcibly` + 写
+  `files/direct-failed-<runtimeVersion>` + 重走 proot（同一 runtime 不再试）。
+- 三道闸：`files/direct-enabled` 存在才尝试；失败标记按 runtimeVersion 固化；工具命令（`startCommand`）恒走 proot。
+- 埋点：`launch: direct=on …` / `direct=off reason=…` / `direct=on token ready in N ms` /
+  `direct 未就绪（alive=…），回退 proot`；`engine.ready` 的 `runtime` 字段与事件名按实际取值（`direct`/`proot`）。
+- 依据：真机探针 loader 直起 node 到 `dsh web:` **6.5 s**，proot 同口径 **32.6 s**（`docs/plan/perf-incremental.md` §7）。
+
+### 运维
+- 版本 `0.2.2-rc.5-debug.7` / vc92。
+
 ## [0.2.2-rc.5-debug.6] — 2026-11-22
 vc=91
 

@@ -34,9 +34,16 @@ class ProotHost(
     private var pump: Thread? = null
     @Volatile private var tokenUrl: String? = null
     @Volatile private var outputClosed = false
+
+    /** 本次 launch 是否走了 direct（免 proot）；EngineManager 用它写 engine.ready 的 runtime 字段。 */
+    @Volatile var launchedDirect: Boolean = false
+        private set
     private var readyOrEof = CountDownLatch(1)
     private val lastLines: MutableList<String> = Collections.synchronizedList(ArrayList())
     private val runId = UUID.randomUUID().toString()
+
+    /** direct 等 token 行的宽限：实测 6.5 s 就绪，这里给 4 倍余量。 */
+    private val DIRECT_GRACE_MS = 25_000L
     private val envFile: File get() = File(dshHome, ".proot-env-$runId")
     private val originalPidFile: File get() = File(
         manifest.stopPidFile.replace("{ROOTFS}", rootfs.canonicalPath).replace("{TMP}", tmpDir.absolutePath)
@@ -50,8 +57,26 @@ class ProotHost(
         profile: String = "web",
         onLine: (String) -> Unit = {},
     ): Process {
-        val p = launch(extraEnv, overlays, profile, null, true)
+        var p = launch(extraEnv, overlays, profile, null, true)
         pump = Thread({ drain(p, onLine) }, "proot-pump-$runId").apply { isDaemon = true; start() }
+        if (launchedDirect) {
+            // direct 的第一道关是「能不能在宽限内打印 token 行」。拿不到就当场回退，
+            // 并把这次失败写进 direct-failed-<runtimeVersion>：同一 runtime 不再试。
+            val t0 = System.currentTimeMillis()
+            val url = awaitToken(DIRECT_GRACE_MS)
+            if (url == null) {
+                val alive = process?.isAlive == true
+                Log.w(TAG, "direct 未就绪（alive=$alive, ${System.currentTimeMillis() - t0} ms），回退 proot")
+                runCatching { p.destroyForcibly() }
+                pump?.join(1500)
+                DirectLaunch.markFailed(context.filesDir, manifest.runtimeVersion)
+                launchedDirect = false
+                p = launch(extraEnv, overlays, profile, null, true, forceProot = true)
+                pump = Thread({ drain(p, onLine) }, "proot-pump-$runId-fallback").apply { isDaemon = true; start() }
+            } else {
+                Log.i(TAG, "direct=on token ready in ${System.currentTimeMillis() - t0} ms")
+            }
+        }
         return p
     }
 
@@ -64,7 +89,7 @@ class ProotHost(
 
     private fun launch(
         extraEnv: Map<String, String>, overlays: List<File>, profile: String,
-        command: List<String>?, mergeError: Boolean,
+        command: List<String>?, mergeError: Boolean, forceProot: Boolean = false,
     ): Process {
         check(process?.isAlive != true) { "Host already running" }
         require(rootfs.isDirectory) { "rootfs missing" }
@@ -75,6 +100,30 @@ class ProotHost(
         Files.deleteIfExists(pidFile.toPath())
         tokenUrl = null; outputClosed = false; readyOrEof = CountDownLatch(1)
         synchronized(lastLines) { lastLines.clear() }
+        // ── P4-a：direct（免 proot）直启 ──────────────────────────────────────
+        // 只对 web profile 尝试；工具/诊断的一次性 node 命令（startCommand）恒走 proot：
+        //   direct 下 guest 绝对路径没有 bind 语义，工具输出会跟 proot 对不上。
+        if (!forceProot && command == null && profile == "web") {
+            val filesDir = context.filesDir
+            if (!DirectLaunch.enabled(filesDir)) {
+                Log.i(TAG, "direct=off reason=disabled")
+            } else if (DirectLaunch.failed(filesDir, manifest.runtimeVersion)) {
+                Log.i(TAG, "direct=off reason=directFailed")
+            } else {
+                val reason = DirectLaunch.unavailable(rootfs, manifest.abi)
+                val plan = if (reason == null) {
+                    DirectLaunch.plan(rootfs, filesDir, manifest.abi, profile, overlays, extraEnv)
+                } else null
+                if (reason != null) {
+                    Log.w(TAG, "direct=off reason=$reason")
+                } else if (plan == null) {
+                    Log.w(TAG, "direct=off reason=planUnavailable")
+                } else {
+                    return spawnDirect(plan, mergeError)
+                }
+            }
+        }
+
         val vars = mapOf(
             "{NATIVE_LIB_DIR}" to nativeLibDir, "{ROOTFS}" to rootfs.canonicalPath,
             "{TMP}" to tmpDir.absolutePath, "{PORT}" to "0",
@@ -187,6 +236,29 @@ class ProotHost(
         // Environment values may be credentials; log structural facts only.
         Log.i(TAG, "launch: profile=$profile patches=${overlays.size} pidFile=$guestPidFile command=${command?.firstOrNull() ?: "dsh"}")
         return pb.start().also { process = it }
+    }
+
+    /**
+     * direct 直启：loader + node + 引擎 bin.js，完全绕过 proot。
+     *
+     * pid 文件由宿主写（direct 下没有 guest 的 `echo $$`）：内容是 node 的**宿主 pid**，
+     * stop() 的祖先扫描仍以本对象的 process 为准。
+     */
+    private fun spawnDirect(plan: DirectLaunch.Plan, mergeError: Boolean): Process {
+        val pb = ProcessBuilder(plan.argv).directory(plan.cwd).redirectErrorStream(mergeError)
+        pb.environment().apply {
+            clear()
+            putAll(plan.environment)
+        }
+        Log.i(TAG, "launch: direct=on profile=web patches=${plan.patches} cwd=${plan.cwd.absolutePath}")
+        val p = pb.start()
+        process = p
+        launchedDirect = true
+        runCatching {
+            plan.pidFile.parentFile?.mkdirs()
+            plan.pidFile.writeText(p.pid().toString() + "\n")
+        }.onFailure { Log.w(TAG, "direct pidfile: ${it.message}") }
+        return p
     }
 
     private fun ensureGuestNetworkConfig() {
