@@ -1,6 +1,7 @@
 package com.dsh.android
 
 import android.Manifest
+import android.app.NotificationManager
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.ActivityNotFoundException
@@ -2298,6 +2299,72 @@ class MainActivity : AppCompatActivity() {
          * ⚠️ 全程 `runCatching`：这个方法的结果直接拼进页面 DOM，抛异常会让 JS 桥
          *   把错误吞掉、那一行变成空白，用户以为功能没做（与 [logSummary] 同理）。
          */
+        /**
+         * 五项基础权限状态（存储 / 悬浮窗 / 电池豁免 / 通知 / 无障碍）。
+         *
+         * ⚠️ 全部 `runCatching`：某一项查不到就按「未授权」算。抛异常会让 JS 桥把
+         *   返回值吞成 undefined，整张卡直接消失（用户以为功能没做）。
+         */
+        override fun basicPermState(): String = runCatching {
+            val power = getSystemService(Context.POWER_SERVICE) as PowerManager
+            val storage = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                Environment.isExternalStorageManager()
+            } else {
+                checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
+            }
+            val notifications = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            JSONObject().apply {
+                put("storage", storage)
+                put("overlay", if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) Settings.canDrawOverlays(this@MainActivity) else true)
+                put("battery", power.isIgnoringBatteryOptimizations(packageName))
+                put("notify", notifications.areNotificationsEnabled())
+                put("a11y", accessibilityServiceOn)
+                put("sdk", Build.VERSION.SDK_INT)
+            }.toString()
+        }.getOrElse {
+            Log.w(DshApplication.TAG, "读基础权限状态失败", it)
+            """{"storage":false,"overlay":false,"battery":false,"notify":false,"a11y":false,"sdk":0}"""
+        }
+
+        /** 悬浮球 / 键盘哨兵那个无障碍服务是否已在系统里打开。 */
+        private val accessibilityServiceOn: Boolean
+            get() = runCatching {
+                val want = packageName + "/" + BubbleA11yService::class.java.name
+                val enabled = Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: ""
+                enabled.split(':').any { it.equals(want, true) || it.endsWith("/" + BubbleA11yService::class.java.name, true) }
+            }.getOrDefault(false)
+
+        override fun basicPermOpen(kind: String): Boolean = runCatching {
+            when (kind) {
+                "storage" -> startActivity(
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                        Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+                    } else {
+                        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))
+                    },
+                )
+                "overlay" -> startActivity(
+                    Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")),
+                )
+                "battery" -> startActivity(
+                    Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).setData(Uri.parse("package:$packageName")),
+                )
+                "notify" -> startActivity(
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+                    } else {
+                        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))
+                    },
+                )
+                "a11y" -> startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                else -> return false
+            }
+            true
+        }.getOrElse {
+            Log.w(DshApplication.TAG, "打开基础权限页失败: " + kind, it)
+            false
+        }
+
         override fun shizukuState(): String = runCatching {
             JSONObject()
                 .put("installed", ShizukuChannel.isManagerInstalled(this@MainActivity))

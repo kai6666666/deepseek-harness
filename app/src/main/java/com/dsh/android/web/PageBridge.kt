@@ -367,4 +367,24 @@ interface PageBridge {
      * 基本类型与 String，返回对象会静默变成 `undefined`。
      */
     fun logSummary(): String
+
+    /**
+     * 五项「基础权限」状态：存储 / 悬浮窗 / 电池优化豁免 / 通知 / 无障碍。
+     *
+     * 返回 JSON 文本（`@JavascriptInterface` 只支持基本类型与 String）：
+     * `{"storage":true,"overlay":true,"battery":false,"notify":true,"a11y":false,"sdk":36}`
+     *
+     * ⚠️ **只读、不弹任何窗口**：它跑在 WebView 的 JS 线程上，同步查系统状态即可。
+     * ⚠️ 页面侧只在 `window.DSHAndroid.basicPermState` 存在时才渲染这张卡（gecko 侧
+     *   的 `dispatchInvoke` 白名单未列它，所以 gecko 上看不到、也不会报错）。
+     */
+    fun basicPermState(): String
+
+    /**
+     * 去开启某一项：`storage` / `overlay` / `battery` / `notify` / `a11y`。
+     *
+     * 返回「是否成功发起」——真实授予与否由系统决定，页面侧在
+     * `focus` / `visibilitychange` 时重新拉一次 [basicPermState]。
+     */
+    fun basicPermOpen(kind: String): Boolean
 }

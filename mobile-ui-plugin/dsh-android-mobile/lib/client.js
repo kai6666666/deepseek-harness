@@ -6268,6 +6268,17 @@ setTimeout(function(){ try { mpEnsureRefreshItem(); } catch (_) { /* 静默 */ }
 
 		const MP_PRIV_ZH = {
 			nav: "特权权限",
+			// ── 基础权限卡（存储 / 悬浮窗 / 电池豁免 / 通知 / 无障碍）──
+			basicTitle: "基础权限",
+			basicHint: "AI 干活前要先有的系统授权。缺哪项点右边的按钮，回来会自动刷新。",
+			basicGranted: "已授权",
+			basicMissing: "未授权",
+			basicOpen: "去开启",
+			basicStorage: "存储权限",
+			basicOverlay: "悬浮窗权限",
+			basicBattery: "电池优化豁免",
+			basicNotify: "通知权限",
+			basicA11y: "无障碍",
 			title: "特权权限（uid 2000 / root）",
 			intro: "开启后，AI 可以在需要时以更高身份执行命令 —— 截图、模拟点击、卸载应用、改系统设置这些原本做不到的事。默认仍走 App 身份，要不要提权由 AI 自己判断。",
 			statusTitle: "当前状态",
@@ -6802,6 +6813,17 @@ setTimeout(function(){ try { mpEnsureRefreshItem(); } catch (_) { /* 静默 */ }
 
 		const MP_PRIV_EN = {
 			nav: "Privileged access",
+			// ── Basic-permissions card ──
+			basicTitle: "Basic permissions",
+			basicHint: "System permissions the AI needs before it can work. Tap the button on any missing row — this page refreshes when you come back.",
+			basicGranted: "Granted",
+			basicMissing: "Not granted",
+			basicOpen: "Open",
+			basicStorage: "Storage",
+			basicOverlay: "Display over other apps",
+			basicBattery: "Battery optimization exemption",
+			basicNotify: "Notifications",
+			basicA11y: "Accessibility",
 			title: "Privileged access (uid 2000 / root)",
 			intro: "When enabled, the AI can run commands as a higher identity when it needs to — screenshots, synthetic taps, uninstalling apps, changing system settings. Everything still defaults to the app's own identity; the AI decides when to escalate.",
 			statusTitle: "Current status",
@@ -7819,6 +7841,53 @@ setTimeout(function(){ try { mpEnsureRefreshItem(); } catch (_) { /* 静默 */ }
 			// 原来的首屏是一张「执行通道 / ADB 密钥 / 实际身份」的技术表格，
 			// 用户得自己把三行翻译成「我现在能不能用、不能的话点哪里」。
 			// 现在把结论摆在最上面，明细折进「查看详情」。
+			// ── 基础权限卡 ───────────────────────────────────────
+			// 数据来自原生 JS 桥 `window.DSHAndroid.basicPermState()`（同步返回 JSON 文本）。
+			// 拿不到就不渲染这张卡：gecko 侧的 `dispatchInvoke` 白名单里没有它，
+			// 在那套内核上应安静消失，而不是显示一排假的「未授权」。
+			const [basicPerm, setBasicPerm] = React.useState(null);
+			const readBasicPerm = React.useCallback(() => {
+				const bridge = window.DSHAndroid;
+				if (!bridge || typeof bridge.basicPermState !== "function") { setBasicPerm(null); return; }
+				try {
+					const raw = bridge.basicPermState();
+					setBasicPerm(typeof raw === "string" ? JSON.parse(raw) : (raw || null));
+				} catch (err) {
+					console.warn("[dsh-android-mobile] 读基础权限失败:", err && err.message);
+					setBasicPerm(null);
+				}
+			}, []);
+			React.useEffect(() => {
+				readBasicPerm();
+				const onVisible = () => { if (document.visibilityState === "visible") readBasicPerm(); };
+				document.addEventListener("visibilitychange", onVisible);
+				window.addEventListener("focus", readBasicPerm);
+				return () => {
+					document.removeEventListener("visibilitychange", onVisible);
+					window.removeEventListener("focus", readBasicPerm);
+				};
+			}, [readBasicPerm]);
+			const openBasicPerm = (kind) => {
+				const bridge = window.DSHAndroid;
+				if (!bridge || typeof bridge.basicPermOpen !== "function") return;
+				try { bridge.basicPermOpen(kind); } catch (err) { /* 跳转失败就只是没反应 */ }
+				setTimeout(readBasicPerm, 800);
+			};
+			const basicPermRow = (kind, label, granted) => e("div", { key: kind, style: S.row },
+				e("span", { style: S.rowLabel }, label),
+				e("span", { style: { ...S.rowValue, color: granted ? "#2f9e44" : "#ffb454" } },
+					granted ? t("basicGranted") : t("basicMissing")),
+				granted ? null : e("button", { type: "button", style: S.btn, onClick: () => openBasicPerm(kind) }, t("basicOpen")),
+			);
+			const basicCard = basicPerm ? e("div", { style: S.card },
+				e("div", { style: S.cardHead }, e("h3", { style: S.cardTitle }, t("basicTitle"))),
+				e("p", { style: S.intro }, t("basicHint")),
+				basicPermRow("storage", t("basicStorage"), !!basicPerm.storage),
+				basicPermRow("overlay", t("basicOverlay"), !!basicPerm.overlay),
+				basicPermRow("battery", t("basicBattery"), !!basicPerm.battery),
+				basicPermRow("notify", t("basicNotify"), !!basicPerm.notify),
+				basicPermRow("a11y", t("basicA11y"), !!basicPerm.a11y),
+			) : null;
 			const head = e("div", { style: S.card },
 				e("div", { style: S.cardHead },
 					e("h3", { style: S.cardTitle }, t("statusTitle")),
@@ -8264,7 +8333,8 @@ setTimeout(function(){ try { mpEnsureRefreshItem(); } catch (_) { /* 静默 */ }
 
 				// 常驻结论条：无论切到哪个标签都看得见 —— 它是「现在到底能不能用」的
 				// 唯一答案，不该因为切了标签就消失。
-				head,
+				basicCard,
+			head,
 
 				e("div", { style: S.stack },
 					e("div", { style: S.tabBar },

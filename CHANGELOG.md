@@ -8,6 +8,27 @@
 - 设备侧清理：删除演练备份 `dsh-backup-drill.zip` 与 13 个历史 APK（约 2.4 GB）。
 
 **不发新版**：本批只有文档与文件清理。
+## [0.2.2-rc.5-debug.11] — 2026-11-22
+vc=96
+
+### 「特权权限」页新增「基础权限」卡（5 项）
+- 原生：`PageBridge.basicPermState()` / `basicPermOpen(kind)`；`MainActivity` 实现
+  存储、悬浮窗、电池优化豁免、通知、无障碍五项状态与对应系统页跳转（`Environment.isExternalStorageManager`、
+  `canDrawOverlays`、`isIgnoringBatteryOptimizations`、`areNotificationsEnabled`、`ENABLED_ACCESSIBILITY_SERVICES`）。
+- 页面：`mobile-ui` 在「特权权限」分节**顶部**渲染该卡；未授权行右侧「去开启」直接跳系统页，
+  回到页面（`focus` / `visibilitychange`）自动重取状态。
+- gecko 内核：`dispatchInvoke` 白名单**刻意未加**这两条 → 该卡在 gecko 上安静不显示（不误导、不报错）。
+- mobile-ui 版本 `1.1.0-195` → `1.1.0-196`。
+
+### P4（免 proot 直启）：**冻结**
+- 三条路全部真机验过（`docs/plan/perf-incremental.md` §7.6 / §7.7）：
+  rootfs loader → error=13；jniLib loader + rootfs glibc → loader 秒退；
+  第三条需整套 glibc 进 jniLibs + `patch-dynstr`，成本 ≈ 再造一个 proot 级工程。
+- 结论：**收益 26 s 不值得这份长期维护成本**，数据留档，主线转向 P1/P2。
+
+### 运维
+- 版本 `0.2.2-rc.5-debug.11` / vc96。
+
 ## [0.2.2-rc.5-debug.10] — 2026-11-22
 vc=95
 
