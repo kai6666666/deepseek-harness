@@ -8,6 +8,25 @@
 - 设备侧清理：删除演练备份 `dsh-backup-drill.zip` 与 13 个历史 APK（约 2.4 GB）。
 
 **不发新版**：本批只有文档与文件清理。
+## [0.2.2-rc.5-debug.20] — 2026-11-23
+vc=105
+
+### 新增（P1-b 第一步：插件热更新机制）
+- `EngineManager.ensureMobileUi()` 改为**两源**：优先 `files/runtime/plugins/mobile-ui-<ver>.zip`，
+  没有或解包失败则**回退内置 `assets/mobile-ui.zip`**。版本戳按实际来源的版本写，
+  热包与内置包的版本变化都能触发重解。
+- 新增 `hotMobileUiBundle()` / `cmpVersion()` / `unzipInto()`：选版本号最大的热包、
+  逐段比较版本、共用解压实现。
+- 日志可区分来源：`已安装移动端 UI 插件（热更新包）… src=mobile-ui-1.1.0-204.zip`
+  vs `已安装移动端 UI 插件 … 1.1.0-203`。
+
+### 为什么（账）
+- 插件资产原本只存在 APK 的 `assets/`，改一行 CSS 就要重装 **161 MB** APK
+  （vc96→vc104 九版每版如此）。热包 ~200 KB，推上去重启即生效。
+
+### 下一步
+- `PluginUpdater`（自动从 Release 拉热包）+ 发布端产出 `plugins-mobile-ui-<ver>.zip`。
+
 ## [0.2.2-rc.5-debug.19] — 2026-11-23
 vc=104
 

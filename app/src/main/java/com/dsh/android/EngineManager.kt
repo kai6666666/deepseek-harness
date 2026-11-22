@@ -2064,37 +2064,96 @@ class EngineManager private constructor(private val context: Context) {
         val clientJs = File(target, "lib/client.js")
         val stamp = File(target, MOBILE_UI_STAMP)
 
-        // 版本戳一致才跳过：插件随 APK 升级而变，只看文件存在会留下旧版
+        // ── P1-b（插件热更新）：运行时插件包优先于内置 assets ─────────────────
+        // `files/runtime/plugins/mobile-ui-<ver>.zip` 存在时解它，目的是
+        // 「改一行 CSS 不必重装 161 MB APK」。包由 PluginUpdater 下载（或人工 push）；
+        // **解包失败一律回退内置 assets** —— 宁可停在旧 UI，也不能白屏。
+        val hot = hotMobileUiBundle()
+        val want = hot?.second ?: MOBILE_UI_VERSION
+
+        // 版本戳一致才跳过：热包/内置包版本变了都要重解
         if (clientJs.isFile && clientJs.length() > 0 &&
-            stamp.isFile && stamp.readText().trim() == MOBILE_UI_VERSION
+            stamp.isFile && stamp.readText().trim() == want
         ) {
             return
         }
-
-        try {
-            target.deleteRecursively()
-            java.util.zip.ZipInputStream(context.assets.open(MOBILE_UI_ASSET).buffered()).use { zis ->
-                var entry = zis.nextEntry
-                while (entry != null) {
-                    if (!entry.isDirectory) {
-                        val out = File(target, entry.name)
-                        out.parentFile?.mkdirs()
-                        out.outputStream().use { zis.copyTo(it) }
-                    }
-                    zis.closeEntry()
-                    entry = zis.nextEntry
-                }
+        var installedFromHot = false
+        if (hot != null) {
+            try {
+                target.deleteRecursively()
+                java.util.zip.ZipInputStream(
+                    java.io.BufferedInputStream(hot.first.inputStream())
+                ).use { zis -> unzipInto(zis, target) }
+                stamp.writeText(want)
+                installedFromHot = true
+                Log.i(TAG, "已安装移动端 UI 插件（热更新包）$MOBILE_UI_PACKAGE $want " +
+                    "${clientJs.length()} 字节 src=${hot.first.name}")
+            } catch (t: Throwable) {
+                Log.w(TAG, "热更新包安装失败，回退内置 assets: ${t.message}")
             }
-            stamp.writeText(MOBILE_UI_VERSION)
-            Log.i(TAG, "已安装移动端 UI 插件 $MOBILE_UI_PACKAGE $MOBILE_UI_VERSION (${clientJs.length()} 字节)")
-        } catch (t: Throwable) {
-            // 装不上就不阻断启动：宁可给桌面布局，也不要白屏
-            Log.w(TAG, "安装移动端 UI 插件失败: ${t.message}")
         }
-
+        if (!installedFromHot) {
+            try {
+                target.deleteRecursively()
+                java.util.zip.ZipInputStream(context.assets.open(MOBILE_UI_ASSET).buffered()).use { zis ->
+                    unzipInto(zis, target)
+                }
+                stamp.writeText(MOBILE_UI_VERSION)
+                Log.i(TAG, "已安装移动端 UI 插件 $MOBILE_UI_PACKAGE $MOBILE_UI_VERSION (${clientJs.length()} 字节)")
+            } catch (t: Throwable) {
+                // 装不上就不阻断启动：宁可给桌面布局，也不要白屏
+                Log.w(TAG, "安装移动端 UI 插件失败: ${t.message}")
+            }
+        }
         // 清理旧位置：早先版本解到 profile 的 node_modules 下，留在那里既没用，
         // 又会被插件清单扫到；pnpm 也可能把它当成待驱逐的"多余依赖"。
         File(dshHome, "profiles/web/node_modules/$MOBILE_UI_PACKAGE").deleteRecursively()
+    }
+
+    /**
+     * 运行时插件包：`files/runtime/plugins/mobile-ui-<ver>.zip`，取版本号最大的一个。
+     *
+     * 为什么不在 `assets/`：assets 在 APK 内部，改它就必须重装整包（161 MB）。
+     * 放 filesDir 下的 plugins/ 才能做到「推几百 KB 就换掉前端」。
+     */
+    private fun hotMobileUiBundle(): Pair<File, String>? = runCatching {
+        val dir = File(context.filesDir, "runtime/plugins")
+        if (!dir.isDirectory) return@runCatching null
+        dir.listFiles { f ->
+            f.isFile && f.name.startsWith("$MOBILE_UI_DIR-") && f.name.endsWith(".zip") && f.length() > 0L
+        }?.mapNotNull { f ->
+            val ver = f.name.removePrefix("$MOBILE_UI_DIR-").removeSuffix(".zip").trim()
+            if (ver.isEmpty()) null else f to ver
+        }?.maxWithOrNull { a, b -> cmpVersion(a.second, b.second) }
+    }.getOrNull()
+
+    /** `1.1.0-203` 这类版本的逐段比较（全数字段按数值，否则按字典序）。 */
+    private fun cmpVersion(a: String, b: String): Int {
+        val pa = a.split('.', '-', '_').map { it.trim() }
+        val pb = b.split('.', '-', '_').map { it.trim() }
+        for (i in 0 until maxOf(pa.size, pb.size)) {
+            val x = pa.getOrNull(i) ?: "0"
+            val y = pb.getOrNull(i) ?: "0"
+            val nx = x.toIntOrNull()
+            val ny = y.toIntOrNull()
+            val c = if (nx != null && ny != null) nx.compareTo(ny) else x.compareTo(y)
+            if (c != 0) return c
+        }
+        return 0
+    }
+
+    /** 把 zip 流解到目标目录（不建根目录，与旧实现同行为）。 */
+    private fun unzipInto(zis: java.util.zip.ZipInputStream, target: File) {
+        var entry = zis.nextEntry
+        while (entry != null) {
+            if (!entry.isDirectory) {
+                val out = File(target, entry.name)
+                out.parentFile?.mkdirs()
+                out.outputStream().use { zis.copyTo(it) }
+            }
+            zis.closeEntry()
+            entry = zis.nextEntry
+        }
     }
 
 
