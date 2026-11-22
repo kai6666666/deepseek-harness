@@ -22,6 +22,21 @@ import java.security.MessageDigest
  */
 object PluginUpdater {
     private const val TAG = "PluginUpdater"
+
+    /**
+     * 最近一次检查的可读结果。
+     *
+     * 为什么要回传给调用方：子线程里 `DshLog` 不落盘（真机实测：logcat 有、app.log 没有），
+     * 所以由 EngineManager 在同一个 `Log`（项目里是 DshLog）上再记一行。
+     */
+    @Volatile
+    var lastStatus: String = "未开始"
+        private set
+
+    private fun note(msg: String) {
+        lastStatus = msg
+        Log.i(TAG, msg)
+    }
     private const val REPO = "kai6666666/deepseek-harness"
     private const val PREFIX = "plugins-mobile-ui-"
     private const val KEEP_BUNDLES = 2
@@ -29,7 +44,7 @@ object PluginUpdater {
     /** @return 已就绪的热包版本号（下次启动生效），没有则为 null。 */
     fun checkAndDownload(filesDir: File, bundledVersion: String, timeoutMs: Int = 8000): String? {
         if (File(filesDir, "plugin-update-disabled").isFile) {
-            Log.i(TAG, "已关闭（存在 files/plugin-update-disabled）")
+            note("已关闭（存在 files/plugin-update-disabled）")
             return null
         }
         val body = httpGet("https://api.github.com/repos/$REPO/releases?per_page=8", timeoutMs) ?: return null
@@ -54,17 +69,17 @@ object PluginUpdater {
         }
         val ver = bestVer
         if (ver == null || bestUrl == null) {
-            Log.i(TAG, "Release 里没有 $PREFIX<ver>.zip")
+            note("Release 里没有 $PREFIX<ver>.zip")
             return null
         }
         if (cmp(ver, bundledVersion) <= 0) {
-            Log.i(TAG, "已是最新（release=$ver 内置=$bundledVersion）")
+            note("已是最新（release=$ver 内置=$bundledVersion）")
             return null
         }
         val dir = File(filesDir, "runtime/plugins")
         val dst = File(dir, "mobile-ui-$ver.zip")
         if (dst.isFile && dst.length() > 0L) {
-            Log.i(TAG, "热包已存在 mobile-ui-$ver.zip")
+            note("热包已存在 mobile-ui-$ver.zip")
             return ver
         }
         dir.mkdirs()
@@ -78,7 +93,7 @@ object PluginUpdater {
         if (!want.isNullOrEmpty()) {
             val got = sha256(tmp)
             if (got == null || got != want) {
-                Log.w(TAG, "sha256 不符，丢弃（got=$got want=$want）")
+                note("sha256 不符，丢弃（got=$got want=$want）")
                 tmp.delete()
                 return null
             }
@@ -92,7 +107,7 @@ object PluginUpdater {
             ?.sortedByDescending { it.name }
             ?.drop(KEEP_BUNDLES)
             ?.forEach { runCatching { it.delete() } }
-        Log.i(TAG, "已就绪 mobile-ui-$ver.zip (${dst.length()} 字节)，下次启动生效")
+        note("已就绪 mobile-ui-$ver.zip (${dst.length()} 字节)，下次启动生效")
         return ver
     }
 

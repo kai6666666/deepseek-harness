@@ -8,6 +8,18 @@
 - 设备侧清理：删除演练备份 `dsh-backup-drill.zip` 与 13 个历史 APK（约 2.4 GB）。
 
 **不发新版**：本批只有文档与文件清理。
+## [0.2.2-rc.5-debug.24] — 2026-11-23
+vc=109
+
+### 修复
+- `PluginUpdater` 的检查结果在子线程里 **不落盘**（logcat 有、`app.log` 没有）：
+  改为把结果回传给 `EngineManager.startPluginUpdateCheck()`，用同一个 `DshLog` 记一行摘要。
+  现在 `app.log` 能看到：`插件热更新：已是最新（release=1.1.0-203 内置=1.1.0-203）`。
+
+### 实证（vc108 真机 logcat）
+- `11-23 03:32:36.758 I PluginUpdater: 已是最新（release=1.1.0-203 内置=1.1.0-203）`
+  —— updater 能读到 Release 资产、能比对版本。
+
 ## [0.2.2-rc.5-debug.23] — 2026-11-23
 vc=108
 

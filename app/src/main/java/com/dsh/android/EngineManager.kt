@@ -2116,8 +2116,11 @@ class EngineManager private constructor(private val context: Context) {
         Thread {
             runCatching {
                 val v = PluginUpdater.checkAndDownload(context.filesDir, MOBILE_UI_VERSION)
+                // 子线程里 PluginUpdater 自己的 Log 不落盘（真机实测：logcat 有、app.log 没有），
+                // 所以在这里用同一个 Log（项目里是 DshLog）再记一行，把结果落盘。
+                Log.i(TAG, "插件热更新：" + PluginUpdater.lastStatus +
+                    if (v != null) "【已下载 $v，下次启动生效】" else "")
                 if (v != null) {
-                    Log.i(TAG, "插件热更新包已就绪 mobile-ui $v（下次启动生效）")
                     EventLog.record("plugin.hotupdate", mapOf("version" to v))
                 }
             }.onFailure { Log.w(TAG, "插件热更新检查失败（忽略）: ${it.message}") }
