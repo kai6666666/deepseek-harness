@@ -7004,6 +7004,21 @@ setTimeout(function(){ try { mpEnsureRefreshItem(); } catch (_) { /* 静默 */ }
 			badge: { marginLeft: "auto", fontSize: "12px", fontWeight: 600, padding: "3px 9px", borderRadius: "999px", whiteSpace: "nowrap" },
 			btn: { border: "0.5px solid var(--dsw-alias-border-l2, #dcdcdc)", background: "transparent", color: "inherit", font: "inherit", fontSize: "13px", padding: "6px 14px", borderRadius: "8px", cursor: "pointer" },
 			row: { display: "flex", alignItems: "baseline", gap: "8px", fontSize: "13px", lineHeight: "19px" },
+			// 「基础权限」五行专用（不复用 S.row：那里是「标签 +自由文本」，
+			// alignItems 是 baseline、rowLabel 又不吃剩余宽度，五个状态必然参差不齐）。
+			// 关键：右侧状态列**固定 68px + 右对齐**，「已授权 / 未授权」才能落在同一条竖线上。
+			bRow: { display: "flex", alignItems: "center", gap: "10px", padding: "11px 0",
+				borderBottom: "0.5px solid var(--dsw-alias-border-l2, #e2e2e2)" },
+			bDot: { flex: "0 0 auto", width: "7px", height: "7px", borderRadius: "50%",
+				background: "var(--dsw-alias-interactive-bg-primary, #2b6cb0)" },
+			bLabel: { flex: "1 1 auto", minWidth: 0, fontSize: "14px",
+				overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+			bStatusOn: { flex: "0 0 auto", width: "68px", textAlign: "right",
+				fontSize: "13px", color: "#2f9e44" },
+			bStatusBtn: { flex: "0 0 auto", width: "68px", textAlign: "center",
+				fontSize: "13px", color: "#ffb454", font: "inherit",
+				border: "0.5px solid rgba(255,180,84,.55)", background: "rgba(255,180,84,.12)",
+				borderRadius: "8px", padding: "5px 0", cursor: "pointer" },
 			dot: { flex: "0 0 auto", width: "7px", height: "7px", borderRadius: "50%", transform: "translateY(-1px)" },
 			rowLabel: { flex: "0 0 auto", color: "var(--dsw-alias-label-tertiary, #888)" },
 			rowValue: { flex: "1 1 auto", minWidth: 0, wordBreak: "break-word" },
@@ -7876,11 +7891,21 @@ setTimeout(function(){ try { mpEnsureRefreshItem(); } catch (_) { /* 静默 */ }
 				try { bridge.basicPermOpen(kind); } catch (err) { /* 跳转失败就只是没反应 */ }
 				setTimeout(readBasicPerm, 800);
 			};
-			const basicPermRow = (kind, label, granted) => e("div", { key: kind, style: S.row },
-				e("span", { style: S.rowLabel }, label),
-				e("span", { style: { ...S.rowValue, color: granted ? "#2f9e44" : "#ffb454" } },
-					granted ? t("basicGranted") : t("basicMissing")),
-				granted ? null : e("button", { type: "button", style: S.btn, onClick: () => openBasicPerm(kind) }, t("basicOpen")),
+			// 一行 =圆点 +标签 +右侧状态格（固定 68px）。
+			//  已授权 →绿色文字（不可点，避免误触）；
+			//  未授权 →同位置的橙色按钮，文案就是「未授权」，点它去系统页。
+			//  授权回来由 openBasicPerm 里的 setTimeout(readBasicPerm, 800) 自动刷新，
+			//  同一格会从橙色按钮变成绿色「已授权」——位置不变，只是不再是按钮。
+			const basicPermRow = (kind, label, granted, last) => e("div",
+				{ key: kind, style: last ? { ...S.bRow, borderBottom: "none" } : S.bRow },
+				e("span", { style: S.bDot }),
+				e("span", { style: S.bLabel }, label),
+				granted
+					? e("span", { style: S.bStatusOn }, t("basicGranted"))
+					: e("button", {
+						type: "button", style: S.bStatusBtn,
+						onClick: () => openBasicPerm(kind),
+					}, t("basicMissing")),
 			);
 			// 「基础权限」不是一张独立卡片，而是与 Shizuku/ADB/root **同一排的第一个标签**：
 			// 它是另三条通道的前置条件（缺存储/通知，AI 开工前就被卡住），所以排在最前。
@@ -7894,7 +7919,7 @@ setTimeout(function(){ try { mpEnsureRefreshItem(); } catch (_) { /* 静默 */ }
 				basicPermRow("overlay", t("basicOverlay"), !!basicPerm.overlay),
 				basicPermRow("battery", t("basicBattery"), !!basicPerm.battery),
 				basicPermRow("notify", t("basicNotify"), !!basicPerm.notify),
-				basicPermRow("a11y", t("basicA11y"), !!basicPerm.a11y),
+				basicPermRow("a11y", t("basicA11y"), !!basicPerm.a11y, true),
 			) : null;
 			const head = e("div", { style: S.card },
 				e("div", { style: S.cardHead },
@@ -8308,7 +8333,7 @@ setTimeout(function(){ try { mpEnsureRefreshItem(); } catch (_) { /* 静默 */ }
 					tone: basicAllOn ? MP_PRIV_TONE.on : MP_PRIV_TONE.warn,
 					body: basicPanel,
 				}] : []),
-				// ⚠️ **Shizuku 排第一**：它不依赖 adbd、重启也有效，是唯一对
+				// ⚠️ Shizuku 排第二（第一是「基础权限」）：它不依赖 adbd、重启也有效，是唯一对
 				//   「Android 10 且只有有线 adb」那类设备真正可用的通道。
 				//   ADB 排在它后面不是因为没用，而是因为它的两条走法都有前提。
 				//
