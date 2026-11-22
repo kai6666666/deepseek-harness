@@ -378,6 +378,10 @@ find "$ROOTFS" -perm /6000 -exec chmod a-s {} + 2>/dev/null || true
 # ---------- 3.5 瘦身（默认开；DSH_RT_PRUNE=0 关闭） ----------
 if [ "${DSH_RT_PRUNE:-1}" = "1" ] && [ -d "$ROOTFS/opt/dsh/node_modules" ]; then
   log "prune: 删除 sourcemap / 测试 / 文档"
+  # P3-bis：删类型声明与包内 TS 源（运行时只读 lib/*.js）。
+  # 实测：.d.ts 16,196 个 / 51.3 MB；.ts 12,147 个 / 115.3 MB —— 占 node_modules 条目 37%。
+  find "$ROOTFS/opt/dsh/node_modules" -type f \( -name '*.d.ts' -o -name '*.d.mts' -o -name '*.d.cts' \) -delete 2>/dev/null || true
+  find "$ROOTFS/opt/dsh/node_modules" -path '*/src/*' -type f -name '*.ts' -delete 2>/dev/null || true
   find "$ROOTFS/opt/dsh/node_modules" -type f \( -name '*.map' -o -name '*.md' -o -name '*.markdown' \) -delete
   find "$ROOTFS/opt/dsh/node_modules" -type d \( -name test -o -name tests -o -name __tests__ -o -name docs -o -name example -o -name examples \) \
     -prune -exec rm -rf {} + 2>/dev/null || true

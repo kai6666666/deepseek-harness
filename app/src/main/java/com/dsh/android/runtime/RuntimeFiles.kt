@@ -71,6 +71,10 @@ internal object RuntimeFiles {
                 }
                 return FileVisitResult.CONTINUE
             }
+            override fun visitFileFailed(file: Path, exc: IOException): FileVisitResult {
+                // P-7：不可遍历/不可读（EACCES）也继续；一个坏目录不应废掉整次清扫
+                return FileVisitResult.CONTINUE
+            }
             override fun visitFile(file: Path, attrs: BasicFileAttributes): FileVisitResult {
                 runCatching { Files.delete(file) }.onFailure {
                     runCatching { file.toFile().setWritable(true, true) }

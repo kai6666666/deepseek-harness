@@ -8,6 +8,18 @@
 - 设备侧清理：删除演练备份 `dsh-backup-drill.zip` 与 13 个历史 APK（约 2.4 GB）。
 
 **不发新版**：本批只有文档与文件清理。
+## [0.2.2-rc.5-debug.5] — 2026-11-22
+vc=90
+### P3-bis：减条目（并行解包没达预期的正解）
+- 实测：分片四线程只把解包从 **85.6 s → 77.4 s**（-9.6%）——瓶颈是设备的小文件元数据吞吐，加线程无效。
+- 改为删「运行时永不需要」的文件：`.d.ts`/`.d.mts`/`.d.cts` **16,196 个 / 51.3 MB**，包内 `src/**/*.ts` **12,147 个 / 115.3 MB**（两者占 `node_modules` 条目 **37%**）。
+- 风险：node 只加载 `lib/*.js`（`.ts` 需 loader，`.d.ts` 只是类型）；sourcemap 已在更早的 prune 阶段删除。
+
+### P-7 补完
+- `deleteTree` 再加 `visitFileFailed` 兜底：不可遍历/不可读的目录不再让整次清扫失败。
+
+### 运维
+- `profiles/web/package.json` 里残留的 `dsh-open-market` / `dshmarket` bundle 引用已清除（未安装 → 每次启动刷两条 warning）；市场入口仍由 `market.patch.yml` 的 `dsh-android-market` 提供。
 ## [0.2.2-rc.5-debug.4] — 2026-11-22
 vc=89
 ### P3：分片并行解包
