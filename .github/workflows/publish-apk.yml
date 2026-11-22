@@ -119,6 +119,7 @@ jobs:
   # 单独成一个 job，避免动原有的发布步骤（那段缩进是历史遗留，改它风险大于收益）。
   publish-plugins:
     name: publish-plugins
+    needs: publish          # 必须等 Release 先建好，否则 gh release upload 会报 not found
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
