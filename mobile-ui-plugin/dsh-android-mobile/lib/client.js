@@ -7009,16 +7009,21 @@ setTimeout(function(){ try { mpEnsureRefreshItem(); } catch (_) { /* 静默 */ }
 			// 关键：右侧状态列**固定 68px + 右对齐**，「已授权 / 未授权」才能落在同一条竖线上。
 			bRow: { display: "flex", alignItems: "center", gap: "10px", padding: "11px 0",
 				borderBottom: "0.5px solid var(--dsw-alias-border-l2, #e2e2e2)" },
-			bDot: { flex: "0 0 auto", width: "7px", height: "7px", borderRadius: "50%",
-				background: "var(--dsw-alias-interactive-bg-primary, #2b6cb0)" },
-			bLabel: { flex: "1 1 auto", minWidth: 0, fontSize: "14px",
+			// 圆点颜色跟着状态走（绿=已授权 / 橙红=未授权），不再写死品牌蓝：
+			// 颜色在行内覆盖（见 basicPermRow），这里只留尺寸与形状。
+			bDot: { flex: "0 0 auto", width: "7px", height: "7px", borderRadius: "50%" },
+			bLabel: { flex: "1 1 auto", minWidth: 0, fontSize: "13px",
 				overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
 			bStatusOn: { flex: "0 0 auto", width: "68px", textAlign: "right",
 				fontSize: "13px", color: "#2f9e44" },
-			bStatusBtn: { flex: "0 0 auto", width: "68px", textAlign: "center",
-				fontSize: "13px", color: "#ffb454", font: "inherit",
+			// ⚠ **不能写 `font: "inherit"`**：它是包含 `font-size` 的简写，
+			//   排在 `fontSize` 之后会把 13px 顶回继承值（上一版按钮字看起来偏大就是这个）。
+			//   只留 `fontFamily: "inherit"`；`boxSizing: border-box` 让 0.5px 边框算进 68px，
+			//   于是「未授权」与「已授权」的**右边缘落在同一条竖线**。
+			bStatusBtn: { flex: "0 0 auto", width: "68px", boxSizing: "border-box",
+				textAlign: "right", fontSize: "13px", fontFamily: "inherit", color: "#ffb454",
 				border: "0.5px solid rgba(255,180,84,.55)", background: "rgba(255,180,84,.12)",
-				borderRadius: "8px", padding: "5px 0", cursor: "pointer" },
+				borderRadius: "8px", padding: "5px 9px", cursor: "pointer" },
 			dot: { flex: "0 0 auto", width: "7px", height: "7px", borderRadius: "50%", transform: "translateY(-1px)" },
 			rowLabel: { flex: "0 0 auto", color: "var(--dsw-alias-label-tertiary, #888)" },
 			rowValue: { flex: "1 1 auto", minWidth: 0, wordBreak: "break-word" },
@@ -7898,7 +7903,7 @@ setTimeout(function(){ try { mpEnsureRefreshItem(); } catch (_) { /* 静默 */ }
 			//  同一格会从橙色按钮变成绿色「已授权」——位置不变，只是不再是按钮。
 			const basicPermRow = (kind, label, granted, last) => e("div",
 				{ key: kind, style: last ? { ...S.bRow, borderBottom: "none" } : S.bRow },
-				e("span", { style: S.bDot }),
+				e("span", { style: { ...S.bDot, background: granted ? "#2f9e44" : "#ff6b4a" } }),
 				e("span", { style: S.bLabel }, label),
 				granted
 					? e("span", { style: S.bStatusOn }, t("basicGranted"))
