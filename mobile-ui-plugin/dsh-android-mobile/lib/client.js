@@ -7882,8 +7882,13 @@ setTimeout(function(){ try { mpEnsureRefreshItem(); } catch (_) { /* 静默 */ }
 					granted ? t("basicGranted") : t("basicMissing")),
 				granted ? null : e("button", { type: "button", style: S.btn, onClick: () => openBasicPerm(kind) }, t("basicOpen")),
 			);
-			const basicCard = basicPerm ? e("div", { style: S.card },
-				e("div", { style: S.cardHead }, e("h3", { style: S.cardTitle }, t("basicTitle"))),
+			// 「基础权限」不是一张独立卡片，而是与 Shizuku/ADB/root **同一排的第一个标签**：
+			// 它是另三条通道的前置条件（缺存储/通知，AI 开工前就被卡住），所以排在最前。
+			// 标签栏只带 label/tone/body 三样（见 tabs 的注释），标题与说明归 body 自己 ——
+			// 面板里**不再重复「基础权限」大标题**，否则同一屏会出现两遍。
+			const basicAllOn = !!(basicPerm && basicPerm.storage && basicPerm.overlay
+				&& basicPerm.battery && basicPerm.notify && basicPerm.a11y);
+			const basicPanel = basicPerm ? e("div", { style: S.card },
 				e("p", { style: S.intro }, t("basicHint")),
 				basicPermRow("storage", t("basicStorage"), !!basicPerm.storage),
 				basicPermRow("overlay", t("basicOverlay"), !!basicPerm.overlay),
@@ -8295,6 +8300,14 @@ setTimeout(function(){ try { mpEnsureRefreshItem(); } catch (_) { /* 静默 */ }
 			const adbTone = identityOk && channel === "legacy" ? MP_PRIV_TONE.on : MP_PRIV_TONE.off;
 
 			const tabs = [
+				// 「基础权限」排第一（在 Shizuku 之前）：它是另三条通道的前置条件，
+				// 放在标签行首位才符合「先有系统授权，再谈通道」的顺序。
+				// 桥缺失（gecko）时整项不出现，页面安静退回原来的三个标签。
+				...(basicPerm ? [{
+					id: "basic", label: t("basicTitle"),
+					tone: basicAllOn ? MP_PRIV_TONE.on : MP_PRIV_TONE.warn,
+					body: basicPanel,
+				}] : []),
 				// ⚠️ **Shizuku 排第一**：它不依赖 adbd、重启也有效，是唯一对
 				//   「Android 10 且只有有线 adb」那类设备真正可用的通道。
 				//   ADB 排在它后面不是因为没用，而是因为它的两条走法都有前提。
@@ -8339,8 +8352,6 @@ setTimeout(function(){ try { mpEnsureRefreshItem(); } catch (_) { /* 静默 */ }
 				head,
 
 				e("div", { style: S.stack },
-					// 基础权限卡：放在「当前状态」卡下方、Shizuku/ADB/root 标签行上方。
-					basicCard,
 					e("div", { style: S.tabBar },
 						...tabs.map((item) => e("button", {
 							key: item.id,
