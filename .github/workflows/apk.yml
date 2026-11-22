@@ -70,8 +70,7 @@ jobs:
           DSH_RT_CACHE: ${{ runner.temp }}/rt-cache
           DSH_RT_OUT: ${{ github.workspace }}/_build/runtime/out
           CC: aarch64-linux-gnu-gcc
-          # 双保险：build-runtime.sh 也会读 tools/engine-version.txt
-          DSH_VERSION: 0.2.2-rc.3
+          # 单一来源：DSH_VERSION 由 tools/engine-version.txt 提供（勿在此写死，否则会视盖文件值）
         run: bash tools/runtime/build-runtime.sh
 
       - name: 硬断言
@@ -96,7 +95,7 @@ jobs:
     env:
       ASSETS_TAG: ${{ github.event.inputs.assets_release || vars.ASSETS_RELEASE }}
       STRICT_ASSETS: ${{ github.event.inputs.strict_assets || '0' }}
-      REL_TAG: v0.2.2-rc.3
+      REL_TAG: v0.2.2-rc.5-debug
     steps:
       - uses: actions/checkout@v4
 

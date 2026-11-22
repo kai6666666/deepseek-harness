@@ -104,7 +104,7 @@ jobs:
           assert payload(source) == payload(target), 'APK payload changed'
           with zipfile.ZipFile(target) as z:
               manifest = json.loads(z.read('assets/runtime/manifest.json'))
-          assert 'dsh0.2.2-rc.3-' in manifest['runtimeVersion']
+          assert 'dsh0.2.2-rc.5-' in manifest['runtimeVersion']
           meta = {'source_run': os.environ['SOURCE_RUN'], 'source_sha': os.environ['SOURCE_SHA'], 'versionName': os.environ['APK_VN'], 'versionCode': int(os.environ['APK_VC']), 'certificate_sha256': os.environ['EXPECTED_SIGNER'].lower(), 'runtimeVersion': manifest['runtimeVersion'], 'payload_unchanged': True}
           Path('out/signing-metadata.json').write_text(json.dumps(meta, indent=2)+'\n')
           print('PAYLOAD_UNCHANGED=YES', manifest['runtimeVersion'])

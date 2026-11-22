@@ -1,6 +1,6 @@
 # DSH Android 总计划（备查）
 
-> 版本基线：引擎 `@deepseek-ai/dsh 0.2.2-rc.3`（PRoot 单运行时）· App `0.2.2-rc.3`（versionCode 85）
+> 版本基线：引擎 `@deepseek-ai/dsh 0.2.2-rc.5`（PRoot 单运行时）· App `0.2.2-rc.5-debug`（versionCode 86）
 > 本文是**唯一索引**：任何“我们打算做什么 / 做到哪了 / 怎么验 / 怎么退”都从这里查。
 > 最后更新：2026-11-22
 

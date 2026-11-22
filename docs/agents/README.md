@@ -26,6 +26,7 @@
 | [engine-0.2.2-rc.3-preflight.md](engine-0.2.2-rc.3-preflight.md) | **rc.1 → rc.3 升级预案（实测数据）** | 基础锚点 5/5；`IMG_TYPE` 需 GUARD+ANCHOR 同改（rc.3 已压缩为单行）；体积与空间峰值 |
 | [engine-0.2.2-rc.3-plan.md](engine-0.2.2-rc.3-plan.md) | **rc.3-debug 执行计划（第二版·待执行批准）** | 版本 0.2.2-rc.3-debug / vc53 / system 单 flavor；B1–B9 阻塞项、M1–M10 补充项、Gate -1→8 |
 | [engine-0.2.2-rc.3-review.md](engine-0.2.2-rc.3-review.md) | **第二版计划的审查报告** | 第一版哪 5 条被推翻、每条缺陷的文件:行证据、基线实测值 |
+| [0.2.2-rc.5-debug](../changelog/0.2.2-rc.5-debug.md) | **rc.3 → rc.5 升级（本次）** | 包结构 59/59 无变、`native/` 零差异、6 patch 全部可原样应用；运行期判据 / 升级必重解 rootfs |
 | [build-and-ship.md](build-and-ship.md) | 构建、发行与发布 | gradle 任务、签名、夸克网盘上传与版本整理 |
 | [server-build-env.md](server-build-env.md) | 服务器构建环境 | 八壹云部署、GRADLE_USER_HOME / DSH_HOME 两处必须存在的绝对路径、一键发布脚本 |
 | [platform-android.md](platform-android.md) | android 平台适配总览 | 为什么 Node 在 Android 上是 android 而不是 linux |

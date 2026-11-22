@@ -112,6 +112,7 @@ manifest 侧同时有 `specialUse` + `PROPERTY_SPECIAL_USE_FGS_SUBTYPE` 说明�
 | `v0.4.2` | 39 | 保留 |
 | `v0.4.3` | 49 | 保留 |
 | `v0.2.2-rc.3` | 85 | **当前正式版**（内容等于 0.4.1） |
+| `v0.2.2-rc.5-debug` | 86 | **当前测试版**（prerelease；引擎 rc.5） |
 
 其余历史 Release（`v0.3.0`–`v0.3.6`、`v0.3.0-refactor.*`、`v0.4.1`）及其 tag 已删除；
 `v0.4.1` 只在本机 `/sdcard/Download/dsh-rc3/upgrade/r041b.apk` 留有副本（已不在 GitHub）。

@@ -1,7 +1,7 @@
 # AGENTS.md — DSH Android 客户端
 
-> 项目状态：**维护态（0.2.2-rc.3 / vc85 起）** —— 只修 bug，不改包名、不改单运行时架构。
-> 发布线：Release 只保留 `v0.2.2-rc.1` / `v0.4.2` / `v0.4.3` / `v0.2.2-rc.3`；`v0.3.0`–`v0.3.6`、`v0.3.0-refactor.*`、`v0.4.1` 已下线。
+> 项目状态：**维护态（0.2.2-rc.5-debug / vc86 起）** —— 只修 bug，不改包名、不改单运行时架构。
+> 发布线：Release 保留 `v0.2.2-rc.1` / `v0.4.2` / `v0.4.3` / `v0.2.2-rc.3`；测试版 `v0.2.2-rc.5-debug`（prerelease）。`v0.3.0`–`v0.3.6`、`v0.3.0-refactor.*`、`v0.4.1` 已下线。
 
 
 原生 Android App：内置 Termux 环境跑一个 Node，在 Node 上跑 DSH 引擎，然后用 WebView

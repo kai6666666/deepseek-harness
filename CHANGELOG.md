@@ -8,6 +8,23 @@
 - 设备侧清理：删除演练备份 `dsh-backup-drill.zip` 与 13 个历史 APK（约 2.4 GB）。
 
 **不发新版**：本批只有文档与文件清理。
+## [0.2.2-rc.5-debug] — 2026-11-22
+vc=86
+### 引擎升级（`0.2.2-rc.3` → `0.2.2-rc.5`）
+- 引擎 `@deepseek-ai/dsh` **0.2.2-rc.5**；node `24.22.1` / pnpm `11.28.5` 与 rc.5 的 `engines` 要求一致；`native/` 侧 **0 变化**。
+- 补丁：6 个 patch 对 rc.5 **全部可原样套用**（4 个包 `lib` 逐字节相同，`dsh-llm` 仅 1 行偏移自动吸收）；`pins.json` 新增 `0.2.2-rc.5` 节。
+- `apk.yml` 删除写死的 `DSH_VERSION`，引擎版本**只由 `tools/engine-version.txt` 单一来源提供**；`REL_TAG` → `v0.2.2-rc.5-debug`。
+- `sign-upgrade-apk.yml` 的 runtimeVersion 断言 → `dsh0.2.2-rc.5-`。
+
+### rc.5 能力增量（引擎层全量继承）
+- **web 搜索自动路由**：DeepSeek 模型会话走旧版 Messages 搜索（不计次费，按 token 计费，日志追加 `web/deepseek-search-llm-request`），其他路由走 DeepSeek Search API。
+- LLM 错误分类（`dsh-llm/src/error.ts`）与 DeepSeek 翻译层（`llm-deepseek/src/translate.ts`）。
+- 插件 API 目录（`tool-cordis` api-catalog）。
+- 官方 `docs/upgrade-guide` 仅覆盖到 `v0.2.2-rc.4`；rc.5 无破坏性变更说明。
+
+### 已知
+- 引擎版本变化会让 `runtimeVersion`（含 `runtime/patches` 全部文件 sha）变化 ⇒ **升级后必重解一次 rootfs（~110 s）**，`files/home/.dsh` 与会话不受影响。
+
 ## [0.2.2-rc.3] — 2026-11-22
 vc=85
 ### 重新发布（发布线重开）
