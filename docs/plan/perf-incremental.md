@@ -38,9 +38,10 @@ APK 185.8 MB / 解压总 194.7 MB / rootfs.tar.xz 170.4 MB
 | **P0** ✅ | `RootfsInstaller.ensureLocked` 三段日志（copy / sha256 / extract） | 启动链可分段度量 | 日志出现 `stage copy:`/`stage sha256:`/`stage extract:` | 删 6 行 revert |
 | **P1** | rootfs 拆两层：`base`（usr+etc+var，345 MB / 9.9k 条目） + `engine`（opt/dsh，694 MB / 73.7k 条目）；manifest 改 `layers[]` | 引擎升级只动 engine 层 | `verify.py` 校验两层；设备只重解变化层 | manifest 回 `rootfs{}` |
 | **P2** | engine 层 **per-file 内容寻址**（每文件一 chunk，sha256 索引 + 独立 zstd 块） | 升级下载 **185 MB → ~7 MB** | 只改一个文件时，下载量 ≈ 该文件大小 | 退回整层下载 |
-| **P3** | 构建期切分片（base / engine，可再切 4 片），运行期并行解 N 个归档 | 首启解包 **106 s → 30–45 s** | `stage extract` 日志下降 | 退单包 |
+| **P3** ✅实施 | 构建期切分片（base / engine，可再切 4 片），运行期并行解 N 个归档 | 首启解包 **106 s → 30–45 s** | `stage extract` 日志下降 | 退单包 |
 | **P4** | 抄 dsh-Go：`DirectLaunch.select(...)` — direct 可选、safe 强制 proot、失败写 `directFailed` 回退 | 冷启后半段 **66 s → 45–55 s**（待实测） | 两种路径都能 `engine.ready` | 固定 proot |
 | **P5** | 自更新：`REQUEST_INSTALL_PACKAGES` + `FileProvider` + `PackageInstaller` + 分步引导；15 镜像探测（2.5 s / 256 KB 测速）+ Range 4 线程 + 断点 | 下载可用性/速度 | 断网重连续传成功；镜像全挂时回直连 | 关掉入口 |
+| **P-7** ✅ | `deleteTree` 先 chmod、删除失败兜底（旧 rootfs 不再残留） | 无 `rootfs.old-*` 残留 | 日志无 `启动清扫失败` | — |
 | **P6** | 双槽 rootfs（A/B）+ 空间预检 | 损坏秒回滚 | 手改 rootfs 后能回滚 | 单槽 |
 
 ## 3. 关键约束（改错不报错但真机炸）

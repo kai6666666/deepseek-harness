@@ -9,12 +9,17 @@ import java.io.File
  *
  * 只做「读 + 校验」，不含任何启动逻辑 —— 启动在 [ProotHost]。
  */
+/** 一个 rootfs 分片（asset 内的相对路径 + sha256 + 字节数）。 */
+data class RootfsPart(val asset: String, val sha256: String, val bytes: Long)
+
 data class RuntimeManifest(
     val runtimeVersion: String,
     val abi: String,
     val rootfsAsset: String,
     val rootfsSha256: String,
     val rootfsBytes: Long,
+    /** P3：分片（构建期按顶层目录切成 N 片）。为空则回退单包。 */
+    val rootfsParts: List<RootfsPart> = emptyList(),
     val jniLibs: Map<String, String>,
     val launchArgv: List<String>,
     val launchEnv: Map<String, String>,
@@ -56,6 +61,12 @@ data class RuntimeManifest(
                 rootfsAsset = o.getJSONObject("rootfs").optString("asset", "runtime/rootfs-arm64-v8a.tar.xz"),
                 rootfsSha256 = o.getJSONObject("rootfs").getString("sha256"),
                 rootfsBytes = o.getJSONObject("rootfs").getLong("bytes"),
+                rootfsParts = o.optJSONArray("rootfsParts")?.let { a ->
+                    List(a.length()) { i ->
+                        val p = a.getJSONObject(i)
+                        RootfsPart(p.getString("asset"), p.getString("sha256"), p.getLong("bytes"))
+                    }
+                } ?: emptyList(),
                 jniLibs = jni,
                 launchArgv = argv,
                 launchEnv = env,

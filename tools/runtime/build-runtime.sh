@@ -386,21 +386,43 @@ fi
 # ---------- 4. 打包 ----------
 ASSET_DIR=$OUT/$ABI/assets/runtime
 mkdir -p "$ASSET_DIR"
-log "tar + xz（SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH）"
-( cd "$ROOTFS" && tar --sort=name --mtime="@$SOURCE_DATE_EPOCH" --owner=0 --group=0 --numeric-owner --hard-dereference \
-    -cf - . ) | xz -6e -T0 > "$ASSET_DIR/rootfs-$ABI.tar.xz"
+log "tar + xz 分片（SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH）"
+# P3：按顶层目录切 4 片，运行期多线程并行解（单 tar 流顺序读，无法并行）。
+#   part0 = ./opt（引擎，88% 条目）→ 文件名保持 rootfs-$ABI.tar.xz，verify.py / 旧路径零改动。
+mkpart() {
+  local name="$1"; shift
+  local keep=()
+  local p
+  for p in "$@"; do [ -e "$ROOTFS/$p" ] && keep+=("$p"); done
+  if [ "${#keep[@]}" -eq 0 ]; then
+    ( cd "$ROOTFS" && tar --sort=name --mtime="@$SOURCE_DATE_EPOCH" --owner=0 --group=0 --numeric-owner --hard-dereference -cf - --files-from /dev/null ) | xz -6e -T0 > "$ASSET_DIR/$name"
+    return 0
+  fi
+  ( cd "$ROOTFS" && tar --sort=name --mtime="@$SOURCE_DATE_EPOCH" --owner=0 --group=0 --numeric-owner --hard-dereference -cf - "${keep[@]}" ) | xz -6e -T0 > "$ASSET_DIR/$name"
+}
+mkpart "rootfs-$ABI.tar.xz" ./opt
+mkpart "rootfs-part1-$ABI.tar.xz" ./usr
+mkpart "rootfs-part2-$ABI.tar.xz" ./var ./etc
+mkpart "rootfs-part3-$ABI.tar.xz" ./bin ./boot ./dev ./home ./lib ./media ./mnt ./proc ./root ./run ./sbin ./srv ./sys ./tmp ./lib64
+ls -lh "$ASSET_DIR"/rootfs-*.tar.xz
 
 # ---------- 5. manifest ----------
 INPUTS=$( { cat "$0"; sha256sum "$PROOT_DEB" "$TALLOC_DEB" "$SHMEM_DEB" "$CA_DEB" "$NODE_TAR" "$UBUNTU_TAR"; find "$REPO_ROOT/runtime/patches" -type f -print0 | sort -z | xargs -0 sha256sum; } | sha256sum | cut -c1-12 )
 RUNTIME_VERSION="r1-$ABI-dsh${DSH_VERSION}-node${NODE_VERSION}-ubuntu${UBUNTU_VERSION}-${INPUTS}"
 
+# P3：分片清单（part0 在前；运行期据此并行解包）
+PARTS_JSON=$(cd "$ASSET_DIR" && for f in "rootfs-$ABI.tar.xz" rootfs-part*-*.tar.xz; do
+  [ -f "$f" ] || continue
+  printf '{"asset":"runtime/%s","sha256":"%s","bytes":%s},' "$f" "$(sha256sum "$f" | cut -d' ' -f1)" "$(stat -c%s "$f")"
+done | sed 's/,$//')
+log "runtime parts: $PARTS_JSON"
 ROOTFS_SHA=$(sha256sum "$ASSET_DIR/rootfs-$ABI.tar.xz" | cut -d' ' -f1)
 ROOTFS_SIZE=$(stat -c%s "$ASSET_DIR/rootfs-$ABI.tar.xz")
 JNI_JSON=$(cd "$JNI" && for f in *.so; do printf '"%s":{"sha256":"%s","bytes":%s},' "$f" "$(sha256sum "$f" | cut -d' ' -f1)" "$(stat -c%s "$f")"; done | sed 's/,$//')
 
-python3 - "$ASSET_DIR/manifest.json" "$RUNTIME_VERSION" "$ABI" "$ROOTFS_SHA" "$ROOTFS_SIZE" "$JNI_JSON" <<'PY'
+python3 - "$ASSET_DIR/manifest.json" "$RUNTIME_VERSION" "$ABI" "$ROOTFS_SHA" "$ROOTFS_SIZE" "$JNI_JSON" "$PARTS_JSON" <<'PY'
 import json, sys
-out, ver, abi, sha, size, jni = sys.argv[1:7]
+out, ver, abi, sha, size, jni, parts = sys.argv[1:8]
 argv = [
     "{NATIVE_LIB_DIR}/libproot.so",
     "--kill-on-exit", "--link2symlink", "--sysvipc", "-L", "-0",
@@ -421,6 +443,7 @@ m = {
     "runtimeVersion": ver,
     "abi": abi,
     "rootfs": {"asset": f"runtime/rootfs-{abi}.tar.xz", "sha256": sha, "bytes": int(size)},
+    "rootfsParts": json.loads(parts) if parts.strip() else [],
     "jniLibs": json.loads("{" + jni + "}"),
     "launch": {
         "argv": argv,

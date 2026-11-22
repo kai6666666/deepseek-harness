@@ -8,6 +8,16 @@
 - 设备侧清理：删除演练备份 `dsh-backup-drill.zip` 与 13 个历史 APK（约 2.4 GB）。
 
 **不发新版**：本批只有文档与文件清理。
+## [0.2.2-rc.5-debug.4] — 2026-11-22
+vc=89
+### P3：分片并行解包
+- 构建期按顶层目录切 4 片：`rootfs-arm64-v8a.tar.xz`（./opt，88% 条目）+ `rootfs-part1`（./usr）+ `rootfs-part2`（./var ./etc）+ `rootfs-part3`（其余顶层）；manifest 新增 `rootfsParts[]`。
+- 运行期：`RootfsInstaller.installParts()` 四线程并行解到同一 staging（单片失败即整体失败，单片回退仍走原单包路径）；日志 `stage copy(parts=…)` / `stage extract(parts=…)`。
+- 依据：单 tar 流是顺序的，无法并行；实测单线程解 7.5 万文件 85.6 s，CPU 只占 11%。
+
+### P-7：旧 rootfs 清不掉
+- `RuntimeFiles.deleteTree()` 现在 `preVisitDirectory` 里先 `chmod u+w+x`，并对单个文件的删除失败做兜底重试；`postVisitDirectory` 不再抛错。
+- 原因：rootfs 里有 0555 目录（如 `/system`），删除其子项需要目录可写，否则 `AccessDeniedException` 会让整次清扫失败、残留 `rootfs.old-*`。
 ## [0.2.2-rc.5-debug.3] — 2026-11-22
 vc=88
 ### 修复

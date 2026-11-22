@@ -61,13 +61,26 @@ internal object RuntimeFiles {
     fun deleteTree(root: File) {
         if (!Files.exists(root.toPath(), NOFOLLOW_LINKS)) return
         Files.walkFileTree(root.toPath(), object : SimpleFileVisitor<Path>() {
+            // P-7：rootfs 里有 0555 目录（如 /system）。删除其子项需要目录可写，
+            // 否则 AccessDeniedException 会让整个清理失败、残留 rootfs.old-*。
+            override fun preVisitDirectory(dir: Path, attrs: BasicFileAttributes): FileVisitResult {
+                runCatching {
+                    val d = dir.toFile()
+                    if (!d.canWrite()) d.setWritable(true, true)
+                    if (!d.canExecute()) d.setExecutable(true, true)
+                }
+                return FileVisitResult.CONTINUE
+            }
             override fun visitFile(file: Path, attrs: BasicFileAttributes): FileVisitResult {
-                Files.delete(file)
+                runCatching { Files.delete(file) }.onFailure {
+                    runCatching { file.toFile().setWritable(true, true) }
+                    runCatching { Files.delete(file) }
+                }
                 return FileVisitResult.CONTINUE
             }
             override fun postVisitDirectory(dir: Path, error: IOException?): FileVisitResult {
-                if (error != null) throw error
-                Files.delete(dir)
+                // 不抛：能删多少算多少，避免一个只读目录废掉整次清扫
+                runCatching { Files.delete(dir) }
                 return FileVisitResult.CONTINUE
             }
         })

@@ -63,6 +63,8 @@ class RootfsInstaller(private val context: Context) {
             return rootfs
         }
 
+        // P3：manifest 带 rootfsParts（>1）则走分片并行解包；否则单包原路径。
+        if (manifest.rootfsParts.size > 1) return installParts(manifest, onProgress)
         runtimeDir.mkdirs()
         // P3：每次安装前清扫上次中断留下的 staging/old（真机曾累积 797 MB）。
         runCatching { RuntimeFiles.sweepStale(runtimeDir) }
@@ -118,6 +120,79 @@ class RootfsInstaller(private val context: Context) {
         return rootfs
     }
 
+    /**
+     * P3：分片并行解包。
+     *
+     * 为什么必须靠分片：单个 tar 流是顺序的（TarArchiveInputStream + XZ 不可随机访问）；
+     * 每片一个线程解到同一 staging 的不同顶层目录，互不冲突。
+     * 基线：单线程解 7.5 万文件约 85.6 s（CPU 只占 11%，瓶颈是逐文件创建）。
+     */
+    private fun installParts(manifest: RuntimeManifest, onProgress: (Progress) -> Unit): File {
+        runtimeDir.mkdirs()
+        runCatching { RuntimeFiles.sweepStale(runtimeDir) }
+            .onSuccess { if (it.isNotEmpty()) Log.i(TAG, "清扫中断残留：" + it.joinToString()) }
+        val free = context.filesDir.usableSpace
+        if (RuntimeFiles.insufficientSpace(free)) {
+            throw IOException("存储空间不足：需要约 " + (RuntimeFiles.ASSUME_UNPACKED_BYTES / 1024 / 1024) + " MB，剩余 " + (free / 1024 / 1024) + " MB")
+        }
+        val parts = manifest.rootfsParts
+        val totalXz = parts.sumOf { it.bytes }.coerceAtLeast(1)
+        val tCopy = System.currentTimeMillis()
+        val copied = java.util.concurrent.atomic.AtomicLong(0)
+        val xzFiles = ArrayList<File>(parts.size)
+        for ((i, p) in parts.withIndex()) {
+            val f = File(context.cacheDir, "rootfs-" + manifest.runtimeVersion + "-p" + i + ".tar.xz")
+            copyAsset(p.asset, f, p.bytes) { pr ->
+                onProgress(Progress("copy", copied.get() + pr.done, totalXz, p.asset))
+            }
+            copied.addAndGet(p.bytes)
+            val got = sha256(f)
+            if (!got.equals(p.sha256, ignoreCase = true)) {
+                f.delete()
+                throw IOException("rootfs分片校验失败：part" + i + " sha256=" + got)
+            }
+            xzFiles.add(f)
+        }
+        DshLog.i("DSH", "stage copy(parts=" + parts.size + "): " + totalXz + " bytes in " + (System.currentTimeMillis() - tCopy) + " ms")
+        val staging = File(runtimeDir, "rootfs.staging-" + manifest.runtimeVersion + "-" + android.os.Process.myPid() + "-" + System.nanoTime())
+        RuntimeFiles.deleteTree(staging)
+        if (!staging.mkdirs()) throw IOException("无法创建 staging：" + staging.absolutePath)
+        val tExtract = System.currentTimeMillis()
+        val doneXz = java.util.concurrent.atomic.AtomicLong(0)
+        try {
+            val pool = java.util.concurrent.Executors.newFixedThreadPool(minOf(4, xzFiles.size))
+            val errors = java.util.Collections.synchronizedList(ArrayList<Throwable>())
+            for ((i, f) in xzFiles.withIndex()) {
+                pool.execute {
+                    try {
+                        extractXz(f, staging) { pr ->
+                            onProgress(Progress("extract", doneXz.get() + pr.done, totalXz, "p" + i + " " + pr.note))
+                        }
+                        doneXz.addAndGet(f.length())
+                    } catch (t: Throwable) {
+                        errors.add(t)
+                    }
+                }
+            }
+            pool.shutdown()
+            pool.awaitTermination(30, java.util.concurrent.TimeUnit.MINUTES)
+            if (errors.isNotEmpty()) throw IOException("分片解包失败：" + errors.first().message, errors.first())
+            DshLog.i("DSH", "stage extract(parts=" + parts.size + "): " + (System.currentTimeMillis() - tExtract) + " ms")
+            val missing = RuntimeFiles.missingCriticalFiles(staging)
+            if (missing.isNotEmpty()) throw IOException("rootfs critical files missing: " + missing.joinToString())
+            swapIn(staging)
+        } catch (t: Throwable) {
+            RuntimeFiles.deleteTree(staging)
+            throw if (t is IOException) t else IOException("解包失败：" + t.message, t)
+        } finally {
+            for (f in xzFiles) f.delete()
+        }
+        copyAsset("runtime/manifest.json", manifestFile, -1, onProgress)
+        stamp.writeText(manifest.runtimeVersion)
+        onProgress(Progress("done", 1, 1, manifest.runtimeVersion))
+        DshLog.i("DSH", "rootfs 就绪（分片）：" + rootfs.absolutePath + "（" + manifest.runtimeVersion + "）")
+        return rootfs
+    }
     /** Rename transaction; tree cleanup treats symlinks as leaf entries. */
     private fun swapIn(staging: File) {
         val old = RuntimeFiles.swapRootfs(rootfs, staging)
