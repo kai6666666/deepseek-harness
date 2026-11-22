@@ -8,6 +8,18 @@
 - 设备侧清理：删除演练备份 `dsh-backup-drill.zip` 与 13 个历史 APK（约 2.4 GB）。
 
 **不发新版**：本批只有文档与文件清理。
+## [0.2.2-rc.5-debug.8] — 2026-11-22
+vc=93
+
+### P4-a 修复：direct 路径必须可观测
+- vc92 的 direct 日志走 `android.util.Log`（只进 logcat，被系统缓冲冲掉）——真机复测时「direct=on 之后一片空白」，原因就是**日志不可见**而不是没跑。现改为 `DshLog` 落盘（8 处）。
+- 新增 `direct.spawn pid=… argv0=…`（`ProcPid.of` 取不到 pid 时显示 `?`）。
+- direct 分支补 `ensureGuestNetworkConfig()`：不走 proot 的 bind，也同样要可用的 `resolv.conf` / `hosts`。
+- 修掉一处 Kotlin 编译隐患：字符串模板里内嵌 `"?"` 是非法的，改成字符串拼接。
+
+### 运维
+- 版本 `0.2.2-rc.5-debug.8` / vc93；`files/direct-enabled` 开关语义不变（默认关）。
+
 ## [0.2.2-rc.5-debug.7] — 2026-11-22
 vc=92
 

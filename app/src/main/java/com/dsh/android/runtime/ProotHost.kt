@@ -9,6 +9,7 @@ import android.system.Os
 import android.system.OsConstants
 import android.util.Log
 import com.dsh.android.engine.ProcPid
+import com.dsh.android.log.DshLog
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
@@ -66,7 +67,7 @@ class ProotHost(
             val url = awaitToken(DIRECT_GRACE_MS)
             if (url == null) {
                 val alive = process?.isAlive == true
-                Log.w(TAG, "direct 未就绪（alive=$alive, ${System.currentTimeMillis() - t0} ms），回退 proot")
+                DshLog.w(TAG, "direct 未就绪（alive=$alive, ${System.currentTimeMillis() - t0} ms），回退 proot")
                 runCatching { p.destroyForcibly() }
                 pump?.join(1500)
                 DirectLaunch.markFailed(context.filesDir, manifest.runtimeVersion)
@@ -74,7 +75,7 @@ class ProotHost(
                 p = launch(extraEnv, overlays, profile, null, true, forceProot = true)
                 pump = Thread({ drain(p, onLine) }, "proot-pump-$runId-fallback").apply { isDaemon = true; start() }
             } else {
-                Log.i(TAG, "direct=on token ready in ${System.currentTimeMillis() - t0} ms")
+                DshLog.i(TAG, "direct=on token ready in ${System.currentTimeMillis() - t0} ms")
             }
         }
         return p
@@ -106,19 +107,21 @@ class ProotHost(
         if (!forceProot && command == null && profile == "web") {
             val filesDir = context.filesDir
             if (!DirectLaunch.enabled(filesDir)) {
-                Log.i(TAG, "direct=off reason=disabled")
+                DshLog.i(TAG, "direct=off reason=disabled")
             } else if (DirectLaunch.failed(filesDir, manifest.runtimeVersion)) {
-                Log.i(TAG, "direct=off reason=directFailed")
+                DshLog.i(TAG, "direct=off reason=directFailed")
             } else {
                 val reason = DirectLaunch.unavailable(rootfs, manifest.abi)
                 val plan = if (reason == null) {
                     DirectLaunch.plan(rootfs, filesDir, manifest.abi, profile, overlays, extraEnv)
                 } else null
                 if (reason != null) {
-                    Log.w(TAG, "direct=off reason=$reason")
+                    DshLog.w(TAG, "direct=off reason=$reason")
                 } else if (plan == null) {
-                    Log.w(TAG, "direct=off reason=planUnavailable")
+                    DshLog.w(TAG, "direct=off reason=planUnavailable")
                 } else {
+                    // direct 不走 proot 的 bind，但同样需要可用的 resolv.conf/hosts。
+                    ensureGuestNetworkConfig()
                     return spawnDirect(plan, mergeError)
                 }
             }
@@ -250,7 +253,7 @@ class ProotHost(
             clear()
             putAll(plan.environment)
         }
-        Log.i(TAG, "launch: direct=on profile=web patches=${plan.patches} cwd=${plan.cwd.absolutePath}")
+        DshLog.i(TAG, "launch: direct=on profile=web patches=${plan.patches} cwd=${plan.cwd.absolutePath}")
         val p = pb.start()
         process = p
         launchedDirect = true
@@ -258,8 +261,9 @@ class ProotHost(
         runCatching {
             plan.pidFile.parentFile?.mkdirs()
             val hostPid = ProcPid.of(p)
+            DshLog.i(TAG, "direct.spawn pid=" + (hostPid ?: "?") + " argv0=" + plan.argv.first())
             if (hostPid != null && hostPid > 0) plan.pidFile.writeText(hostPid.toString() + "\n")
-        }.onFailure { Log.w(TAG, "direct pidfile: ${it.message}") }
+        }.onFailure { DshLog.w(TAG, "direct pidfile: ${it.message}") }
         return p
     }
 
