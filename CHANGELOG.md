@@ -8,6 +8,17 @@
 - 设备侧清理：删除演练备份 `dsh-backup-drill.zip` 与 13 个历史 APK（约 2.4 GB）。
 
 **不发新版**：本批只有文档与文件清理。
+## [0.2.2-rc.5-debug.18] — 2026-11-23
+vc=103
+
+### 修复
+- **「已授权」与「未授权」右边缘差 9 CSS px**：`bStatusOn` 缺 `padding`，而按钮有 `padding: 5px 9px`。
+  现两者几何完全一致（同宽 68px / border-box / 同 padding / 同右对齐），
+  真机像素复核：绿字右缘 1178 与橙字右缘 1178 重合。
+
+### 运维
+- 版本 `0.2.2-rc.5-debug.18` / vc103；`tools/mobile-ui-version.txt` → 1.1.0-202；插件 `package.json` → 1.0.5。
+
 ## [0.2.2-rc.5-debug.17] — 2026-11-23
 vc=102
 

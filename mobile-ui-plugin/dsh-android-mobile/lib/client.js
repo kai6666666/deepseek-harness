@@ -7014,8 +7014,11 @@ setTimeout(function(){ try { mpEnsureRefreshItem(); } catch (_) { /* 静默 */ }
 			bDot: { flex: "0 0 auto", width: "7px", height: "7px", borderRadius: "50%" },
 			bLabel: { flex: "1 1 auto", minWidth: 0, fontSize: "13px",
 				overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
-			bStatusOn: { flex: "0 0 auto", width: "68px", textAlign: "right",
-				fontSize: "13px", color: "#2f9e44" },
+			// 与 bStatusBtn **几何完全一致**（同宽 68px / border-box / 同 padding / 同右对齐），
+			// 只差边框与底色。这样「已授权」文字与「未授权」按钮里的文字**右边缘逐像素重合**；
+			// 上一版缺了 padding，两者右缘差 9 CSS px（真机实测 1178 vs 1147）。
+			bStatusOn: { flex: "0 0 auto", width: "68px", boxSizing: "border-box",
+				textAlign: "right", fontSize: "13px", padding: "5px 9px", color: "#2f9e44" },
 			// ⚠ **不能写 `font: "inherit"`**：它是包含 `font-size` 的简写，
 			//   排在 `fontSize` 之后会把 13px 顶回继承值（上一版按钮字看起来偏大就是这个）。
 			//   只留 `fontFamily: "inherit"`；`boxSizing: border-box` 让 0.5px 边框算进 68px，
