@@ -8,6 +8,25 @@
 - 设备侧清理：删除演练备份 `dsh-backup-drill.zip` 与 13 个历史 APK（约 2.4 GB）。
 
 **不发新版**：本批只有文档与文件清理。
+## [0.2.2-rc.5-debug.14] — 2026-11-22
+vc=99
+
+### 修复
+- **「基础权限」卡始终不可见 —— 真因钉死**：能力要三层同时齐（`PageBridge` 接口 / `MainActivity` 实现 /
+  `SystemWebHost.SystemPageBridge` 的 `@JavascriptInterface` 手工白名单）。vc96 只补了前两层，
+  页面侧 `window.DSHAndroid.basicPermState` 是 `undefined`，client.js 的守卫
+  `typeof !== "function"` 直接**静默 return**（`pageDiag` 诊断写在守卫之后，所以三版都是一行日志都没有）。
+  本次补 `basicPermState()` / `basicPermOpen(kind)` 两条转发，与 `rootState` / `shizukuState` **完全同构**。
+
+### 未动
+- `client.js`、`package.json`(1.0.1)、`tools/mobile-ui-version.txt`(1.1.0-198) 一律不变；
+- gecko 侧 `dispatchInvoke` 刻意不加：`basicPermState` 是同步返回值、gecko invoke 是异步，
+  加了页面会拿到 Promise 并显示成「全部未授权」（误导）。gecko 上这张卡静默不显示，
+  与既有「拿不到桥就不渲染」的约定一致。
+
+### 运维
+- 版本 `0.2.2-rc.5-debug.14` / vc99；只改 Kotlin，runtime 未变（设备不重解）。
+
 ## [0.2.2-rc.5-debug.13] — 2026-11-22
 vc=98
 

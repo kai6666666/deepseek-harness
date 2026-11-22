@@ -769,4 +769,22 @@ private class SystemPageBridge(private val impl: PageBridge) {
      */
     @android.webkit.JavascriptInterface
     fun logSummary(): String = impl.logSummary()
+    /**
+     * 「基础权限」卡的状态（JSON 文本：storage/overlay/battery/notif/a11y）。
+     *
+     * ⚠️ **又是这个手工白名单**。第三次踩：`openLogs`/`logSummary` 一次、
+     *   vc96 的 basicPerm 一次 —— 那次症状更阴：卡片**完全不显示**，而且连
+     *   `pageDiag` 诊断都不落盘，因为页面守卫在 `typeof !== "function"` 时
+     *   静默 return（诊断那行在守卫之后）。
+     *   必须返回 String：`@JavascriptInterface` 只支持基本类型与 String。
+     */
+    @android.webkit.JavascriptInterface
+    fun basicPermState(): String = impl.basicPermState()
+    /**
+     * 点「去开启」→ 跳到对应的系统授权页（storage / overlay / battery / notif / a11y）。
+     *
+     * ⚠️ 同样必须出现在这个白名单里，否则页面拿到 undefined 会**整张卡不渲染**。
+     */
+    @android.webkit.JavascriptInterface
+    fun basicPermOpen(kind: String): Boolean = impl.basicPermOpen(kind)
 }
