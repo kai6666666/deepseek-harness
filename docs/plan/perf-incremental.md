@@ -133,3 +133,25 @@ sh tools/direct-probe/run.sh <package-files-dir> [port]
 # 例：sh tools/direct-probe/run.sh /data/user/0/com.dsh.android/files 46991
 ```
 探针**不碰 App 数据**（DSH_HOME 指向隔离目录），不影响 proot 启动。
+
+### 7.6 ⚠️ 真机落地撞到硬墙：App 进程无权 execve app data 里的 loader（vc92/vc93 实测）
+```text
+Cannot run program "…/files/runtime/rootfs/usr/lib/aarch64-linux-gnu/ld-linux-aarch64.so.1"
+  (in directory "…/rootfs/root"): error=13, Permission denied
+```
+- **探针能跑、App 不能跑**：同一 uid（u0_a643）、同一台机、同一个 loader。
+  探针跑在 `run-as`（adb 侧）的域，App 跑在 `untrusted_app`——**Android 10+ 不允许 untrusted_app
+execve app data 目录里的文件**（只给 `nativeLibraryDir`/`apk_data_file` 的 execute 权限）。
+- 已排除的次要因素：rootfs=`700 u0_a643`、`root/`=`755`、`tmp/`=`777`、loader=`755`，`canExecute()` 全为真。
+- 所以 `DirectLaunch.unavailable()` 的 `canExecute()` **不足以判定可直启**：它只读 mode，读不到 SELinux。
+
+#### 唯一可行路线（P4-a′，待做）
+| 步 | 做法 | 依据 |
+|---|---|---|
+| 1 | 把 `ld-linux-aarch64.so.1`（203 KB）作为 **jniLib** 打进 APK：`libld-linux.so` | 只有 `nativeLibraryDir` 保证 `execute` |
+| 2 | direct argv 改用 `nativeLibraryDir/libld-linux.so --library-path <rootfs libs> <rootfs>/usr/bin/node …` | loader 是**解释器**：内核只 execve loader，node 由它 mmap 加载，**不再触发对 node 的 execve 检查** |
+| 3 | node 仍留 rootfs（123 MB 不进 APK），`unavailable()` 改判 loader 改成“jniLib 存在” | 体积不变 |
+| 4 | 若 jniLib loader 也被拒，则 P4 在非 root 机型上只能放弃（保留 proot） | — |
+
+> 记账：`vc92`/`vc93` 的 direct 路径现在**恒不可用**（`files/direct-enabled` 一开就 EACCES，随后回退/失败）。
+> 开关默认关，所以对用户零影响；但 **P4-a 不能算完成**，要等 P4-a′ 用 jniLib loader 真机验过。
