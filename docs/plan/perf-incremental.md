@@ -1,6 +1,6 @@
 # 计划：体积、启动与增量更新（rc.5 之后）
 
-> 状态：**P-1 / P0 / P3 / P3-bis / P3-c 已实施**（`0.2.2-rc.5-debug.6` / vc91）；P1 / P2 / P4–P6 待批。
+> 状态：**P-1 / P0 / P3 / P3-bis / P3-c 已实施**（`0.2.2-rc.5-debug.6` / vc91）；**P4-a 真机探针已通过**（见 §7）；P1 / P2 / P4-b·c / P5–P6 待批。
 > 关系：本文是 [refactor-single-host-purge.md](refactor-single-host-purge.md) 完成后的**性能线**，不改身份与架构。
 
 ---
@@ -41,7 +41,7 @@ APK 185.8 MB / 解压总 194.7 MB / rootfs.tar.xz 170.4 MB
 | **P3** ✅（实测 -9.6%，未达预期） | 构建期切分片（base / engine，可再切 4 片），运行期并行解 N 个归档 | 首启解包 **106 s → 30–45 s** | `stage extract` 日志下降 | 退单包 |
 | **P3-bis** ✅ | prune 删 `.d.ts`(16,196/51.3 MB) 与 `src/**/*.ts`(12,147/115.3 MB) —— 条目 -37% | 解包 77.4 s → 目标 ≤50 s | `stage extract(parts=4)` 下降 | 回滚两行 find |
 | **P3-c** ✅ | 解包进度改「增量累加」（每线程只加自己的 delta）+ 百分比单调夹逼 | 进度条不再 3X% ↔ 6X% | 真机进度单向递增 | 回滚 2 处 |
-| **P4-a** | 仅「rootfs 已就绪后的再次启动」尝试 direct（`loader --library-path … --import=preload.mjs …/bin.js`），失败立即回 proot，日志打 `direct=on/off + fallbackReason` | 冷启后半段 **66 s → 45–55 s** | 冷启 3 次对照 `engine.ready` | 固定 proot |
+| **P4-a** ✅探针 | 真机验证 loader 直启可行：`ld-linux-aarch64.so.1 --library-path … node …/bin.js web` → `dsh web` 就绪 **6,514 ms**（proot 同口径 32.6 s，**省 26.1 s**）；App 内实现仍未做 | 启动段 −26 s | 探针日志 + HTTP 401 | 不实现 |
 | **P4-b** | 补 4 个 shim（paths / dns / processes / modules），只在缺的时候兜底 | bash 工具 / `/sdcard` / apt / uid2000 全通 | 四项冒烟 | 删 shim |
 | **P4-c** | 默认开 direct；safe mode 强制 proot | 同 P4-a | 3 次冷启稳定 + 异常自动回退 | 关开关 |
 | **P5** | 自更新：`REQUEST_INSTALL_PACKAGES` + `FileProvider` + `PackageInstaller` + 分步引导；15 镜像探测（2.5 s / 256 KB 测速）+ Range 4 线程 + 断点 | 下载可用性/速度 | 断网重连续传成功；镜像全挂时回直连 | 关掉入口 |
@@ -85,3 +85,51 @@ P4  : safe 模式强制 proot
 P5  : 断点续传 + 镜像择优可用；无 REQUEST_INSTALL_PACKAGES 时自更新入口隐藏
 ```
 
+
+---
+## 7. P4 直启（免 proot）真机探针 — 2026-11-22
+
+设备：Xiaomi 25104RADAC / Android 16 (API 36) / arm64-v8a；rootfs `files/runtime/rootfs`。
+
+### 7.1 结论（三项均实测）
+```text
+① loader 能拉起 node         : ld-linux-aarch64.so.1 --library-path … node → PROBE_OK（不是 cannot execute）
+② 引擎能跑                   : … bin.js --version → 0.2.2-rc.5（exit 0）
+   （注：Android16 的 seccomp 只对 x86_64 杀 loader；arm64 放行）
+③ dsh web 能监听             : dsh web: http://127.0.0.1:46991/?token=… → HTTP 401（健康语义同 proot）
+```
+
+### 7.2 收益（同口径：从「extract 完成」到「`dsh web:` 打印」）
+| 方式 | 耗时 | 备注 |
+|---|---|---|
+| proot（vc91 实测） | **32.6 s** | 18:15:59.287 extract done → 18:16:31.897 `dsh web:` |
+| direct（探针实测） | **6.5 s** | `T0…880` → `T…394` = 6,514 ms |
+| **净省** | **≈26.1 s** | 93.6 s 冷启 → 约 67 s |
+
+### 7.3 direct 必需的环境垫片（缺一个就起不来）
+```text
+HOME           = $RF/root                         ← 引擎读 ~/.dsh
+DSH_HOME       = <隔离目录>                        ← 避免污染真实会话
+TMPDIR/TMP/TEMP= $RF/tmp                           ← 缺它 spill-local 直接 EACCES（mkdtemp /tmp 不存在）
+PATH           = $RF/usr/local/bin:$RF/usr/bin:$RF/bin:…   ← 子进程（bash）靠它
+NODE_PATH      = $RF/opt/dsh/node_modules
+SSL_CERT_FILE  = $RF/etc/ssl/certs/ca-certificates.crt     ← 不设则 https 全失败
+TZ/LANG        = Asia/Shanghai / C.UTF-8
+cwd            = $RF/root
+argv           = ld-linux --library-path <4 条> node <rootfs>/opt/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js
+```
+
+### 7.4 还没解决（P4-b 要做的）
+| 坑 | 现象 | 对策 |
+|---|---|---|
+| 路径变物理长路径 | 引擎看到 `/data/user/0/…/rootfs/opt/dsh`，不是 `/opt/dsh` | 移植 dsh-Go `runtime/direct/paths.mjs`（toHost/toGuest + mounts） |
+| `/tmp`、`/dev`、`/proc` 不翻译 | 已用 `TMPDIR` 绕过 tmp；`/proc` 读宿主（更真）但工具输出不一致 | `paths.mjs` + `processes.mjs` |
+| 工具（bash）内的绝对路径 | `ls /opt/dsh` 指向宿主根 | 同上；或 `proot` 保留为工具通道 |
+| hard link / `.l2s` | 本工程不用 l2s，暂不触发 | 沿用 dsh-Go 的 `compatibilityReason()` 空目录检测 |
+
+### 7.5 复现
+```text
+sh tools/direct-probe/run.sh <package-files-dir> [port]
+# 例：sh tools/direct-probe/run.sh /data/user/0/com.dsh.android/files 46991
+```
+探针**不碰 App 数据**（DSH_HOME 指向隔离目录），不影响 proot 启动。
