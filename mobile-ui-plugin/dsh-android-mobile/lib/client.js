@@ -7015,18 +7015,22 @@ setTimeout(function(){ try { mpEnsureRefreshItem(); } catch (_) { /* 静默 */ }
 			bLabel: { flex: "1 1 auto", minWidth: 0, fontSize: "13px",
 				overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
 			// 与 bStatusBtn **几何完全一致**（同宽 68px / border-box / 同 padding / 同右对齐），
-			// 只差边框与底色。这样「已授权」文字与「未授权」按钮里的文字**右边缘逐像素重合**；
-			// 上一版缺了 padding，两者右缘差 9 CSS px（真机实测 1178 vs 1147）。
+			// 两边只差文字颜色（绿 / 橙红）。这样「已授权」与「未授权」的文字**右边缘逐像素重合**；
+			// 早期版本缺了 padding，两者右缘差 9 CSS px（真机实测 1178 vs 1147）。
 			bStatusOn: { flex: "0 0 auto", width: "68px", boxSizing: "border-box",
 				textAlign: "right", fontSize: "13px", padding: "5px 9px", color: "#2f9e44" },
 			// ⚠ **不能写 `font: "inherit"`**：它是包含 `font-size` 的简写，
 			//   排在 `fontSize` 之后会把 13px 顶回继承值（上一版按钮字看起来偏大就是这个）。
 			//   只留 `fontFamily: "inherit"`；`boxSizing: border-box` 让 0.5px 边框算进 68px，
 			//   于是「未授权」与「已授权」的**右边缘落在同一条竖线**。
+			// 未授权 = **看起来只是橙红文字**（无边框、无底色，与卡片同色），
+			// 但它仍是 `<button>`：点击区域就是这一格 68px，点它去系统授权页。
+			// ⚠ `width / boxSizing / padding / textAlign` **一个都不能动** ——
+			//   它们是把「未授权」与「已授权」右缘掰到同一竖线的几何基准。
 			bStatusBtn: { flex: "0 0 auto", width: "68px", boxSizing: "border-box",
-				textAlign: "right", fontSize: "13px", fontFamily: "inherit", color: "#ffb454",
-				border: "0.5px solid rgba(255,180,84,.55)", background: "rgba(255,180,84,.12)",
-				borderRadius: "8px", padding: "5px 9px", cursor: "pointer" },
+				textAlign: "right", fontSize: "13px", fontFamily: "inherit", color: "#ff6b4a",
+				border: "none", background: "transparent",
+				padding: "5px 9px", cursor: "pointer" },
 			dot: { flex: "0 0 auto", width: "7px", height: "7px", borderRadius: "50%", transform: "translateY(-1px)" },
 			rowLabel: { flex: "0 0 auto", color: "var(--dsw-alias-label-tertiary, #888)" },
 			rowValue: { flex: "1 1 auto", minWidth: 0, wordBreak: "break-word" },

@@ -8,6 +8,18 @@
 - 设备侧清理：删除演练备份 `dsh-backup-drill.zip` 与 13 个历史 APK（约 2.4 GB）。
 
 **不发新版**：本批只有文档与文件清理。
+## [0.2.2-rc.5-debug.19] — 2026-11-23
+vc=104
+
+### 变更
+- **「未授权」改成纯文字**：去掉边框与底色（与卡片同色），文字色 `#ffb454` → **`#ff6b4a`**
+  （与左侧橙红圆点同色）。它仍是 `<button>`，点击区域就是那一格 68px，点它照旧跳系统授权页。
+- 几何基准未动（`width 68px` / `box-sizing:border-box` / `padding 5px 9px` / `text-align:right`），
+  「已授权」与「未授权」右缘仍逐像素重合。
+
+### 运维
+- 版本 `0.2.2-rc.5-debug.19` / vc104；`tools/mobile-ui-version.txt` → 1.1.0-203；插件 `package.json` → 1.0.6。
+
 ## [0.2.2-rc.5-debug.18] — 2026-11-23
 vc=103
 
