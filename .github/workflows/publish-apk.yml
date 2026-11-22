@@ -114,3 +114,31 @@ jobs:
           gh release upload "${{ inputs.tag }}" "out/$APK_NAME" out/SHA256SUMS.txt --clobber
           gh release view "${{ inputs.tag }}" --json tagName,isPrerelease,assets \
             -q '"\(.tagName) prerelease=\(.isPrerelease) assets=\([.assets[].name]|join(","))"'
+
+  # P1-b：把该行构建的插件热更新包一并挂到 Release 上。
+  # 单独成一个 job，避免动原有的发布步骤（那段缩进是历史遗留，改它风险大于收益）。
+  publish-plugins:
+    name: publish-plugins
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.src_ref }}
+      - name: 取插件热更新资产
+        uses: actions/download-artifact@v4
+        with:
+          name: plugins-mobile-ui
+          path: plugins
+          run-id: ${{ inputs.run_id }}
+          github-token: ${{ github.token }}
+      - name: 挂到 Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          F=$(find plugins -name 'plugins-mobile-ui-*.zip' | head -1)
+          [ -n "$F" ] || { echo '::error::没拿到 plugins-mobile-ui artifact（该 run 可能是旧版 apk.yml）'; exit 1; }
+          ls -l "$F"
+          gh release upload "${{ inputs.tag }}" "$F" --clobber
+          gh release view "${{ inputs.tag }}" --json assets -q '.assets[] | "\(.name) \(.size)"'

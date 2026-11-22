@@ -273,6 +273,24 @@ jobs:
           retention-days: 14
 
 
+      # P1-b：插件热更新包。App 的 PluginUpdater 从 Release 取这两个前缀的资产。
+      - name: 打包插件热更新资产（P1-b）
+        run: |
+          set -e
+          V=$(tr -d ' \r\n' < tools/mobile-ui-version.txt)
+          mkdir -p dist-plugins
+          cp app/src/main/assets/mobile-ui.zip "dist-plugins/plugins-mobile-ui-$V.zip"
+          ls -l dist-plugins
+          echo "PLUGIN_VER=$V" >> "$GITHUB_ENV"
+
+      - name: 上传插件热更新资产
+        uses: actions/upload-artifact@v4
+        with:
+          name: plugins-mobile-ui
+          path: dist-plugins/*.zip
+          if-no-files-found: error
+          retention-days: 14
+
       - name: 发布到 Release（公开可下）
         # 只有 main 的构建能发布。PR 构建也曾走到这里，把 v0.4.4-test 的资产
         # 覆盖成 PR 代码（2026-11-12 实际发生），所以这里同时挡 event 与 ref。

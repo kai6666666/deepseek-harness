@@ -8,6 +8,19 @@
 - 设备侧清理：删除演练备份 `dsh-backup-drill.zip` 与 13 个历史 APK（约 2.4 GB）。
 
 **不发新版**：本批只有文档与文件清理。
+## [0.2.2-rc.5-debug.22] — 2026-11-23
+vc=107
+
+### 新增（P1-b 发布端）
+- `apk.yml` 新增「打包插件热更新资产」：把 `assets/mobile-ui.zip` 改名成
+  `plugins-mobile-ui-<mobile-ui-version>.zip` 并作为 `plugins-mobile-ui` artifact 上传。
+- `publish-apk.yml` 新增独立 job `publish-plugins`：从同一个 run 取该 artifact、
+  挂到 Release。这样 `PluginUpdater` 才有官方来源可拉。
+
+### 闭环
+改 UI → push → 构建 → 发版 → App 启动时自动拉到热包 → 下次启动生效。
+**不再需要重装 161 MB APK**。
+
 ## [0.2.2-rc.5-debug.21] — 2026-11-23
 vc=106
 
