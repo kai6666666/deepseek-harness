@@ -228,9 +228,20 @@ direct 未就绪（alive=false, 2 ms）                                    ← l
 
 | 方案 | 做法 | 收益 | 风险 |
 |---|---|---|---|
-| **B1** | `mobile-ui.zip` 同时打进 runtime 资产（`plugins-mobile-ui-<ver>.zip`），客户端**优先 runtime、失败回退 assets** | 插件/UI 改动只需推 runtime 资产，**不装 APK** | 插件加载路径改动；加载失败会白屏（必须有回退兜底 + 真机验） |
+| **B1 ✅ 已实施（vc105/vc106）** | 热包落 `files/runtime/plugins/mobile-ui-<ver>.zip`；`ensureMobileUi` 两源优先热包、
+  失败回退 `assets`；`PluginUpdater` 从 Release 自动拉 `plugins-mobile-ui-<ver>.zip` | 插件/UI 改动**不装 APK**：实测热包 **215,179 B** vs 整包 **161,166,575 B**（1/749） | 已加三重兜底：版本只升级不降级、解包失败回退、`files/plugin-update-disabled` 急救开关 |
 | B2 | 只做「插件版本号 + 下载引导」：检测到新插件就提示去下 APK | 零风险 | 仍要装 APK，收益小 |
 | B3 | 不做，UI 改动继续整包 | 零风险 | 每轮 161 MB |
+
+### 9.3.1 B1 真机三段验证（2026-11-23，vc105）
+
+| 段 | 操作 | 日志/结果 |
+|---|---|---|
+| A 无热包 | 首次启动 | `已安装移动端 UI 插件 dsh-android-mobile 1.1.0-203 (627191 字节)`，stamp=1.1.0-203 |
+| B 放热包 | push 215,179 B 的 `mobile-ui-1.1.0-204.zip` → 重启 | `已安装移动端 UI 插件（热更新包）dsh-android-mobile 1.1.0-204 627238 字节 src=mobile-ui-1.1.0-204.zip`，stamp=1.1.0-204 |
+| C 删热包 | 删除后重启 | 回退 `1.1.0-203 (627191 字节)`，stamp=1.1.0-203 |
+
+**结论**：前端全量替换的实际成本从 161 MB 降到 **210 KB**。
 
 ### 9.4 P2 分块差分：方案修正
 

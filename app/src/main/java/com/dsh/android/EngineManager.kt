@@ -2110,6 +2110,19 @@ class EngineManager private constructor(private val context: Context) {
         File(dshHome, "profiles/web/node_modules/$MOBILE_UI_PACKAGE").deleteRecursively()
     }
 
+    /** 后台查一次插件热更新包；任何失败都只记日志，绝不影响启动。 */
+    private fun startPluginUpdateCheck() {
+        Thread {
+            runCatching {
+                val v = PluginUpdater.checkAndDownload(context.filesDir, MOBILE_UI_VERSION)
+                if (v != null) {
+                    Log.i(TAG, "插件热更新包已就绪 mobile-ui $v（下次启动生效）")
+                    EventLog.record("plugin.hotupdate", mapOf("version" to v))
+                }
+            }.onFailure { Log.w(TAG, "插件热更新检查失败（忽略）: ${it.message}") }
+        }.apply { isDaemon = true; name = "plugin-updater" }.start()
+    }
+
     /**
      * 运行时插件包：`files/runtime/plugins/mobile-ui-<ver>.zip`，取版本号最大的一个。
      *
@@ -2125,7 +2138,11 @@ class EngineManager private constructor(private val context: Context) {
             val ver = f.name.removePrefix("$MOBILE_UI_DIR-").removeSuffix(".zip").trim()
             if (ver.isEmpty()) null else f to ver
         }?.maxWithOrNull { a, b -> cmpVersion(a.second, b.second) }
-    }.getOrNull()
+    }.getOrNull()?.takeIf {
+        // ⚠ **只升级不降级**：热包版本必须严格大于内置版本才采用。
+        //   否则「内置已是 1.1.0-206、plugins 里还躺着 204」会把前端倒退回旧版。
+        cmpVersion(it.second, MOBILE_UI_VERSION) > 0
+    }
 
     /** `1.1.0-203` 这类版本的逐段比较（全数字段按数值，否则按字典序）。 */
     private fun cmpVersion(a: String, b: String): Int {
@@ -2148,6 +2165,12 @@ class EngineManager private constructor(private val context: Context) {
         while (entry != null) {
             if (!entry.isDirectory) {
                 val out = File(target, entry.name)
+                // zip-slip 防护：entry 名带 `../` 时 canonicalPath 会跑出 target，直接跳过
+                if (!out.canonicalPath.startsWith(target.canonicalPath + File.separator)) {
+                    zis.closeEntry()
+                    entry = zis.nextEntry
+                    continue
+                }
                 out.parentFile?.mkdirs()
                 out.outputStream().use { zis.copyTo(it) }
             }
@@ -6757,6 +6780,8 @@ class EngineManager private constructor(private val context: Context) {
         runCatching { ensureWebViewCompat() }
         runCatching { ensureWebCompat() }
         runCatching { ensureBrowserPane() }
+        // P1-b：后台检查插件热更新（**本次启动不生效**，下次启动由 ensureMobileUi 切到新版）
+        startPluginUpdateCheck()
         runCatching { seedDefaultSettings() }
         runCatching { ensureAgnesMultimodal() }
         runCatching { seedAgnesAccounts() }

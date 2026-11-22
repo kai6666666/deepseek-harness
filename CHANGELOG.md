@@ -8,6 +8,25 @@
 - 设备侧清理：删除演练备份 `dsh-backup-drill.zip` 与 13 个历史 APK（约 2.4 GB）。
 
 **不发新版**：本批只有文档与文件清理。
+## [0.2.2-rc.5-debug.21] — 2026-11-23
+vc=106
+
+### 新增（P1-b 第二段：自动更新）
+- 新增 `PluginUpdater`：每次启动**后台**查一次 GitHub Release，找 `plugins-mobile-ui-<ver>.zip`，
+  版本比内置新则下载到 `files/runtime/plugins/`，**下次启动生效**（本次不动运行中的页面）。
+  失败一律静默：没网 / 限流 / 资产不存在 / sha256 不符 → 返回 null，不影响启动。
+- 急救开关：`files/plugin-update-disabled` 存在则整个跳过。
+- 只保留最新 2 个热包，避免长期占用。
+
+### 修复（自查发现的真问题）
+- **只升级不降级**：热包版本必须严格大于内置版本才采用。
+  否则「内置已是 1.1.0-206、plugins 里还躺着 204」会把前端倒退回旧版。
+- **zip-slip 防护**：解包时 entry 名的 canonicalPath 必须落在 target 内，带 `../` 的条目跳过。
+
+### 已知安全点
+- `RuntimeFiles.sweepStale()` 只删 `runtime/rootfs.staging-*` / `rootfs.old-*`，
+  **不会**动 `runtime/plugins/`（已核代码）。
+
 ## [0.2.2-rc.5-debug.20] — 2026-11-23
 vc=105
 
