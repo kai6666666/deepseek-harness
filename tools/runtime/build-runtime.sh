@@ -443,7 +443,7 @@ m = {
     "runtimeVersion": ver,
     "abi": abi,
     "rootfs": {"asset": f"runtime/rootfs-{abi}.tar.xz", "sha256": sha, "bytes": int(size)},
-    "rootfsParts": json.loads(parts) if parts.strip() else [],
+    "rootfsParts": json.loads("[" + parts + "]") if parts.strip() else [],
     "jniLibs": json.loads("{" + jni + "}"),
     "launch": {
         "argv": argv,
