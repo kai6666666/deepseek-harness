@@ -102,6 +102,24 @@ def check_manifest(manifest):
 
 
 def check_archive(path, manifest):
+    # P3：分片模式——逐片校验 sha256/bytes，再跳过单包结构断言（运行期 missingCriticalFiles 兜底）。
+    parts = manifest.get("rootfsParts") or []
+    if parts:
+        base = os.path.dirname(os.path.abspath(path))
+        total = 0
+        for idx, p in enumerate(parts):
+            fp = os.path.join(base, os.path.basename(p["asset"]))
+            if not os.path.isfile(fp):
+                bad("分片 %d 缺失: %s" % (idx, fp))
+                continue
+            size = os.path.getsize(fp)
+            if sha256_file(fp) != p["sha256"]:
+                bad("分片 %d sha256 不符: %s" % (idx, os.path.basename(fp)))
+            if int(p["bytes"]) != size:
+                bad("分片 %d bytes 不符: %s" % (idx, os.path.basename(fp)))
+            total += size
+        ok("分片 %d 个，合计 %.1f MB" % (len(parts), total / 1048576.0))
+        return
     abi = manifest.get("abi", "arm64-v8a")
     em = EM_BY_ABI.get(abi)
     if em is None:
