@@ -8,6 +8,21 @@
 - 设备侧清理：删除演练备份 `dsh-backup-drill.zip` 与 13 个历史 APK（约 2.4 GB）。
 
 **不发新版**：本批只有文档与文件清理。
+## [0.2.2-rc.5-debug.13] — 2026-11-22
+vc=98
+
+### 「基础权限」卡不显示 —— 按包版本命中的旧编译产物（E+A）
+- 根因（高置信）：`@deepseek-ai/dsh-client-modules` 把 `client.js` 编进浏览器 bundle 时按
+  **包名@版本** 缓存；`mobile-ui` 的 `package.json` 版本一直是 `1.0.0`，所以只改 `client.js`、
+  只 bump `MOBILE_UI_VERSION` 都不会让引擎重新编译 → 服务端文件是新的、页面里没有这段代码。
+- 修（E）：`mobile-ui-plugin/dsh-android-mobile/package.json` `1.0.0` → `1.0.1`；
+  `MOBILE_UI_VERSION` `1.1.0-197` → `1.1.0-198`。
+- 证（A）：`lib/index.js`（host half）启动时打印
+  `[dsh-adb] host half: client.js=<路径> bytes=<字节> pkgVersion=1.0.1` → 引擎日志可直接核对。
+
+### 运维
+- 版本 `0.2.2-rc.5-debug.13` / vc98。
+
 ## [0.2.2-rc.5-debug.12] — 2026-11-22
 vc=97
 

@@ -57,6 +57,7 @@ export const inject = ['webServer'];
 /** 状态接口路径。exact 路由优先于 `/api` 前缀，所以不会被 RPC 通道截走。 */
 const ROUTE = '/api/dsh-android/privileged';
 
+
 /**
  * 探测超时。
  *
@@ -77,6 +78,22 @@ const PROBE_TIMEOUT_MS = 45000;
 
 /** runner 打在 stderr 上的前缀，与 `assets/dsh-android-shell.mjs` 的 `TAG` 一致。 */
 const TAG = '[dsh-adb]';
+
+/**
+ * 诊断：本包 client.js 的实际情况（放在 TAG 之后，避免 TDZ）。
+ *
+ * 为什么需要它：`@deepseek-ai/dsh-client-modules` 按**包版本**把 client.js 编进浏览器
+ * bundle。只改 client.js 而不 bump `package.json` 的 version 时，引擎会复用旧编译产物 ——
+ * 现象是「服务端文件明明是新的、页面里却没有这段代码」（vc96/vc97 真机踩过）。
+ */
+const HOST_CLIENT_VERSION = '1.0.1';
+try {
+    const clientFile = path.join(path.dirname(new URL(import.meta.url).pathname), 'client.js');
+    const clientStat = await stat(clientFile);
+    console.log(`${TAG} host half: client.js=${clientFile} bytes=${clientStat.size} pkgVersion=${HOST_CLIENT_VERSION}`);
+} catch (error) {
+    console.log(`${TAG} host half: client.js 探测失败 ${error && error.message}`);
+}
 
 /** runner 回落成 app 身份时的 stderr 文案（原因在中文括号里）。 */
 const FALLBACK_RE = /uid 2000 不可用（(.+?)）/;
