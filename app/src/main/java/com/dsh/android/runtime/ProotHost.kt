@@ -63,8 +63,23 @@ class ProotHost(
         if (launchedDirect) {
             // direct 的第一道关是「能不能在宽限内打印 token 行」。拿不到就当场回退，
             // 并把这次失败写进 direct-failed-<runtimeVersion>：同一 runtime 不再试。
+            //
+            // ⚠️ 这里**不能**用 awaitToken()：它等的是 `readyOrEof` 这个字段，而这个
+            //   latch 是「本实例共享」的 —— 同一 host 上一个 proot 命令（startCommand）
+            //   的 drain 线程在 EOF 时会 countDown 它，于是 direct 刚 spawn 就被判成
+            //   「已就绪但没 token」（vc94 真机实测：alive=true, 3 ms）。改成独立轮询。
             val t0 = System.currentTimeMillis()
-            val url = awaitToken(DIRECT_GRACE_MS)
+            var url: String? = null
+            while (System.currentTimeMillis() - t0 < DIRECT_GRACE_MS) {
+                url = tokenUrl
+                if (url != null) break
+                if (process?.isAlive != true) {
+                    pump?.join(1500)
+                    url = tokenUrl
+                    break
+                }
+                Thread.sleep(50)
+            }
             if (url == null) {
                 val alive = process?.isAlive == true
                 DshLog.w(TAG, "direct 未就绪（alive=$alive, ${System.currentTimeMillis() - t0} ms），回退 proot")

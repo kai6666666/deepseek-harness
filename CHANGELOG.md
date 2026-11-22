@@ -8,6 +8,20 @@
 - 设备侧清理：删除演练备份 `dsh-backup-drill.zip` 与 13 个历史 APK（约 2.4 GB）。
 
 **不发新版**：本批只有文档与文件清理。
+## [0.2.2-rc.5-debug.10] — 2026-11-22
+vc=95
+
+### P4-a′ 修复：direct 刚 spawn 就被误判「未就绪」（3 ms）
+- 现象（vc94 真机）：`direct.spawn argv0=…/lib/arm64/libld-linux.so`（**exec 权限已过**），
+  紧接着 `direct 未就绪（alive=true, 3 ms），回退 proot`。
+- 根因：回退判断用的 `awaitToken()` 等的是**实例级** `readyOrEof` latch；同一 host 上一个
+  `startCommand`（proot 探测命令）的 drain 线程 EOF 时 countDown 了它 → 新 direct 进程刚起就被判成
+  「已就绪但没 token」。
+- 修法：direct 分支改为**独立轮询** `tokenUrl` + `process.isAlive`（50 ms 一跳），不再依赖共享 latch。
+
+### 运维
+- 版本 `0.2.2-rc.5-debug.10` / vc95。
+
 ## [0.2.2-rc.5-debug.9] — 2026-11-22
 vc=94
 
