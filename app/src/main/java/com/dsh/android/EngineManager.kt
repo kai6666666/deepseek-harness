@@ -5,6 +5,7 @@ import com.dsh.android.runtime.ProotHost
 import com.dsh.android.runtime.RootfsInstaller
 import com.dsh.android.runtime.RuntimeManifest
 import com.dsh.android.runtime.RuntimeFiles
+import com.dsh.android.runtime.PluginUpdater
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.CancellationException

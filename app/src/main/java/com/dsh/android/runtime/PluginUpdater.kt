@@ -155,6 +155,6 @@ object PluginUpdater {
                 md.update(buf, 0, n)
             }
         }
-        md.digest().joinToString("") { "%02x".format(it) }
+        md.digest().joinToString("") { "%02x".format(it.toInt() and 0xFF) }
     }.getOrNull()
 }
