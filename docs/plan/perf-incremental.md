@@ -186,3 +186,58 @@ direct 未就绪（alive=false, 2 ms）                                    ← l
 |---|---|---|
 | 2026-11-22 | **P4（免 proot 直启）冻结**，不做「整套 glibc 进 jniLibs + dynstr 补丁」 | §7.6/§7.7 三条路真机验完；收益 26 s vs 成本≈再造 proot 级工程 |
 | 2026-11-22 | 主线转向 **P1 分层 + P2 分块差分**（升级包 185 MB → ~7 MB） | §0 一页结论里真实差异仅 6.67 MB |
+| 2026-11-23 | **P1-a：manifest 增 `layers[]`**（语义层名映射到现有 4 片）；P2 从「块级」改为「文件级增量」优先 | §9.1 现状：分片与并行解已存在；§9.4 改动以静态资源为主 |
+| 2026-11-23 | **P1-b（插件资产迁 runtime、UI 热更新）列为下一候选**，待决策 B1/B2/B3 | §9.3：`mobile-ui` 在 APK assets 里，改一行 CSS 就要重装 161 MB |
+
+---
+
+## 9. P1 分层：现状勘察与落地拆解（2026-11-23）
+
+### 9.1 现状（比计划里假设的更靠前）
+
+| 事实 | 位置 |
+|---|---|
+| rootfs **已经按顶层目录切成 4 片**：`rootfs-arm64-v8a.tar.xz`(=./opt)、`part1`(./usr)、`part2`(./var ./etc)、`part3`(其余) | `tools/runtime/build-runtime.sh:405-423` |
+| manifest 已有 `rootfsParts[]`（asset/sha256/bytes） | 同上 `:430-435` |
+| 客户端已支持多片并行解 + 进度单调（vc91 修的就是这里的进度 bug） | `RootfsInstaller.installParts` |
+| 客户端解析用 `optJSONArray/optJSONObject` → **新增字段不会弄坏旧客户端** | `RuntimeManifest.parse` |
+
+→ P1 不是「从零切层」，而是**给现有 4 片贴上语义层名**，再让「只换一层」成为可能。
+
+### 9.2 P1-a（零风险，先做）
+
+`manifest.json` 增 `layers[]`，**纯增量、不新增文件、不改现有字段**：
+
+```json
+"layers": [
+  {"name":"base","paths":["./usr","./lib","./lib64","./bin","./etc","./var","./sbin"],
+   "parts":["rootfs-part1-<abi>.tar.xz","rootfs-part2-<abi>.tar.xz","rootfs-part3-<abi>.tar.xz"]},
+  {"name":"engine","paths":["./opt"],
+   "parts":["rootfs-<abi>.tar.xz"]}
+]
+```
+
+- 落点：`build-runtime.sh:439` 的 python heredoc（多传一个 `LAYERS_JSON`，写法与 `PARTS_JSON` 完全一致）。
+- 消费方：客户端后续版本按 `layers[].parts[].sha256` 决定「哪层变了只解哪层」。
+- **代价**：改 `build-runtime.sh` 会让 `INPUTS`（脚本自身 sha256）变 → `runtimeVersion` 变 → 下次 APK 首次启动会重新解 rootfs（968 MB）。所以这一步要与「必定重解」的版本合并，或等 P1-b 一起做。
+
+### 9.3 P1-b（真正的痛点，建议优先于 P2）
+
+**勘察发现（重要）**：`mobile-ui` 等插件资产现在打在 **APK 的 `assets/mobile-ui.zip`** 里，**不在 runtime 层**。
+→ 结果就是这两天的实际体验：**改一行 CSS = 重装 161 MB APK**（vc96 → vc104 每一版都是这样走的）。
+
+| 方案 | 做法 | 收益 | 风险 |
+|---|---|---|---|
+| **B1** | `mobile-ui.zip` 同时打进 runtime 资产（`plugins-mobile-ui-<ver>.zip`），客户端**优先 runtime、失败回退 assets** | 插件/UI 改动只需推 runtime 资产，**不装 APK** | 插件加载路径改动；加载失败会白屏（必须有回退兜底 + 真机验） |
+| B2 | 只做「插件版本号 + 下载引导」：检测到新插件就提示去下 APK | 零风险 | 仍要装 APK，收益小 |
+| B3 | 不做，UI 改动继续整包 | 零风险 | 每轮 161 MB |
+
+### 9.4 P2 分块差分：方案修正
+
+原计划是 rsync 式**块级**差分（文件内部改动）。实测改动以**静态资源/JS** 为主，块级收益不如**文件级**：
+
+- **P2（改后）**：按 `layers[]` 做**文件级增量包** —— 比对旧/新层的文件 sha256，只打变化的文件（xz 打包），客户端解到对应层。
+- 块级差分（弱校验 adler32 + 强校验 sha256）留给「单个大二进制内部微改」（node / proot），作为 P2-b 可选。
+- 可继续用现有底数：真实差异 **6.67 MB** vs 整包 185 MB。
+
+---
