@@ -76,9 +76,13 @@ class RootfsInstaller(private val context: Context) {
         }
 
         val xz = File(context.cacheDir, "rootfs-" + manifest.runtimeVersion + ".tar.xz")
+        val tCopy = System.currentTimeMillis()
         copyAsset(manifest.rootfsAsset, xz, manifest.rootfsBytes, onProgress)
+        Log.i(TAG, "stage copy: " + xz.length() + " bytes in " + (System.currentTimeMillis() - tCopy) + " ms")
 
+        val tSha = System.currentTimeMillis()
         val got = sha256(xz)
+        Log.i(TAG, "stage sha256: " + (System.currentTimeMillis() - tSha) + " ms")
         if (!got.equals(manifest.rootfsSha256, ignoreCase = true)) {
             xz.delete()
             throw IOException("rootfs 校验失败：sha256=" + got + "，manifest=" + manifest.rootfsSha256)
@@ -93,7 +97,9 @@ class RootfsInstaller(private val context: Context) {
         if (!staging.mkdirs()) throw IOException("无法创建 staging：" + staging.absolutePath)
 
         try {
+            val tExtract = System.currentTimeMillis()
             extractXz(xz, staging, onProgress)
+            Log.i(TAG, "stage extract: " + (System.currentTimeMillis() - tExtract) + " ms")
             val missing = RuntimeFiles.missingCriticalFiles(staging)
             if (missing.isNotEmpty()) throw IOException("rootfs critical files missing: ${missing.joinToString()}")
             swapIn(staging)

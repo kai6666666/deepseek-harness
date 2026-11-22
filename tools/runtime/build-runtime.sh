@@ -229,6 +229,9 @@ if [ "${DSH_RT_DEV_TOOLS:-1}" = "1" ]; then
   [ -z "${INSTALL_RC:-}" ] || die "dev 工具安装失败（rc=$INSTALL_RC）"
   $SUDO rm -rf "$ROOTFS"/var/lib/apt/lists/* "$ROOTFS"/var/cache/apt/archives/*.deb
   $SUDO rm -rf "$ROOTFS"/var/cache/ldconfig "$ROOTFS"/var/cache/debconf 2>/dev/null || true
+  # apt 的二进制索引缓存（每个 50 MB 原始 / 11 MB xz，合计 22 MB = rootfs.tar.xz 的 12.4%）：
+  # 纯垃圾，且每次重建都变 → 既白占体积，又让「引擎升级」的差异量虚高 100 MB。
+  $SUDO rm -f "$ROOTFS"/var/cache/apt/pkgcache.bin "$ROOTFS"/var/cache/apt/srcpkgcache.bin 2>/dev/null || true
   # apt 落下的文件属于 root（/etc/ssl/private 是 0700），而后续打包以构建用户跑 tar，
   # 实测会 `Cannot open: Permission denied`。把整棵树交还构建用户。
   $SUDO chown -R "$(id -u):$(id -g)" "$ROOTFS"

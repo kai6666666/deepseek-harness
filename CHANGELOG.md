@@ -8,6 +8,15 @@
 - 设备侧清理：删除演练备份 `dsh-backup-drill.zip` 与 13 个历史 APK（约 2.4 GB）。
 
 **不发新版**：本批只有文档与文件清理。
+## [0.2.2-rc.5-debug.2] — 2026-11-22
+vc=87
+### 优化（首刀：零架构变更）
+- **P-1 免费赎身**：`tools/runtime/build-runtime.sh` 的 prune 补删 `var/cache/apt/pkgcache.bin` 与 `srcpkgcache.bin`（各 50 MB 原始 / 11 MB xz，合计 22 MB = rootfs.tar.xz 的 12.4%）→ rootfs 与 APK 各约 **-22 MB**。
+- **P0 启动埋点**：`RootfsInstaller.ensureLocked` 新增三段日志 —— `stage copy: <bytes> in <ms>`、`stage sha256: <ms>`、`stage extract: <ms>`；配合已有的 `engine.ready` / `loadEvent` / `notifyUiReady`，启动链初次可分段度量。
+
+### 为什么现在才加（实测依据）
+- 设备解包 **106 s**，而同一台机上 `xz -dc` 全量解压仅 **11.7 s**、顺序写 1.2 GB 仅 **12.7 s** → CPU 只占约 11%，瓶颈是 **75,624 个文件的逐文件创建**（`opt/dsh` 58 88% 条目 / 57% 体积）。
+- rc.3 → rc.5 两版 tar 仅差 **20,480 B**、**新增 0 文件 / 修改 390 文件 / 内容相同 90.60%**，其中 **100.38 MB** 是 apt 缓存 → 删掉后真实差异仅 **6.67 MB**。
 ## [0.2.2-rc.5-debug] — 2026-11-22
 vc=86
 ### 引擎升级（`0.2.2-rc.3` → `0.2.2-rc.5`）
