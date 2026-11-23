@@ -82,6 +82,32 @@ Release 上的资产名固定 `runtime-chunks.json`；客户端按里层 `runtim
 1. `runtime-chunks.py manifest` 在目录里找不到 `manifest.json`（拿不到 `runtimeVersion`）时**直接 exit 1**，CI 当场红 —— 缺版本的清单对客户端毫无意义。本地调试用 `--allow-missing-version`。
 2. 不要去 `run: |` 里塞 heredoc 做校验：YAML block 的基线缩进会被原样喂给 Python，`<<'CHK'` 不会剥缩进，必然 `IndentationError`（这次真踩了）。把校验放进脚本本身。
 
+## 客户端（已落地 2026-11-23 / vc114）
+
+`app/src/main/java/com/dsh/android/runtime/RuntimeDelta.kt`：
+
+- `check()`：拉 Release 的 `runtime-chunks.json` → 与本地 `runtime/manifest.json` 的 `runtimeVersion` 比较；
+  不同则按 64 KiB 块比对本地旧分片，得出「需下载的块」。
+- `apply()`：`RandomAccessFile` 预分配整文件 → 先把本地旧分片整体拷进去 → 逐块 `Range: bytes=off-off+len-1` 覆盖；
+  **单块 sha256 → 整文件 sha256** 两道校验；落 `.staging-<ver>/` → 成功才 `rename` 到 `runtime/parts/<ver>/`。
+- 没有本地旧分片时自动走全量，并把分片**保留**下来，下一次就能增量。
+- `pruneOldParts` 只留最近 1 个版本（每版约 145 MB）。
+
+桥三方法三层同构：`runtimeDeltaCheck` / `runtimeDeltaState` / `runtimeDeltaApply`。
+`SystemWebHost` 里的白名单别忘（**漏一条页面拿到 undefined 且不报错**）。
+
+真机：`debug.29` 装上后 `classes4/7.dex` 里能搜到 `runtimeDeltaCheck/State/Apply`，`classes5.dex` 里能搜到 `RuntimeDelta` 与 `runtime-chunks.json`。
+
+### 还没接线的两处
+
+1. `RootfsInstaller.installParts` 仍从 APK assets 拷分片 ⇒ 要加一层「`files/runtime/parts/<manifest.runtimeVersion>/<asset>` 存在且 sha 相符就直接用」，增量才能真正替掉「重装 161 MB APK」。
+2. 前端「检查更新」弹窗还没有运行时那一行（`RuntimeDelta.stateJson` 已就绪，纯前端活）。
+
+## 两个编译坑（这次真踩了）
+
+1. **Kotlin 块注释支持嵌套**：KDoc 正文里写 ``runtime/parts/*/<asset>`` 会开一层新注释，于是 KDoc 自己的 `*/` 只关掉内层，编译器报的是「`Missing '}'` + `Unclosed comment`」，一行都指不到真凶。注释里别写裸 `/*`。
+2. **`SystemWebHost.kt` 没有 import `android.webkit.JavascriptInterface`**，白名单里一律写全限定名 `@android.webkit.JavascriptInterface`。照抄相邻那行就不会错。
+
 ## 别忘了
 
 - 块大小改了老客户端会错位：清单里带 `chunkSize`，客户端**必须**按清单里的值算偏移，不要把 65536 写死。
