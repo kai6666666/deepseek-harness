@@ -258,6 +258,43 @@ e: RootfsInstaller.kt:420:22 Unresolved reference 'bestPartsManifest'.
 | `apk.yml`（构建 APK） | **success** | 含本次 `RuntimeDelta` 改动，Kotlin 编译通过 |
 | `compile.yml`（单元测试） | failure | `RuntimeS6Test.legacyRetirementIsAnExactIdempotentAllowlist` 失败 —— 测的是 `RuntimeFiles.purgeLegacy`，**与 RuntimeDelta 无关**，是既有问题，`apk.yml` 不跑单测所以一直没暴露 |
 
+### 真机验证：Atom 路径跑通（`debug.34`，2026-11-24 02:21）
+
+装 `debug.34` 后，把 `files/runtime/manifest.json` 的 `runtimeVersion` 改成旧值（`…56ebac12167f`），
+放 `auto-dryrun`，重启 App 让它自动 `check → apply`。
+
+**日志一个字都没落盘**（`auto-dryrun` 是一次性钩子，读完自删，`hook-missing`），
+所以改从**产物**取证：
+
+```text
+files/runtime/parts/<…4ef4d5ef4ac0>/
+  manifest.json                     3,503   mtime 02:21   ← 本次启动后才写的
+  rootfs-arm64-v8a.tar.xz      79,448,384   02:21
+  rootfs-part1-arm64-v8a.tar.xz 70,263,276  02:21
+  rootfs-part2-arm64-v8a.tar.xz    783,464  02:21   ← 长度变了！
+  rootfs-part3-arm64-v8a.tar.xz      1,888  02:21
+```
+
+**关键判据**：`rootfs-part2` 从 **783,564** 变成 **783,464** —— 这是 `debug.34` 重新切片的长度，
+只有**真的从最新 Release 取了清单**才会变成这个值。sha256 也逐位对上：
+
+```text
+Release v0.2.2-rc.5-debug.34  rootfs-part2  783,464  digest accd6a51dcb7985f35c1a89f…
+设备 parts/rootfs-part2                 783,464  sha256 accd6a51dcb7985f35c1a89f…
+```
+
+⇒ `releases.atom` 取 tag → `releases/download/<tag>/runtime-chunks.json` → 逐块比对 → 拼接 → sha256 终校，
+**整条链路不消耗任何 GitHub API 配额**，已确认可用。
+
+**取证经验（下次直接用）**：
+
+| 想证明 | 看什么 |
+|---|---|
+| 有没有真的去拿 Release | `parts/<ver>/` 里文件的 **mtime** 与**长度变化** |
+| 拿到的内容对不对 | 产物 `sha256` vs Release asset 的 `digest` |
+| 钩子有没有跑 | 跑过就没了（一次性），`ls files/runtime/auto-dryrun` → `hook-missing` |
+| 别指望日志 | 这类钩子的日志可能完全不落盘，产物才是硬证据 |
+
 **另外**：`latestRuntimeRelease()` 遍历 `releases?per_page=10` 时**不区分 prerelease**，
 取的是"第一个带 runtime-chunks.json 的 Release"。我们这个仓库全是 prerelease，
 所以目前行为正确；但如果将来发正式版而它的资产不全，会选中它并报"Release 里没有分片"。**建议按 tag 排序 + 校验资产完整性**。
