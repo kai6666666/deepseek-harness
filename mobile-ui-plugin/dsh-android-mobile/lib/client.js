@@ -12190,55 +12190,68 @@ if (!window.__mpHeaderMenuTimer) {
 })();
 
 /**
- * 插件页导航标题 · 最终修法（1.1.0-233）
+ * 插件页对齐 · 观察者版（1.1.0-237）—— 在首帧 paint 之前打补丁
  *
- * ## 父链探针（[MP-CHAIN]，vw=394，dpr=3.25）给出的唯一答案
+ * ## 236 的探针揭穿了两件事
  *
  * ```text
- * HEADER(X_2TxG_moreHead) 362@16
- *   padding: 4px 12px 4px 52px        ← 左内边距 52px
- *   display: flex; align-items: center
- *   kids: BUTTON(…_moreBack) 28@68    ← 返回箭头（flex 子项，被 52px 推右）
- *         H1(X_2TxG_pageTitle) 100@104
+ * [MP-CSS] {"vw":394,"css":"on","padL":"52px","h1Left":88,"secPadL":"0px"}
  * ```
  *
- * ⇒ 标题偏右**只因为 header 的 `padding-left: 52px`**（给返回按钮预留的空位），
- *   而按钮本身又是 flex 子项，于是「52 的空位 + 28 的按钮 + 8 的间距」= H1 落在 104。
+ * 1. 我们的 `<style id="dsh-mobile-align-css">` **确实进了 DOM**（`css:"on"`），
+ *    但 `header` 的 `padding-left` 仍然是 **52px** ⇒ CSS 规则没命中渲染。
+ *    （`[class*="_moreHead"]` 这类属性选择器在 DSH 的 CSS Modules 场景下不可靠，
+ *     而 `section:has(… )` 还依赖 `:has()` 支持。结论：别指望 CSS，用 inline style。）
+ * 2. JS 的 `setProperty('padding-left','0px','important')` 在 233 里**是有效的**
+ *    （当时探针 `padL:0px, H1@52`）—— 唯一的问题是**时机太晚**：1200ms 后才改，
+ *    第一帧已经用 52px 画出来了，于是出现「向左瞬移」。
  *
- * 这解释了前六轮为什么全军覆没：
- * - `justify-content: flex-start` 没用 —— 主轴本来就靠左，是 **padding** 在推
- * - `h1{margin-left:0}` 没用 —— H1 本来就没有 auto margin（探针：`flex: 0 1 auto`）
- * - `header{padding-left:16px}` 只把 52 改成 16，H1 到 52（当时探针确实变成 `H1:100@52`），
- *   但那次截图取到的是异常帧，我没有坚持这条正确方向
+ * ## 本版做法
  *
- * ## 本版做法（两件事）
+ * 用 **MutationObserver + requestAnimationFrame** 把补丁提前到「DOM 插入的当帧」：
  *
- * 1. `header` 的 `padding-left` 归零（保留上/右/下内边距），只对「插件页那条导航」生效：
- *    条件是 header 宽 ≥ 50% 视口 **且** 文本含「实验性插件 / 内置插件 / 已安装插件」。
- *    ⇒ 返回箭头回到 16，标题紧跟其后 ≈ 52，与列表左缘（16dp）在同一视觉轴线上。
- * 2. 保留 v4 的整页内缩（`main`/`section` → `padding: 0 16px`），列表已经是 16dp。
+ * - `MutationObserver` 的回调在**微任务**里跑，早于下一帧 paint；
+ * - 再包一层 `requestAnimationFrame` 合并同一帧内的多次变更；
+ * - `rAF` 回调在 **paint 之前**执行 ⇒ 样式在第一次绘制前就已经是 `padding-left:0`，
+ *   用户看不到任何位移。
  *
- * 探针输出改为 `[MP-ALIGN7]`，直接给 header 的 padding 与 BUTTON/H1 的坐标，便于验收。
+ * 补丁内容与 233 完全一致（幂等 + 标记属性）：
+ * - `header`（宽 ≥ 50% 视口、文本含「插件」）→ `padding-left:0 !important`
+ * - `main`/`section`（宽 ≥ 90% 视口、left ≤ 2、且父级不是同宽的 main/section）
+ *   → `padding:0 16px !important`（列表 16dp）
+ *
+ * 保留一个 2s 的低频兜底（应对极端重建），并继续逐帧采样 `H1.left` 作为验收证据。
  */
 (function () {
     var PAD = 16;
-    var stat = { root: 0, head: 0 };
 
     function isPluginPage() {
-        var t = document.body ? (document.body.innerText || '') : '';
-        return t.indexOf('已安装插件') >= 0 || t.indexOf('实验性插件') >= 0;
+        var s = document.body ? (document.body.innerText || '') : '';
+        return s.indexOf('已安装插件') >= 0 || s.indexOf('实验性插件') >= 0;
     }
 
-    /* ---------- 1) 整页容器内缩（v4，已验收 16dp） ---------- */
-    function fixRoot() {
+    function patchHeader() {
+        var vw = window.innerWidth;
+        var heads = document.querySelectorAll('header');
+        for (var i = 0; i < heads.length; i++) {
+            var h = heads[i];
+            if (h.getAttribute('data-mp-head')) continue;
+            if (h.getBoundingClientRect().width < vw * 0.5) continue;
+            var t = (h.textContent || '').replace(/\s+/g, '');
+            if (t.indexOf('插件') < 0) continue;
+            try { h.style.setProperty('padding-left', '0px', 'important'); } catch (e) { }
+            h.setAttribute('data-mp-head', '1');
+        }
+    }
+
+    function patchRoot() {
         var vw = window.innerWidth;
         var cands = document.querySelectorAll('main,section');
         for (var i = 0; i < cands.length; i++) {
             var el = cands[i];
             if (el.getAttribute('data-mp-root')) continue;
             var r = el.getBoundingClientRect();
-            if (r.width < vw * 0.9) continue;
-            if (r.left > 2) continue;
+            if (r.width < vw * 0.9 || r.left > 2) continue;
             var p = el.parentElement;
             if (p && p !== document.body) {
                 var pr = p.getBoundingClientRect();
@@ -12249,62 +12262,52 @@ if (!window.__mpHeaderMenuTimer) {
                 el.style.setProperty('padding-right', PAD + 'px', 'important');
             } catch (e) { }
             el.setAttribute('data-mp-root', '1');
-            stat.root++;
         }
     }
 
-    /* ---------- 2) 导航条：把左侧 52px 的预留空位归零 ---------- */
-    function padHead() {
-        var vw = window.innerWidth;
-        var heads = document.querySelectorAll('header');
-        for (var i = 0; i < heads.length; i++) {
-            var h = heads[i];
-            if (h.getAttribute('data-mp-head')) continue;
-            if (h.getBoundingClientRect().width < vw * 0.5) continue;
-            var t = (h.textContent || '').replace(/\s+/g, '');
-            if (t.indexOf('实验性插件') < 0 && t.indexOf('内置插件') < 0 &&
-                t.indexOf('已安装插件') < 0 && t.indexOf('插件') < 0) continue;
-            try {
-                h.style.setProperty('padding-left', '0px', 'important');
-            } catch (e) { }
-            h.setAttribute('data-mp-head', '1');
-            stat.head++;
-        }
-    }
-
-    function fix() {
+    function patch() {
         if (!document.body || !isPluginPage()) return;
-        fixRoot();
-        padHead();
+        patchHeader();
+        patchRoot();
     }
 
-    function probe() {
+    /* ---- 同一帧内合并，rAF 回调在 paint 之前 ---- */
+    var queued = false;
+    function schedule() {
+        if (queued) return;
+        queued = true;
+        requestAnimationFrame(function () { queued = false; patch(); });
+    }
+
+    patch();
+    try {
+        new MutationObserver(schedule).observe(document.documentElement, { childList: true, subtree: true });
+    } catch (e) { }
+    setInterval(patch, 2000);
+
+    /* ---- 逐帧采样：证明首帧即终值 ---- */
+    var frames = 0, lastLeft = null, sawFirst = false, miss = 0;
+    function tick() {
         try {
-            if (!isPluginPage()) return;
-            var heads = document.querySelectorAll('header');
-            var out = { vw: window.innerWidth, stat: stat, heads: [] };
-            for (var i = 0; i < heads.length && i < 3; i++) {
-                var h = heads[i];
-                if (h.getBoundingClientRect().width < window.innerWidth * 0.5) continue;
-                var cs = getComputedStyle(h);
-                var item = {
-                    w: Math.round(h.getBoundingClientRect().width),
-                    left: Math.round(h.getBoundingClientRect().left),
-                    padL: cs.paddingLeft,
-                    kids: []
-                };
-                for (var k = 0; k < h.children.length && k < 4; k++) {
-                    var c = h.children[k], cr = c.getBoundingClientRect();
-                    item.kids.push(c.tagName + ':' + Math.round(cr.width) + '@' + Math.round(cr.left));
-                }
-                out.heads.push(item);
-            }
-            console.log('[MP-ALIGN7] ' + JSON.stringify(out));
+            if (isPluginPage()) {
+                var h = document.querySelector('header[class*="_moreHead"]') || document.querySelector('header[data-mp-head]');
+                var h1 = h ? h.querySelector('h1') : null;
+                if (h1) {
+                    frames++;
+                    if (miss > 3) { sawFirst = false; lastLeft = null; }
+                    miss = 0;
+                    var l = Math.round(h1.getBoundingClientRect().left);
+                    if (!sawFirst) {
+                        sawFirst = true; lastLeft = l;
+                        console.log('[MP-MOTION] first left=' + l + ' padL=' + getComputedStyle(h).paddingLeft + ' frame=' + frames);
+                    } else if (Math.abs(l - lastLeft) >= 1) {
+                        console.log('[MP-MOTION] changed left=' + l + ' from=' + lastLeft + ' frame=' + frames);
+                        lastLeft = l;
+                    }
+                } else { miss++; }
+            } else { miss++; }
         } catch (e) {}
+        requestAnimationFrame(tick);
     }
-
-    setTimeout(fix, 1200);
-    setInterval(fix, 1200);
-    setTimeout(probe, 3000);
-    setInterval(probe, 9000);
+    requestAnimationFrame(tick);
 })();

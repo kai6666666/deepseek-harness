@@ -157,8 +157,63 @@ header 且 宽 ≥ 50% 视口 且 文本含「插件」 → setProperty('padding
 
 ### 3.4 幂等纪律
 
-每次改动都打标记（`data-mp-root` / `data-mp-pad` / `data-mp-fix`），并在 `setInterval` 里先查标记，
+每次改动都打标记（`data-mp-root` / `data-mp-pad` / `data-mp-head`），并在定时器里先查标记，
 否则每 1.2s 加一次 padding，越跑越窄。
+
+### 3.5 「标题向左瞬移」——补丁时机（1.1.0-234 → 237）
+
+**现象**：从插件页进入「实验性插件」页时，标题会**极快地向左跳一下**。
+
+**原因**：补丁是用 JS 定时器打的（`setTimeout(fix, 1200)`），
+官方先用 `padding-left:52px` 画了第一帧，1.2 秒后才被改成 0 → 标题瞬移。
+
+**试过但不行的方案**
+
+| 方案 | 探针结果 | 结论 |
+|---|---|---|
+| CSS `header[class*="_moreHead"]{padding-left:0}` | `css:"on"` 但 `padL:"52px"` | **属性选择器不命中渲染**，CSS 这条路走不通 |
+| `section:has(> header[class*="_moreHead"])` | `secPadL:"0px"` | 同上（且依赖 `:has()`） |
+
+⇒ **DSH 的 CSS Modules 场景下，别指望用属性选择器覆盖官方规则；inline style 一定生效。**
+
+**正确做法：MutationObserver + requestAnimationFrame**
+
+```js
+new MutationObserver(schedule).observe(document.documentElement, { childList: true, subtree: true });
+
+var queued = false;
+function schedule() {
+  if (queued) return;
+  queued = true;
+  requestAnimationFrame(function () { queued = false; patch(); });
+}
+```
+
+- `MutationObserver` 回调在微任务里，早于下一帧 paint
+- 包一层 `rAF` 合并同帧多次变更，且 **rAF 回调在 paint 之前**执行
+- ⇒ 样式在**第一次绘制前**就已是 `padding-left:0`，用户看不到位移
+
+**验收证据（逐帧采样 `H1.left`，写 `files/logs/web.log`）**
+
+```text
+[MP-MOTION] first left=32 padL=0px frame=1      ← 第 1 帧 padL 就是 0
+[MP-MOTION] changed left=104 from=32 frame=268
+[MP-MOTION] changed left=52 from=104 frame=269
+```
+
+`padL=0 from frame=1` ⇒ **补丁零延迟**。后续 `left` 数值波动是**官方页面转场时整体平移**
+（整个 `header` 的 `left` 一起变），不是内部布局跳动。
+
+采样的判读要点：**先看 `padL`，再看 `left`**。只看 `left` 会把转场动画误判成布局 bug。
+
+**采样器本身的两个坑**
+
+1. 不要用「总帧数上限」控制生命周期（`frames > 3000` ≈ 50 秒）。
+   UI 子代理导航可能要 1 分多钟，等进到页面时采样器已经停了 —— 235 就是这样一条数据都没采到。
+   ⇒ **只在目标页计帧**。
+2. 页面重建后要重置「首帧」状态：连续 `miss > 3` 帧找不到标题 ⇒ `sawFirst = false`，
+   这样才能对**每一次进入页面**都记录一条 `first`。
+
 
 ---
 
