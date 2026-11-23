@@ -705,4 +705,55 @@ ctx.effect(() => {
 	}, 3000);
 	return () => clearTimeout(timer);
 });
+
+// ── 内置插件清单：去抖 + 快照缓存 ────────────────────────────────
+//
+// `pluginInventory.list()`（@deepseek-ai/dsh-host-plugin-inventory）每次调用都
+// 重读 Loader 的全部 fiber，而且对 **failed 的 fiber** 会 `await fiber.await()`
+// 去取失败原因 —— 一个插件卡在加载/失败，整张清单就被它一个人拖着。
+// 设置页是卸载式切 tab，每次回来都重新 `list()` 一遍，于是「内置插件」页
+// 每次挂载都要重扫一次。
+//
+// 这里在**宿主侧**把它包一层（不动官方代码、不改它的文件）：
+//   · 30 s TTL：同一次浏览里反复切 tab 直接返回上次结果
+//   · 并发去重：多个分节同时挂载只算一次
+//   · 8 s 硬上限：真卡住时先给上次结果，不让页面无限转圈
+// Cordis 的 ctx.inject 签名与预期不符（实测回调不触发），改用官方同款取法：
+// ctx.get(name) —— 与 readPluginInventory 里取 pluginPackages / agentPresets 一致。
+const installInventoryCache = (svc) => {
+if (!svc || typeof svc.list !== 'function' || svc.list.__dshCached) return false;
+const orig = svc.list.bind(svc);
+let cache = null;
+let at = 0;
+let inflight = null;
+const TTL = 30000;
+const HARD = 8000;
+const wrapped = async (...args) => {
+if (cache && Date.now() - at < TTL) return cache;
+if (inflight) return inflight;
+inflight = Promise.race([
+orig(...args),
+new Promise((resolve) => { setTimeout(() => resolve(null), HARD); }),
+])
+.then((snap) => {
+if (snap) { cache = snap; at = Date.now(); }
+return snap ?? cache;
+})
+.finally(() => { inflight = null; });
+return inflight;
+};
+wrapped.__dshCached = true;
+svc.list = wrapped;
+console.warn('[dsh-android-mobile] 已为 pluginInventory.list 挂上 30s 快照缓存');
+return true;
+};
+if (!installInventoryCache(ctx.get('pluginInventory'))) {
+// 服务还没注册好：短间隔重试，最多 60 s（只尝试，失败无声）
+const timer = setInterval(() => {
+try {
+if (installInventoryCache(ctx.get('pluginInventory'))) clearInterval(timer);
+} catch { clearInterval(timer); }
+}, 500);
+setTimeout(() => clearInterval(timer), 60000);
+}
 }

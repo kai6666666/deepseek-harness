@@ -3025,6 +3025,20 @@ class EngineManager private constructor(private val context: Context) {
                 - insert:
                     - id: $MARKET_PACKAGE
                       name: '$url'
+                # 插件市场的**网络行为**：默认 fetchTimeoutMs 15 s、cacheTtlMs 10 min。
+                # 这台机器的两个索引（dshopen.org / jsdelivr）在内网环境下一个都抓不动，
+                # 于是「插件市场」页每次进都要干等 15 s×N 才回落离线目录。
+                # 这里把单次抓取压到 3 s（够慢网跑完一个 index.json），缓存拉长到 1 h。
+                # ⚠️ `config:` 是**整段替换**，所以 indexes 必须原样重写一遍（与
+                #    profiles/web/cordis.patch.yml 里的一致）；官方改了索引要同步这里。
+                - id: plugin-market
+                  name: "@deepseek-ai/dsh-plugin-market"
+                  config:
+                    indexes:
+                      - https://dshopen.org/index.json
+                      - https://cdn.jsdelivr.net/npm/dsh-plugin-catalog/index.json
+                    fetchTimeoutMs: 3000
+                    cacheTtlMs: 3600000
                 """.trimIndent() + "\n"
             )
             patch

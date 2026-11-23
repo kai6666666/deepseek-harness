@@ -8,6 +8,24 @@
 - 设备侧清理：删除演练备份 `dsh-backup-drill.zip` 与 13 个历史 APK（约 2.4 GB）。
 
 **不发新版**：本批只有文档与文件清理。
+## [0.2.2-rc.5-debug.28] — 2026-11-23
+vc=113
+
+### 性能（设置页四处加载慢）
+- **「关于」后置**：`settings.section` 的 `order` 29 → 201，排在「多模态配置」(order 200) 之后。
+- **「开发环境」不再空等 13 秒**：`/api/dsh-android/devenv` 加 60 s 状态缓存 + 并发去重 + 写后失效；
+  插件挂载 3 s 后静默预热一次；前端加模块级快照（切走再回来先渲染快照，后台再刷新）。
+  真机实测：**13.9 s → 6 ms**（`x-dsh-force: 1` 强制重算 5.7 s）。
+- **「内置插件」不再每次重扫**：宿主半把 `pluginInventory.list()` 包一层
+  （30 s TTL + 并发去重 + 8 s 硬上限）。官方实现每次调用都重读全部 fiber，
+  且对 failed 的 fiber 会 `await fiber.await()` —— 一个插件卡住就拖死整张清单。
+- **「插件市场」不再干等 15 秒**：overlay 里给 `plugin-market` 加配置
+  `fetchTimeoutMs` 15 s → **3 s**、`cacheTtlMs` 10 min → **1 h**。
+  原先两个索引（dshopen.org / jsdelivr）抓不动时，每个都要干等满 15 s 才回落离线目录。
+
+### 说明
+- 移动端 UI 插件版本 `1.1.0-214`（走热更新通道，无需重装 APK 也能先拿到前端改动）。
+
 ## [0.2.2-rc.5-debug.27] — 2026-11-23
 vc=112
 
