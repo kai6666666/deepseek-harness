@@ -43,6 +43,19 @@ def chunk_hashes(path: Path):
             off += len(data)
     return out
 
+def runtime_meta(directory: Path):
+    """从同目录的 manifest.json 取 runtimeVersion / abi（App 靠它判断「是否需要升级」）。"""
+    mf = directory / 'manifest.json'
+    if not mf.is_file():
+        print(f'  ! 没找到 {mf}：清单里将没有 runtimeVersion', file=sys.stderr)
+        return {}
+    try:
+        m = json.loads(mf.read_text())
+    except Exception as e:  # noqa: BLE001 - 清单坏了就让下面显式缺字段
+        print(f'  ! {mf} 解析失败: {e}', file=sys.stderr)
+        return {}
+    return {'runtimeVersion': m.get('runtimeVersion'), 'abi': m.get('abi')}
+
 def build(directory: Path):
     entries = {}
     for p in sorted(directory.glob('rootfs*.tar.xz')):
@@ -53,13 +66,19 @@ def build(directory: Path):
             'chunks': chunk_hashes(p),
         }
         print(f'  {p.name}: {p.stat().st_size} B / {len(entries[p.name]["chunks"])} chunks', file=sys.stderr)
-    return {'chunkSize': CHUNK, 'files': entries}
+    return {'chunkSize': CHUNK, **runtime_meta(directory), 'files': entries}
 
-def cmd_manifest(directory: Path, out: Path):
+def cmd_manifest(directory: Path, out: Path, allow_missing_version=False):
     doc = build(directory)
+    if not doc.get('runtimeVersion') and not allow_missing_version:
+        # CI 里必须带版本：客户端靠它判断「要不要升级」，缺了整份清单就没意义。
+        print(f'::error::{directory}/manifest.json 里没有 runtimeVersion（要本地调试请加 --allow-missing-version）', file=sys.stderr)
+        return 1
+    out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(doc, ensure_ascii=False, indent=1) + '\n')
     total = sum(len(v['chunks']) for v in doc['files'].values())
-    print(f'{out}: {len(doc["files"])} files / {total} chunks')
+    print(f'{out}: {doc.get("runtimeVersion")} / {len(doc["files"])} files / {total} chunks')
+    return 0
 
 def cmd_diff(old_path: Path, new_path: Path):
     old = json.loads(old_path.read_text())
@@ -118,7 +137,9 @@ def main(argv):
         return 2
     cmd = argv[1]
     if cmd == 'manifest':
-        cmd_manifest(Path(argv[2]), Path(argv[3]) if len(argv) > 3 else Path('runtime-chunks.json'))
+        allow = '--allow-missing-version' in argv
+        rest = [a for a in argv if a != '--allow-missing-version']
+        return cmd_manifest(Path(rest[2]), Path(rest[3]) if len(rest) > 3 else Path('runtime-chunks.json'), allow)
     elif cmd == 'diff':
         cmd_diff(Path(argv[2]), Path(argv[3]))
     elif cmd == 'verify':

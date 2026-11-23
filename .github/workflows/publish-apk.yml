@@ -142,4 +142,12 @@ jobs:
           [ -n "$F" ] || { echo '::error::没拿到 plugins-mobile-ui artifact（该 run 可能是旧版 apk.yml）'; exit 1; }
           ls -l "$F"
           gh release upload "${{ inputs.tag }}" "$F" --clobber
+          # P3：runtime 分块清单一并挂上去（旧 run 没有这个文件时不算失败）
+          C=$(find plugins -name 'runtime-chunks.json' | head -1)
+          if [ -n "$C" ]; then
+            ls -l "$C"
+            gh release upload "${{ inputs.tag }}" "$C" --clobber
+          else
+            echo '::warning::该 run 没有 runtime-chunks.json（旧版 apk.yml），跳过'
+          fi
           gh release view "${{ inputs.tag }}" --json assets -q '.assets[] | "\(.name) \(.size)"'

@@ -282,12 +282,19 @@ jobs:
           cp app/src/main/assets/mobile-ui.zip "dist-plugins/plugins-mobile-ui-$V.zip"
           ls -l dist-plugins
           echo "PLUGIN_VER=$V" >> "$GITHUB_ENV"
-
+      - name: 生成 runtime 分块清单（P3）
+        # 与热包同目录；App 升级 runtime 时按它做文件级增量（只下变化的 64 KiB 块）。
+        # 清单自带 runtimeVersion，客户端用它判断「要不要升级」，所以必须和 assets 同源；
+        # 缺版本时脚本自己 exit 1（不在这里塞 heredoc：`run: |` 的缩进会污染 Python）。
+        run: |
+          set -e
+          python3 tools/runtime-chunks.py manifest app/src/main/assets/runtime dist-plugins/runtime-chunks.json
+          ls -l dist-plugins/runtime-chunks.json
       - name: 上传插件热更新资产
         uses: actions/upload-artifact@v4
         with:
           name: plugins-mobile-ui
-          path: dist-plugins/*.zip
+          path: dist-plugins/*
           if-no-files-found: error
           retention-days: 14
 

@@ -67,11 +67,20 @@ rootfs-part3-arm64-v8a.tar.xz:    完全相同 → 0 B
 5. 全部分片拼完 → `sha256` 终校 → 原子 `rename` 到 `files/runtime/rootfs`。
 6. 任一步失败 → 保留旧 runtime，删 staging（和现有 `ensureMobileUi` 的双源回退同一套纪律）。
 
-## CI 侧要产出的东西
+## CI（已落地，2026-11-23 / P3）
 
-- `runtime.yml` 构建完直接在 artifact 里多打一个 `runtime-chunks.json`（`manifest` 子命令）。
-- `publish-apk.yml` 的 `publish-plugins` job 顺手把它当 Release 资产传上去（和 `plugins-mobile-ui-*.zip` 同一处）。
-- 旧版本 App 完全不认识这个资产 ⇒ 向后兼容，没有迁移成本。
+| 位置 | 做了什么 |
+|---|---|
+| `apk.yml` 「生成 runtime 分块清单（P3）」 | `python3 tools/runtime-chunks.py manifest app/src/main/assets/runtime dist-plugins/runtime-chunks.json` |
+| `apk.yml` artifact `plugins-mobile-ui` | `path` 从 `dist-plugins/*.zip` 改成 `dist-plugins/*`（zip 与 json 一起进 artifact） |
+| `publish-apk.yml` job `publish-plugins` | 把 `runtime-chunks.json` 一并 `gh release upload`；**旧 run 没有该文件时只 warning**，不让发布失败 |
+
+Release 上的资产名固定 `runtime-chunks.json`；客户端按里层 `runtimeVersion` 判断要不要升级。
+
+两层把关：
+
+1. `runtime-chunks.py manifest` 在目录里找不到 `manifest.json`（拿不到 `runtimeVersion`）时**直接 exit 1**，CI 当场红 —— 缺版本的清单对客户端毫无意义。本地调试用 `--allow-missing-version`。
+2. 不要去 `run: |` 里塞 heredoc 做校验：YAML block 的基线缩进会被原样喂给 Python，`<<'CHK'` 不会剥缩进，必然 `IndentationError`（这次真踩了）。把校验放进脚本本身。
 
 ## 别忘了
 
