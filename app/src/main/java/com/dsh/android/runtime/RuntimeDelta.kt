@@ -83,8 +83,10 @@ object RuntimeDelta {
         try {
             val local = localManifest(filesDir)
             fromVersion = local
-            val rel = latestRuntimeRelease() ?: throw IllegalStateException("没找到带 $CHUNKS_NAME 的 Release")
-            val chunksText = httpGet(rel.chunksUrl) ?: throw IllegalStateException("下载分块清单失败")
+            val rel = latestRuntimeRelease()
+                ?: throw IllegalStateException(lastReleaseError ?: "没找到带 $CHUNKS_NAME 的 Release")
+            val chunksText = rel.chunksText ?: httpGet(rel.chunksUrl)
+                ?: throw IllegalStateException("下载分块清单失败：${rel.chunksUrl}")
             val doc = JSONObject(chunksText)
             val remoteVer = doc.optString("runtimeVersion")
             if (remoteVer.isEmpty()) throw IllegalStateException("分块清单缺 runtimeVersion")
@@ -150,6 +152,7 @@ object RuntimeDelta {
             total += bytes
             val chunks = fo.optJSONArray("chunks") ?: JSONArray()
             val url = rel.assets[n] ?: rel.assets[n.substringAfterLast('/')]
+                ?: rel.baseUrl?.let { it + n }
                 ?: throw IllegalStateException("Release 里没有分片 $n（旧版发布缺资产）")
             // 本地旧分片：优先 parts/<本地ver>/，其次 runtime/ 根下的同名文件
             val base = localBase(filesDir, n)
@@ -180,8 +183,10 @@ object RuntimeDelta {
     private fun runApply(filesDir: File) {
         try {
             val local = localManifest(filesDir)
-            val rel = latestRuntimeRelease() ?: throw IllegalStateException("没找到带 $CHUNKS_NAME 的 Release")
-            val doc = JSONObject(httpGet(rel.chunksUrl) ?: throw IllegalStateException("下载分块清单失败"))
+            val rel = latestRuntimeRelease()
+                ?: throw IllegalStateException(lastReleaseError ?: "没找到带 $CHUNKS_NAME 的 Release")
+            val doc = JSONObject(rel.chunksText ?: httpGet(rel.chunksUrl)
+                ?: throw IllegalStateException("下载分块清单失败：${rel.chunksUrl}"))
             val plan = planDelta(doc, rel, filesDir)
             if (plan.version.isEmpty()) throw IllegalStateException("清单缺 runtimeVersion")
             if (local == plan.version) {
@@ -271,61 +276,67 @@ object RuntimeDelta {
         }
     }
 
-    // ── 给 RootfsInstaller 的接口（增量 ↔ 安装的接缝）─────────────
-
-    /** 某个版本的某个分片文件（增量产物）；没有则 null。 */
-    fun partFile(filesDir: File, version: String, asset: String): File? {
-        if (version.isEmpty()) return null
-        val f = File(filesDir, "runtime/parts/" + version + "/" + asset)
-        return if (f.isFile && f.length() > 0L) f else null
-    }
-
-    /**
-     * parts 目录里「最新一版」的 manifest.json。
-     *
-     * [RootfsInstaller][com.dsh.android.runtime.RootfsInstaller] 启动时优先用它 ——
-     * 否则用户点完「检查更新 → 应用」下载到 `runtime/parts/<new>/` 也不会被采用
-     * （assets 里的 manifest.json 还是 APK 自带的旧版本）。
-     */
-    fun bestPartsManifest(filesDir: File): File? {
-        val dir = File(filesDir, "runtime/parts")
-        val files = dir.listFiles { f -> f.isDirectory && !f.name.startsWith(".") }
-            ?.mapNotNull { File(it, "manifest.json").takeIf { m -> m.isFile } }
-            ?: return null
-        return files.maxByOrNull { it.lastModified() }
-    }
-
     // ── 工具 ────────────────────────────────────────────────
     private class RuntimeRelease(
         val tag: String,
         val chunksUrl: String,
         val manifestUrl: String?,
         val assets: Map<String, String>,
+        /** 资产下载前缀（Atom 模式按固定前缀拼 URL）；API 模式为 null */
+        val baseUrl: String? = null,
+        /** 已下载的清单文本（Atom 探测时已取回，避免二次下载） */
+        val chunksText: String? = null,
     )
 
-    /** 在最近的 Release 里找 `runtime-chunks.json`（手动发布的最新一版）。 */
+    /** 最近一次取 Release 失败的真实原因（避免把 403 误报成「没找到」）。 */
+    private var lastReleaseError: String? = null
+
+    /** 在最近的 Release 里找 `runtime-chunks.json`（手动发布的最新一版）。
+     *
+     * **不调 GitHub API**：匿名 REST 配额只有 60 次/小时/出口 IP（全网共享），
+     * 打空时 Releases 列表返回 403，旧实现会把它误报成「没找到这样的 Release」。
+     * 现在改走 `releases.atom`（无认证、不严格限流）取 tag，再按固定前缀拼资产 URL：
+     *
+     * ```
+     * https://github.com/<repo>/releases/download/<TAG>/runtime-chunks.json
+     * https://github.com/<repo>/releases/download/<TAG>/manifest.json
+     * https://github.com/<repo>/releases/download/<TAG>/<分片名>   ← 分片名来自清单 files.keys
+     * ```
+     *
+     * 取前 5 个 tag 逐个探测（可跳过只挂了 APK 的版本），首个成功即返回。
+     */
     private fun latestRuntimeRelease(): RuntimeRelease? {
-        val body = httpGet("https://api.github.com/repos/$REPO/releases?per_page=10") ?: return null
-        val arr = JSONArray(body)
-        for (i in 0 until arr.length()) {
-            val rel = arr.optJSONObject(i) ?: continue
-            val assets = rel.optJSONArray("assets") ?: continue
-            var chunks: String? = null
-            val map = LinkedHashMap<String, String>()
-            var manifest: String? = null
-            for (j in 0 until assets.length()) {
-                val a = assets.optJSONObject(j) ?: continue
-                val n = a.optString("name")
-                val u = a.optString("browser_download_url")
-                if (n == CHUNKS_NAME) { chunks = u; continue }
-                if (n == "manifest.json") { manifest = u; continue }
-                if (n.endsWith(".tar.xz")) map[n] = u
+        lastReleaseError = null
+        try {
+            val atom = httpGet("https://github.com/$REPO/releases.atom")
+                ?: throw IllegalStateException("读取 releases.atom 失败（网络不通或被拦截）")
+            val tags = Regex("""/releases/tag/([^"<\s]+)""").findAll(atom)
+                .map { it.groupValues[1] }
+                .distinct()
+                .take(5)
+                .toList()
+            if (tags.isEmpty()) throw IllegalStateException("releases.atom 里没有 release tag")
+            for (tag in tags) {
+                val base = "https://github.com/$REPO/releases/download/$tag/"
+                val txt = httpGet(base + CHUNKS_NAME)
+                if (txt == null || !txt.contains("\"runtimeVersion\"")) {
+                    lastReleaseError = "tag $tag 下没有可用的 $CHUNKS_NAME"
+                    continue
+                }
+                return RuntimeRelease(
+                    tag = tag,
+                    chunksUrl = base + CHUNKS_NAME,
+                    manifestUrl = base + "manifest.json",
+                    assets = emptyMap(),
+                    baseUrl = base,
+                    chunksText = txt,
+                )
             }
-            if (chunks != null) {
-                return RuntimeRelease(rel.optString("tag_name"), chunks, manifest, map)
-            }
+            return null
+        } catch (t: Throwable) {
+            lastReleaseError = t.message ?: t.toString()
+            return null
         }
-        return null
     }
 
     private fun localManifest(filesDir: File): String? = runCatching {
@@ -382,7 +393,7 @@ object RuntimeDelta {
         c.connectTimeout = 15000
         c.readTimeout = 20000
         c.setRequestProperty("User-Agent", "dsh-android")
-        c.setRequestProperty("Accept", "application/vnd.github+json")
+        c.setRequestProperty("Accept", "*/*")
         try {
             if (c.responseCode !in 200..299) return@runCatching null
             c.inputStream.bufferedReader().use { it.readText() }
