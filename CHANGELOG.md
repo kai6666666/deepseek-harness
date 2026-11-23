@@ -8,6 +8,32 @@
 - 设备侧清理：删除演练备份 `dsh-backup-drill.zip` 与 13 个历史 APK（约 2.4 GB）。
 
 **不发新版**：本批只有文档与文件清理。
+## [0.2.2-rc.5-debug.33] — 2026-11-24
+vc=118
+### 运行时：插件详细介绍真正带进 runtime
+上一版修掉了一条规则，但 `*.md` 那条还在删 `docs/DETAIL.md`，实测 `debug.32` 的 rootfs：
+**16 个包有 `docs/` 目录，`detail_md=0`，只剩 `preview.svg`** ⇒ 详情页依旧报无效。
+本版把两条规则都修齐：
+
+```bash
+# ① 文件规则：豁免 README 与 docs/ 下的所有 md
+find "$ROOTFS/opt/dsh/node_modules" -type f \( -name '*.map' -o -name '*.md' -o -name '*.markdown' \) \
+  ! -name 'README.md' ! -name 'readme.md' ! -path '*/docs/*' -delete
+# ② 目录规则：只删 test/tests/__tests__/example/examples（docs 已不在列表里）
+```
+
+⇒ 本版构建出的 runtime **自带 `docs/DETAIL.md` / `DETAIL.zh.md` / `preview.svg`**，
+重装 APK 或重建 rootfs 都不会再丢，不必手工补。
+### 文档
+- 新增 `docs/agents/plugin-data-repair.md`：升级 / 重建 runtime 后两类数据失效的排查与修复——
+  ① `docs/*.md` 被删 ⇒ 详情页「详细介绍文件无效」（含设备侧判定与应急补命令、
+  哪些包本来就没有 `docs/`）；
+  ② profile 里第三方插件变成 PRoot `.l2s` 死链 ⇒ 「未运行 / 包不可用」
+  （判定：`ls -la` 全是软链 + `cat package.json` 为空；修法：从 npm 镜像拉 tgz 重装真实文件；
+  验证：`engine.log` 能看到 `已注册 …工具`）。
+- 文末附通用排查三条：文件在不在 → 是不是死链 → `engine.log` 认没认，
+  以及 `app.log` / `web.log` / `engine.log` 三个日志的分工。
+
 ## [0.2.2-rc.5-debug.32] — 2026-11-24
 vc=117
 ### 移动端 UI 插件 1.1.0-237
