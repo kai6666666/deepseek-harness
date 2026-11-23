@@ -4204,15 +4204,18 @@ timer = setTimeout(function () { t.style.display = 'none'; }, 5200);
 var TIP_TEXT = '开启后 Agent 会并行派出子智能体协同处理任务，\n并在右侧展开团队面板；关闭则收起。';
 document.addEventListener('click', function (ev) {
 try {
-var n = ev.target;
-while (n && n !== document.body && n.tagName !== 'BUTTON') n = n.parentElement;
-if (!n || n === document.body) return;
-var al = (n.getAttribute('aria-label') || '') + (n.getAttribute('title') || '');
-if (!/信息|说明|info|details|more information/i.test(al)) return;
-var row = n.parentElement;
-var txt = row ? (row.textContent || '') : '';
-if (!/智能体团队|团队协作|team/i.test(txt)) return;
-show(TIP_TEXT);
+var n = ev.target, hops = 0;
+while (n && n !== document.body && hops < 4) {
+var rect = n.getBoundingClientRect ? n.getBoundingClientRect() : null;
+var small = rect && rect.width > 0 && rect.width <= 48 && rect.height <= 48;
+if (small) {
+var box = n.parentElement;
+for (var up = 0; box && up < 3; up++, box = box.parentElement) {
+if (/智能体团队|团队协作/.test(box.textContent || '')) { show(TIP_TEXT); return; }
+}
+}
+n = n.parentElement; hops++;
+}
 } catch (e) {}
 }, true);
 })();

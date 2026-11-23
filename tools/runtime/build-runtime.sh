@@ -400,7 +400,10 @@ if [ "${DSH_RT_PRUNE:-1}" = "1" ] && [ -d "$ROOTFS/opt/dsh/node_modules" ]; then
 # 只是双语区块哈希的旁签、没有正文，补救不了。体积代价约 1~2 MB。
 find "$ROOTFS/opt/dsh/node_modules" -type f \( -name '*.map' -o -name '*.md' -o -name '*.markdown' \) \
   ! -name 'README.md' ! -name 'readme.md' -delete
-  find "$ROOTFS/opt/dsh/node_modules" -type d \( -name test -o -name tests -o -name __tests__ -o -name docs -o -name example -o -name examples \) \
+  # ⚠️ **必须保留 docs/ 目录**：插件的详细介纠在 docs/DETAIL.md（中文 DETAIL.zh.md）
+# + preview.svg，dsh-plugin-detail 就是按这个约定读的；删了 docs 就报
+# 「插件声明的详细介绍文件无效」（2026-11-23 实测）。
+find "$ROOTFS/opt/dsh/node_modules" -type d \( -name test -o -name tests -o -name __tests__ -o -name example -o -name examples \) \
     -prune -exec rm -rf {} + 2>/dev/null || true
 fi
 
