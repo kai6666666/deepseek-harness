@@ -106,7 +106,8 @@ internal object RuntimeFiles {
     /**
      * 删除 bionic 时代遗留（P3 起是**删除**，不再归档）。
      *
-     * 精确 allowlist：只动下面这些名字；`home/`（会话与凭据）与 `workspace/` 绝不触碰。
+     * 精确 allowlist：只动下面这些名字；`home/`（会话与凭据）、`workspace/`、`termux/home/`
+     * （用户自定义环境）绝不触碰。
      * 为什么不搬到 `runtime/legacy-bionic`：归档会让每个升级装机永久多背一份几百 MB
      * 的旧运行时，而它从 P1 之后已经没有任何读取方（`proot-libs` 同理）。
      */
@@ -114,13 +115,24 @@ internal object RuntimeFiles {
         val base = filesDir.canonicalFile
         require(base == filesDir.absoluteFile.canonicalFile)
         val removed = ArrayList<String>()
-        for (relative in listOf("engine", "usr", "termux", "proot-libs", "runtime/legacy-bionic")) {
+        for (relative in listOf("engine", "usr", "proot-libs", "runtime/legacy-bionic")) {
             val source = File(base, relative)
             // 父目录若是符号链接，删除会越出 filesDir。
             if (source.parentFile.canonicalFile != source.parentFile.absoluteFile) continue
             if (!Files.exists(source.toPath(), NOFOLLOW_LINKS)) continue
             deleteTree(source)
             removed += relative
+        }
+        // `termux` 下只有 `termux/usr` 是 bionic 时代的遗留运行时；
+        // `termux/home` 是用户数据（自定义环境、脚本），**必须留下**。
+        // 之前整删 `termux` 会连用户数据一起删 —— RuntimeS6Test 就是拿这个当回归门。
+        // 返回值仍报 "termux"（对外语义：清掉了 termux 下的遗留运行时）。
+        val termuxUsr = File(base, "termux/usr")
+        if (termuxUsr.parentFile.canonicalFile == termuxUsr.parentFile.absoluteFile &&
+            Files.exists(termuxUsr.toPath(), NOFOLLOW_LINKS)
+        ) {
+            deleteTree(termuxUsr)
+            removed += "termux"
         }
         return removed
     }
