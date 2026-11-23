@@ -12,16 +12,16 @@
 #   3. 引擎版本：tools/verify-engine-upgrade.sh 的断言 = 各构建脚本的默认值
 set -u
 
-GRADLE=app/build.gradle.kts
+APP_FILE=tools/app-version.txt
 CHANGELOG=CHANGELOG.md
 FAIL=0
 
 die() { echo "version.sh: $*" >&2; exit 2; }
-[ -f "$GRADLE" ] || die "找不到 $GRADLE（请在仓库根目录运行）"
+[ -f "$APP_FILE" ] || die "找不到 $APP_FILE（请在仓库根目录运行）"
 
-# ---- 1. 从 build.gradle.kts 取 versionName / versionCode ----
-APP_VER=$(grep -E '^[[:space:]]*versionName[[:space:]]*=' "$GRADLE" | head -1 | sed -e 's/.*=[[:space:]]*"//' -e 's/".*//')
-APP_VC=$(grep -E '^[[:space:]]*versionCode[[:space:]]*=' "$GRADLE" | head -1 | sed -e 's/[^0-9]//g')
+# ---- 1. 从 tools/app-version.txt 取 versionName / versionCode ----
+APP_VER=$(grep -E '^versionName=' "$APP_FILE" | head -1 | cut -d= -f2 | tr -d ' \r\n')
+APP_VC=$(grep -E '^versionCode=' "$APP_FILE" | head -1 | cut -d= -f2 | tr -d ' \r\n')
 [ -n "$APP_VER" ] || die "解析不出 versionName"
 
 # 0.4.1-debug → 0.4.1（去掉 -debug / -gecko 之类后缀）
