@@ -8,6 +8,15 @@
 - 设备侧清理：删除演练备份 `dsh-backup-drill.zip` 与 13 个历史 APK（约 2.4 GB）。
 
 **不发新版**：本批只有文档与文件清理。
+## [0.2.2-rc.5-debug.26] — 2026-11-23
+vc=111
+
+### 修复
+- **设置页崩在 `settings.section`**：`slot entry crashed … TypeError: template.replace is not a function`。
+  原因：「关于」分节用了框架的 `props.t`，而它只支持**字符串模板**；本字典里有
+  `(v) => ...` 这类函数值，于是调用时对函数做 `replace` 报错。
+  现改为像开发环境分节一样**自己实现 t**（`useMemo` + 自带中英文字典）。
+
 ## [0.2.2-rc.5-debug.25] — 2026-11-23
 vc=110
 

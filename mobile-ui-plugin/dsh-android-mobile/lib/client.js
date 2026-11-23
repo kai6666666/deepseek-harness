@@ -4164,13 +4164,18 @@ back: { display: "flex", alignItems: "center", gap: "8px", border: "none", backg
 };
 
 /** 「关于」页组件：主页（hero + 三组卡片）/ 更新历史子页 / 检查更新弹窗。 */
-function mpAboutSection(props) {
-const t = typeof props.t === "function"
-? props.t
-: (k, a) => (typeof MP_ABOUT_ZH[k] === "function" ? MP_ABOUT_ZH[k](a) : (MP_ABOUT_ZH[k] === undefined ? k : MP_ABOUT_ZH[k]));
+function mpAboutSection() {
+// ⚠️ 不能用 props.t：框架的 t 只支持字符串模板，碰到函数值会抛 template.replace is not a function
+//（vc110 真机：进设置页就崩在 settings.section）。字典里有 (v) => ... 这类函数值，
+//必须像开发环境分节那样自己实现 t。
 const R = mpPrivReact;
 const e = R.createElement;
 const { useState, useEffect, useRef } = R;
+const t = R.useMemo(() => {
+const en = (typeof document !== "undefined" && document.documentElement.lang || "").toLowerCase().startsWith("en");
+const dict = en ? MP_ABOUT_EN : MP_ABOUT_ZH;
+return (k, ...a) => (typeof dict[k] === "function" ? dict[k](...a) : (dict[k] === undefined ? k : dict[k]));
+}, []);
 const bridge = typeof window !== "undefined" ? window.DSHAndroid : null;
 const [info, setInfo] = useState({});
 const [view, setView] = useState("main");
