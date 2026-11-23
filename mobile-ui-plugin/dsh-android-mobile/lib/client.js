@@ -4180,9 +4180,11 @@ card: { background: "rgba(255,255,255,.035)" },
 logo: { background: "rgba(255,255,255,.09)" },
 icon: { background: "rgba(255,255,255,.07)" },
 dialog: { background: "#26262a" },
+dlgIcon: { background: "rgba(94,160,220,.20)", color: "#7fb3e0" },
 dlgTitle: { color: "#f0f0f0" },
 dlgBody: { color: "#b6b6b6" },
 dlgQuiet: { color: "#9a9a9a" },
+relCard: { background: "rgba(255,255,255,.03)" },
 };
 /** 当前是否深色（DSH 在 body 上打 data-ds-dark-theme）。 */
 const mpAboutIsDark = () => { try { return document.body.hasAttribute("data-ds-dark-theme"); } catch (e) { return false; } };
@@ -4368,7 +4370,7 @@ style: MP_ABOUT_S.mask,
 onClick: (ev) => { if (ev.target === ev.currentTarget) setDlg(null); },
 },
 e("div", { style: mpDs(MP_ABOUT_S.dialog, "dialog") },
-e("div", { style: MP_ABOUT_S.dlgIcon }, dlg.kind === "checking" || dlg.kind === "applying" ? "⟳" : (dlg.kind === "update" ? "↑" : "✓")),
+e("div", { style: mpDs(MP_ABOUT_S.dlgIcon, "dlgIcon") }, dlg.kind === "checking" || dlg.kind === "applying" ? "⟳" : (dlg.kind === "update" ? "↑" : "✓")),
 e("div", { style: mpDs(MP_ABOUT_S.dlgTitle, "dlgTitle") },
 dlg.kind === "checking" ? t("checking") : (dlg.kind === "applying" ? t("applying") : dlg.title)),
 dlg.body ? e("div", { style: mpDs(MP_ABOUT_S.dlgBody, "dlgBody") }, dlg.body) : null,
@@ -4419,7 +4421,7 @@ e("span", {}, "‹"), e("span", {}, t("history"))),
 const notes = x.notes || "";
 const lines = notes.split("\n");
 const isOpen = !!open[x.tag];
-return e("div", { key: x.tag, style: MP_ABOUT_S.relCard },
+return e("div", { key: x.tag, style: mpDs(MP_ABOUT_S.relCard, "relCard") },
 e("div", { style: MP_ABOUT_S.relHead },
 e("span", { style: { ...MP_ABOUT_S.badge, ...(i === 0 ? MP_ABOUT_S.badgeOn : MP_ABOUT_S.badgeOff) } }, (i === 0 ? "★ " : "# ") + x.tag),
 i === 0 ? e("span", { style: MP_ABOUT_S.latest }, t("latest")) : null,

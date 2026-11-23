@@ -277,3 +277,37 @@ MutationObserver 保留作兜底 + 摘 `autocomplete="new-password"`。
 ### 版本戳（补充）
 
 改 `mobile-ui-plugin/**` 后**必须** bump `tools/mobile-ui-version.txt`（热包通道与内置 assets 都靠它判新旧）；`EngineManager.MOBILE_UI_VERSION` 只在没有热包时才用。
+
+## DSH 设计 token 白名单（写死颜色前先核一遍）
+
+2026-11-23 踩的坑：「关于」页弹窗在深色下**白底 + 浅字，几乎看不见**。
+
+真因不是主题没切，而是我用了**不存在的 token**：
+
+```text
+我写的        --dsw-alias-bg-elevated / --dsw-alias-bg-subtle   ← DSH 里没有
+dialog 的 fallback  #fff  → var() 整条声明作废 → 背景回退成纯白
+标题 color 走 inherit      → 深色下继承到浅色字 ⇒ 白底浅字
+```
+
+从 `dsh-web-frontend/dist/assets/index-*.css` 抄出来的真实名字：
+
+| 类别 | 真实 token |
+|---|---|
+| 背景 | `bg-base`、`bg-layer-1` / `-2` / `-3` / `-4`、`bg-mask-1`、`bg-module-platform`、`bg-skeleton` |
+| 文字 | `label-primary`、`label-secondary`、`label-tertiary`、`label-caption`、`label-dimmed`、`label-error`、`label-shimmer`、`label-primary-foreground` |
+| 边框 | `border-l1` / `-l2` / `-l3` / `-l4`、`border-l2-darkmode-thin` |
+
+### 两条纪律
+
+1. **fallback 必须“和主题一致”**。卡片写的是 `var(--dsw-alias-bg-elevated, transparent)` —— 变量不存在时变透明，透出深色页面，**误打误撞对了**；弹窗写 `#fff` 就直接翻车。变量可能不存在时，宁可透明也别写死浅色。
+2. **关键浮层再叠一层显式兜底**。`MP_ABOUT_DARK` + `mpDs(base, key)`（每次调用读 `body[data-ds-dark-theme]`，主题切完立刻生效，别缓存进 state）。token 正常时 token 赢，token 没了还有正确深浅。
+
+真机像素验收（`debug.31` + `mobile-ui 1.1.0-219`）：
+
+```text
+深色·正在检查  弹窗底 (38,38,42) #26262a   标题 (240,240,240)
+深色·检查完成  弹窗底 (51,51,53) #333335（DSH 自己 layer-2 的深色值 ⇒ token 真的生效了）
+浅色·检查完成  弹窗底 (255,255,255)         正文 (15,17,21)
+三组采样里没有一次「白底 + 浅字」
+```
