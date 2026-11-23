@@ -465,6 +465,50 @@ resolve(null);
 });
 }
 
+/**
+ * 状态缓存 + 并发去重。
+ *
+ * `devEnvStatus()` 每次都要 spawn 一次 `dsh-env.mjs status --json`，里面会
+ * `du -sk /usr` 扫整个 rootfs —— 真机实测 **10.8~13.9 s**。设置页每挂载一次
+ * 就来一发，切走再回来又是十几秒，而且 du 占满 IO 会连带拖慢同期打开的其它分节。
+ *
+ * 策略：
+ *   · 空闲 TTL 60 s；任务运行中 TTL 2 s（进度要新鲜）
+ *   · 同一时刻只跑一个，后来者共享同一个 Promise
+ *   · `?force=1` 绕过；安装/卸载动作后主动失效
+ */
+let devEnvCache = { at: 0, data: null };
+let devEnvInflight = null;
+const DEV_ENV_TTL_IDLE = 60000;
+const DEV_ENV_TTL_RUNNING = 2000;
+/**
+ * 是否强制重算。
+ *
+ * ⚠️ 实测 `kind: 'exact'` 的 handler 里 `req.url` 已被剥掉 query
+ * （`/devenv?force=1` 匹配成功但拿到的 url 是 `/devenv`），所以
+ * **header 是主通道**，query 只作兜底。
+ */
+function devEnvWantForce(req) {
+	if (String(req?.headers?.['x-dsh-force'] || '') === '1') return true;
+	return /[?&]force=1/.test(String(req?.url || ''));
+}
+
+async function devEnvStatusCached(force) {
+	if (!force && devEnvCache.data) {
+		const job = await devEnvJob();
+		const ttl = job && job.running ? DEV_ENV_TTL_RUNNING : DEV_ENV_TTL_IDLE;
+		if (Date.now() - devEnvCache.at < ttl) return devEnvCache.data;
+	}
+	if (devEnvInflight) return devEnvInflight;
+	devEnvInflight = devEnvStatus()
+		.then((d) => {
+			if (d) devEnvCache = { at: Date.now(), data: d };
+			return d;
+		})
+		.finally(() => { devEnvInflight = null; });
+	return devEnvInflight;
+}
+
 /** 读任务文件；不存在视为「没有任务」。 */
 async function devEnvJob() {
 try {
@@ -614,7 +658,7 @@ res.end(JSON.stringify(body));
 
 if (req.method === 'GET' || req.method === 'HEAD') {
 const [status, job, logTail] = await Promise.all([
-devEnvStatus(), await devEnvJob(), devEnvLogTail(),
+devEnvStatusCached(devEnvWantForce(req)), await devEnvJob(), devEnvLogTail(),
 ]);
 if (req.method === 'HEAD') { res.writeHead(200); res.end(); return; }
 send(200, { ok: Boolean(status), status, job, logTail });
@@ -643,6 +687,7 @@ if (action !== 'reset') {
 }
 
 try {
+devEnvCache = { at: 0, data: null }; // 动作后状态必变 → 下次强制重算
 const job = await devEnvStart(action, action === 'reset' ? ['all'] : ids);
 send(202, { ok: true, job });
 } catch (e) {
@@ -651,4 +696,13 @@ send(500, { error: String(e?.message ?? e) });
 }
 },
 }), 'dsh-android-mobile: dev environment route');
+
+// 预热：插件挂载 3 s 后静默算一次状态。用户第一次进「开发环境」直接命中缓存，
+// 而不是对着 13 s 的空白 loading。失败无声（真失败时页面自己会报）。
+ctx.effect(() => {
+	const timer = setTimeout(() => {
+		Promise.resolve(devEnvStatusCached(false)).catch(() => {});
+	}, 3000);
+	return () => clearTimeout(timer);
+});
 }

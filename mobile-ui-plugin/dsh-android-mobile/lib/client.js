@@ -4380,7 +4380,7 @@ scope.effect(
 scope.slots.inject("settings.section", () => scope.slots.register({
 name: "settings.section",
 id: "dsh-android-about",
-order: 29,
+order: 201,
 label: () => t("nav"),
 locale: MP_ABOUT_NS,
 }, mpAboutSection));
@@ -11119,6 +11119,16 @@ const MP_DEV_S = {
 	},
 };
 
+/**
+ * 开发环境状态的**模块级快照**。
+ *
+ * 为什么需要：`settings.section` 是卸载式切 tab —— 离开「开发环境」组件就销毁，
+ * 回来是全新挂载、`useEffect` 再跑一次。而 `/api/dsh-android/devenv` 首次要
+ * `du -sk /usr` 扫一遍 rootfs（实测 10.8~13.9 s），空白等十几秒谁都受不了。
+ * 有快照就先渲染快照（0 ms 出内容），再后台刷新。
+ */
+let mpDevSnapshot = null;
+
 /** 开发环境：分组 + 子项勾选。 */
 function mpDevEnvSection() {
 	// ⚠️ 必须先把模块级 React 接进局部（本文件 React 不是全局，漏了会 "React is not defined"）
@@ -11137,12 +11147,21 @@ function mpDevEnvSection() {
 	const [confirming, setConfirming] = React.useState(false);
 	const timerRef = React.useRef(null);
 
-	const load = React.useCallback(async () => {
+	const load = React.useCallback(async (opts) => {
+		const force = Boolean(opts && opts.force);
+		// 先用上次快照渲染（切走再回来的场景），再后台刷新；force=1 时跳过
+		if (!force && mpDevSnapshot) setState({ phase: "ready", ...mpDevSnapshot, error: "" });
 		const ctl = typeof AbortController === "function" ? new AbortController() : null;
 		const to = ctl ? setTimeout(() => { try { ctl.abort(); } catch (e) {} }, 10000) : null;
 		try {
-			const res = await fetch(MP_DEV_API, { cache: "no-store", signal: ctl ? ctl.signal : undefined });
+			const res = await fetch(MP_DEV_API, {
+				cache: "no-store",
+				signal: ctl ? ctl.signal : undefined,
+				// 强制刷新走 header（exact 路由会把 query 剥掉）
+				headers: force ? { "x-dsh-force": "1" } : undefined,
+			});
 			const data = await res.json();
+			if (data && data.status) mpDevSnapshot = data; // 只缓存成功的完整状态
 			setState({ phase: "ready", ...data, error: "" });
 			if (data && data.job && data.job.running) {
 				if (timerRef.current) clearTimeout(timerRef.current);
