@@ -48,6 +48,7 @@ import com.dsh.android.log.SafeDateFormat
 import com.dsh.android.web.DownloadRequest
 import com.dsh.android.web.DownloadStream
 import com.dsh.android.web.PageBridge
+import com.dsh.android.runtime.RuntimeDelta
 import com.dsh.android.runtime.PluginUpdater
 import com.dsh.android.runtime.ReleaseFeed
 import com.dsh.android.web.WebHost
