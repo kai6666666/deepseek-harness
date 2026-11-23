@@ -34,10 +34,31 @@ DSH 的设计变量只有下面这些（`dsh-web-frontend/dist/assets/index-*.cs
 ### 2.1 `tools/runtime/build-runtime.sh` 删了 `docs/`
 
 ```bash
-# 改前（两处都会踩）
-find … -name '*.md' -delete                 # 干掉 README.md
-find … -type d \( -name docs -o -name … \) -delete   # 干掉整个 docs/  ← 真凶
+# 改前（两处都会踩，且**必须同时修**）
+find … -name '*.md' -delete                          # ① 连 docs/DETAIL.md 一起删
+find … -type d \( -name docs -o -name … \) -delete    # ② 把整个 docs/ 目录删掉
 ```
+
+⚠️ **只修 ② 是不够的** —— 2026-11-24 实测 `debug.32` 的 rootfs：
+
+```text
+16 个包有 docs/ 目录，但里面只剩 preview.svg
+detail_md=0     ← DETAIL.md / DETAIL.zh.md 全没了
+```
+
+原因就是 ① 那条 `-name '*.md' -delete` 只豁免了 `README.md` / `readme.md`，
+没有豁免 `docs/` 下的 md。**两条规则都要改**：
+
+```bash
+find "$ROOTFS/opt/dsh/node_modules" -type f \( -name '*.map' -o -name '*.md' -o -name '*.markdown' \) \
+  ! -name 'README.md' ! -name 'readme.md' ! -path '*/docs/*' -delete
+
+find "$ROOTFS/opt/dsh/node_modules" -type d \( -name test -o -name tests -o -name __tests__ \
+  -o -name example -o -name examples \) -delete      # 注意：docs 已从这里移除
+```
+
+修 ① 之后还需要**重新构建 runtime 才会生效**；在那之前，设备上只能手工把
+`docs/*.md` 拷回去（`tools/plugin-docs.py` 产出 → `run-as` 里 `cp -f`）。
 
 插件 `package.json` 的 `files` 里写着 `"docs"`，`@deepseek-ai/dsh-plugin-detail` 就是按这个约定
 去读 detailed 介绍：
