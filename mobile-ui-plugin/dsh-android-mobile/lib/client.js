@@ -4125,7 +4125,7 @@ hero: { display: "flex", flexDirection: "column", alignItems: "center", gap: "6p
 logo: {
 width: "76px", height: "76px", borderRadius: "50%",
 display: "flex", alignItems: "center", justifyContent: "center",
-background: "var(--dsw-alias-bg-subtle, #eef2f7)", color: "#2b6cb0",
+background: "var(--dsw-alias-bg-layer-3, #eef2f7)", color: "#2b6cb0",
 fontSize: "26px", fontWeight: 700, letterSpacing: "-1px",
 },
 appName: { fontSize: "19px", fontWeight: 600 },
@@ -4133,11 +4133,11 @@ sub: { fontSize: "12.5px", color: "var(--dsw-alias-label-tertiary, #888)" },
 card: {
 border: "0.5px solid var(--dsw-alias-border-l2, #e2e2e2)",
 borderRadius: "14px", overflow: "hidden",
-background: "var(--dsw-alias-bg-elevated, transparent)",
+background: "var(--dsw-alias-bg-layer-1, transparent)",
 },
 row: { display: "flex", alignItems: "center", gap: "12px", padding: "13px 14px", width: "100%", boxSizing: "border-box", border: "none", background: "transparent", color: "inherit", font: "inherit", textAlign: "left", cursor: "pointer" },
 rowSep: { borderTop: "0.5px solid var(--dsw-alias-border-l2, #e2e2e2)" },
-icon: { flex: "0 0 auto", width: "30px", height: "30px", borderRadius: "9px", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--dsw-alias-bg-subtle, #f0f2f5)", fontSize: "15px" },
+icon: { flex: "0 0 auto", width: "30px", height: "30px", borderRadius: "9px", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--dsw-alias-bg-layer-3, #f0f2f5)", fontSize: "15px" },
 rowMain: { flex: "1 1 auto", minWidth: 0, display: "flex", flexDirection: "column", gap: "2px" },
 rowTitle: { fontSize: "14px" },
 rowDesc: { fontSize: "12px", color: "var(--dsw-alias-label-tertiary, #888)", overflow: "hidden", textOverflow: "ellipsis" },
@@ -4157,15 +4157,43 @@ relBtns: { display: "flex", gap: "10px", paddingTop: "6px", borderTop: "0.5px so
 btn: { flex: 1, padding: "9px 12px", borderRadius: "10px", border: "0.5px solid var(--dsw-alias-border-l2, #dcdcdc)", background: "transparent", color: "inherit", font: "inherit", fontSize: "13px", cursor: "pointer" },
 btnPrimary: { flex: 1, padding: "9px 12px", borderRadius: "10px", border: "1px solid #2b6cb0", background: "#2b6cb0", color: "#fff", font: "inherit", fontSize: "13px", cursor: "pointer" },
 mask: { position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999, padding: "24px" },
-dialog: { width: "100%", maxWidth: "340px", borderRadius: "20px", background: "var(--dsw-alias-bg-elevated, #fff)", color: "inherit", padding: "22px 20px 16px", display: "flex", flexDirection: "column", alignItems: "center", gap: "10px", boxShadow: "0 18px 50px rgba(0,0,0,.28)" },
+dialog: { width: "100%", maxWidth: "340px", borderRadius: "20px", background: "var(--dsw-alias-bg-layer-2, #fff)", color: "inherit", padding: "22px 20px 16px", display: "flex", flexDirection: "column", alignItems: "center", gap: "10px", boxShadow: "0 18px 50px rgba(0,0,0,.28)" },
 dlgIcon: { width: "38px", height: "38px", borderRadius: "50%", background: "rgba(43,108,176,.14)", color: "#2b6cb0", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "18px" },
-dlgTitle: { fontSize: "17px", fontWeight: 600 },
+dlgTitle: { fontSize: "17px", fontWeight: 600, color: "var(--dsw-alias-label-primary, #111)" },
 dlgBody: { fontSize: "13.5px", lineHeight: "21px", textAlign: "center", color: "var(--dsw-alias-label-secondary, #444)", whiteSpace: "pre-wrap" },
 dlgBtns: { display: "flex", gap: "10px", width: "100%", paddingTop: "6px" },
 dlgQuiet: { flex: 1, padding: "9px 0", borderRadius: "10px", border: "none", background: "transparent", color: "var(--dsw-alias-label-tertiary, #888)", font: "inherit", fontSize: "13.5px", cursor: "pointer" },
 dlgOk: { flex: 1, padding: "9px 0", borderRadius: "10px", border: "1px solid #2b6cb0", background: "#2b6cb0", color: "#fff", font: "inherit", fontSize: "13.5px", cursor: "pointer" },
 back: { display: "flex", alignItems: "center", gap: "8px", border: "none", background: "transparent", color: "inherit", font: "inherit", fontSize: "14px", padding: "2px 0", cursor: "pointer" },
 };
+
+/**
+ * 「关于」页的深色覆盖。
+ *
+ * 为什么除了 token 还要写死一套：DSH 的 CSS 变量名会变（这次就撞上
+ * `--dsw-alias-bg-elevated` / `bg-subtle` 根本不存在），变量缺失时 `var()` 整条声明作废，
+ * 弹窗就落回浅色的 `#fff`，而标题颜色是 `inherit`（深色下是浅字）——白底浅字=看不见。
+ * 所以：token 正常时走 token，token 没了也有正确深浅。
+ */
+const MP_ABOUT_DARK = {
+card: { background: "rgba(255,255,255,.035)" },
+logo: { background: "rgba(255,255,255,.09)" },
+icon: { background: "rgba(255,255,255,.07)" },
+dialog: { background: "#26262a" },
+dlgTitle: { color: "#f0f0f0" },
+dlgBody: { color: "#b6b6b6" },
+dlgQuiet: { color: "#9a9a9a" },
+};
+/** 当前是否深色（DSH 在 body 上打 data-ds-dark-theme）。 */
+const mpAboutIsDark = () => { try { return document.body.hasAttribute("data-ds-dark-theme"); } catch (e) { return false; } };
+/**
+ * 按当前深浅色给某个静态样式项叠一层覆盖。
+ *
+ * 刻意做成模块级、且**每次调用都重读** body 属性：切主题立刻生效，
+ * 不要缓存进组件 state（切主题不会重建这个分节组件）。
+ */
+const mpDs = (base, key) => (mpAboutIsDark() && MP_ABOUT_DARK[key] ? { ...base, ...MP_ABOUT_DARK[key] } : base);
+
 
 /** 「关于」页组件：主页（hero + 三组卡片）/ 更新历史子页 / 检查更新弹窗。 */
 function mpAboutSection() {
@@ -4326,7 +4354,7 @@ key, type: "button",
 style: sep ? { ...MP_ABOUT_S.row, ...MP_ABOUT_S.rowSep } : MP_ABOUT_S.row,
 onClick,
 },
-e("span", { style: MP_ABOUT_S.icon }, icon),
+e("span", { style: mpDs(MP_ABOUT_S.icon, "icon") }, icon),
 e("span", { style: MP_ABOUT_S.rowMain },
 e("span", { style: MP_ABOUT_S.rowTitle }, title),
 desc ? e("span", { style: MP_ABOUT_S.rowDesc }, desc) : null),
@@ -4339,13 +4367,13 @@ const dialogEl = dlg ? e("div", {
 style: MP_ABOUT_S.mask,
 onClick: (ev) => { if (ev.target === ev.currentTarget) setDlg(null); },
 },
-e("div", { style: MP_ABOUT_S.dialog },
+e("div", { style: mpDs(MP_ABOUT_S.dialog, "dialog") },
 e("div", { style: MP_ABOUT_S.dlgIcon }, dlg.kind === "checking" || dlg.kind === "applying" ? "⟳" : (dlg.kind === "update" ? "↑" : "✓")),
-e("div", { style: MP_ABOUT_S.dlgTitle },
+e("div", { style: mpDs(MP_ABOUT_S.dlgTitle, "dlgTitle") },
 dlg.kind === "checking" ? t("checking") : (dlg.kind === "applying" ? t("applying") : dlg.title)),
-dlg.body ? e("div", { style: MP_ABOUT_S.dlgBody }, dlg.body) : null,
+dlg.body ? e("div", { style: mpDs(MP_ABOUT_S.dlgBody, "dlgBody") }, dlg.body) : null,
 e("div", { style: MP_ABOUT_S.dlgBtns },
-e("button", { type: "button", style: MP_ABOUT_S.dlgQuiet, onClick: () => setDlg(null) }, t("close")),
+e("button", { type: "button", style: mpDs(MP_ABOUT_S.dlgQuiet, "dlgQuiet"), onClick: () => setDlg(null) }, t("close")),
 dlg.kind === "update" && (dlg.ui || dlg.rt)
 ? e("button", { type: "button", style: MP_ABOUT_S.dlgOk, onClick: doApply }, t("apply"))
 : (dlg.kind === "update" && dlg.apkUrl
@@ -4358,10 +4386,10 @@ dlg.kind === "update" && (dlg.ui || dlg.rt)
 
 const mainView = e("div", { style: MP_ABOUT_S.wrap },
 e("div", { style: MP_ABOUT_S.hero },
-e("div", { style: MP_ABOUT_S.logo }, "DS"),
+e("div", { style: mpDs(MP_ABOUT_S.logo, "logo") }, "DS"),
 e("div", { style: MP_ABOUT_S.appName }, "DSH"),
 e("div", { style: MP_ABOUT_S.sub }, t("version", (info.versionName || "?") + " (" + (info.versionCode || "?") + ")"))),
-e("div", { style: MP_ABOUT_S.card },
+e("div", { style: mpDs(MP_ABOUT_S.card, "card") },
 row("check", "⟳", t("check"),
 pstate && pstate.available ? t("uiRow") + " " + pstate.available.version : t("upToDate", info.versionName || ""),
 doCheck, null, false),
@@ -4370,12 +4398,12 @@ const v = !pre;
 setPre(v);
 try { localStorage.setItem("mp.about.pre", v ? "1" : "0"); } catch (err) {}
 }, sw, true)),
-e("div", { style: MP_ABOUT_S.card },
+e("div", { style: mpDs(MP_ABOUT_S.card, "card") },
 row("proj", "🌐", t("project"), MP_ABOUT_REPO, () => openUrl(MP_ABOUT_REPO), chev, false),
 row("star", "★", t("star"), "", () => openUrl(MP_ABOUT_REPO + "/stargazers"), chev, true),
 row("log", "🕘", t("changelog"), "", () => { setView("logs"); loadReleases(); }, chev, true),
 row("lic", "📄", t("licenses"), "", () => openUrl(MP_ABOUT_REPO + "/blob/main/LICENSE"), chev, true)),
-e("div", { style: MP_ABOUT_S.card },
+e("div", { style: mpDs(MP_ABOUT_S.card, "card") },
 row("contact", "✉", t("contact"), t("contactSub"), () => openUrl(MP_ABOUT_REPO + "/issues"), chev, false),
 row("dev", "👤", t("developer"), t("devName"), null, e("span", { style: MP_ABOUT_S.arrow }, ""), true)),
 dialogEl);
