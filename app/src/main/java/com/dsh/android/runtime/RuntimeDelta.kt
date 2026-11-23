@@ -309,7 +309,7 @@ object RuntimeDelta {
         if (!f.isFile) null else JSONObject(f.readText()).optString("runtimeVersion").ifEmpty { null }
     }.getOrNull()
 
-    /** 本地可作基线的旧分片：`runtime/parts/*/<asset>` 或 `runtime/<asset>`。 */
+    /** 本地可作基线的旧分片：`runtime/parts/<ver>/<asset>`，或 `runtime/<asset>`。 */
     private fun localBase(filesDir: File, asset: String): File? {
         val direct = File(filesDir, "runtime/$asset")
         if (direct.isFile) return direct
