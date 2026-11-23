@@ -815,6 +815,24 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        // ── 诊断钩子：不点屏也能验证「运行时增量」链路 ──────────────────
+        // `files/runtime/auto-dryrun` 存在时，启动 12 s 后自动跑一次
+        // 「检查 → 应用」，全过程落在 app.log（RuntimeDelta 的 Log.i）。
+        // 平时这个文件不存在 → 什么都不做。演练脚本见 docs/agents/runtime-delta.md。
+        if (java.io.File(filesDir, "runtime/auto-dryrun").isFile) {
+            Thread({
+                runCatching {
+                    Thread.sleep(12_000)
+                    Log.i("DSH", "auto-dryrun: check 开始")
+                    RuntimeDelta.checkAsync(filesDir)
+                    Thread.sleep(10_000)
+                    Log.i("DSH", "auto-dryrun: check 结果=" + RuntimeDelta.stateJson(filesDir))
+                    RuntimeDelta.applyAsync(filesDir)
+                    Thread.sleep(30_000)
+                    Log.i("DSH", "auto-dryrun: apply 结果=" + RuntimeDelta.stateJson(filesDir))
+                }.onFailure { Log.w("DSH", "auto-dryrun 异常：" + it.message) }
+            }, "auto-dryrun").start()
+        }
         // 调试包开 WebView 远程调试：移动端布局出问题时只能靠 CDP 读 computed style，
         // 否则「为什么这块内容只有 200px 宽」只能靠猜（本次插件市场塌成窄列就是）。
         // ⚠️ 只在 debug 构建开启；release 包保持关闭（默认值）。

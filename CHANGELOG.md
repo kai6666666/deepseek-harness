@@ -8,6 +8,15 @@
 - 设备侧清理：删除演练备份 `dsh-backup-drill.zip` 与 13 个历史 APK（约 2.4 GB）。
 
 **不发新版**：本批只有文档与文件清理。
+## [0.2.2-rc.5-debug.31] — 2026-11-23
+vc=116
+
+### 诊断
+- 新增**无屏演练钩子**：`files/runtime/auto-dryrun` 存在时，App 启动 12 s 后自动跑一次
+  `RuntimeDelta.checkAsync` → `applyAsync`，结果全部写进 `app.log`。
+  用途：不点屏就能验证「清单比对 → Range 下载 → sha256 → staging 原子替换」整条链路；
+  文件不存在时完全无行为。演练脚本与实测数据见 `docs/agents/runtime-delta.md`。
+
 ## [0.2.2-rc.5-debug.30] — 2026-11-23
 vc=115
 
