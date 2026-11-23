@@ -787,4 +787,18 @@ private class SystemPageBridge(private val impl: PageBridge) {
      */
     @android.webkit.JavascriptInterface
     fun basicPermOpen(kind: String): Boolean = impl.basicPermOpen(kind)
+
+    // ── 「关于」页（vc110）── 同属手工白名单，漏一条页面就静默少一行
+    @android.webkit.JavascriptInterface
+    fun aboutInfo(): String = impl.aboutInfo()
+    @android.webkit.JavascriptInterface
+    fun openUrl(url: String): Boolean = impl.openUrl(url)
+    @android.webkit.JavascriptInterface
+    fun releasesJson(): String = impl.releasesJson()
+    @android.webkit.JavascriptInterface
+    fun pluginUpdateCheck(): Boolean = impl.pluginUpdateCheck()
+    @android.webkit.JavascriptInterface
+    fun pluginUpdateState(): String = impl.pluginUpdateState()
+    @android.webkit.JavascriptInterface
+    fun pluginUpdateApply(): Boolean = impl.pluginUpdateApply()
 }

@@ -8,6 +8,29 @@
 - 设备侧清理：删除演练备份 `dsh-backup-drill.zip` 与 13 个历史 APK（约 2.4 GB）。
 
 **不发新版**：本批只有文档与文件清理。
+## [0.2.2-rc.5-debug.25] — 2026-11-23
+vc=110
+
+### 新增
+- **设置 → 「关于」分节**（order 29，排在开发环境 / 运行日志之后）：
+  版本号（读 BuildConfig，非手写）、检查更新、允许预发布版、项目地址 / Star / 更新日志 / 许可、
+  联系方式与开发者。
+- **检查更新弹窗**：检查中 → 检查完成 / 发现新版本；显示 APK 与界面的可更新项与体积。
+- **更新历史**：卡片列表（★ 最新徽章 + 绿色「最新」+ 日期 + 摘要 + 展开更多 + 查看发布/下载）。
+- 新桥 6 个（三层同构）：`aboutInfo` / `openUrl` / `releasesJson` / `pluginUpdateCheck` /
+  `pluginUpdateState` / `pluginUpdateApply`；新增 `ReleaseFeed`（异步 + 10 分钟缓存）。
+
+### 变更（关键）
+- **取消自动更新**：启动不再检查/下载热包，只在用户点「检查更新」时联网。
+  （真机事故：启动自动拉包把缺 `lib/index.js` 的坏包装上 → 插件挂载失败、界面回退桌面布局、就绪超时。）
+- **完整性校验**：`package.json` / `lib/client.js` / `lib/index.js` / `lib/drawer-fix-170.js`
+  缺一个就不生效；解到 `.staging-<ver>` → 校验 → 原子替换；坏包移入 `plugins/.rejected/`。
+- **支持增量包**：`plugins-mobile-ui-<base>-<ver>.delta.zip` + `plugin-manifest.json`
+  （`kind/base/files/deletes`）；基线不符或校验不过则丢弃、保留旧版。
+
+### 配套
+- `tools/mobile-ui-version.txt` 1.1.0-203 -> **1.1.0-205**；插件 `package.json` 1.0.6 -> **1.0.7**。
+
 ## [0.2.2-rc.5-debug.24] — 2026-11-23
 vc=109
 

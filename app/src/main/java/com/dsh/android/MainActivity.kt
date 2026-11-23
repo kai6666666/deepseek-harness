@@ -48,6 +48,8 @@ import com.dsh.android.log.SafeDateFormat
 import com.dsh.android.web.DownloadRequest
 import com.dsh.android.web.DownloadStream
 import com.dsh.android.web.PageBridge
+import com.dsh.android.runtime.PluginUpdater
+import com.dsh.android.runtime.ReleaseFeed
 import com.dsh.android.web.WebHost
 import com.dsh.android.web.WebHostCallbacks
 import com.dsh.android.web.createWebHost
@@ -2364,6 +2366,45 @@ class MainActivity : AppCompatActivity() {
             Log.w(DshApplication.TAG, "打开基础权限页失败: " + kind, it)
             false
         }
+
+        override fun aboutInfo(): String = runCatching {
+            JSONObject()
+                .put("versionName", BuildConfig.VERSION_NAME)
+                .put("versionCode", BuildConfig.VERSION_CODE)
+                .put("buildType", BuildConfig.BUILD_TYPE)
+                .put("packageName", packageName)
+                .put("engineVersion", runCatching {
+                    JSONObject(java.io.File(filesDir, "runtime/manifest.json").readText())
+                        .optString("runtimeVersion")
+                }.getOrDefault(""))
+                .put("pluginVersion", PluginUpdater.installedVersion(pluginInstallDir))
+                .put("abi", Build.SUPPORTED_ABIS.firstOrNull() ?: "")
+                .put("android", Build.VERSION.RELEASE + "（API " + Build.VERSION.SDK_INT + "）")
+                .toString()
+        }.getOrElse { "{}" }
+
+        override fun openUrl(url: String): Boolean = runCatching {
+            val u = Uri.parse(url)
+            val scheme = u.scheme?.lowercase()
+            if (scheme != "http" && scheme != "https") return@runCatching false
+            startActivity(Intent(Intent.ACTION_VIEW, u).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            true
+        }.getOrElse {
+            Log.w(DshApplication.TAG, "打开链接失败: " + url, it)
+            false
+        }
+
+        override fun releasesJson(): String = ReleaseFeed.get()
+
+        override fun pluginUpdateCheck(): Boolean = PluginUpdater.checkAsync(filesDir, pluginInstallDir)
+
+        override fun pluginUpdateState(): String = PluginUpdater.stateJson(pluginInstallDir)
+
+        override fun pluginUpdateApply(): Boolean = PluginUpdater.applyAsync(pluginInstallDir)
+
+        /** 插件安装落点（必须与 EngineManager.ensureMobileUi 一致）。 */
+        private val pluginInstallDir: java.io.File
+            get() = java.io.File(filesDir, "home/.dsh/mobile-ui/dsh-android-mobile")
 
         override fun shizukuState(): String = runCatching {
             JSONObject()

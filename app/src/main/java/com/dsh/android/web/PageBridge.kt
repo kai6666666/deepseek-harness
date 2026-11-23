@@ -387,4 +387,28 @@ interface PageBridge {
      * `focus` / `visibilitychange` 时重新拉一次 [basicPermState]。
      */
     fun basicPermOpen(kind: String): Boolean
+
+    // ── 「关于」页（vc110） ─────────────────────────────────────
+
+    /** 版本 / 引擎 / 插件 / ABI / Android，一次给全（JSON 文本）。 */
+    fun aboutInfo(): String
+
+    /** 用系统浏览器打开链接（http/https）；其它 scheme 一律拒绝。 */
+    fun openUrl(url: String): Boolean
+
+    /**
+     * Release 数据（**异步 + 缓存**）：`{"ready":false}` 表示还在拉，页面轮询即可。
+     *
+     * ⚠️ JS 桥是同步调用，不能在这里等网络 —— WebView 的 JS 线程会被卡住。
+     */
+    fun releasesJson(): String
+
+    /** 触发一次插件热更新检查（异步，立刻返回）；结果看 [pluginUpdateState]。 */
+    fun pluginUpdateCheck(): Boolean
+
+    /** 热更新状态 JSON：`{state,message,installed,available?}` */
+    fun pluginUpdateState(): String
+
+    /** 把已就绪的包应用下去（异步）；成功后页面自行 reload。 */
+    fun pluginUpdateApply(): Boolean
 }

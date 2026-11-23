@@ -4030,7 +4030,362 @@ mpWantedOpen = true;
 				root.style.setProperty("--mp-float-nav-h", next);
 			}
 
-			/* ══ 修复 30c（内联版）：把 tabs 摆到「标准模式」徽章右侧 ═══════════
+			/* ══ 「关于」分节（vc110）═════════════════════════════════════════
+   照 Operit 的「关于」页做的：大图标 + 版本 + 行式条目 + 检查更新弹窗 + 更新历史。
+
+   两条纪律：
+   1. **不自动联网**：只有用户点「检查更新」/「更新日志」时才发起请求
+      （启动自动拉包曾把缺 lib/index.js 的坏包装上，界面直接退回桌面布局）。
+   2. **网络都在原生侧**：`releasesJson` / `pluginUpdateState` 是异步 + 缓存，
+      本页只轮询 `ready`，**不在 JS 线程上等网络**。
+   ══════════════════════════════════════════════════════════════ */
+const MP_ABOUT_NS = "dsh-android-mobile.about";
+const MP_ABOUT_REPO = "https://github.com/kai6666666/deepseek-harness";
+const MP_ABOUT_ZH = {
+nav: "关于",
+title: "关于",
+version: (v) => `版本：${v}`,
+check: "检查更新",
+checking: "正在检查…",
+checkDone: "检查完成",
+checkFail: "检查失败",
+upToDate: (v) => `当前已是最新版本：${v}`,
+hasUpdate: "发现新版本",
+apkRow: "安装包",
+uiRow: "界面",
+changelog: "更新日志",
+licenses: "开源许可声明",
+project: "项目地址",
+star: "在 GitHub 点个 Star",
+contact: "联系方式",
+contactSub: "联系我们：GitHub Issues",
+developer: "开发者",
+devName: "kai6666666",
+latest: "最新",
+expand: "展开更多",
+collapse: "收起",
+viewRelease: "查看发布",
+download: "下载",
+close: "关闭",
+ok: "确定",
+apply: "立即更新",
+applying: "应用中…",
+history: "更新历史",
+empty: "暂无更新记录",
+allowPre: "允许预发布版",
+allowPreSub: "开启后检查更新会包含 prerelease 版本",
+netErr: "网络不可用或已被限流，请稍后重试",
+updated: "已更新，页面即将重载",
+self: "当前版本",
+};
+const MP_ABOUT_EN = {
+nav: "About",
+title: "About",
+version: (v) => `Version: ${v}`,
+check: "Check for updates",
+checking: "Checking…",
+checkDone: "Check complete",
+checkFail: "Check failed",
+upToDate: (v) => `You are up to date: ${v}`,
+hasUpdate: "Update available",
+apkRow: "App",
+uiRow: "Interface",
+changelog: "Changelog",
+licenses: "Open-source licenses",
+project: "Project",
+star: "Star on GitHub",
+contact: "Contact",
+contactSub: "GitHub Issues",
+developer: "Developer",
+devName: "kai6666666",
+latest: "latest",
+expand: "Show more",
+collapse: "Show less",
+viewRelease: "View release",
+download: "Download",
+close: "Close",
+ok: "OK",
+apply: "Update now",
+applying: "Applying…",
+history: "Changelog",
+empty: "No releases yet",
+allowPre: "Include pre-releases",
+allowPreSub: "Check for updates will include prerelease builds",
+netErr: "Network unavailable or rate-limited, try again later",
+updated: "Updated, reloading…",
+self: "Current",
+};
+const MP_ABOUT_S = {
+wrap: { display: "flex", flexDirection: "column", gap: "14px", paddingBottom: "8px" },
+hero: { display: "flex", flexDirection: "column", alignItems: "center", gap: "6px", padding: "18px 0 10px" },
+logo: {
+width: "76px", height: "76px", borderRadius: "50%",
+display: "flex", alignItems: "center", justifyContent: "center",
+background: "var(--dsw-alias-bg-subtle, #eef2f7)", color: "#2b6cb0",
+fontSize: "26px", fontWeight: 700, letterSpacing: "-1px",
+},
+appName: { fontSize: "19px", fontWeight: 600 },
+sub: { fontSize: "12.5px", color: "var(--dsw-alias-label-tertiary, #888)" },
+card: {
+border: "0.5px solid var(--dsw-alias-border-l2, #e2e2e2)",
+borderRadius: "14px", overflow: "hidden",
+background: "var(--dsw-alias-bg-elevated, transparent)",
+},
+row: { display: "flex", alignItems: "center", gap: "12px", padding: "13px 14px", width: "100%", boxSizing: "border-box", border: "none", background: "transparent", color: "inherit", font: "inherit", textAlign: "left", cursor: "pointer" },
+rowSep: { borderTop: "0.5px solid var(--dsw-alias-border-l2, #e2e2e2)" },
+icon: { flex: "0 0 auto", width: "30px", height: "30px", borderRadius: "9px", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--dsw-alias-bg-subtle, #f0f2f5)", fontSize: "15px" },
+rowMain: { flex: "1 1 auto", minWidth: 0, display: "flex", flexDirection: "column", gap: "2px" },
+rowTitle: { fontSize: "14px" },
+rowDesc: { fontSize: "12px", color: "var(--dsw-alias-label-tertiary, #888)", overflow: "hidden", textOverflow: "ellipsis" },
+arrow: { flex: "0 0 auto", color: "var(--dsw-alias-label-tertiary, #aaa)", fontSize: "15px" },
+switch: (on) => ({ flex: "0 0 auto", width: "40px", height: "23px", borderRadius: "999px", background: on ? "#2b6cb0" : "rgba(128,128,128,.35)", position: "relative", transition: "background .15s" }),
+knob: (on) => ({ position: "absolute", top: "2px", left: on ? "19px" : "2px", width: "19px", height: "19px", borderRadius: "50%", background: "#fff", transition: "left .15s" }),
+badge: { display: "inline-flex", alignItems: "center", gap: "4px", fontSize: "12px", fontWeight: 600, padding: "3px 9px", borderRadius: "999px" },
+badgeOn: { background: "#2b6cb0", color: "#fff" },
+badgeOff: { background: "rgba(128,128,128,.16)", color: "inherit" },
+latest: { background: "#39a35a", color: "#fff", fontSize: "11px", padding: "3px 8px", borderRadius: "999px" },
+date: { marginLeft: "auto", fontSize: "12px", color: "var(--dsw-alias-label-tertiary, #888)" },
+relCard: { display: "flex", flexDirection: "column", gap: "8px", padding: "14px", border: "0.5px solid var(--dsw-alias-border-l2, #e2e2e2)", borderRadius: "14px" },
+relHead: { display: "flex", alignItems: "center", gap: "8px" },
+relTitle: { fontSize: "16px", fontWeight: 600 },
+notes: { fontSize: "13px", lineHeight: "20px", whiteSpace: "pre-wrap", wordBreak: "break-word", color: "var(--dsw-alias-label-secondary, #444)" },
+relBtns: { display: "flex", gap: "10px", paddingTop: "6px", borderTop: "0.5px solid var(--dsw-alias-border-l2, #e2e2e2)" },
+btn: { flex: 1, padding: "9px 12px", borderRadius: "10px", border: "0.5px solid var(--dsw-alias-border-l2, #dcdcdc)", background: "transparent", color: "inherit", font: "inherit", fontSize: "13px", cursor: "pointer" },
+btnPrimary: { flex: 1, padding: "9px 12px", borderRadius: "10px", border: "1px solid #2b6cb0", background: "#2b6cb0", color: "#fff", font: "inherit", fontSize: "13px", cursor: "pointer" },
+mask: { position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999, padding: "24px" },
+dialog: { width: "100%", maxWidth: "340px", borderRadius: "20px", background: "var(--dsw-alias-bg-elevated, #fff)", color: "inherit", padding: "22px 20px 16px", display: "flex", flexDirection: "column", alignItems: "center", gap: "10px", boxShadow: "0 18px 50px rgba(0,0,0,.28)" },
+dlgIcon: { width: "38px", height: "38px", borderRadius: "50%", background: "rgba(43,108,176,.14)", color: "#2b6cb0", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "18px" },
+dlgTitle: { fontSize: "17px", fontWeight: 600 },
+dlgBody: { fontSize: "13.5px", lineHeight: "21px", textAlign: "center", color: "var(--dsw-alias-label-secondary, #444)", whiteSpace: "pre-wrap" },
+dlgBtns: { display: "flex", gap: "10px", width: "100%", paddingTop: "6px" },
+dlgQuiet: { flex: 1, padding: "9px 0", borderRadius: "10px", border: "none", background: "transparent", color: "var(--dsw-alias-label-tertiary, #888)", font: "inherit", fontSize: "13.5px", cursor: "pointer" },
+dlgOk: { flex: 1, padding: "9px 0", borderRadius: "10px", border: "1px solid #2b6cb0", background: "#2b6cb0", color: "#fff", font: "inherit", fontSize: "13.5px", cursor: "pointer" },
+back: { display: "flex", alignItems: "center", gap: "8px", border: "none", background: "transparent", color: "inherit", font: "inherit", fontSize: "14px", padding: "2px 0", cursor: "pointer" },
+};
+
+/** 「关于」页组件：主页（hero + 三组卡片）/ 更新历史子页 / 检查更新弹窗。 */
+function mpAboutSection(props) {
+const t = typeof props.t === "function"
+? props.t
+: (k, a) => (typeof MP_ABOUT_ZH[k] === "function" ? MP_ABOUT_ZH[k](a) : (MP_ABOUT_ZH[k] === undefined ? k : MP_ABOUT_ZH[k]));
+const R = mpPrivReact;
+const e = R.createElement;
+const { useState, useEffect, useRef } = R;
+const bridge = typeof window !== "undefined" ? window.DSHAndroid : null;
+const [info, setInfo] = useState({});
+const [view, setView] = useState("main");
+const [rel, setRel] = useState({ ready: false, data: [], error: "" });
+const [dlg, setDlg] = useState(null);
+const [pre, setPre] = useState(() => { try { return localStorage.getItem("mp.about.pre") === "1"; } catch (err) { return false; } });
+const [open, setOpen] = useState({});
+const [pstate, setPstate] = useState(null);
+const timer = useRef(null);
+
+useEffect(() => {
+if (info.versionName) return;
+try {
+const raw = bridge && bridge.aboutInfo ? bridge.aboutInfo() : "";
+setInfo(raw ? JSON.parse(raw) : {});
+} catch (err) { setInfo({}); }
+}, []);
+
+useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+
+const pollReleases = (cb) => {
+if (!bridge || !bridge.releasesJson) { cb({ ready: true, data: [], error: "no-bridge" }); return; }
+let n = 0;
+const tick = () => {
+let j = {};
+try { j = JSON.parse(bridge.releasesJson() || "{}"); } catch (err) { j = {}; }
+if (j && j.ready) { cb(j); return; }
+if (++n > 40) { cb({ ready: true, data: [], error: "timeout" }); return; }
+timer.current = setTimeout(tick, 500);
+};
+tick();
+};
+
+const pollPlugin = (cb) => {
+if (!bridge || !bridge.pluginUpdateState) { cb(null); return; }
+let n = 0;
+const tick = () => {
+let j = null;
+try { j = JSON.parse(bridge.pluginUpdateState() || "{}"); } catch (err) { j = null; }
+if (!j || (j.state !== "checking" && j.state !== "applying")) { cb(j); return; }
+if (++n > 60) { cb(j); return; }
+timer.current = setTimeout(tick, 500);
+};
+tick();
+};
+
+const openUrl = (u) => { try { if (bridge && bridge.openUrl) bridge.openUrl(u); } catch (err) {} };
+const apkVerCode = (notes) => { const m = /versionCode\s*\*{0,2}\s*(\d+)/.exec(notes || ""); return m ? parseInt(m[1], 10) : null; };
+const visible = (list) => (list || []).filter((x) => pre || !x.prerelease);
+
+const loadReleases = () => {
+setRel({ ready: false, data: [], error: "" });
+pollReleases((j) => setRel({ ready: true, data: (j && j.data) || [], error: (j && j.error) || "" }));
+};
+
+const doCheck = () => {
+setDlg({ kind: "checking" });
+try { if (bridge && bridge.pluginUpdateCheck) bridge.pluginUpdateCheck(); } catch (err) {}
+pollReleases((j) => {
+const list = visible((j && j.data) || []);
+const latest = list[0] || null;
+const curCode = info.versionCode || 0;
+const newCode = latest ? apkVerCode(latest.notes) : null;
+const apkNew = !!(latest && newCode && newCode > curCode);
+pollPlugin((ps) => {
+setPstate(ps);
+const ui = ps && ps.available;
+if (!apkNew && !ui) {
+setDlg({
+kind: "done", title: t("checkDone"),
+body: j && j.error ? t("netErr") : t("upToDate", (info.versionName || "?") + " (" + curCode + ")"),
+});
+return;
+}
+const lines = [];
+if (apkNew) lines.push(t("apkRow") + " " + latest.tag + " (" + newCode + ")");
+if (ui) lines.push(t("uiRow") + " " + ui.version + "（" + (ui.kind === "delta" ? "增量" : "全量") + " " + Math.round((ui.bytes || 0) / 1024) + " KB）");
+setDlg({ kind: "update", title: t("hasUpdate"), body: lines.join("\n"), apkUrl: apkNew && latest.apk ? latest.apk.url : "", ui: !!ui });
+});
+});
+};
+
+const doApply = () => {
+setDlg({ kind: "applying" });
+try { if (bridge && bridge.pluginUpdateApply) bridge.pluginUpdateApply(); } catch (err) {}
+pollPlugin((ps) => {
+if (ps && ps.state === "applied") {
+setDlg({ kind: "done", title: t("checkDone"), body: t("updated") });
+setTimeout(() => { try { location.reload(); } catch (err) {} }, 1200);
+} else {
+setDlg({ kind: "done", title: t("checkFail"), body: (ps && ps.message) || "" });
+}
+});
+};
+
+const row = (key, icon, title, desc, onClick, right, sep) => e("button", {
+key, type: "button",
+style: sep ? { ...MP_ABOUT_S.row, ...MP_ABOUT_S.rowSep } : MP_ABOUT_S.row,
+onClick,
+},
+e("span", { style: MP_ABOUT_S.icon }, icon),
+e("span", { style: MP_ABOUT_S.rowMain },
+e("span", { style: MP_ABOUT_S.rowTitle }, title),
+desc ? e("span", { style: MP_ABOUT_S.rowDesc }, desc) : null),
+right || e("span", { style: MP_ABOUT_S.arrow }, "›"));
+
+const chev = e("span", { style: MP_ABOUT_S.arrow }, "›");
+const sw = e("span", { style: MP_ABOUT_S.switch(pre) }, e("span", { style: MP_ABOUT_S.knob(pre) }));
+
+const dialogEl = dlg ? e("div", {
+style: MP_ABOUT_S.mask,
+onClick: (ev) => { if (ev.target === ev.currentTarget) setDlg(null); },
+},
+e("div", { style: MP_ABOUT_S.dialog },
+e("div", { style: MP_ABOUT_S.dlgIcon }, dlg.kind === "checking" || dlg.kind === "applying" ? "⟳" : (dlg.kind === "update" ? "↑" : "✓")),
+e("div", { style: MP_ABOUT_S.dlgTitle },
+dlg.kind === "checking" ? t("checking") : (dlg.kind === "applying" ? t("applying") : dlg.title)),
+dlg.body ? e("div", { style: MP_ABOUT_S.dlgBody }, dlg.body) : null,
+e("div", { style: MP_ABOUT_S.dlgBtns },
+e("button", { type: "button", style: MP_ABOUT_S.dlgQuiet, onClick: () => setDlg(null) }, t("close")),
+dlg.kind === "update" && dlg.ui
+? e("button", { type: "button", style: MP_ABOUT_S.dlgOk, onClick: doApply }, t("apply"))
+: (dlg.kind === "update" && dlg.apkUrl
+? e("button", { type: "button", style: MP_ABOUT_S.dlgOk, onClick: () => { openUrl(dlg.apkUrl); setDlg(null); } }, t("download"))
+: (dlg.kind === "checking" || dlg.kind === "applying"
+? null
+: e("button", { type: "button", style: MP_ABOUT_S.dlgOk, onClick: () => setDlg(null) }, t("ok")))))
+)
+) : null;
+
+const mainView = e("div", { style: MP_ABOUT_S.wrap },
+e("div", { style: MP_ABOUT_S.hero },
+e("div", { style: MP_ABOUT_S.logo }, "DS"),
+e("div", { style: MP_ABOUT_S.appName }, "DSH"),
+e("div", { style: MP_ABOUT_S.sub }, t("version", (info.versionName || "?") + " (" + (info.versionCode || "?") + ")"))),
+e("div", { style: MP_ABOUT_S.card },
+row("check", "⟳", t("check"),
+pstate && pstate.available ? t("uiRow") + " " + pstate.available.version : t("upToDate", info.versionName || ""),
+doCheck, null, false),
+row("pre", "◐", t("allowPre"), t("allowPreSub"), () => {
+const v = !pre;
+setPre(v);
+try { localStorage.setItem("mp.about.pre", v ? "1" : "0"); } catch (err) {}
+}, sw, true)),
+e("div", { style: MP_ABOUT_S.card },
+row("proj", "🌐", t("project"), MP_ABOUT_REPO, () => openUrl(MP_ABOUT_REPO), chev, false),
+row("star", "★", t("star"), "", () => openUrl(MP_ABOUT_REPO + "/stargazers"), chev, true),
+row("log", "🕘", t("changelog"), "", () => { setView("logs"); loadReleases(); }, chev, true),
+row("lic", "📄", t("licenses"), "", () => openUrl(MP_ABOUT_REPO + "/blob/main/LICENSE"), chev, true)),
+e("div", { style: MP_ABOUT_S.card },
+row("contact", "✉", t("contact"), t("contactSub"), () => openUrl(MP_ABOUT_REPO + "/issues"), chev, false),
+row("dev", "👤", t("developer"), t("devName"), null, e("span", { style: MP_ABOUT_S.arrow }, ""), true)),
+dialogEl);
+
+const logsView = e("div", { style: MP_ABOUT_S.wrap },
+e("button", { type: "button", style: MP_ABOUT_S.back, onClick: () => setView("main") },
+e("span", {}, "‹"), e("span", {}, t("history"))),
+!rel.ready
+? e("div", { style: MP_ABOUT_S.sub }, t("checking"))
+: (rel.data.length === 0
+? e("div", { style: MP_ABOUT_S.sub }, rel.error ? t("netErr") : t("empty"))
+: visible(rel.data).map((x, i) => {
+const notes = x.notes || "";
+const lines = notes.split("\n");
+const isOpen = !!open[x.tag];
+return e("div", { key: x.tag, style: MP_ABOUT_S.relCard },
+e("div", { style: MP_ABOUT_S.relHead },
+e("span", { style: { ...MP_ABOUT_S.badge, ...(i === 0 ? MP_ABOUT_S.badgeOn : MP_ABOUT_S.badgeOff) } }, (i === 0 ? "★ " : "# ") + x.tag),
+i === 0 ? e("span", { style: MP_ABOUT_S.latest }, t("latest")) : null,
+e("span", { style: MP_ABOUT_S.date }, "📅 " + x.date)),
+e("div", { style: MP_ABOUT_S.relTitle }, "DSH " + x.tag),
+e("div", { style: MP_ABOUT_S.notes }, isOpen ? notes : lines.slice(0, 6).join("\n")),
+lines.length > 6
+? e("button", { type: "button", style: { ...MP_ABOUT_S.back, color: "#2b6cb0" }, onClick: () => setOpen({ ...open, [x.tag]: !isOpen }) }, isOpen ? t("collapse") : t("expand"))
+: null,
+e("div", { style: MP_ABOUT_S.relBtns },
+e("button", { type: "button", style: MP_ABOUT_S.btn, onClick: () => openUrl(x.page) }, t("viewRelease")),
+x.apk
+? e("button", { type: "button", style: MP_ABOUT_S.btnPrimary, onClick: () => openUrl(x.apk.url) }, "⬇ " + t("download"))
+: e("button", { type: "button", style: { ...MP_ABOUT_S.btn, opacity: 0.5 }, disabled: true }, t("download"))))
+})));
+
+return view === "logs" ? logsView : mainView;
+}
+
+/** 注册「关于」分节（order 29：排在开发环境 27 / 运行日志 28 之后）。 */
+function mpRegisterAboutSection(ctx) {
+if (mpPrivReact === null) {
+try { mpPrivReact = require("react"); } catch (e) {
+console.warn("[dsh-android-mobile] require('react') 失败，跳过关于分节:", e && e.message);
+mpPrivReact = null;
+}
+}
+if (!mpPrivReact) return;
+try {
+ctx.inject(["slots", "locale"], (scope) => {
+const t = scope.locale.bind(MP_ABOUT_NS);
+scope.effect(
+() => scope.locale.register(MP_ABOUT_NS, { zh: MP_ABOUT_ZH, en: MP_ABOUT_EN }),
+"dsh-android-mobile: 关于字典",
+);
+scope.slots.inject("settings.section", () => scope.slots.register({
+name: "settings.section",
+id: "dsh-android-about",
+order: 29,
+label: () => t("nav"),
+locale: MP_ABOUT_NS,
+}, mpAboutSection));
+});
+} catch (e) {
+console.warn("[dsh-android-mobile] 注册关于分节失败:", e && (e.stack || e.message || e));
+}
+}
+
+/* ══ 修复 30c（内联版）：把 tabs 摆到「标准模式」徽章右侧 ═══════════
 			   目标布局（用户 2026-10-30 圈定）：
 			     第 1 行：             标题                    ⋯ ▢
 			     第 2 行： ☰   [徽章 标准模式]  对话  轨迹  ⋯
@@ -11438,6 +11793,7 @@ if (!window.__mpHeaderMenuTimer) {
 			mpRegisterBubbleSection(ctx);
 			mpRegisterLogsSection(ctx);
 			mpRegisterDevEnvSection(ctx);
+			mpRegisterAboutSection(ctx);
 			/* 修复 30c：注册 views.actions，让官方 ⋯ 及其「浏览更多插件 / 创建你的插件」
 			   菜单由官方渲染；官方按宽度裁 tab 的问题由「tabs 容器保持 360px 宽」解决。 */
 			mpRegisterViewsMore(ctx);

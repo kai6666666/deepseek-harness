@@ -2081,16 +2081,21 @@ class EngineManager private constructor(private val context: Context) {
         var installedFromHot = false
         if (hot != null) {
             try {
-                target.deleteRecursively()
-                java.util.zip.ZipInputStream(
-                    java.io.BufferedInputStream(hot.first.inputStream())
-                ).use { zis -> unzipInto(zis, target) }
-                stamp.writeText(want)
+                // installFrom 内含：解到 `.staging-<ver>` →（增量包先复制现目录）→ 覆盖/删除
+                // → **完整性校验**（package.json / lib/client.js / lib/index.js / lib/drawer-fix-170.js）
+                // → 原子 rename → 写 stamp。校验不过抛异常，**绝不留半成品**。
+                // 这里再接一层：坏包移到 `plugins/.rejected/`，避免每次启动都重试同一个坏包
+                // （曾经因为热包里丢了 lib/index.js，插件挂载失败 + 就绪超时）。
+                PluginUpdater.installFrom(hot.first, target, want)
                 installedFromHot = true
                 Log.i(TAG, "已安装移动端 UI 插件（热更新包）$MOBILE_UI_PACKAGE $want " +
                     "${clientJs.length()} 字节 src=${hot.first.name}")
             } catch (t: Throwable) {
-                Log.w(TAG, "热更新包安装失败，回退内置 assets: ${t.message}")
+                Log.w(TAG, "热更新包不可用，已丢弃并回退内置 assets: ${t.message}")
+                runCatching {
+                    val rejected = File(hot.first.parentFile, ".rejected").apply { mkdirs() }
+                    hot.first.renameTo(File(rejected, hot.first.name))
+                }
             }
         }
         if (!installedFromHot) {
@@ -2111,21 +2116,6 @@ class EngineManager private constructor(private val context: Context) {
         File(dshHome, "profiles/web/node_modules/$MOBILE_UI_PACKAGE").deleteRecursively()
     }
 
-    /** 后台查一次插件热更新包；任何失败都只记日志，绝不影响启动。 */
-    private fun startPluginUpdateCheck() {
-        Thread {
-            runCatching {
-                val v = PluginUpdater.checkAndDownload(context.filesDir, MOBILE_UI_VERSION)
-                // 子线程里 PluginUpdater 自己的 Log 不落盘（真机实测：logcat 有、app.log 没有），
-                // 所以在这里用同一个 Log（项目里是 DshLog）再记一行，把结果落盘。
-                Log.i(TAG, "插件热更新：" + PluginUpdater.lastStatus +
-                    if (v != null) "【已下载 $v，下次启动生效】" else "")
-                if (v != null) {
-                    EventLog.record("plugin.hotupdate", mapOf("version" to v))
-                }
-            }.onFailure { Log.w(TAG, "插件热更新检查失败（忽略）: ${it.message}") }
-        }.apply { isDaemon = true; name = "plugin-updater" }.start()
-    }
 
     /**
      * 运行时插件包：`files/runtime/plugins/mobile-ui-<ver>.zip`，取版本号最大的一个。
@@ -6784,8 +6774,8 @@ class EngineManager private constructor(private val context: Context) {
         runCatching { ensureWebViewCompat() }
         runCatching { ensureWebCompat() }
         runCatching { ensureBrowserPane() }
-        // P1-b：后台检查插件热更新（**本次启动不生效**，下次启动由 ensureMobileUi 切到新版）
-        startPluginUpdateCheck()
+        // P1-b：**不做自动检查/自动下载** —— 「检查更新」只由用户在「关于」页点击触发
+        //（曾因启动自动拉包把缺 lib/index.js 的坏包装上，界面直接退回桌面布局）。
         runCatching { seedDefaultSettings() }
         runCatching { ensureAgnesMultimodal() }
         runCatching { seedAgnesAccounts() }
