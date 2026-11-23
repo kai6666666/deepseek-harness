@@ -144,6 +144,104 @@ Release 上的资产名固定 `runtime-chunks.json`；客户端按里层 `runtim
 最后是靠产物 sha256 取证。已改成 `runOnUiThread { Log.i(...) }`。
 
 ## 别忘了
-
 - 块大小改了老客户端会错位：清单里带 `chunkSize`，客户端**必须**按清单里的值算偏移，不要把 65536 写死。
 - 分片只在尾部增长（`build-runtime.sh` 切分方式决定），所以前面块的偏移稳定；仍要按 `o` 字段定位，不要按下标乘块大小硬算。
+
+---
+
+## ⚠️ 已知缺陷：`latestRuntimeRelease()` 用**匿名** GitHub API（2026-11-24 实测踩到）
+
+```kotlin
+private fun latestRuntimeRelease(): RuntimeRelease? {
+    val body = httpGet("https://api.github.com/repos/$REPO/releases?per_page=10") ?: return null
+    …
+}
+```
+
+`httpGet` **不带 token**。GitHub 匿名调用 `core` 配额是 **60 次 / 小时 / 出口 IP**，
+而 Release 列表页、每个用户的检查更新、每次 P2 演练**都吃这 60 次** —— 很容易打空。
+
+**打空时的表现**（2026-11-24 01:35 演练实录）：
+
+```text
+auto-dryrun: check 结果={"state":"error",
+  "message":"没找到带 runtime-chunks.json 的 Release",
+  "from":"…-56ebac12167f","to":null,"needBytes":0,"totalBytes":0,"incremental":false}
+```
+
+⚠️ 这句 `没找到带 runtime-chunks.json 的 Release` 是**误导性报错** —— 它把 403 当成了"没有这样的 Release"。
+真实原因要自己 curl 一下才知道：
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' \
+  'https://api.github.com/repos/kai6666666/deepseek-harness/releases?per_page=10'
+# 403
+curl -s https://api.github.com/rate_limit | head -20
+# "core": {"limit": 60, "remaining": 0, "reset": …}
+```
+
+**临时绕过**：等 `reset` 时刻（`date -d @<reset>` 可换算），再重跑演练。
+
+**建议的修法（下个版本）**：彻底不碰 API，改用 **Atom feed + 固定下载前缀**：
+
+```text
+1) GET https://github.com/<repo>/releases.atom            ← 无认证、无严格限流
+   解析第一个 <entry><link href="…/releases/tag/<TAG>">
+2) runtime-chunks.json :
+   https://github.com/<repo>/releases/download/<TAG>/runtime-chunks.json
+3) 其余资产名直接来自 chunks.json 的 files.keys（manifest.json 也在这里）
+   https://github.com/<repo>/releases/download/<TAG>/<name>
+```
+
+好处：① 不消耗 API 配额；② 少一次请求（不再查 assets 列表）；
+③ 顺带把「403 被误报成没找到 Release」这类问题一并消掉 ——
+建议同时把 HTTP 状态码带进 `message`，别再吞掉。
+
+**另外**：`latestRuntimeRelease()` 遍历 `releases?per_page=10` 时**不区分 prerelease**，
+取的是"第一个带 runtime-chunks.json 的 Release"。我们这个仓库全是 prerelease，
+所以目前行为正确；但如果将来发正式版而它的资产不全，会选中它并报"Release 里没有分片"。**建议按 tag 排序 + 校验资产完整性**。
+
+---
+
+## 2026-11-24 第二次端到端演练（`debug.33`，含 79 MB 大文件）
+
+**目的**：不只验证小分片，验证「79 MB 的完整 rootfs 包」也能走增量。
+
+**布置**
+
+```text
+files/runtime/
+  rootfs-arm64-v8a.tar.xz        79,448,384   ← 篡改第 500000 字节（sha → c0fd1eb5…）
+  rootfs-part1/2/3-arm64-v8a.tar.xz             ← 未篡改
+  manifest.json                  runtimeVersion 改成 debug.32 的旧值（让 check 认为需要升级）
+  auto-dryrun                    空文件（12 s 后自动 check → apply）
+```
+
+**结果（48 秒内完成，其中约 35 s 是 App 启动）**
+
+```text
+parts/<debug.33 版本>/
+  manifest.json                     3,503
+  rootfs-arm64-v8a.tar.xz      79,448,384   sha 0eb17d43…  ← 清单值（从 c0fd1eb5… 恢复）
+  rootfs-part1-arm64-v8a.tar.xz 70,263,276  sha b5c637e3…  ← 清单值
+  rootfs-part2-arm64-v8a.tar.xz    783,564   sha 2ce82fa6…  ← 清单值
+  rootfs-part3-arm64-v8a.tar.xz      1,888    sha e3c19864…  ← 清单值
+```
+
+**为什么这能证明是增量**：79 MB 的文件若走全量，光下载就不可能在
+「启动后 48 秒内、apply 实际约 10 秒」这段里完成；而篡改只影响 1 个 64 KiB 块，
+其余块从本地 base 直接拷贝。⇒ 端到端（check → 逐块比对 → Range 下载 → 拼接 → sha256 终校 → 原子落盘）全部正确。
+
+**清理纪律（演练后必做）**
+
+```bash
+run-as com.dsh.android sh -c 'cd files/runtime
+  cp manifest.json.drillbak manifest.json      # 还原版本号
+  rm -f auto-dryrun                            # 删钩子
+  rm -f rootfs-*.tar.xz                        # 删手工放的基线分片
+  # ⚠️ parts/<ver>/ 要保留 —— 那是下次升级的增量基线（约 144 MB）
+'
+```
+
+⚠️ `rootfs.old-*` 这种旧解包目录里含 **root 属主**的符号链接，`run-as` 删不掉
+（`find -delete` 会 permission denied），体积只有几十 KB，可以不管。
