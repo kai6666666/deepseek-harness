@@ -5492,7 +5492,7 @@ class EngineManager private constructor(private val context: Context) {
         Log.w(TAG, "启动前体检：重建 rootfs（缺失=${missing.joinToString()}）")
         val installer = RootfsInstaller(context)
         installer.invalidate()
-        installer.ensure(installer.readManifestFromAssets())
+        installer.ensure(installer.resolveManifest())
         val check = runDumpConfig()
         val ok = check != null && check.exitCode == 0 && missingRequiredEntries(check.stdout).isEmpty()
         EventLog.record("runtime.rebuild", mapOf("verified" to ok.toString()))
@@ -5617,7 +5617,7 @@ class EngineManager private constructor(private val context: Context) {
     ): ProbeResult? {
         val env = activeEnv
         if (env.isEmpty()) return null
-        val host = ProotHost(context, RootfsInstaller(context).readManifestFromAssets(),
+        val host = ProotHost(context, RootfsInstaller(context).resolveManifest(),
             dshHome = dshHome, workspace = workspaceDir)
         return try {
             host.start(env, overlays, profile)
@@ -6556,7 +6556,7 @@ class EngineManager private constructor(private val context: Context) {
      */
     private fun runDumpConfig(): DumpResult? {
         if (RuntimeFiles.missingCriticalFiles(rootfsDir).isNotEmpty()) return null
-        val host = ProotHost(context, RootfsInstaller(context).readManifestFromAssets(),
+        val host = ProotHost(context, RootfsInstaller(context).resolveManifest(),
             dshHome = dshHome, workspace = workspaceDir)
         return try {
             val env = activeEnv.ifEmpty { mapOf("DSH_HOME" to dshHome.absolutePath, KEY_ENV to KEY_PLACEHOLDER) }
@@ -7029,7 +7029,7 @@ class EngineManager private constructor(private val context: Context) {
             activeEnv = emptyMap(); activeOverlays = emptyList()
             EventLog.record("engine.start")
             homeDir.mkdirs(); dshHome.mkdirs(); workspaceDir.mkdirs()
-            val manifest = runCatching { RootfsInstaller(context).readManifestFromAssets() }.getOrNull()
+            val manifest = runCatching { RootfsInstaller(context).resolveManifest() }.getOrNull()
             if (manifest == null) {
                 failStart(generation, "APK 缺少 runtime/manifest.json，请安装完整包")
                 return@withLock

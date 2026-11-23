@@ -8,6 +8,21 @@
 - 设备侧清理：删除演练备份 `dsh-backup-drill.zip` 与 13 个历史 APK（约 2.4 GB）。
 
 **不发新版**：本批只有文档与文件清理。
+## [0.2.2-rc.5-debug.30] — 2026-11-23
+vc=115
+
+### 接线（P2 收口）
+- `RootfsInstaller.resolveManifest()`：**增量下载的新 runtime 优先**（`files/runtime/parts/<ver>/manifest.json` 最新一份），
+  没有再回退 APK assets。`EngineManager` 的 4 个调用点全部改用它 —— 否则下载完永远不被采用。
+- `RootfsInstaller.installParts`：拷分片时先找 `files/runtime/parts/<manifest.runtimeVersion>/<asset>`，
+  长度与 sha256 都对就直接用（日志 `partN 用增量分片`），否则回读 assets。
+- 前端「关于 → 检查更新」接入运行时行：`runtimeDeltaCheck` / `runtimeDeltaState` / `runtimeDeltaApply`，
+  弹窗按「安装包 / 界面 / 运行时」三行显示，增量时标注 KB；只补运行时则提示「重启 App 生效」。
+  旧 APK 没有这些桥 → 直接跳过（热包可装在 debug.28 上）。
+
+### 说明
+- 移动端 UI 插件 `1.1.0-218`。
+
 ## [0.2.2-rc.5-debug.29] — 2026-11-23
 vc=114
 

@@ -142,8 +142,19 @@ class RootfsInstaller(private val context: Context) {
         val xzFiles = ArrayList<File>(parts.size)
         for ((i, p) in parts.withIndex()) {
             val f = File(context.cacheDir, "rootfs-" + manifest.runtimeVersion + "-p" + i + ".tar.xz")
-            copyAsset(p.asset, f, p.bytes) { pr ->
-                onProgress(Progress("copy", copied.get() + pr.done, totalXz, p.asset))
+            // P2：先用「增量已下好的分片」（files/runtime/parts/<ver>/<asset>），没有才读 assets。
+            // 校验长度 + sha256 都要过 —— 增量产物可能是半截或旧文件。
+            val cached = RuntimeDelta.partFile(context.filesDir, manifest.runtimeVersion, p.asset)
+            if (cached != null && cached.length() == p.bytes &&
+                sha256(cached).equals(p.sha256, ignoreCase = true)
+            ) {
+                cached.copyTo(f, overwrite = true)
+                DshLog.i("DSH", "part" + i + " 用增量分片：" + p.asset + "（" + p.bytes + " 字节）")
+                onProgress(Progress("copy", copied.get() + p.bytes, totalXz, p.asset + "（增量）"))
+            } else {
+                copyAsset(p.asset, f, p.bytes) { pr ->
+                    onProgress(Progress("copy", copied.get() + pr.done, totalXz, p.asset))
+                }
             }
             copied.addAndGet(p.bytes)
             val got = sha256(f)
@@ -398,6 +409,21 @@ class RootfsInstaller(private val context: Context) {
     }
 
     /** 从 assets 读 manifest（安装器自己用；装完 ProotHost 读 files 里的副本）。 */
+    /**
+     * 启动时该用哪份清单：**增量下载的新 runtime 优先**，没有才回退 APK assets。
+     *
+     * 为什么需要这一层：`RuntimeDelta` 把新分片下到 `files/runtime/parts/<ver>/`，
+     * 但 assets 里的 `manifest.json` 仍是 APK 自带的旧版本；不换清单的话
+     * 下载完永远不会被采用（用户会以为「点了没反应」）。
+     */
+    fun resolveManifest(): RuntimeManifest {
+        RuntimeDelta.bestPartsManifest(context.filesDir)?.let { mf ->
+            runCatching { return RuntimeManifest.parse(mf.readText()) }
+                .onFailure { Log.w(TAG, "增量清单解析失败，回退 assets：" + it.message) }
+        }
+        return readManifestFromAssets()
+    }
+
     fun readManifestFromAssets(): RuntimeManifest =
         context.assets.open("runtime/manifest.json").use { input ->
             RuntimeManifest.parse(input.bufferedReader().readText())

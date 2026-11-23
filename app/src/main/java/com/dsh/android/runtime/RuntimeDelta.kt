@@ -271,6 +271,30 @@ object RuntimeDelta {
         }
     }
 
+    // ── 给 RootfsInstaller 的接口（增量 ↔ 安装的接缝）─────────────
+
+    /** 某个版本的某个分片文件（增量产物）；没有则 null。 */
+    fun partFile(filesDir: File, version: String, asset: String): File? {
+        if (version.isEmpty()) return null
+        val f = File(filesDir, "runtime/parts/" + version + "/" + asset)
+        return if (f.isFile && f.length() > 0L) f else null
+    }
+
+    /**
+     * parts 目录里「最新一版」的 manifest.json。
+     *
+     * [RootfsInstaller][com.dsh.android.runtime.RootfsInstaller] 启动时优先用它 ——
+     * 否则用户点完「检查更新 → 应用」下载到 `runtime/parts/<new>/` 也不会被采用
+     * （assets 里的 manifest.json 还是 APK 自带的旧版本）。
+     */
+    fun bestPartsManifest(filesDir: File): File? {
+        val dir = File(filesDir, "runtime/parts")
+        val files = dir.listFiles { f -> f.isDirectory && !f.name.startsWith(".") }
+            ?.mapNotNull { File(it, "manifest.json").takeIf { m -> m.isFile } }
+            ?: return null
+        return files.maxByOrNull { it.lastModified() }
+    }
+
     // ── 工具 ────────────────────────────────────────────────
     private class RuntimeRelease(
         val tag: String,

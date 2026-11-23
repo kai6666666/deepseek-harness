@@ -4053,6 +4053,8 @@ upToDate: (v) => `当前已是最新版本：${v}`,
 hasUpdate: "发现新版本",
 apkRow: "安装包",
 uiRow: "界面",
+rtRow: "运行时",
+rtRestart: "运行时已就绪，重启 App 生效",
 changelog: "更新日志",
 licenses: "开源许可声明",
 project: "项目地址",
@@ -4090,6 +4092,8 @@ upToDate: (v) => `You are up to date: ${v}`,
 hasUpdate: "Update available",
 apkRow: "App",
 uiRow: "Interface",
+rtRow: "Runtime",
+rtRestart: "Runtime ready — restart the app to apply",
 changelog: "Changelog",
 licenses: "Open-source licenses",
 project: "Project",
@@ -4222,6 +4226,28 @@ timer.current = setTimeout(tick, 500);
 tick();
 };
 
+/**
+ * 运行时增量（P2）：轮询 `runtimeDeltaState`。
+ *
+ * ⚠️ 旧 APK 没有这个桥 → 直接 cb(null)，页面照常工作（热包可以装到 debug.28 上）。
+ */
+const pollRuntime = (cb) => {
+if (!bridge || !bridge.runtimeDeltaState) { cb(null); return; }
+let n = 0;
+const tick = () => {
+let j = null;
+try { j = JSON.parse(bridge.runtimeDeltaState() || "{}"); } catch (err) { j = null; }
+if (!j || (j.state !== "checking" && j.state !== "applying")) { cb(j); return; }
+if (++n > 240) { cb(j); return; } // 145 MB 全量在慢网下也就几分钟
+timer.current = setTimeout(tick, 500);
+};
+tick();
+};
+/** 有可落的运行时更新（且不是「已是最新」）。 */
+const runtimeReady = (j) => !!(j && j.state === "ready" && j.to && j.to !== j.from);
+/** runtimeVersion 很长（r1-arm64-…-<hash>），只显示末尾短码。 */
+const shortVer = (v) => { const a = String(v || "").split("-"); return a.length > 1 ? a[a.length - 1].slice(0, 12) : String(v || ""); };
+
 const openUrl = (u) => { try { if (bridge && bridge.openUrl) bridge.openUrl(u); } catch (err) {} };
 const apkVerCode = (notes) => { const m = /versionCode\s*\*{0,2}\s*(\d+)/.exec(notes || ""); return m ? parseInt(m[1], 10) : null; };
 const visible = (list) => (list || []).filter((x) => pre || !x.prerelease);
@@ -4234,6 +4260,7 @@ pollReleases((j) => setRel({ ready: true, data: (j && j.data) || [], error: (j &
 const doCheck = () => {
 setDlg({ kind: "checking" });
 try { if (bridge && bridge.pluginUpdateCheck) bridge.pluginUpdateCheck(); } catch (err) {}
+try { if (bridge && bridge.runtimeDeltaCheck) bridge.runtimeDeltaCheck(); } catch (err) {}
 pollReleases((j) => {
 const list = visible((j && j.data) || []);
 const latest = list[0] || null;
@@ -4243,7 +4270,9 @@ const apkNew = !!(latest && newCode && newCode > curCode);
 pollPlugin((ps) => {
 setPstate(ps);
 const ui = ps && ps.available;
-if (!apkNew && !ui) {
+pollRuntime((rs) => {
+const rtNew = runtimeReady(rs);
+if (!apkNew && !ui && !rtNew) {
 setDlg({
 kind: "done", title: t("checkDone"),
 body: j && j.error ? t("netErr") : t("upToDate", (info.versionName || "?") + " (" + curCode + ")"),
@@ -4253,13 +4282,18 @@ return;
 const lines = [];
 if (apkNew) lines.push(t("apkRow") + " " + latest.tag + " (" + newCode + ")");
 if (ui) lines.push(t("uiRow") + " " + ui.version + "（" + (ui.kind === "delta" ? "增量" : "全量") + " " + Math.round((ui.bytes || 0) / 1024) + " KB）");
-setDlg({ kind: "update", title: t("hasUpdate"), body: lines.join("\n"), apkUrl: apkNew && latest.apk ? latest.apk.url : "", ui: !!ui });
+if (rtNew) lines.push(t("rtRow") + " " + shortVer(rs.to) + "（" + (rs.incremental ? "增量" : "全量") + " " + Math.round((rs.needBytes || 0) / 1024) + " KB）");
+setDlg({ kind: "update", title: t("hasUpdate"), body: lines.join("\n"), apkUrl: apkNew && latest.apk ? latest.apk.url : "", ui: !!ui, rt: rtNew });
+});
 });
 });
 };
 
 const doApply = () => {
 setDlg({ kind: "applying" });
+// 先落运行时（若可升），再升界面插件：运行时换的是 rootfs，必须重启才生效，
+// 界面插件只是重载页面 —— 顺序反过来的话重启会把刚重载的页面又白刷一次。
+const startPlugin = () => {
 try { if (bridge && bridge.pluginUpdateApply) bridge.pluginUpdateApply(); } catch (err) {}
 pollPlugin((ps) => {
 if (ps && ps.state === "applied") {
@@ -4269,6 +4303,22 @@ setTimeout(() => { try { location.reload(); } catch (err) {} }, 1200);
 setDlg({ kind: "done", title: t("checkFail"), body: (ps && ps.message) || "" });
 }
 });
+};
+const finishRuntime = (rs) => {
+if (!rs) { startPlugin(); return; }
+if (rs.state === "error") { setDlg({ kind: "done", title: t("checkFail"), body: rs.message || "" }); return; }
+if (rs.state !== "applied") { startPlugin(); return; }
+if (dlg && dlg.rt && !(dlg && dlg.ui)) {
+// 只有运行时更新：插件不需要动，直接提示重启
+setDlg({ kind: "done", title: t("checkDone"), body: t("rtRestart") });
+return;
+}
+startPlugin();
+};
+let rtStarted = false;
+try { rtStarted = !!(bridge && bridge.runtimeDeltaApply && bridge.runtimeDeltaApply()); } catch (err) { rtStarted = false; }
+if (!rtStarted) { startPlugin(); return; }
+pollRuntime((rs) => finishRuntime(rs));
 };
 
 const row = (key, icon, title, desc, onClick, right, sep) => e("button", {
@@ -4296,7 +4346,7 @@ dlg.kind === "checking" ? t("checking") : (dlg.kind === "applying" ? t("applying
 dlg.body ? e("div", { style: MP_ABOUT_S.dlgBody }, dlg.body) : null,
 e("div", { style: MP_ABOUT_S.dlgBtns },
 e("button", { type: "button", style: MP_ABOUT_S.dlgQuiet, onClick: () => setDlg(null) }, t("close")),
-dlg.kind === "update" && dlg.ui
+dlg.kind === "update" && (dlg.ui || dlg.rt)
 ? e("button", { type: "button", style: MP_ABOUT_S.dlgOk, onClick: doApply }, t("apply"))
 : (dlg.kind === "update" && dlg.apkUrl
 ? e("button", { type: "button", style: MP_ABOUT_S.dlgOk, onClick: () => { openUrl(dlg.apkUrl); setDlg(null); } }, t("download"))
