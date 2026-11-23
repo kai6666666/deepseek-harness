@@ -8,6 +8,34 @@
 - 设备侧清理：删除演练备份 `dsh-backup-drill.zip` 与 13 个历史 APK（约 2.4 GB）。
 
 **不发新版**：本批只有文档与文件清理。
+## [0.2.2-rc.5-debug.34] — 2026-11-24
+vc=119
+### 运行时增量（P2）：不再依赖 GitHub API 配额
+旧实现用匿名 `GET /repos/…/releases?per_page=10` 找带 `runtime-chunks.json` 的 Release。
+匿名配额只有 **60 次/小时/出口 IP**（全网共享），打空时返回 403，却被误报成
+「没找到带 runtime-chunks.json 的 Release」——用户侧看到的就是「检查更新失败」。
+
+本版改走 **`releases.atom` + 固定下载前缀**：
+
+```text
+1) GET https://github.com/<repo>/releases.atom            ← 无认证、不严格限流
+   解析前 5 个 tag（可跳过只挂 APK 的版本）
+2) https://github.com/<repo>/releases/download/<TAG>/runtime-chunks.json
+3) 资产名直接来自清单 files.keys  https://github.com/<repo>/releases/download/<TAG>/<name>
+```
+
+配套：清单在探测时已下载（`chunksText` 复用，少一次请求）；`RuntimeRelease` 新增
+`baseUrl` / `chunksText`；`planDelta` 在 `assets` 为空时按 `baseUrl` 拼；
+新增 `lastReleaseError` 把真实失败原因带进 `message`。
+### 运行时清扫：保住 `termux/home` 用户数据
+`RuntimeFiles.purgeLegacy` 原来把整个 `termux` 删掉，会连用户在 `termux/home` 里的
+自定义环境一起删。现在只删 bionic 时代的 `termux/usr`，`termux/home` 保留；
+返回值仍含 `"termux"`，两次调用幂等。（`RuntimeS6Test` 一直红的就是这条，现已转绿。）
+### 移动端 UI 插件 1.1.0-237
+- 插件详情页可读（`docs/DETAIL.md` 随 runtime 构建）；
+- 插件页三个列表左右 16dp；导航标题左对齐（`padding-left` 52px → 0）；
+- 补丁改 `MutationObserver + requestAnimationFrame`，首帧即生效，标题不再「向左瞬移」。
+
 ## [0.2.2-rc.5-debug.33] — 2026-11-24
 vc=118
 ### 运行时：插件详细介绍真正带进 runtime
