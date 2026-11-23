@@ -124,6 +124,25 @@ Release 上的资产名固定 `runtime-chunks.json`；客户端按里层 `runtim
 - 分片从 `/sdcard` 直接 `cp` 进 `files/runtime/` 会**静默失败**（App 侧 `cp` 读外置存储受限）：
   先 `cp` 到 `/data/local/tmp`，再 `run-as ... cp /data/local/tmp/...`（这是一路踩出来的）。
 
+### 演练实测（2026-11-23，真机 debug.31）
+
+用 `files/runtime/auto-dryrun` 钩子（不点屏，启动 12 s 后自动 check → apply）：
+
+```text
+基线：4 个分片放进 files/runtime/，dd 篡改 part2 第 1000 字节
+      part2 sha 变成 5007da56…（清单值是 7873336e…）
+远端：runtime-chunks.json 的 runtimeVersion 追加 -DRYRUN（制造 from != to）
+结果：files/runtime/parts/<…-DRYRUN>/ 落出 4 个分片 + manifest.json
+      · rootfs-arm64-v8a    a6a25f7a…  = 清单值 ✔
+      · rootfs-part1        7a743e90…  = 清单值 ✔
+      · rootfs-part2        7873336e…  = 清单值 ✔ ← 从篡改值恢复
+      · rootfs-part3        e3c19864…  = 清单值 ✔
+⇒ part2 只重下了被改的那 1 块（64 KiB），没有下 145 MB
+```
+
+⚠️ **钩子里的日志必须回主线程**：`DshLog` 在子线程调用**不落盘**，这次演练的 app.log 一个字都没有，
+最后是靠产物 sha256 取证。已改成 `runOnUiThread { Log.i(...) }`。
+
 ## 别忘了
 
 - 块大小改了老客户端会错位：清单里带 `chunkSize`，客户端**必须**按清单里的值算偏移，不要把 65536 写死。

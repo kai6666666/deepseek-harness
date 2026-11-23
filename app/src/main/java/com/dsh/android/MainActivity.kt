@@ -820,17 +820,20 @@ class MainActivity : AppCompatActivity() {
         // 「检查 → 应用」，全过程落在 app.log（RuntimeDelta 的 Log.i）。
         // 平时这个文件不存在 → 什么都不做。演练脚本见 docs/agents/runtime-delta.md。
         if (java.io.File(filesDir, "runtime/auto-dryrun").isFile) {
+            // ⚠️ 子线程里直接调 DshLog 往往**不落盘**（这次演练全丢，只能靠产物 sha 取证）
+            fun dryLog(msg: String) { runOnUiThread { Log.i("DSH", msg) } }
             Thread({
                 runCatching {
                     Thread.sleep(12_000)
-                    Log.i("DSH", "auto-dryrun: check 开始")
+                    dryLog("auto-dryrun: check 开始")
                     RuntimeDelta.checkAsync(filesDir)
                     Thread.sleep(10_000)
-                    Log.i("DSH", "auto-dryrun: check 结果=" + RuntimeDelta.stateJson(filesDir))
+                    dryLog("auto-dryrun: check 结果=" + RuntimeDelta.stateJson(filesDir))
                     RuntimeDelta.applyAsync(filesDir)
                     Thread.sleep(30_000)
-                    Log.i("DSH", "auto-dryrun: apply 结果=" + RuntimeDelta.stateJson(filesDir))
-                }.onFailure { Log.w("DSH", "auto-dryrun 异常：" + it.message) }
+                    dryLog("auto-dryrun: apply 结果=" + RuntimeDelta.stateJson(filesDir))
+                    java.io.File(filesDir, "runtime/auto-dryrun").delete()
+                }.onFailure { dryLog("auto-dryrun 异常：" + it.message) }
             }, "auto-dryrun").start()
         }
         // 调试包开 WebView 远程调试：移动端布局出问题时只能靠 CDP 读 computed style，
