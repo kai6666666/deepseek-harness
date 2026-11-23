@@ -1,335 +1,168 @@
-# 移动端 UI 插件
+# 移动端 UI 插件（`mobile-ui-plugin/dsh-android-mobile`）
 
-> 本文是 [AGENTS.md](../../AGENTS.md) 的分册之一，
-索引见 [docs/agents/README.md](README.md)。
+改移动端布局 / 样式前先读这一页。三个高频坑都在这里踩过，且都有真机取证的结论。
 
-## 历史状态（2026-11-18 补记）
+---
 
-- **PR#9 的三个缺陷**（别名桥接误认领、`MP_LEGACY_HASHES` 未随引擎同步、单局部名豁免）**已在更早的 mobile-ui 版本修复**，本文档曾长时间未同步，读起来像是「仍未修」。
-- 本次 `0.2.2-rc.3-debug` 升级**只做回归**：不重开这三个缺陷，也不把修复归功于尚未发布的 `1.1.0-186`。`1.1.0-186` 的职责仅是「跟随 rc.3 的 CSS Module hash 与压缩产物形态」。
-- 回归判据仍以本文「别名桥接的判据」与 [mobile-ui-rc3.md](mobile-ui-rc3.md) 的 6 条断言为准。
+## 1. 设计 token：只能用真实存在的名字
 
-## 移动端 UI 插件
-
-源码在 `mobile-ui-plugin/dsh-android-mobile/`，打包成 `assets/mobile-ui.zip`。
-`EngineManager.ensureMobileUi()` 解包到 `$DSH_HOME/mobile-ui/dsh-android-mobile/`，
-`writeMobileUiPatch()` 生成 overlay（`name` 用 `file://` 绝对 URL）并作为 `--patch`
-传给引擎。
-
-```powershell
-# 改完源码重新打包（注意：条目必须是 lib/client.js 这种相对路径）
-Compress-Archive -Path mobile-ui-plugin\dsh-android-mobile\* `
-                 -DestinationPath app\src\main\assets\mobile-ui.zip -Force
-# 然后改 EngineManager.MOBILE_UI_VERSION
-```
-
-⚠️ `ensureMobileUi()` 按 `entry.name` 直接解到目标目录。若压缩时把顶层目录也带进去
-（变成 `dsh-android-mobile/lib/client.js`），会解成嵌套两层，插件找不到 → 静默退回桌面布局。
-
-### ⚠️ 为什么解到 `$DSH_HOME/mobile-ui/` 而不是 profile 的 `node_modules`（踩过的大坑）
-
-**症状**：界面看起来"插件装了一半"——侧栏不再是抽屉，而是常驻 56px 图标条（正文只剩
-304px），工具卡片/执行过程里的长文本**左右两端都被裁出屏幕**，但左上角汉堡按钮还在、
-DOM 里也有 `.mp-nav-btn` / `.mp-drawer-mask`。**没有任何报错。**
-
-**根因**：插件原先解到 `profiles/web/node_modules/dsh-android-mobile`，而该包**不在**
-profile 的 `dependencies` 里（写进去会让 DSH 去 registry 拉这个本地包）。于是
-**用户每用插件管理器装一次插件，pnpm 就把它当"多余依赖"挪进 `node_modules/.ignored/`**。
-包一挪走，overlay 里按包名解析的 `name` 找不到模块 → 客户端半不编入浏览器 →
-`injectStyles()` 注入的 `<style>` 随插件卸载被移除 → **全部 53 条 `[data-mobile]`
-规则一起消失**，静默退回桌面布局。
-
-**为什么难查**：`[data-mobile]` 属性还在（`mpSyncMobileAttr` 照常跑），残留的 DOM
-元素也在，只有 CSS 没了——所有 `position` 都退回 `static`。用 CDP 数一下
-`document.styleSheets` 里 `[data-mobile]` 规则的条数就能一眼看出（正常 53，坏掉 0）：
-
-```js
-let n=0; for (const sh of document.styleSheets){let rs;try{rs=sh.cssRules}catch(e){continue}
-  const w=a=>{for(const x of a){if(x.cssRules&&!x.selectorText){w(x.cssRules);continue}
-    if(x.selectorText&&/\[data-mobile\]/.test(x.selectorText))n++}};w(rs)} n  // 期望 53
-```
-
-**修法**：把包放到 pnpm 管不到的地方（`$DSH_HOME/mobile-ui/`），overlay 里用
-`file://` 绝对 URL 挂载 —— `dsh-client-modules.locatePkgJson()` 显式支持 pathLike
-说明符（`.` / `file:` / 绝对路径），会从模块位置向上找最近的 `package.json` 认作该包。
-`ensureMobileUi()` 同时会清掉 `node_modules` 下的旧位置。
-
-**为什么走 `--patch` 而不改 profile 的 `cordis.patch.yml`**：后者归 DSH 初始化并可能承载
-用户配置，覆写会丢东西；`--patch` 层在 profile 层之后应用、优先级更高，且完全由本 App 拥有。
-
-**为什么不写进 profile 的 `package.json` dependencies**：那会让 DSH 试图从 registry 拉这个
-本地包。桌面端同样刻意不写。
-
-**插件依赖的 CSS Module hash 与引擎版本强绑定**（如 `pI_x6G`=layout、`wSkVaW`=conversation）。
-插件内置「别名桥接」在运行时从稳定局部名反推当前 hash，升级 DSH 后多数规则能自动复活，
-但**不是所有**——见下。
-
-### 别名桥接的判据（改过，别退回去）
-
-`mpDeriveAliasMap()` 只认**命中 ≥2** 的映射（`if (hit < 2) continue`）。
-
-原先有一条 `|| locals.length === 1` 豁免（单局部名的旧 hash 凭 1 票即可采纳），它在
-`Nqubda: ["panel"]` 上炸了：`panel` 太通用，官方右侧栏的 dockkit 面板（`P3OORG_panel`）
-也用它，于是桥接把 `Nqubda_panel` 补到了**那个面板**上，而审批浮层规则
-`[data-mobile] .Nqubda_panel` 随即把它变成 `position:fixed` 浮层盖住上半屏——用户看到
-半屏白块，连「添加一个 API Key」对话框都被压住。
-
-同类隐患还有 `zGbnIq: ["title"]`。**加豁免前先确认该局部名是否唯一。**
-
-### ⚠️ 别名桥接会误认领无关 hash（改过两次，别退回去）
-
-**症状**：「执行了命令」这类**分组头被居中**（本该左对齐）。真机实测 53 个
-`.O_Ebla_root` 里有 2 个中招、其余正常 —— **同一页面上有的错有的对**。
-
-**根因**：`MP_LEGACY_HASHES` 是手写的「旧 hash → 局部名」表，但它**没有随引擎升级同步**。
-`bOPqQW`（composer 遥测药丸）既登记在表里，**又是官方当前仍在用的 hash** ——
-官方 `dsh-client-ui-chat/lib/client.js` 里 `.bOPqQW_root` 与 `.O_Ebla_root`
-**同时存在**，属于两个不同组件。旧逻辑无条件把登记过的 hash 从候选池剔除，于是
-`bOPqQW` 丢掉了自己的 4 票证据，转而去认领了恰好共享 `label` + `root` 两个局部名的
-**无关** hash `O_Ebla`（2 票，刚好够门槛）。而 `bOPqQW_root` 官方定义带
-`justify-content: center`：
-
-```css
-.bOPqQW_root{…;justify-content:center;gap:12px;display:flex}   /* 遥测药丸栏 */
-.O_Ebla_root{min-width:0}                                        /* 分组头 */
-.O_Ebla_title{…;text-align:left;…}                               /* 明确要求左对齐 */
-```
-
-**判据演进（三次都踩了坑，最终版才是对的）**：
-
-| 版本 | 判据 | 为什么不够 |
-|---|---|---|
-| v1 | 无条件跳过登记过的 hash | `bOPqQW` 丢掉自己的证据 → 认领 `O_Ebla` |
-| v2 | 当下样式表里有没有该 hash | CSS Module **懒注入**，同一 hash 时有时无 → 同页有的中招有的正常 |
-| v3 | 累积证据 `mpOfficialSeen`（只增不减） | 早期样式表未注入时仍会误判 `YDXeBa→oz9t_a` |
-| **v4（现行）** | 累积证据 **+ 重合率 ≥ 60%** | ✅ |
-
-**最终判据**（`mpDeriveAliasMap`，三条缺一不可）：
-
-1. **`mpOfficialSeen.has(oldHash) || cur[oldHash]` ⇒ 跳过**。前者是「官方样式表
-   **曾经**出现过」，后者是「当下 DOM 里有（且已排除桥接自己补的）」。
-   ⚠️ 必须**累积**：官方 CSS Module 按需注入，未渲染组件的规则此刻不在表里，
-   用快照会让判据抖动。真机实测官方样式表里出现过 114 个 hash。
-2. **重合率 `hit / min(旧局部名数, 新局部名数) ≥ 0.6`**。光有 2 票远不够 ——
-   真机实测 `YDXeBa→oz9t_a` 只因两者偶然共享 `time` + `chevron` 两个**通用**局部名
-   就达成了 2 票。真正的「过期」是**同一组件换 hash**，局部名集合基本不变（接近 100%）。
-   `YDXeBa`(10) vs `oz9t_a`(10)，命中 2 → 20% ⇒ 拒绝。
-3. **目标 hash 自身也登记在旧表里 ⇒ 不许被认领**（它属于另一个组件）。
-
-另外两条必须同时满足：
-
-- **排除插件自己的样式表**：插件 CSS 大量使用旧类名（如 `[data-mobile] .bOPqQW_root`），
-  算进去的话所有旧 hash 都会被判为未过期，**桥接彻底失效**。
-  ⚠️ 判据必须**全等**比较 `dataset.pluginCss === "dsh-android-mobile/main.css"` ——
-  官方 DSH 自己也给每个 CSS Module 的 `<style>` 打 `dataset.pluginCss`（值是模块路径），
-  只判该属性是否存在会误伤 140 个官方样式表（真机实测 143 张表里 140 张被误判）。
-- **防自我强化**：桥接补上去的类名记进 `mpAliasAdded`，DOM 采集时跳过它们 ——
-  否则下一轮推导会拿自己补的类名当官方证据，越套越偏。
-
-⚠️ **误加的类名不会自己消失**：判据修好后，DOM 上残留的旧类名照旧触发官方规则
-（`justify-content: center` 依然生效），用户看到的错位不会恢复。所以有
-`mpPruneStaleAliases()` —— 映射变化时主动撤掉「已补上但当前映射里不再成立」的类名。
-
-⚠️ **别再往 `MP_LEGACY_HASHES` 里加官方当前仍在用的 hash。** 加之前先在
-`engine/node_modules/@deepseek-ai/dsh-client-ui-*/lib/client.js` 里
-`Select-String -SimpleMatch "<hash>_"` 搜一遍：**搜得到就说明它没过期，不该进这张表**。
-（实测：这张表里 14 个 hash 在当前引擎 `0.2.0-rc.2` 下**全部没过期**，
-所以桥接在当前版本下本就无事可做，任何「认领」都是误伤。）
-
-**验收手法**（数值证据，别靠截图猜）：
-
-```js
-// 期望：O_EblaWithBOPqQW = 0，justify = "normal"，dataMobileRules ≈ 57
-({
-  O_Ebla_root: document.querySelectorAll('.O_Ebla_root').length,
-  O_EblaWithBOPqQW: document.querySelectorAll('.O_Ebla_root.bOPqQW_root').length,
-  justify: getComputedStyle(document.querySelector('.O_Ebla_root')).justifyContent,
-})
-```
-
-`dataMobileRules` = `document.styleSheets` 里 `[data-mobile]` 规则条数，
-正常 **57**；**0 表示插件 CSS 整体丢失**（退回桌面布局，见上一节）。
-另：logcat 里**不应出现** `[mobile-polish] CSSModule 别名桥接:` 那行 ——
-它一旦打出就说明有 hash 被认领了，在当前引擎版本下即为误伤。
-
-### 「+」菜单与键盘的时序（改过，别退回去）
-
-官方「+」的指令菜单**只在编辑区仍持有 DOM 焦点时才会渲染**，而官方
-`onToggleCommandMenu` 是「先把焦点还给编辑区、再 toggle 菜单」
-（`dsh-client-ui-conversation/lib/client.js:17390`）。同时官方 `keepDraftFocus`
-还会在 mousedown 里再 focus 一次。
-
-而插件的两个守卫（修复 29 的 `onFocusIn`、修复 38b 的 `arm`）都会**主动把焦点从编辑区
-拿走**（键盘被手动收起后，只要还有可编辑元素持焦点，Android 就会把输入法挂回来）。
-于是「谁先拿走焦点」直接决定菜单能不能出现。真机三种时序：
-
-| 拿走焦点的时机 | 菜单 | 键盘 |
-|---|---|---|
-| 菜单渲染前（旧行为） | ❌ 不开 | 不弹 |
-| 一直不拿 | ✅ 开 | ❌ 弹回 |
-| **菜单出现之后再拿** | ✅ 开 | ✅ 不弹 |
-
-所以有一条**共享闸门** `mpDeferBlur()` / `mpFlushPendingBlur()`（在
-`setupComposerKeyboardGuard` 上方）：把「拿焦点」挂到 `[data-trigger-menu]` 出现的
-那一刻，并带 700ms 兜底（官方改了渲染方式时也必须把焦点还回去，否则键盘一直挂着）。
-
-⚠️ 闸门**必须对两条守卫都生效** —— 只改 `arm` 无效，`onFocusIn` 会先一步把焦点抢走
-（真机实测：只有 `focusout`，菜单从未进过 DOM）。
-⚠️ **只对 `button[aria-haspopup="listbox"]`（即「+」）延迟**；发送 / 停止 / 模型选择等
-不弹这个菜单，必须维持**立即 blur**，否则白等一个兜底周期，那段时间足够键盘被挂回来。
-⚠️ 不要退回「立即 blur」，也不要改成「在 keepFocus 里 blur」—— 后者同样抢在 React
-渲染菜单之前。
-
-### API 密钥输入框弹安全键盘（修复 68，**改过两次才对**）
-
-**症状**：设置 → 模型 → 添加模型提供商，点 API 密钥输入框弹出「华为安全键盘」，
-**没有粘贴入口**。API key 是 51 字符的 `sk-...`，手抄不现实 ⇒ 功能实际不可用。
-
-**根因（第一版没找对，第二版才定论）**：官方把凭据框渲染成 `<input type="password">`
-（`dsh-client-ui-settings-models/lib/client.js` L1692 与 L2552），Android WebView 据此
-把 `inputType` 定成 `TYPE_TEXT_VARIATION_WEB_PASSWORD`，输入法切安全键盘（按设计屏蔽剪贴板）。
-
-**两次踩坑，都要记住：**
-
-**坑一：用 CSS 补圆点 ⇒ 修复完全失效。**
-第一版摘掉 `type=password` 后，又写了
-`input[data-mp-key="1"] { -webkit-text-security: disc !important; }` 把圆点补回来。
-而 blink 判定「密码字段」用的是 `Element::ShouldObscureValue()`，它检查的正是
-**`computedStyle.textSecurity != none`** —— `type=password` 只是经 UA 样式表拿到同一条声明。
-摘掉属性、再手写同一条声明 ＝ 原样把密码语义装了回去。
-⚠️ **「普通键盘」与「圆点遮蔽」在 Android WebView 上不可兼得**，要剪贴板就必须放弃遮蔽。
-
-**坑二（更隐蔽）：事后改属性永远追不上 —— WebView 不为已建立的输入连接重算 `inputType`。**
-官方那两个框带 **`autoFocus: true`**（L1699、L2552）。React 把元素插入 DOM 的**同一帧**
-就以 `type=password` 聚焦，WebView 在那时建立了密码型连接。MutationObserver 是**之后**
-才改属性的，**太晚了**。实测 `blur() + focus()` 也刷不动 —— 确认是缓存的。
-
-**决定性对照实验**（真机 CDY-TN90 / Android 10，读 `dumpsys input_method` 的实时值）：
-
-| 聚焦的元素 | DOM | IME `inputType` |
-|---|---|---|
-| 手工造的纯净 `<input type=text>` | `type=text` | `0x0` |
-| 同样纯净 + `data-mp-key="1"` | `type=text` | `0x0` |
-| 官方凭据框（**只做事后改属性**） | `type=text`、`ts=none` | **`0xe1`** ✗ |
-| 官方凭据框（**原型层拦截**） | `type=text`、`ts=none` | **`0x80a1`** ✓ |
-
-`0xe1` = `TYPE_CLASS_TEXT(0x1)` \| `TYPE_TEXT_VARIATION_WEB_PASSWORD(0xe0)`
-`0x80a1` = `TYPE_CLASS_TEXT(0x1)` \| `TYPE_TEXT_VARIATION_VISIBLE_PASSWORD(0x10)` \| `NO_SUGGESTIONS`
-
-**做法**：`installPasswordTypeShim()` 在 `HTMLInputElement.prototype` 层重定义 `type`
-访问器与 `setAttribute`，把写入的 `"password"` 就地换成 `"text"` ——
-**让 DOM 里从头到尾没出现过 password**，输入连接从建立的第一刻就是普通文本框。
-React 完全无感（它只认自己的 props，不读 DOM 属性），受控逻辑不受影响。
-MutationObserver 保留作兜底 + 摘 `autocomplete="new-password"`。
-
-**顺带排除掉的嫌疑（都实测过，别再往这些方向查）**：
-- `data-mp-key` 标记本身 —— 带它的纯净 input 仍是 `0x0`
-- CSS `-webkit-text-security` —— 已确认 `getComputedStyle().webkitTextSecurity` 可读，
-  焦点框实测 `ts=none`，证明遮蔽确实清掉了
-- `blur() + focus()` 重建连接 —— 实测刷不动 `inputType`
-
-**验收**：`0xe1` → `0x80a1`，键盘顶部「华为安全键盘」标识消失，键盘出现剪贴板入口。
-
-⚠️ 改的是 `mobile-ui.zip` 内容 ⇒ **必须同时改两处版本戳**，否则老设备静默不更新：
-`EngineManager.MOBILE_UI_VERSION`（→ `1.0.0-49`）与
-`tools/build-webview-compat.ps1` 的 `-CompatVersion`（→ `9`，并重跑脚本）。
-降级产物会**覆盖**源文件，这是「改了没生效」最常见的陷阱（见 ⑯）。
-
-## 设置页分节：为什么「转圈 + 切回来又转圈」
-
-四个分节（内置插件 / Agent 预设 / 插件市场 / 开发环境）各自卡在不同地方，2026-11-23 一次修完，四层真相都值得记。
-
-### 1. `settings.section` 是**卸载式**切 tab
-
-离开就销毁组件，回来是全新挂载、`useEffect` 重跑一次 —— 所以「客户端缓存」救不了切 tab，**缓存必须放宿主半**。
-
-### 2. 「开发环境」卡在 `du -sk /usr`
-
-`/api/dsh-android/devenv` 每次 GET 都 spawn `dsh-env.mjs status --json`，里面 `du -sk /usr` 扫整个 rootfs → 真机 **10.8 / 13.4 / 13.9 s**（连测三次）。
-
-修：宿主半 60 s 状态缓存 + 并发去重 + 写后失效；插件挂载 3 s 后静默预热；前端加模块级快照（先渲染快照再后台刷新）。
-
-⚠️ **强制刷新必须走 header**：`kind: 'exact'` 的 handler 里 `req.url` 的 query **会被剥掉**（实测 `/devenv?force=1` 能匹配上，但 handler 拿到的 url 是 `/devenv`）⇒ `x-dsh-force: 1` 是主通道，query 只算兜底。
-
-真机：13.9 s → **6~15 ms**；`x-dsh-force: 1` 强制重算 5.7~7.7 s。
-
-### 3. 「内置插件」被 failed fiber 拖住
-
-`pluginInventory.list()`（`@deepseek-ai/dsh-host-plugin-inventory`）**每次调用都重读全部 fiber**（源码注释自己写着 *no separate runtime cache*），而且对 `fiberPhase === 'failed'` 的条目会 `await fiber.await()` 去取失败原因 —— 一个坏插件卡住就能拖死整张清单。
-
-修：宿主半把它包一层（5 min TTL + 并发去重 + 8 s 硬上限）。短时间来回切 = **0 次扫描**；放久了再回来才重读一次。
-
-### 4. 「插件市场」每次都真的去抓网
-
-`pluginMarket.search(url, query)` 每换一个索引调一次，而 `fetchTimeoutMs` 默认 **15 s**、`cacheTtlMs` 10 min。两个索引（`dshopen.org` / `cdn.jsdelivr.net`）抓不动时 = **15 s × 2** 才回落离线目录 ≈ 用户看到的「实时扫描失败 … aborted due to timeout」。
-
-修（三层，全在宿主半）：
-
-1. 运行时把 config 压下去：`mk.config.fetchTimeoutMs = 3000`、`mk.config.cacheTtlMs = 3600000`（`this.config = config` 是普通实例属性，可写；探针实测读回 `to:3000 / ttl:3600000`）；
-2. `search()` 包结果缓存：空 query **1 h**、带 query **5 min**、并发去重、**3.5 s 硬上限**（探针实测 `wrapped:true`）；
-3. `setIndexes()` 后清空缓存。
-
-### 5. 这次踩到的两个坑
-
-- **`ctx.get(name)` 在服务未注册时可能抛错**。裸调用会让它后面的挂载（市场、清单包装）整段跳过，而且**不留任何日志** —— 自查时发现两处，统一包了 `safeGet()`。
-- **overlay 覆盖官方插件 config 时，`config:` 是整段替换**。只写要改的字段会把 `indexes` 一起抹掉，市场源直接消失 ⇒ 必须把 `indexes` 原样重写一遍（`EngineManager.writeMarketPatch()` 里已加注释，官方改了索引要同步）。
-
-### 版本戳（补充）
-
-改 `mobile-ui-plugin/**` 后**必须** bump `tools/mobile-ui-version.txt`（热包通道与内置 assets 都靠它判新旧）；`EngineManager.MOBILE_UI_VERSION` 只在没有热包时才用。
-
-## DSH 设计 token 白名单（写死颜色前先核一遍）
-
-2026-11-23 踩的坑：「关于」页弹窗在深色下**白底 + 浅字，几乎看不见**。
-
-真因不是主题没切，而是我用了**不存在的 token**：
-
-```text
-我写的        --dsw-alias-bg-elevated / --dsw-alias-bg-subtle   ← DSH 里没有
-dialog 的 fallback  #fff  → var() 整条声明作废 → 背景回退成纯白
-标题 color 走 inherit      → 深色下继承到浅色字 ⇒ 白底浅字
-```
-
-从 `dsh-web-frontend/dist/assets/index-*.css` 抄出来的真实名字：
+DSH 的设计变量只有下面这些（`dsh-web-frontend/dist/assets/index-*.css` 里 grep 出来的）：
 
 | 类别 | 真实 token |
 |---|---|
-| 背景 | `bg-base`、`bg-layer-1` / `-2` / `-3` / `-4`、`bg-mask-1`、`bg-module-platform`、`bg-skeleton` |
-| 文字 | `label-primary`、`label-secondary`、`label-tertiary`、`label-caption`、`label-dimmed`、`label-error`、`label-shimmer`、`label-primary-foreground` |
-| 边框 | `border-l1` / `-l2` / `-l3` / `-l4`、`border-l2-darkmode-thin` |
+| 背景 | `--dsw-alias-bg-base` / `bg-layer-1` … `bg-layer-4` / `bg-mask-1` / `bg-module-platform` / `bg-skeleton` |
+| 文字 | `--dsw-alias-label-primary` / `-secondary` / `-tertiary` / `-caption` / `-dimmed` / `-error` / `-shimmer` / `-primary-foreground` |
+| 边框 | `--dsw-alias-border-l1` … `border-l4` / `border-l2-darkmode-thin` |
 
-### 两条纪律
+**不存在**：`bg-elevated`、`bg-subtle`（这两个是我自己编的，写进 `var()` 会让整条声明作废）。
 
-1. **fallback 必须“和主题一致”**。卡片写的是 `var(--dsw-alias-bg-elevated, transparent)` —— 变量不存在时变透明，透出深色页面，**误打误撞对了**；弹窗写 `#fff` 就直接翻车。变量可能不存在时，宁可透明也别写死浅色。
-2. **关键浮层再叠一层显式兜底**。`MP_ABOUT_DARK` + `mpDs(base, key)`（每次调用读 `body[data-ds-dark-theme]`，主题切完立刻生效，别缓存进 state）。token 正常时 token 赢，token 没了还有正确深浅。
+纪律：
 
-真机像素验收（`debug.31` + `mobile-ui 1.1.0-219`）：
+- `var()` 的 fallback **必须与主题一致**；宁可 `transparent`，绝不写死浅色。
+- 关键浮层（弹窗）再叠一层显式兜底：每次读 `body[data-ds-dark-theme]`，**不要缓存进组件 state**
+  （切主题不会重建这个分节）。
 
-```text
-深色·正在检查  弹窗底 (38,38,42) #26262a   标题 (240,240,240)
-深色·检查完成  弹窗底 (51,51,53) #333335（DSH 自己 layer-2 的深色值 ⇒ token 真的生效了）
-浅色·检查完成  弹窗底 (255,255,255)         正文 (15,17,21)
-三组采样里没有一次「白底 + 浅字」
+历史事故：深色模式下「检查完成 / 正在检查」弹窗白底浅字 —— 原因就是 `bg-elevated` 不存在。
+修法与像素验收见 `1.1.0-219/220`。
+
+---
+
+## 2. 插件详情页「插件声明的详细介绍文件无效」
+
+**两个独立根因，缺一不可**：
+
+### 2.1 `tools/runtime/build-runtime.sh` 删了 `docs/`
+
+```bash
+# 改前（两处都会踩）
+find … -name '*.md' -delete                 # 干掉 README.md
+find … -type d \( -name docs -o -name … \) -delete   # 干掉整个 docs/  ← 真凶
 ```
 
-## 插件详情页「插件声明的详细介绍文件无效」（2026-11-23）
+插件 `package.json` 的 `files` 里写着 `"docs"`，`@deepseek-ai/dsh-plugin-detail` 就是按这个约定
+去读 detailed 介绍：
 
-**根因**：`tools/runtime/build-runtime.sh` 为了减包，把 node_modules 里所有 `.md` 删了，
-而 `@deepseek-ai/dsh-plugin-detail/lib/index.js` 只认 `README.md` / `readme.md`。
-于是每个插件的详情页都报「插件声明的详细介绍文件无效」。
+```text
+<pkg>/docs/
+  DETAIL.md          ← 英文详细介绍
+  DETAIL.zh.md       ← 中文详细介绍
+  preview.svg / preview.zh.svg   ← 预览图
+```
 
-- 包里的 `README.i18n.yaml` **不是 README**：它是双语区块哈希的旁签（没有正文），转不出介绍。
+⇒ 已改成**保留 `docs/`**（删掉 test/example 那两条仍然保留）。
 
-**修法两层**：
+### 2.2 `README.i18n.yaml` 是哈希旁签，不是正文
 
-1. **根治**：`build-runtime.sh` 的删除规则加 `! -name README.md ! -name readme.md`（体积代价约 1~2 MB）。
-2. **救现有设备**：`tools/plugin-readme.py` 按包名清单找回 README（jsDelivr → npm packument → description 兜底），
-   产物是 `<包>/README.md` + `readme.map`，再用 `run-as` 循环拷进 rootfs。
+```yaml
+# Bilingual-pair consistency record for README.md: per heading section,
+# a hash of its English and Chinese blocks …
+/:
+  en: d7cf0e812c2b84ef
+  zh: 959798411569393e
+```
 
-⚠️ 重建 runtime 会覆盖第 2 步补的文件，根治只能靠第 1 步。
+它记录官方 README 每个标题段的中英哈希。**人手塞进去的 README 对不上这些哈希** ⇒ 同样判「无效」。
+运行时用不到它，改名成 `.bak` 即可绕开（构建期工具才需要）。
 
-## 插件页移动端适配（待做）
+### 2.3 补文件的工具
 
-- 三个列表（内置插件 / 实验性插件 / 已安装）内容贴边，需左右 16 px 内边距。
-- 子页头部 `‹ 实验性插件` 未左对齐（箭头贴左、标题居中），需与卡片左边缘同基线。
-- 两条都要用 JS 定位官方容器（class 是 CSS Modules 哈希，不能写死），下一轮实测迭代。
+```bash
+# 真实 docs（jsDelivr 目录 API + 逐文件下载）
+python3 tools/plugin-docs.py pkgs.txt docsout 0.2.2-rc.5 --fallback --keep-map
+
+# 产物：docsout/@deepseek-ai__<name>/docs/…
+# 清单：docsout/docs.map（包名|@deepseek-ai/短名）
+# --fallback ：没有 docs 的包用 npm description 生成最小 DETAIL.md
+# --keep-map ：与已有 map 合并（不合并会「第二次只跑两个包就把清单覆盖成两行」）
+```
+
+装进设备（`run-as` 里 `R` 要用**绝对路径**，`cd` 到别处后相对路径会失效）：
+
+```bash
+run-as com.dsh.android sh -c '
+  R=/data/user/0/com.dsh.android/files/runtime/rootfs/opt/dsh/node_modules/@deepseek-ai
+  cd /data/local/tmp/docs3
+  for s in @deepseek-ai__*; do
+    [ -d "$s/docs" ] || continue
+    d="$R/${s#@deepseek-ai__}"; [ -d "$d" ] || continue
+    mkdir -p "$d/docs"; cp -r "$s/docs/." "$d/docs/"
+  done'
+```
+
+⚠️ **重建 runtime 会覆盖手工补的文件** —— 根治靠的是构建脚本那一条规则（2.1），不是手工 cp。
+
+---
+
+## 3. 插件页对齐（标题左对齐 / 列表贴边）
+
+### 3.1 为什么不能用 CSS 选择器
+
+插件页容器的 class 是 **CSS Modules 哈希**（`_root_x1y2z_3` 这种），官方每次发版重算，
+写死必碎。正确做法：**认语义标签 + 几何特征**，运行时打 inline style。
+
+### 3.2 怎么取证（探针，而不是猜）
+
+在 client.js 里打一行 `console.log('[MP-ALIGNn] ' + JSON.stringify({vw, nodes}))`，
+**落到 `files/logs/web.log`**（WebView 的 console 走这里，不是 app.log）：
+
+```bash
+run-as com.dsh.android sh -c 'grep -a "MP-ALIGN" files/logs/web.log | tail -3'
+```
+
+把 `getBoundingClientRect()` 的 `width@left` 打出来，就知道真实结构了。
+
+### 3.3 六轮实测（vw=394，dpr=3.25，1280×2772）
+
+| 版本 | 做法 | 探针稳定态 | 截图（标题 / 列表左缘） |
+|---|---|---|---|
+| v1 | 无 | `HEADER:394@0 H1:100@88 UL:394@0` | 259px / 52px |
+| v2 | `ul{pad}` `header{pad}` | `UL:394@0:pad16px` | 259px / **0px（更糟）** |
+| v3 | `ul{margin}` `header{!important pad}` | `H1:100@52 UL:394@16` | — |
+| v4 | **只抬 `main`/`section`** | `SECTION:362@16 UL:362@16` | 259px / **52px = 16dp ✓** |
+| v5 | v4 + `header{flex-start}` | `HEADER:362@16 H1:100@104` | 标题**更右** |
+| v6 | v5 + `h1{margin-left:0}` | `H1:100@104`（不变） | — |
+| **v6 收敛** | **只保留 v4** | `SECTION:362@16 UL:362@16` | 列表 16dp ✓，标题回退原样 |
+
+**结论（可直接复用）**：
+
+- **列表贴边 ⇒ 抬最外层容器**（`main`/`section` 且 `width ≥ 90%vw`、`left ≤ 2` 时加 `padding:0 16px !important`）。
+  父级一内缩，`header`/`ul`/`li` 全部跟着内缩，**不会叠加**。
+- **`ul` 千万不要加 `padding`** —— 它只推 li 内容，`ul` 自己的底色/分隔线仍铺满，量出来比原来更贴边（0px）。
+- **标题不能靠 padding 推**（会把返回箭头一起推右）；`flex-start` 也不够，H1 外面还有一层包裹，
+  `margin-left:0` 无效 ⇒ **待办**：需要定位 `H1` 与 `header` 之间那一层元素（下一步 dump `H1.parentElement` 的完整链）。
+
+### 3.4 幂等纪律
+
+每次改动都打标记（`data-mp-root` / `data-mp-pad` / `data-mp-fix`），并在 `setInterval` 里先查标记，
+否则每 1.2s 加一次 padding，越跑越窄。
+
+---
+
+## 4. 真机验收的固定套路
+
+```bash
+# 1) 装热包
+cp /sdcard/mNNN.zip /data/local/tmp/; chmod 644 /data/local/tmp/mNNN.zip
+run-as com.dsh.android sh -c 'rm -f files/runtime/plugins/mobile-ui-1.1.0-*.zip; \
+  cp /data/local/tmp/mNNN.zip files/runtime/plugins/mobile-ui-1.1.0-NNN.zip'
+# 2) 重启（force-stop 才会重新解包插件）
+am force-stop com.dsh.android; am start -n com.dsh.android/.MainActivity
+# 3) 核对版本
+run-as com.dsh.android cat files/home/.dsh/mobile-ui/dsh-android-mobile/.mobile_ui_version
+# 4) 探针 / 截图量像素
+run-as com.dsh.android sh -c 'grep -a "MP-ALIGN" files/logs/web.log | tail -2'
+screencap -p /sdcard/x.png
+```
+
+量像素用 PIL：背景色取底部中间像素，逐行找左侧第一个「与背景差 > 阈值」的 x，
+再除以 `1280/394 ≈ 3.25` 得到 dp；只有 dp 对得上（16dp ⇒ 52px）才算真生效。
+
+---
+
+## 5. 其它已知坑
+
+- `super_admin::terminal`（双冒号）会 `Tool not found`，必须写 `super_admin:terminal`。
+- `/sdcard` 对 `run-as` 不可写；中转走 `/data/local/tmp`（`shell` 可写，`chmod 644` 后 `run-as` 可读）。
+- 在 shell heredoc 里写 JS/CSS 片段时，`for` / `if` / `var` / 制表符可能被吞，
+  导致 `node --check` 报 `Unexpected token 'var'` ⇒ **用文件 API 写片段再 `cat` 追加**。
+- `DshLog` 在子线程**不落盘**，需要 `runOnUiThread`。

@@ -12188,3 +12188,77 @@ if (!window.__mpHeaderMenuTimer) {
   }
   if (document.body) boot(); else document.addEventListener('DOMContentLoaded', boot, { once: true });
 })();
+
+/**
+ * 插件页对齐 v4（1.1.0-228）—— 只改整页容器，不做逐元素修补。
+ *
+ * ## 三轮实测记录（都靠 [MP-ALIGN*] 探针取证，vw=394）
+ *
+ * | 版本 | 做法 | 探针结果 | 截图左缘 |
+ * |---|---|---|---|
+ * | v1 改前 | — | `HEADER:394@0 / H1:100@88 / UL:394@0` | 标题 259px、列表 52px |
+ * | v2 | `ul{pad} header{pad}` | `UL:394@0:pad16px` | 列表 → **0px**（更糟：padding 只推内容，ul 底色仍铺满） |
+ * | v3 | `ul{margin} header{!important pad}` | `HEADER:394@0 / H1:100@52 / UL:394@16` | 标题 20px、列表仍有 0 处 |
+ * | v4 | **只给整页容器加左右 padding** | 目标 `SECTION:362@16` | 全部一起内缩 |
+ *
+ * 官方结构是 `SECTION > HEADER / UL`，逐元素改会互相抵消（ul 加了 margin，
+ * 它的父级 SECTION 仍铺满，压在 ul 上的分隔线/底色还是到边）。
+ * 直接抬最外层容器：父级一内缩，HEADER / UL / li 全部跟着内缩，且不会叠加。
+ *
+ * 判据（不碰 CSS Modules 哈希，只认语义标签 + 几何）：
+ * - `main` 或 `section`，宽度 >= 90% 视口，left <= 2 → 左右 padding 16px（!important）
+ * - 已经内缩过（left > 2 或已有 data-mp-root）就跳过，避免嵌套层层加码
+ */
+(function () {
+    var PAD = 16;
+    var applied = 0;
+
+    function isPluginPage() {
+        var t = document.body ? (document.body.innerText || '') : '';
+        return t.indexOf('已安装插件') >= 0 || t.indexOf('实验性插件') >= 0;
+    }
+
+    function fix() {
+        if (!document.body || !isPluginPage()) return;
+        var vw = window.innerWidth;
+        var cands = document.querySelectorAll('main,section');
+        for (var i = 0; i < cands.length; i++) {
+            var el = cands[i];
+            if (el.getAttribute('data-mp-root')) continue;
+            var r = el.getBoundingClientRect();
+            if (r.width < vw * 0.9) continue;
+            if (r.left > 2) continue;
+            // 只要"最外层的那一层"：父元素不是同样满宽的 main/section
+            var p = el.parentElement;
+            if (p && p !== document.body) {
+                var pr = p.getBoundingClientRect();
+                if (pr.width >= vw * 0.9 && (p.tagName === 'MAIN' || p.tagName === 'SECTION')) continue;
+            }
+            try {
+                el.style.setProperty('padding-left', PAD + 'px', 'important');
+                el.style.setProperty('padding-right', PAD + 'px', 'important');
+            } catch (e) { }
+            el.setAttribute('data-mp-root', '1');
+            applied++;
+        }
+    }
+
+    function probe() {
+        try {
+            if (!isPluginPage()) return;
+            var out = { vw: window.innerWidth, fixed: applied, nodes: [] };
+            var q = document.querySelectorAll('main,section,header,ul,h1');
+            for (var i = 0; i < q.length && i < 8; i++) {
+                var n = q[i], r = n.getBoundingClientRect();
+                out.nodes.push(n.tagName + ':' + Math.round(r.width) + '@' + Math.round(r.left) +
+                    (n.getAttribute('data-mp-root') ? '*' : ''));
+            }
+            console.log('[MP-ALIGN4] ' + JSON.stringify(out));
+        } catch (e) {}
+    }
+
+    setTimeout(fix, 1200);
+    setInterval(fix, 1200);
+    setTimeout(probe, 3000);
+    setInterval(probe, 8000);
+})();
