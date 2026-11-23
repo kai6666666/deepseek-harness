@@ -108,6 +108,22 @@ Release 上的资产名固定 `runtime-chunks.json`；客户端按里层 `runtim
 1. **Kotlin 块注释支持嵌套**：KDoc 正文里写 ``runtime/parts/*/<asset>`` 会开一层新注释，于是 KDoc 自己的 `*/` 只关掉内层，编译器报的是「`Missing '}'` + `Unclosed comment`」，一行都指不到真凶。注释里别写裸 `/*`。
 2. **`SystemWebHost.kt` 没有 import `android.webkit.JavascriptInterface`**，白名单里一律写全限定名 `@android.webkit.JavascriptInterface`。照抄相邻那行就不会错。
 
+## 演练方法（可重跑）
+
+1. 把**当前 APK** 里的 4 个分片拷到 `files/runtime/` 根 —— 它们充当比对基线（`localBase` 会先看这里）。
+2. 篡改其中一个分片的 1 字节：`printf Z | dd of=files/runtime/rootfs-part2-arm64-v8a.tar.xz bs=1 seek=1000 conv=notrunc`。
+3. 制造 `from != to`：把 Release 上 `runtime-chunks.json` 的 `runtimeVersion` 加个后缀（或只把本地 `runtime/manifest.json` 的版本改掉，但后者会让下次启动重解包）。
+4. 设置 → 关于 → 检查更新 → 弹窗应出现「运行时 <短码>（增量 64 KB）」。
+5. 立即更新 → 只下那 1 块 → `applied`（若只有运行时更新，提示「重启 App 生效」）。
+6. **恢复**：删 `files/runtime/*.tar.xz`、回滚远端清单、删 `files/runtime/parts/*`。
+
+### 2026-11-23 实测
+
+- 算法复刻（同一份清单 + 篡改后的 part2）：part2 共 12 块，**1 块变化 = 65,536 B**；
+  总计 144,861,292 B ⇒ **省 99.9548%**。
+- 分片从 `/sdcard` 直接 `cp` 进 `files/runtime/` 会**静默失败**（App 侧 `cp` 读外置存储受限）：
+  先 `cp` 到 `/data/local/tmp`，再 `run-as ... cp /data/local/tmp/...`（这是一路踩出来的）。
+
 ## 别忘了
 
 - 块大小改了老客户端会错位：清单里带 `chunkSize`，客户端**必须**按清单里的值算偏移，不要把 65536 写死。
