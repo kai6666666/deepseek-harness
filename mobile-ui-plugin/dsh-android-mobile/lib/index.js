@@ -715,7 +715,7 @@ ctx.effect(() => {
 // 每次挂载都要重扫一次。
 //
 // 这里在**宿主侧**把它包一层（不动官方代码、不改它的文件）：
-//   · 30 s TTL：同一次浏览里反复切 tab 直接返回上次结果
+//   · 5 min TTL：短时间反复切 tab 直接返回上次结果
 //   · 并发去重：多个分节同时挂载只算一次
 //   · 8 s 硬上限：真卡住时先给上次结果，不让页面无限转圈
 // Cordis 的 ctx.inject 签名与预期不符（实测回调不触发），改用官方同款取法：
@@ -726,7 +726,7 @@ const orig = svc.list.bind(svc);
 let cache = null;
 let at = 0;
 let inflight = null;
-const TTL = 30000;
+const TTL = 300000; // 5 分钟：短时间来回切不重扫；放久了或换页面回来才重读一次
 const HARD = 8000;
 const wrapped = async (...args) => {
 if (cache && Date.now() - at < TTL) return cache;
@@ -744,7 +744,7 @@ return inflight;
 };
 wrapped.__dshCached = true;
 svc.list = wrapped;
-console.warn('[dsh-android-mobile] 已为 pluginInventory.list 挂上 30s 快照缓存');
+console.warn('[dsh-android-mobile] 已为 pluginInventory.list 挂上 5min 快照缓存');
 return true;
 };
 if (!installInventoryCache(ctx.get('pluginInventory'))) {
@@ -755,5 +755,66 @@ if (installInventoryCache(ctx.get('pluginInventory'))) clearInterval(timer);
 } catch { clearInterval(timer); }
 }, 500);
 setTimeout(() => clearInterval(timer), 60000);
+}
+
+// ── 插件市场：抓取超时 + 结果缓存 ─────────────────────────────────
+//
+// `@deepseek-ai/dsh-plugin-market` 的默认值是真机上的痛：
+//   fetchTimeoutMs = 15 s、cacheTtlMs = 10 min
+// 而前端「插件市场」页每换一个索引就调一次 `search(url, query)` —— 那条路径
+// **每次都真的去抓网**，抓不动就干等满 15 s，才回落离线目录。
+//
+// 三层修法（都在宿主侧，不动官方文件）：
+//   ① 运行时把 config 的 15 s 压到 3 s（实例属性可写，见 `this.config = config`）
+//   ② `search()` 包一层：按 (url, query) 缓存 + 并发去重 + 3 s 硬超时
+//   ③ `setIndexes()` 后清空缓存（索引列表变了，旧结果不能复用）
+const MARKET_TRY_MS = 3000;
+const MARKET_TTL_INDEX = 3600000;
+const MARKET_TTL_SEARCH = 300000;
+const installMarketCache = (mk) => {
+	if (!mk || typeof mk.search !== 'function' || mk.search.__dshCached) return false;
+	try {
+		if (mk.config) {
+			mk.config.fetchTimeoutMs = Math.min(Number(mk.config.fetchTimeoutMs) || 15000, MARKET_TRY_MS);
+			mk.config.cacheTtlMs = Math.max(Number(mk.config.cacheTtlMs) || 0, 3600000);
+		}
+	} catch { /* config 只读就算了，方法包装仍然保底 */ }
+	const origSearch = mk.search.bind(mk);
+	const memo = new Map();
+	const inflight = new Map();
+	const wrapped = async (...args) => {
+		const query = String(args[1] ?? '');
+		const key = JSON.stringify([String(args[0] ?? ''), query]);
+		const ttl = query ? MARKET_TTL_SEARCH : MARKET_TTL_INDEX;
+		const hit = memo.get(key);
+		if (hit && Date.now() - hit.at < ttl) return hit.value;
+		const running = inflight.get(key);
+		if (running) return running;
+		const job = Promise.race([
+			origSearch(...args),
+			new Promise((resolve) => { setTimeout(() => resolve(undefined), MARKET_TRY_MS + 500); }),
+		])
+			.then((value) => {
+				if (value !== undefined) memo.set(key, { at: Date.now(), value });
+				return value !== undefined ? value : (hit ? hit.value : undefined);
+			})
+			.finally(() => { inflight.delete(key); });
+		inflight.set(key, job);
+		return job;
+	};
+	wrapped.__dshCached = true;
+	mk.search = wrapped;
+	const origSet = typeof mk.setIndexes === 'function' ? mk.setIndexes.bind(mk) : null;
+	if (origSet) {
+		mk.setIndexes = async (...a) => { memo.clear(); return origSet(...a); };
+	}
+	console.warn('[dsh-android-mobile] pluginMarket.search 已挂 3s 超时 + 结果缓存');
+	return true;
+};
+if (!installMarketCache(ctx.get('pluginMarket'))) {
+	const timer = setInterval(() => {
+		try { if (installMarketCache(ctx.get('pluginMarket'))) clearInterval(timer); } catch { clearInterval(timer); }
+	}, 500);
+	setTimeout(() => clearInterval(timer), 60000);
 }
 }
