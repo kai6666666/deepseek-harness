@@ -235,3 +235,45 @@ MutationObserver 保留作兜底 + 摘 `autocomplete="new-password"`。
 `tools/build-webview-compat.ps1` 的 `-CompatVersion`（→ `9`，并重跑脚本）。
 降级产物会**覆盖**源文件，这是「改了没生效」最常见的陷阱（见 ⑯）。
 
+## 设置页分节：为什么「转圈 + 切回来又转圈」
+
+四个分节（内置插件 / Agent 预设 / 插件市场 / 开发环境）各自卡在不同地方，2026-11-23 一次修完，四层真相都值得记。
+
+### 1. `settings.section` 是**卸载式**切 tab
+
+离开就销毁组件，回来是全新挂载、`useEffect` 重跑一次 —— 所以「客户端缓存」救不了切 tab，**缓存必须放宿主半**。
+
+### 2. 「开发环境」卡在 `du -sk /usr`
+
+`/api/dsh-android/devenv` 每次 GET 都 spawn `dsh-env.mjs status --json`，里面 `du -sk /usr` 扫整个 rootfs → 真机 **10.8 / 13.4 / 13.9 s**（连测三次）。
+
+修：宿主半 60 s 状态缓存 + 并发去重 + 写后失效；插件挂载 3 s 后静默预热；前端加模块级快照（先渲染快照再后台刷新）。
+
+⚠️ **强制刷新必须走 header**：`kind: 'exact'` 的 handler 里 `req.url` 的 query **会被剥掉**（实测 `/devenv?force=1` 能匹配上，但 handler 拿到的 url 是 `/devenv`）⇒ `x-dsh-force: 1` 是主通道，query 只算兜底。
+
+真机：13.9 s → **6~15 ms**；`x-dsh-force: 1` 强制重算 5.7~7.7 s。
+
+### 3. 「内置插件」被 failed fiber 拖住
+
+`pluginInventory.list()`（`@deepseek-ai/dsh-host-plugin-inventory`）**每次调用都重读全部 fiber**（源码注释自己写着 *no separate runtime cache*），而且对 `fiberPhase === 'failed'` 的条目会 `await fiber.await()` 去取失败原因 —— 一个坏插件卡住就能拖死整张清单。
+
+修：宿主半把它包一层（5 min TTL + 并发去重 + 8 s 硬上限）。短时间来回切 = **0 次扫描**；放久了再回来才重读一次。
+
+### 4. 「插件市场」每次都真的去抓网
+
+`pluginMarket.search(url, query)` 每换一个索引调一次，而 `fetchTimeoutMs` 默认 **15 s**、`cacheTtlMs` 10 min。两个索引（`dshopen.org` / `cdn.jsdelivr.net`）抓不动时 = **15 s × 2** 才回落离线目录 ≈ 用户看到的「实时扫描失败 … aborted due to timeout」。
+
+修（三层，全在宿主半）：
+
+1. 运行时把 config 压下去：`mk.config.fetchTimeoutMs = 3000`、`mk.config.cacheTtlMs = 3600000`（`this.config = config` 是普通实例属性，可写；探针实测读回 `to:3000 / ttl:3600000`）；
+2. `search()` 包结果缓存：空 query **1 h**、带 query **5 min**、并发去重、**3.5 s 硬上限**（探针实测 `wrapped:true`）；
+3. `setIndexes()` 后清空缓存。
+
+### 5. 这次踩到的两个坑
+
+- **`ctx.get(name)` 在服务未注册时可能抛错**。裸调用会让它后面的挂载（市场、清单包装）整段跳过，而且**不留任何日志** —— 自查时发现两处，统一包了 `safeGet()`。
+- **overlay 覆盖官方插件 config 时，`config:` 是整段替换**。只写要改的字段会把 `indexes` 一起抹掉，市场源直接消失 ⇒ 必须把 `indexes` 原样重写一遍（`EngineManager.writeMarketPatch()` 里已加注释，官方改了索引要同步）。
+
+### 版本戳（补充）
+
+改 `mobile-ui-plugin/**` 后**必须** bump `tools/mobile-ui-version.txt`（热包通道与内置 assets 都靠它判新旧）；`EngineManager.MOBILE_UI_VERSION` 只在没有热包时才用。

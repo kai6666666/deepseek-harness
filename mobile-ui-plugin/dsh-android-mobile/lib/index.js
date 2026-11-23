@@ -706,6 +706,15 @@ ctx.effect(() => {
 	return () => clearTimeout(timer);
 });
 
+/**
+ * 取一个可能还不存在的 Cordis 服务。
+ *
+ * ⚠️ `ctx.get(name)` 在服务未注册时**可能抛错**（不同 Cordis 版本行为不一致）。
+ * 这次自查就发现两处裸调用 —— 一旦抛错，它后面的挂载（市场、清单包装）
+ * 会整段跳过，而且不留任何日志。包一层，抛了就当没有。
+ */
+const safeGet = (name) => { try { return ctx.get(name); } catch { return undefined; } };
+
 // ── 内置插件清单：去抖 + 快照缓存 ────────────────────────────────
 //
 // `pluginInventory.list()`（@deepseek-ai/dsh-host-plugin-inventory）每次调用都
@@ -747,11 +756,11 @@ svc.list = wrapped;
 console.warn('[dsh-android-mobile] 已为 pluginInventory.list 挂上 5min 快照缓存');
 return true;
 };
-if (!installInventoryCache(ctx.get('pluginInventory'))) {
+if (!installInventoryCache(safeGet('pluginInventory'))) {
 // 服务还没注册好：短间隔重试，最多 60 s（只尝试，失败无声）
 const timer = setInterval(() => {
 try {
-if (installInventoryCache(ctx.get('pluginInventory'))) clearInterval(timer);
+if (installInventoryCache(safeGet('pluginInventory'))) clearInterval(timer);
 } catch { clearInterval(timer); }
 }, 500);
 setTimeout(() => clearInterval(timer), 60000);
@@ -811,9 +820,9 @@ const installMarketCache = (mk) => {
 	console.warn('[dsh-android-mobile] pluginMarket.search 已挂 3s 超时 + 结果缓存');
 	return true;
 };
-if (!installMarketCache(ctx.get('pluginMarket'))) {
+if (!installMarketCache(safeGet('pluginMarket'))) {
 	const timer = setInterval(() => {
-		try { if (installMarketCache(ctx.get('pluginMarket'))) clearInterval(timer); } catch { clearInterval(timer); }
+		try { if (installMarketCache(safeGet('pluginMarket'))) clearInterval(timer); } catch { clearInterval(timer); }
 	}, 500);
 	setTimeout(() => clearInterval(timer), 60000);
 }

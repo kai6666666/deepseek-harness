@@ -127,6 +127,7 @@ adb logcat -d -s DSH:I     # 引擎就绪 / 界面加载完成 / 各 ensureXxx �
 | [boundaries.md](docs/agents/boundaries.md) | 明确不做 / 做不到的事 |
 | [desktop-relation.md](docs/agents/desktop-relation.md) | 与桌面端共用哪些、各管哪些 |
 | [debug-device.md](docs/agents/debug-device.md) | adb 基本手法 |
+| [runtime-delta.md](docs/agents/runtime-delta.md) | 升级要重下 145 MB runtime；要做文件级增量（P2）时 |
 
 ## 三条最容易违反的规矩
 
