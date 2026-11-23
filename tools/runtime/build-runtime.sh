@@ -394,13 +394,13 @@ if [ "${DSH_RT_PRUNE:-1}" = "1" ] && [ -d "$ROOTFS/opt/dsh/node_modules" ]; then
   # 实测：.d.ts 16,196 个 / 51.3 MB；.ts 12,147 个 / 115.3 MB —— 占 node_modules 条目 37%。
   find "$ROOTFS/opt/dsh/node_modules" -type f \( -name '*.d.ts' -o -name '*.d.mts' -o -name '*.d.cts' \) -delete 2>/dev/null || true
   find "$ROOTFS/opt/dsh/node_modules" -path '*/src/*' -type f -name '*.ts' -delete 2>/dev/null || true
-  # ⚠️ **必须保留 README.md / readme.md**：
+  # ⚠️ **必须保留 README.md / readme.md，以及 docs/ 下的所有 md**：
 # `@deepseek-ai/dsh-plugin-detail` 只认这两个文件名；删掉之后（2026-11-23 实测）
 # 每个插件的详情页都报「插件声明的详细介绍文件无效」，而包里的 README.i18n.yaml
 # 只是双语区块哈希的旁签、没有正文，补救不了。体积代价约 1~2 MB。
 find "$ROOTFS/opt/dsh/node_modules" -type f \( -name '*.map' -o -name '*.md' -o -name '*.markdown' \) \
-  ! -name 'README.md' ! -name 'readme.md' -delete
-  # ⚠️ **必须保留 docs/ 目录**：插件的详细介纠在 docs/DETAIL.md（中文 DETAIL.zh.md）
+  ! -name 'README.md' ! -name 'readme.md' ! -path '*/docs/*' -delete
+  # ⚠️ **必须保留 docs/ 目录**：插件的详细介绍在 docs/DETAIL.md（中文 DETAIL.zh.md）
 # + preview.svg，dsh-plugin-detail 就是按这个约定读的；删了 docs 就报
 # 「插件声明的详细介绍文件无效」（2026-11-23 实测）。
 find "$ROOTFS/opt/dsh/node_modules" -type d \( -name test -o -name tests -o -name __tests__ -o -name example -o -name examples \) \
