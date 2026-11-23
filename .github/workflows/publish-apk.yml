@@ -150,4 +150,28 @@ jobs:
           else
             echo '::warning::该 run 没有 runtime-chunks.json（旧版 apk.yml），跳过'
           fi
+      - name: 取 runtime 分片
+        uses: actions/download-artifact@v4
+        with:
+          name: runtime-arm64-v8a
+          path: rt
+          run-id: ${{ inputs.run_id }}
+          github-token: ${{ github.token }}
+      - name: 挂 runtime 分片与 manifest 到 Release（P2 增量的下载源）
+        # 客户端 RuntimeDelta 只能对 Release 上的 `rootfs-*.tar.xz` 发 Range 请求，
+        # 所以分片必须在这里挂上去；没有该 artifact 的旧 run 只 warning。
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          XZ=$(find rt -name 'rootfs-*.tar.xz' | head -1)
+          if [ -z "$XZ" ]; then
+            echo '::warning::该 run 没有 runtime 分片 artifact，跳过'
+            exit 0
+          fi
+          D=$(dirname "$XZ")
+          ls -l "$D"
+          gh release upload "${{ inputs.tag }}" "$D"/*.tar.xz --clobber
+          [ -f "$D/manifest.json" ] && gh release upload "${{ inputs.tag }}" "$D/manifest.json" --clobber || true
+          gh release view "${{ inputs.tag }}" --json assets -q '.assets[] | "\(.name) \(.size)"' 
           gh release view "${{ inputs.tag }}" --json assets -q '.assets[] | "\(.name) \(.size)"'

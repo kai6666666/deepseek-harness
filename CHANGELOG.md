@@ -8,6 +8,26 @@
 - 设备侧清理：删除演练备份 `dsh-backup-drill.zip` 与 13 个历史 APK（约 2.4 GB）。
 
 **不发新版**：本批只有文档与文件清理。
+## [0.2.2-rc.5-debug.29] — 2026-11-23
+vc=114
+
+### 新增（P2 客户端段）
+- `RuntimeDelta.kt`：runtime 文件级增量的客户端实现。
+  - 从 Release 的 `runtime-chunks.json` 取块清单，按 64 KiB 块比对本地旧分片，
+    只对变化的块发 HTTP Range（`bytes=off-off+len-1`）；
+  - 两道校验：单块 sha256 → 整文件 sha256，任一不符即丢弃；
+  - `.staging-<ver>/` 内拼装 → 成功后原子 `rename` 到 `files/runtime/parts/<ver>/`；
+  - 无本地旧分片时自动回退**全量**，并把分片保留，供下一次走增量；
+  - 三条纪律与热更新一致：**不自动检查/不自动下载、只升不降、校验不过一律丢弃**。
+- 桥新增三方法（三层同构）：`runtimeDeltaCheck` / `runtimeDeltaState` / `runtimeDeltaApply`。
+- `publish-apk.yml`：发布时把 `rootfs-*.tar.xz` 与 `manifest.json` 一并挂上 Release
+  （`RuntimeDelta` 的 Range 请求必须指向 Release 资产）。
+
+### 尚未接线（下一段）
+- `RootfsInstaller.installParts` 仍从 APK assets 拷分片；需改成「`files/runtime/parts/<manifest.runtimeVersion>/`
+  有就用它」，增量才能真正替掉重装 APK。
+- 前端「检查更新」弹窗还没显示运行时行。
+
 ## [0.2.2-rc.5-debug.28] — 2026-11-23
 vc=113
 

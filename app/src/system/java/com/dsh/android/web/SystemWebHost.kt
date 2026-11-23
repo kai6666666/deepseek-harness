@@ -801,4 +801,13 @@ private class SystemPageBridge(private val impl: PageBridge) {
     fun pluginUpdateState(): String = impl.pluginUpdateState()
     @android.webkit.JavascriptInterface
     fun pluginUpdateApply(): Boolean = impl.pluginUpdateApply()
+
+    @JavascriptInterface
+    fun runtimeDeltaCheck(): Boolean = impl.runtimeDeltaCheck()
+
+    @JavascriptInterface
+    fun runtimeDeltaState(): String = impl.runtimeDeltaState()
+
+    @JavascriptInterface
+    fun runtimeDeltaApply(): Boolean = impl.runtimeDeltaApply()
 }

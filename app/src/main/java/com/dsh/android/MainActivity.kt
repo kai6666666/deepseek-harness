@@ -2402,6 +2402,12 @@ class MainActivity : AppCompatActivity() {
 
         override fun pluginUpdateApply(): Boolean = PluginUpdater.applyAsync(pluginInstallDir)
 
+        // ── 运行时增量（P2）─────────────────────────────────────────
+        override fun runtimeDeltaCheck(): Boolean = RuntimeDelta.checkAsync(filesDir)
+
+        override fun runtimeDeltaState(): String = RuntimeDelta.stateJson(filesDir)
+
+        override fun runtimeDeltaApply(): Boolean = RuntimeDelta.applyAsync(filesDir)
         /** 插件安装落点（必须与 EngineManager.ensureMobileUi 一致）。 */
         private val pluginInstallDir: java.io.File
             get() = java.io.File(filesDir, "home/.dsh/mobile-ui/dsh-android-mobile")

@@ -411,4 +411,13 @@ interface PageBridge {
 
     /** 把已就绪的包应用下去（异步）；成功后页面自行 reload。 */
     fun pluginUpdateApply(): Boolean
+
+    /** 运行时增量（P2）：触发一次检查（异步） */
+    fun runtimeDeltaCheck(): Boolean
+
+    /** 运行时增量：状态 JSON（页面轮询） */
+    fun runtimeDeltaState(): String
+
+    /** 运行时增量：把已算好的差异下载并落地（异步） */
+    fun runtimeDeltaApply(): Boolean
 }
