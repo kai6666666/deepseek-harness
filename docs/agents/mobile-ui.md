@@ -311,3 +311,25 @@ dialog 的 fallback  #fff  → var() 整条声明作废 → 背景回退成纯�
 浅色·检查完成  弹窗底 (255,255,255)         正文 (15,17,21)
 三组采样里没有一次「白底 + 浅字」
 ```
+
+## 插件详情页「插件声明的详细介绍文件无效」（2026-11-23）
+
+**根因**：`tools/runtime/build-runtime.sh` 为了减包，把 node_modules 里所有 `.md` 删了，
+而 `@deepseek-ai/dsh-plugin-detail/lib/index.js` 只认 `README.md` / `readme.md`。
+于是每个插件的详情页都报「插件声明的详细介绍文件无效」。
+
+- 包里的 `README.i18n.yaml` **不是 README**：它是双语区块哈希的旁签（没有正文），转不出介绍。
+
+**修法两层**：
+
+1. **根治**：`build-runtime.sh` 的删除规则加 `! -name README.md ! -name readme.md`（体积代价约 1~2 MB）。
+2. **救现有设备**：`tools/plugin-readme.py` 按包名清单找回 README（jsDelivr → npm packument → description 兜底），
+   产物是 `<包>/README.md` + `readme.map`，再用 `run-as` 循环拷进 rootfs。
+
+⚠️ 重建 runtime 会覆盖第 2 步补的文件，根治只能靠第 1 步。
+
+## 插件页移动端适配（待做）
+
+- 三个列表（内置插件 / 实验性插件 / 已安装）内容贴边，需左右 16 px 内边距。
+- 子页头部 `‹ 实验性插件` 未左对齐（箭头贴左、标题居中），需与卡片左边缘同基线。
+- 两条都要用 JS 定位官方容器（class 是 CSS Modules 哈希，不能写死），下一轮实测迭代。

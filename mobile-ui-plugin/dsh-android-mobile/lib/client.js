@@ -4175,6 +4175,48 @@ back: { display: "flex", alignItems: "center", gap: "8px", border: "none", backg
  * 弹窗就落回浅色的 `#fff`，而标题颜色是 `inherit`（深色下是浅字）——白底浅字=看不见。
  * 所以：token 正常时走 token，token 没了也有正确深浅。
  */
+
+// ── 「启用智能体团队协作」的 i 点击提示 ──────────────────
+// 官方那枚 info 是 hover 语义（桌面鼠标的 tooltip），触摸设备点了什么也不发生。
+// 这里只补一条提示：不拦默认行为、不改开关本身，误命中也不影响功能。
+(function () {
+if (window.__mpTeamInfoTip) return;
+window.__mpTeamInfoTip = true;
+var tip = null, timer = null;
+function el() {
+if (tip) return tip;
+tip = document.createElement('div');
+tip.id = 'mp-team-info-tip';
+tip.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);bottom:calc(env(safe-area-inset-bottom,0px) + 110px);' +
+'max-width:78vw;padding:10px 14px;border-radius:12px;background:rgba(28,28,32,.96);color:#f2f2f2;' +
+'font-size:12.5px;line-height:18px;z-index:2147483000;box-shadow:0 8px 24px rgba(0,0,0,.45);' +
+'display:none;white-space:pre-wrap;pointer-events:none;';
+document.body.appendChild(tip);
+return tip;
+}
+function show(text) {
+var t = el();
+t.textContent = text;
+t.style.display = 'block';
+if (timer) clearTimeout(timer);
+timer = setTimeout(function () { t.style.display = 'none'; }, 5200);
+}
+var TIP_TEXT = '开启后 Agent 会并行派出子智能体协同处理任务，\n并在右侧展开团队面板；关闭则收起。';
+document.addEventListener('click', function (ev) {
+try {
+var n = ev.target;
+while (n && n !== document.body && n.tagName !== 'BUTTON') n = n.parentElement;
+if (!n || n === document.body) return;
+var al = (n.getAttribute('aria-label') || '') + (n.getAttribute('title') || '');
+if (!/信息|说明|info|details|more information/i.test(al)) return;
+var row = n.parentElement;
+var txt = row ? (row.textContent || '') : '';
+if (!/智能体团队|团队协作|team/i.test(txt)) return;
+show(TIP_TEXT);
+} catch (e) {}
+}, true);
+})();
+
 const MP_ABOUT_DARK = {
 card: { background: "rgba(255,255,255,.035)" },
 logo: { background: "rgba(255,255,255,.09)" },
