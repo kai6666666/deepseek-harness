@@ -12190,36 +12190,47 @@ if (!window.__mpHeaderMenuTimer) {
 })();
 
 /**
- * 插件页对齐 v4（1.1.0-228）—— 只改整页容器，不做逐元素修补。
+ * 插件页导航标题 · 最终修法（1.1.0-233）
  *
- * ## 三轮实测记录（都靠 [MP-ALIGN*] 探针取证，vw=394）
+ * ## 父链探针（[MP-CHAIN]，vw=394，dpr=3.25）给出的唯一答案
  *
- * | 版本 | 做法 | 探针结果 | 截图左缘 |
- * |---|---|---|---|
- * | v1 改前 | — | `HEADER:394@0 / H1:100@88 / UL:394@0` | 标题 259px、列表 52px |
- * | v2 | `ul{pad} header{pad}` | `UL:394@0:pad16px` | 列表 → **0px**（更糟：padding 只推内容，ul 底色仍铺满） |
- * | v3 | `ul{margin} header{!important pad}` | `HEADER:394@0 / H1:100@52 / UL:394@16` | 标题 20px、列表仍有 0 处 |
- * | v4 | **只给整页容器加左右 padding** | 目标 `SECTION:362@16` | 全部一起内缩 |
+ * ```text
+ * HEADER(X_2TxG_moreHead) 362@16
+ *   padding: 4px 12px 4px 52px        ← 左内边距 52px
+ *   display: flex; align-items: center
+ *   kids: BUTTON(…_moreBack) 28@68    ← 返回箭头（flex 子项，被 52px 推右）
+ *         H1(X_2TxG_pageTitle) 100@104
+ * ```
  *
- * 官方结构是 `SECTION > HEADER / UL`，逐元素改会互相抵消（ul 加了 margin，
- * 它的父级 SECTION 仍铺满，压在 ul 上的分隔线/底色还是到边）。
- * 直接抬最外层容器：父级一内缩，HEADER / UL / li 全部跟着内缩，且不会叠加。
+ * ⇒ 标题偏右**只因为 header 的 `padding-left: 52px`**（给返回按钮预留的空位），
+ *   而按钮本身又是 flex 子项，于是「52 的空位 + 28 的按钮 + 8 的间距」= H1 落在 104。
  *
- * 判据（不碰 CSS Modules 哈希，只认语义标签 + 几何）：
- * - `main` 或 `section`，宽度 >= 90% 视口，left <= 2 → 左右 padding 16px（!important）
- * - 已经内缩过（left > 2 或已有 data-mp-root）就跳过，避免嵌套层层加码
+ * 这解释了前六轮为什么全军覆没：
+ * - `justify-content: flex-start` 没用 —— 主轴本来就靠左，是 **padding** 在推
+ * - `h1{margin-left:0}` 没用 —— H1 本来就没有 auto margin（探针：`flex: 0 1 auto`）
+ * - `header{padding-left:16px}` 只把 52 改成 16，H1 到 52（当时探针确实变成 `H1:100@52`），
+ *   但那次截图取到的是异常帧，我没有坚持这条正确方向
+ *
+ * ## 本版做法（两件事）
+ *
+ * 1. `header` 的 `padding-left` 归零（保留上/右/下内边距），只对「插件页那条导航」生效：
+ *    条件是 header 宽 ≥ 50% 视口 **且** 文本含「实验性插件 / 内置插件 / 已安装插件」。
+ *    ⇒ 返回箭头回到 16，标题紧跟其后 ≈ 52，与列表左缘（16dp）在同一视觉轴线上。
+ * 2. 保留 v4 的整页内缩（`main`/`section` → `padding: 0 16px`），列表已经是 16dp。
+ *
+ * 探针输出改为 `[MP-ALIGN7]`，直接给 header 的 padding 与 BUTTON/H1 的坐标，便于验收。
  */
 (function () {
     var PAD = 16;
-    var applied = 0;
+    var stat = { root: 0, head: 0 };
 
     function isPluginPage() {
         var t = document.body ? (document.body.innerText || '') : '';
         return t.indexOf('已安装插件') >= 0 || t.indexOf('实验性插件') >= 0;
     }
 
-    function fix() {
-        if (!document.body || !isPluginPage()) return;
+    /* ---------- 1) 整页容器内缩（v4，已验收 16dp） ---------- */
+    function fixRoot() {
         var vw = window.innerWidth;
         var cands = document.querySelectorAll('main,section');
         for (var i = 0; i < cands.length; i++) {
@@ -12228,7 +12239,6 @@ if (!window.__mpHeaderMenuTimer) {
             var r = el.getBoundingClientRect();
             if (r.width < vw * 0.9) continue;
             if (r.left > 2) continue;
-            // 只要"最外层的那一层"：父元素不是同样满宽的 main/section
             var p = el.parentElement;
             if (p && p !== document.body) {
                 var pr = p.getBoundingClientRect();
@@ -12239,26 +12249,62 @@ if (!window.__mpHeaderMenuTimer) {
                 el.style.setProperty('padding-right', PAD + 'px', 'important');
             } catch (e) { }
             el.setAttribute('data-mp-root', '1');
-            applied++;
+            stat.root++;
         }
+    }
+
+    /* ---------- 2) 导航条：把左侧 52px 的预留空位归零 ---------- */
+    function padHead() {
+        var vw = window.innerWidth;
+        var heads = document.querySelectorAll('header');
+        for (var i = 0; i < heads.length; i++) {
+            var h = heads[i];
+            if (h.getAttribute('data-mp-head')) continue;
+            if (h.getBoundingClientRect().width < vw * 0.5) continue;
+            var t = (h.textContent || '').replace(/\s+/g, '');
+            if (t.indexOf('实验性插件') < 0 && t.indexOf('内置插件') < 0 &&
+                t.indexOf('已安装插件') < 0 && t.indexOf('插件') < 0) continue;
+            try {
+                h.style.setProperty('padding-left', '0px', 'important');
+            } catch (e) { }
+            h.setAttribute('data-mp-head', '1');
+            stat.head++;
+        }
+    }
+
+    function fix() {
+        if (!document.body || !isPluginPage()) return;
+        fixRoot();
+        padHead();
     }
 
     function probe() {
         try {
             if (!isPluginPage()) return;
-            var out = { vw: window.innerWidth, fixed: applied, nodes: [] };
-            var q = document.querySelectorAll('main,section,header,ul,h1');
-            for (var i = 0; i < q.length && i < 8; i++) {
-                var n = q[i], r = n.getBoundingClientRect();
-                out.nodes.push(n.tagName + ':' + Math.round(r.width) + '@' + Math.round(r.left) +
-                    (n.getAttribute('data-mp-root') ? '*' : ''));
+            var heads = document.querySelectorAll('header');
+            var out = { vw: window.innerWidth, stat: stat, heads: [] };
+            for (var i = 0; i < heads.length && i < 3; i++) {
+                var h = heads[i];
+                if (h.getBoundingClientRect().width < window.innerWidth * 0.5) continue;
+                var cs = getComputedStyle(h);
+                var item = {
+                    w: Math.round(h.getBoundingClientRect().width),
+                    left: Math.round(h.getBoundingClientRect().left),
+                    padL: cs.paddingLeft,
+                    kids: []
+                };
+                for (var k = 0; k < h.children.length && k < 4; k++) {
+                    var c = h.children[k], cr = c.getBoundingClientRect();
+                    item.kids.push(c.tagName + ':' + Math.round(cr.width) + '@' + Math.round(cr.left));
+                }
+                out.heads.push(item);
             }
-            console.log('[MP-ALIGN4] ' + JSON.stringify(out));
+            console.log('[MP-ALIGN7] ' + JSON.stringify(out));
         } catch (e) {}
     }
 
     setTimeout(fix, 1200);
     setInterval(fix, 1200);
     setTimeout(probe, 3000);
-    setInterval(probe, 8000);
+    setInterval(probe, 9000);
 })();

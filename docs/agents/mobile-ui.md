@@ -121,15 +121,39 @@ run-as com.dsh.android sh -c 'grep -a "MP-ALIGN" files/logs/web.log | tail -3'
 | v4 | **只抬 `main`/`section`** | `SECTION:362@16 UL:362@16` | 259px / **52px = 16dp ✓** |
 | v5 | v4 + `header{flex-start}` | `HEADER:362@16 H1:100@104` | 标题**更右** |
 | v6 | v5 + `h1{margin-left:0}` | `H1:100@104`（不变） | — |
-| **v6 收敛** | **只保留 v4** | `SECTION:362@16 UL:362@16` | 列表 16dp ✓，标题回退原样 |
+| **v7 定位** | 父链探针 `[MP-CHAIN]` | 见下 | — |
+| **v7 修法** | `header{padding-left:0}` | `padL:0px BUTTON:28@16 H1:100@52` | 标题行 **259px → 90px** ✓ |
+
+### 3.3.1 标题偏右的真凶（父链探针，1.1.0-232 测得）
+
+```text
+HEADER(X_2TxG_moreHead) 362@16
+  padding: 4px 12px 4px 52px        ← 就是这 52px
+  display: flex; align-items: center
+  kids: BUTTON(…_moreBack) 28@68    ← 返回箭头是 flex 子项，被 52px 一起推右
+        H1(X_2TxG_pageTitle) 100@104
+```
+
+链上其它层全是 `padding:0` / `display:contents` / `grid`，**没有别的元素参与水平定位**。
+所以：52（预留空位）+ 28（按钮）+ 8（间距）= H1 落在 104。
+
+⇒ 修法只有一条：**把 `header` 的 `padding-left` 归零**（保留上/右/下）。
+
+```js
+header 且 宽 ≥ 50% 视口 且 文本含「插件」 → setProperty('padding-left', '0px', 'important')
+```
+
+修后探针：`padL:"0px" BUTTON:28@16 H1:100@52`；截图标题行左缘 259px → **90px**（左移 52dp），
+列表左缘仍是 52px（16dp），两者落在同一视觉轴线上。
 
 **结论（可直接复用）**：
 
 - **列表贴边 ⇒ 抬最外层容器**（`main`/`section` 且 `width ≥ 90%vw`、`left ≤ 2` 时加 `padding:0 16px !important`）。
   父级一内缩，`header`/`ul`/`li` 全部跟着内缩，**不会叠加**。
 - **`ul` 千万不要加 `padding`** —— 它只推 li 内容，`ul` 自己的底色/分隔线仍铺满，量出来比原来更贴边（0px）。
-- **标题不能靠 padding 推**（会把返回箭头一起推右）；`flex-start` 也不够，H1 外面还有一层包裹，
-  `margin-left:0` 无效 ⇒ **待办**：需要定位 `H1` 与 `header` 之间那一层元素（下一步 dump `H1.parentElement` 的完整链）。
+- **标题偏右 ⇒ 先 dump 父链看 `padding`**。别改 `justify-content`（主轴本来就靠左），别改 `h1{margin}`（H1 是 `flex:0 1 auto`，没有 auto margin）。
+  官方给导航条留了 `padding-left:52px` 给返回按钮，按钮本身又是 flex 子项 —— 两处叠加才是 104 的来源。
+- **改前先取证**：`console.log('[MP-CHAIN] ' + 父链)` → 落 `files/logs/web.log`；一次 dump 胜过六轮试错。
 
 ### 3.4 幂等纪律
 
