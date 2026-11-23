@@ -54,6 +54,49 @@ run-as com.dsh.android sh -c '
 `dsh-plugin-manager`、`dsh-plugin-market`、`dsh-client-ui-plugin-*`、`dsh-computer-use`、`dsh-cua` 等。
 它们靠 `README.md` 回退，别指望补 `DETAIL.md` 能解决。
 
+### 1.1 `DETAIL.md` 里通常**只有一行图片引用**
+
+官方 npm 包里 `docs/DETAIL.md` 的实际内容（2026-11-24 从 `debug.33` 的 runtime 里取原文）：
+
+```markdown
+![Voice input feature preview](preview.svg)
+```
+
+**44 字节**。也就是说「详细介绍」的主体是旁边那张 `preview.svg`（约 96 KB），
+渲染出来是一张**功能预览图**，而不是一篇长文。
+
+⇒ 三个推论：
+
+1. **详情页只显示一张图是正常的**，不是"内容丢了"。
+   别因为"看不到大段文字"就再往 `DETAIL.md` 里塞 README —— 那会让页面变成一大段英文/中文正文，
+   与官方样式不一致。
+2. `preview.svg` / `preview.zh.svg` 必须和 `DETAIL.md` **一起**保留，
+   否则页面会显示一个破图占位（比"无效"更迷惑）。
+3. 排查"详情页空白"时先看 `preview.svg` 在不在：
+
+```bash
+run-as com.dsh.android sh -c '
+  R=files/runtime/rootfs/opt/dsh/node_modules/@deepseek-ai
+  ls -l $R/*/docs/DETAIL.md $R/*/docs/preview.svg 2>/dev/null | head'
+```
+
+`debug.33` 的 runtime 里 `DETAIL.md` 覆盖 **15 个包**（包名与 CI 产物逐一对齐）：
+
+```text
+dsh-cua-bundle                              dsh-experimental-session-search
+dsh-deepseek-chat-import                    dsh-experimental-session-titles-bundle
+dsh-experimental-auto-review                dsh-experimental-terminal-bundle
+dsh-experimental-badge-skill-bundle         dsh-experimental-tool-worktree
+dsh-experimental-cot-translation-bundle     dsh-experimental-voice-input-bundle
+dsh-experimental-forge-bundle               dsh-personalized-recommendations
+dsh-experimental-inspector-profile
+dsh-experimental-plugin-market-bundle
+dsh-experimental-ralph-bundle
+```
+
+**判定"是构建自带还是手工补的"**：看 mtime。tar 解包出来的文件时间戳固定为
+`2026-01-01 08:00`（rootfs 构建时的基准时间）；手工 `cp` 进去的会是当前时间或源文件时间。
+
 ---
 
 ## 2. profile 里的第三方插件变成 `.l2s` 死链 ⇒ 插件页「未运行 / 包不可用」
