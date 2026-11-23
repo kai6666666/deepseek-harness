@@ -197,6 +197,67 @@ curl -s https://api.github.com/rate_limit | head -20
 ③ 顺带把「403 被误报成没找到 Release」这类问题一并消掉 ——
 建议同时把 HTTP 状态码带进 `message`，别再吞掉。
 
+### ✅ 已修（2026-11-24，提交 `88beda33e9`）
+
+上面的方案已落地，实现要点（`RuntimeDelta.kt`）：
+
+```kotlin
+private fun latestRuntimeRelease(): RuntimeRelease? {
+    lastReleaseError = null
+    try {
+        val atom = httpGet("https://github.com/$REPO/releases.atom")
+            ?: throw IllegalStateException("读取 releases.atom 失败（网络不通或被拦截）")
+        val tags = Regex("""/releases/tag/([^"<\s]+)""").findAll(atom)
+            .map { it.groupValues[1] }.distinct().take(5).toList()
+        for (tag in tags) {
+            val base = "https://github.com/$REPO/releases/download/$tag/"
+            val txt = httpGet(base + CHUNKS_NAME)
+            if (txt == null || !txt.contains("\"runtimeVersion\"")) {
+                lastReleaseError = "tag $tag 下没有可用的 $CHUNKS_NAME"; continue
+            }
+            return RuntimeRelease(tag, base + CHUNKS_NAME, base + "manifest.json",
+                emptyMap(), baseUrl = base, chunksText = txt)
+        }
+        return null
+    } catch (t: Throwable) { lastReleaseError = t.message ?: t.toString(); return null }
+}
+```
+
+配套改动：
+
+| 改动 | 原因 |
+|---|---|
+| `RuntimeRelease` 加 `baseUrl` / `chunksText` | 资产名从清单 `files.keys` 拿；清单在探测时已下载，复用省一次请求 |
+| `planDelta`：`rel.assets[n] ?: rel.baseUrl?.let { it + n }` | Atom 模式 `assets` 是空的 |
+| `lastReleaseError` 带进 `message` | 403 不再被报成「没找到 Release」 |
+| `httpGet` 的 `Accept: application/vnd.github+json` → `*/*` | atom 与裸下载都不需要那个 Accept |
+
+**实测**：
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' https://github.com/kai6666666/deepseek-harness/releases.atom
+# 200（9.3 KB，5 个 tag 按新旧排列）
+curl -sI https://github.com/kai6666666/deepseek-harness/releases/download/v0.2.2-rc.5-debug.33/runtime-chunks.json
+# 302 → release-assets.githubusercontent.com（HttpURLConnection 默认跟随；Range 路径本来就走这里）
+```
+
+**踩过的坑（务必记住）**：第一次提交时我用本地旧版 `RuntimeDelta.kt` 覆盖仓库版，
+**丢了 `partFile()` / `bestPartsManifest()`** —— `RootfsInstaller` 引它们，`compileSystemDebugKotlin` 直接挂：
+
+```text
+e: RootfsInstaller.kt:147:39 Unresolved reference 'partFile'.
+e: RootfsInstaller.kt:420:22 Unresolved reference 'bestPartsManifest'.
+```
+
+⇒ **改单文件前先取仓库最新版做基底**（`contents?ref=<sha>`），不要用本地副本直接覆盖。
+
+**CI 门禁现状**：
+
+| 工作流 | 结果 | 说明 |
+|---|---|---|
+| `apk.yml`（构建 APK） | **success** | 含本次 `RuntimeDelta` 改动，Kotlin 编译通过 |
+| `compile.yml`（单元测试） | failure | `RuntimeS6Test.legacyRetirementIsAnExactIdempotentAllowlist` 失败 —— 测的是 `RuntimeFiles.purgeLegacy`，**与 RuntimeDelta 无关**，是既有问题，`apk.yml` 不跑单测所以一直没暴露 |
+
 **另外**：`latestRuntimeRelease()` 遍历 `releases?per_page=10` 时**不区分 prerelease**，
 取的是"第一个带 runtime-chunks.json 的 Release"。我们这个仓库全是 prerelease，
 所以目前行为正确；但如果将来发正式版而它的资产不全，会选中它并报"Release 里没有分片"。**建议按 tag 排序 + 校验资产完整性**。
