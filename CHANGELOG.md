@@ -8,6 +8,14 @@
 - 设备侧清理：删除演练备份 `dsh-backup-drill.zip` 与 13 个历史 APK（约 2.4 GB）。
 
 **不发新版**：本批只有文档与文件清理。
+## [0.2.2-rc.5-debug.27] — 2026-11-23
+vc=112
+
+### 修复
+- **vc111 的修复在设备上没生效**：`tools/mobile-ui-version.txt` 仍是 1.1.0-205，
+  而 `client.js` 已改 → 版本戳相同 → `ensureMobileUi` 直接跳过解包，跑的还是有 bug 的旧文件。
+  现 bump 到 **1.1.0-206**（这就是为什么改 `mobile-ui` 必须同步 bump 版本号）。
+
 ## [0.2.2-rc.5-debug.26] — 2026-11-23
 vc=111
 
