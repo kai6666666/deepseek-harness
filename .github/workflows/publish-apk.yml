@@ -175,3 +175,21 @@ jobs:
           [ -f "$D/manifest.json" ] && gh release upload "${{ inputs.tag }}" "$D/manifest.json" --clobber || true
           gh release view "${{ inputs.tag }}" --json assets -q '.assets[] | "\(.name) \(.size)"' 
           gh release view "${{ inputs.tag }}" --json assets -q '.assets[] | "\(.name) \(.size)"'
+
+      - name: 重建完整 SHA256SUMS.txt（含 runtime 资产）
+        # 之前 SHA256SUMS.txt 只在 publish job 里对 APK 算了 sha256，而分片/manifest/
+        # plugins/清单都是后续 job 才上传的 —— 结果校验文件只有 1 行。
+        # 这里等所有资产都到齐后，用 Release 自带的 digest 重建全量清单（零下载）。
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          gh api "repos/${{ github.repository }}/releases/tags/${{ inputs.tag }}" \
+            --jq '.assets[] | select(.name != "SHA256SUMS.txt") | "\(.digest | sub("sha256:"; ""))  \(.name)"' \
+            | sort -k2 > SHA256SUMS.txt
+          [ -s SHA256SUMS.txt ] || { echo '::error::SHA256SUMS.txt 为空，digest 字段不可用'; exit 1; }
+          echo "=== SHA256SUMS.txt ($(wc -l < SHA256SUMS.txt) 行) ==="
+          cat SHA256SUMS.txt
+          gh release upload "${{ inputs.tag }}" SHA256SUMS.txt --clobber
+          echo '=== 最终资产清单 ==='
+          gh release view "${{ inputs.tag }}" --json assets -q '.assets[] | "\(.name) \(.size)"'

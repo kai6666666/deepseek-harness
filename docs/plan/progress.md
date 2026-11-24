@@ -1,8 +1,16 @@
 # DSH for Android · 进度与计划
 
-> 快照时间：2026-11-24 02:30（UTC+8）　当前发布：`v0.2.2-rc.5-debug.34` / vc119
+> 快照时间：2026-11-24 06:40（UTC+8）　当前发布：`v0.2.2-rc.5-debug.35` / vc120
 > 架构：单宿主 PRoot + glibc 单运行时（rootfs 内 `/usr/bin/node`、`/opt/dsh`），WebView 加载官方 Web GUI
 > 身份：`com.dsh.android` / targetSdk 35 / 维护态（只修 bug，不改身份与架构）
+
+**本轮（debug.35）**：单测门禁并入 `apk.yml`（单测挂了就不出包）+ 删除仓库根目录陈旧
+`app-version.txt`（debug.31/vc116，会让人改错文件）+ `publish-apk.yml` 末自动重建全量
+`SHA256SUMS.txt`（原来只算 APK 一行，分片是后续 job 才上传的）。
+
+> 设备侧已装 `debug.35 / vc120`：runtime stamp 保持 `…4ef4d5ef4ac0`（未重解包）、
+> `DETAIL.md` 15 个、`parts` 144 MB 保留。启动日志：`engine.ready ms=47708` →
+> `Web 界面加载完成` → `插件已激活（onUiReady）`。
 
 ---
 
@@ -104,7 +112,7 @@ var+etc      783,464
 |---|---|---|
 | `compile.yml` 纳入 `apk.yml` | 单测现在独立跑，`apk.yml` 不跑单测 → 曾让 `RuntimeS6Test` 红了两天没人知道 | ✅ **已完成（2026-11-24，debug.34 之后）** |
 | CHANGELOG 自动化 | 现在手写 + `version.sh --check` 校验，可改成从提交生成 | 待做（低优先） |
-| Release 资产自动校验 | 现在靠人工跑脚本比对清单/分片；可做成 publish 后的 gate | 待做 |
+| Release 资产自动校验 | 现在靠人工跑脚本比对清单/分片；`SHA256SUMS.txt` 已改为 publish 末自动重建 | ✅ 部分完成（2026-11-24） |
 
 **单测门禁落地细节**（`.github/workflows/apk.yml`，插入在「编译门禁（engine）」之后）：
 
