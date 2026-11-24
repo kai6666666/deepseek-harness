@@ -512,7 +512,7 @@ object RuntimeDelta {
         lastReleaseError = null
         lastReleaseKind = null
         try {
-            val atom = httpGet("https://github.com/$REPO/releases.atom")
+            val atom = httpGetWithMirrors("https://github.com/$REPO/releases.atom")
                 ?: return failRelease(
                     ReleaseFailKind.NETWORK,
                     "读取 releases.atom 失败（超时 / 连接被拒 / 被拦截）—— 与「发布缺资产」无关",
@@ -617,11 +617,21 @@ object RuntimeDelta {
      */
     private fun httpGetWithMirrors(url: String): String? {
         httpGet(url)?.let { return it }
-        val candidates = GithubMirrors.mirrored(url).entries.take(6)
+        // 两类 URL 走不同候选表：
+        //  · `/releases/download/*`（清单 / manifest / 分片）→ [GithubMirrors.mirrored]
+        //  · 其它（`releases.atom`）→ [GithubMirrors.atomUrls]，只试**实测能转普通 URL** 的那条
+        //    ⚠️ atom 是整条更新链的**入口**：拿不到 tag 就拿不到任何下载 URL，
+        //       选路根本没机会跑。2026-11-25 实测 5 条可用镜像里只有 gh-proxy.com 能转 atom。
+        val isDownload = url.contains("/releases/download/")
+        val candidates = if (isDownload) {
+            GithubMirrors.mirrored(url).entries.take(6)
+        } else {
+            GithubMirrors.atomUrls(url).entries
+        }
         if (candidates.isEmpty()) return null
         for ((name, mirrored) in candidates) {
             val txt = httpGet(mirrored)
-            if (txt != null) {
+            if (txt != null && txt.isNotEmpty()) {
                 Log.i(TAG, "小文件走镜像 $name：${url.substringAfterLast('/')}")
                 return txt
             }
@@ -631,7 +641,11 @@ object RuntimeDelta {
 
     private fun httpGet(url: String): String? = runCatching {
         val c = URL(url).openConnection() as HttpURLConnection
-        c.connectTimeout = 15000
+        // ⚠️ 6 秒而不是 15 秒：2026-11-25 真机实测，当前网络下直连 github.com
+        //    的 `releases.atom` 拉到 25 秒仍 `size=0`（等于不通），而镜像只要 **1.2 秒**。
+        //    把直连超时压短 ⇒ 快速失败、立刻交给镜像，总耗时从"15s 白等"变成"6s+1.2s"。
+        //    海外/网络好的用户 6 秒内就成功了，不受影响。
+        c.connectTimeout = 6000
         c.readTimeout = 20000
         c.setRequestProperty("User-Agent", "dsh-android")
         c.setRequestProperty("Accept", "*/*")
@@ -653,8 +667,10 @@ object RuntimeDelta {
     private fun downloadRange(url: String, off: Long, len: Long, base: String? = null): ByteArray? = runCatching {
         val target = GithubMirrors.rewriteOne(base, url)
         val c = URL(target).openConnection() as HttpURLConnection
-        c.connectTimeout = 15000
-        c.readTimeout = 30000
+        // connect 8s：选中线路大概率正常，8 秒连不上就是这条线路坏了，快速失败好让上层换
+        // read 60s：64 KiB 的块就算镜像慢也读得完；原来是 30s，对慢镜像偏紧
+        c.connectTimeout = 8000
+        c.readTimeout = 60000
         c.instanceFollowRedirects = true
         c.setRequestProperty("User-Agent", "dsh-android")
         c.setRequestProperty("Range", "bytes=" + off + "-" + (off + len - 1))

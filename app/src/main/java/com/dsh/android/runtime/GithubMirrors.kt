@@ -49,23 +49,46 @@ internal object GithubMirrors {
      * ⚠️ 候选来自 Operit 的 34 条里 2026 年仍在服务的那批，但**没有逐条真机实测**过
      * （见 `pa-pb-plan.md` §A5）。探测会自动淘汰失效的；表可以在实测后裁剪。
      */
+    /**
+     * 镜像表（**2026-11-25 真机实测后裁剪**，16 条候选里只剩 5 条可用）。
+     *
+     * 实测方法：设备上 `curl` 逐条打「atom（普通 URL）」+「分片（/releases/download/）」
+     * +「Range: bytes=0-1023」三项，判据是 **206** 且**字节数精确**（1888）。
+     *
+     * | 镜像 | atom | 分片 | Range |
+     * |---|---|---|---|
+     * | GhProxyCom (gh-proxy.com) | **200 / 1.2s / 9316B** | 200 / 1.2s / 1888B | **206** |
+     * | GhProxyNet (ghproxy.net) | 403 | 200 / 1.2s / 1888B | 206 |
+     * | GhProxyCfd (ghproxy.cfd) | 000 | **200 但 22474B（HTML）+ range=200** | ✗ 淘汰 |
+     * | Ghfast (ghfast.top) | 403 | 200 / 1.3s / 1888B | 206 |
+     * | BokiMoe / Monlor | 404 | 200 / 1.4s / 1888B | 206 |
+     * | 其余 9 条 | 全 000 / 429 / 裸 302 | — | ✗ 淘汰 |
+     *
+     * ⚠️ `ghproxy.cfd` 那行是最值得记的：它**接受 Range 头却返回 200 全文**
+     * （还给了 22474 字节的 HTML 错误页）。如果让它通过，`downloadRange` 会走
+     * "跳过前缀"分支 —— 2296 个块 × 每块重下前缀 = O(n²) 流量。所以判据必须是 206。
+     *
+     * 顺序 = 实测延迟升序（GhProxyCom 1.22s 最快）。
+     */
     private val MIRRORS: LinkedHashMap<String, String> = linkedMapOf(
-        "Ghfast" to "https://ghfast.top/",
-        "GhProxyNet" to "https://ghproxy.net/",
-        "GhProxy" to "https://ghproxy.com/",
-        "GhProxyMirror" to "https://mirror.ghproxy.com/",
-        "GhProxyCfd" to "https://ghproxy.cfd/",
-        "GhProxyNetHyphen" to "https://gh-proxy.net/",
         "GhProxyCom" to "https://gh-proxy.com/",
-        "GitMirror" to "https://hub.gitmirror.com/",
-        "Moeyy" to "https://github.moeyy.xyz/",
-        "H233" to "https://gh.h233.eu.org/",
+        "GhProxyNet" to "https://ghproxy.net/",
+        "Ghfast" to "https://ghfast.top/",
         "BokiMoe" to "https://github.boki.moe/",
-        "JasonZeng" to "https://gh.jasonzeng.dev/",
         "Monlor" to "https://gh.monlor.com/",
-        "Tbedu" to "https://github.tbedu.top/",
-        "GeekerTao" to "https://ghfile.geekertao.top/",
-        "Llkk" to "https://gh.llkk.cc/",
+    )
+
+    /**
+     * **能转普通 URL（`releases.atom`）的镜像** —— 单独一张小表。
+     *
+     * 为什么必须分开：实测 5 条可用镜像里，**只有 `gh-proxy.com` 能转 atom**
+     * （其余对 atom 回 403 / 404）。而 atom 是整条更新链的入口：拿不到 tag
+     * 就拿不到任何 `/releases/download/` 的 URL，选路根本没机会跑。
+     *
+     * 所以 atom 不能用"整表顺序试"，只能试**实测能转的那条**，避免白等 4 次超时。
+     */
+    private val ATOM_MIRRORS: LinkedHashMap<String, String> = linkedMapOf(
+        "GhProxyCom" to "https://gh-proxy.com/",
     )
 
     /** 直连"足够快"的阈值：达到就跳过镜像全测。 */
@@ -124,6 +147,9 @@ internal object GithubMirrors {
     /** 镜像表大小（日志/诊断用）。 */
     val mirrorCount: Int get() = MIRRORS.size
 
+    /** 能转普通 URL 的镜像数（实测=1；诊断用）。 */
+    val atomMirrorCount: Int get() = ATOM_MIRRORS.size
+
     /**
      * 生成镜像候选。只对 `github.com` + `/releases/download/` 生效。
      *
@@ -134,6 +160,21 @@ internal object GithubMirrors {
         if (!url.contains("github.com") || !url.contains("/releases/download/")) return emptyMap()
         val out = LinkedHashMap<String, String>(MIRRORS.size)
         for ((name, prefix) in MIRRORS) {
+            out[name] = prefix.trimEnd('/') + "/" + url
+        }
+        return out
+    }
+
+    /**
+     * atom 这类**普通 URL** 的镜像候选（与 [mirrored] 分开：后者只认
+     * `/releases/download/`，而 atom 的路径是 `/releases/atom`）。
+     *
+     * 只返回实测能转普通 URL 的镜像（当前 = GhProxyCom）。空表 ⇒ 调用方退回直连。
+     */
+    fun atomUrls(url: String): Map<String, String> {
+        if (!url.contains("github.com")) return emptyMap()
+        val out = LinkedHashMap<String, String>(ATOM_MIRRORS.size)
+        for ((name, prefix) in ATOM_MIRRORS) {
             out[name] = prefix.trimEnd('/') + "/" + url
         }
         return out

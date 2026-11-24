@@ -461,4 +461,45 @@ class RuntimeS6Test {
         assertNull(c.base)
         assertTrue(c.degraded)
     }
+
+    // ---------- A-1b：atom 用独立镜像表（"补入口"） ----------
+
+    @Test fun atomUsesDedicatedMirrorListNotTheDownloadOne() {
+        GithubMirrors.clearCache()
+        val atom = "https://github.com/o/r/releases.atom"
+
+        // atom 的路径不是 /releases/download/ ⇒ 分片表**不该**给它候选
+        assertTrue("分片表不该匹配 atom", GithubMirrors.mirrored(atom).isEmpty())
+        // 但 atom 专用表必须给它候选（实测只有 gh-proxy.com 能转普通 URL）
+        val m = GithubMirrors.atomUrls(atom)
+        assertTrue("atom 必须有镜像候选（否则入口是单点）", m.isNotEmpty())
+        assertEquals(GithubMirrors.atomMirrorCount, m.size)
+        for ((_, url) in m) {
+            assertTrue("拼接应保留原 URL 后缀", url.endsWith(atom))
+            assertTrue("必须是 https", url.startsWith("https://"))
+            assertFalse("不该出现双斜杠", url.contains("//https"))
+        }
+
+        // 反向：分片 URL 不该走 atom 表
+        assertTrue("atom 表不该匹配分片", GithubMirrors.atomUrls(dlUrl).isEmpty())
+        // 非 github host 一律不给
+        assertTrue(GithubMirrors.atomUrls("https://example.com/x").isEmpty())
+    }
+
+    @Test fun atomMirrorListIsSubsetOfTheWorkingMirrors() {
+        GithubMirrors.clearCache()
+        // 能转 atom 的镜像必须同时在分片表里 —— 否则说明两张表不一致，
+        // 那种线路在真实链路上会「atom 拿到了、分片却换另一条」，排查困难。
+        val atomNames = GithubMirrors.atomUrls("https://github.com/o/r/releases.atom").keys
+        val dlNames = GithubMirrors.mirrored(dlUrl).keys
+        assertTrue("atom 表不能为空", atomNames.isNotEmpty())
+        for (n in atomNames) {
+            assertTrue("atom 镜像 $n 必须也在分片表里", n in dlNames)
+        }
+        // 分片表应该比 atom 表大（实测 5 vs 1）
+        assertTrue(
+            "分片表应≥atom 表（实测 5 vs 1），实际 ${dlNames.size} vs ${atomNames.size}",
+            dlNames.size >= atomNames.size,
+        )
+    }
 }
