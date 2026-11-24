@@ -8,6 +8,89 @@
 - 设备侧清理：删除演练备份 `dsh-backup-drill.zip` 与 13 个历史 APK（约 2.4 GB）。
 
 **不发新版**：本批只有文档与文件清理。
+## [0.2.2-rc.5-debug.36] — 2026-11-24
+vc=121
+
+### P0：首启失败兜底（用户能看懂 + 知道下一步）
+
+以前运行时准备失败，用户看到的是 `State.Failed("运行时准备失败：rootfs 分片校验失败：part2 sha256=…\njava.io.IOException…")`
+—— 既不知道差多少空间，也不知道该点什么。
+
+新增 `RuntimeFailure`（纯 Kotlin，可单测）：把 `IOException` 归类成
+`INSUFFICIENT_SPACE` / `CORRUPT_ASSET` / `INCOMPLETE` / `PERMISSION` / `UNKNOWN`，
+每类给出「标题 + 说明 + 下一步动作」。示例（空间不足）：
+
+```text
+存储空间不足，运行时装不下
+解包大约需要 3244 MB，当前可用 812 MB。还差约 2432 MB。
+请先腾出空间再重试：删掉旧的录屏/下载/别的 AI 应用都可以；若只是缓存占空间，
+可在系统「设置 → 应用 → DSH → 存储 → 清除缓存」（不会删会话与凭据）。
+点『重试』会重新解包；已校验通过的分片会复用，不会重新下载。
+```
+
+配套：
+
+- `RootfsInstaller` 新增 `internal class Failure(info)`，在空间不足与分片校验失败处抛出；
+  继承 `IOException`，不破坏既有 `catch (t: IOException)` 契约。
+- `EngineManager` 在 `failStart` 前用 `RuntimeFailure.classify(t, filesDir.usableSpace)`，
+  并把 `kind` / `code` / `retryable` / `freeMb` 写进 `EventLog`（事件名 `engine.failed.kind`），
+  以后能按失败种类统计，而不是只知道「失败了」。
+- 判据细节：`usableSpace` 读到 0 或 -1（系统读不出来）时**不判**「空间不足」，
+  避免一批设备永远装不上（沿用 `insufficientSpace` 的既有语义）。
+
+### P0：增量基线只留一版（`parts/` 自动清理）
+
+`RuntimeDelta` 会把下好的分片留在 `runtime/parts/<runtimeVersion>/` 当下一轮增量基线。
+只留当前版本是 144 MB，但每换一次 runtime 就多一份 —— 历史上跑几次演练就能堆到 400 MB 以上，
+而 `RootfsInstaller.sweepStale` 只扫 `rootfs.staging-*` / `rootfs.old-*`，**碰不到 parts/**。
+
+新增 `RuntimeFiles.pruneParts(partsDir, keep = 1)`：
+
+- 按 **mtime** 保留最新 `keep` 个目录（不是按名字排序 —— `runtimeVersion` 里的哈希没有时间含义）；
+- 符号链接目录一律跳过（可能指到用户数据）；
+- 删不掉不抛（清理失败不该拖累启动），幂等。
+
+调用点在「stamp 已写、swap 已完成」之后（此时当前基线刚被写过，mtime 最新，必然被保留）。
+
+### P2：CHANGELOG 从提交历史生成
+
+新增 `tools/changelog.py`：按 Conventional Commits 把提交分到
+`新增 / 修复 / 性能 / 重构 / 工程 / 测试 / 文档 / 杂项`，标题、日期、`vc=` 按
+`tools/app-version.txt` 填好，直接可粘。
+
+```bash
+# 有 .git（CI 里）
+python3 tools/changelog.py --since v0.2.2-rc.5-debug.35
+# 没有 .git
+GITHUB_TOKEN=… python3 tools/changelog.py --from-api --since v0.2.2-rc.5-debug.35
+# 直接插入 CHANGELOG.md
+python3 tools/changelog.py --since v0.2.2-rc.5-debug.35 --write
+```
+
+`--since` 支持 tag：API 模式下先把 tag 解成 ISO 时间（`commits?since=` 只认时间，
+而 tag 也不是提交标题 —— 第一版就是这么写错的，会静默退化成「最近 100 条」）。
+
+### 修复
+
+- `SHA256SUMS.txt` 只写了 APK 一行：`publish` job 里 `sha256sum` 只算 APK，
+  而 `plugins / manifest / 4 个分片 / runtime-chunks` 是 `publish-plugins` job 之后才上传的。
+  现在在 `publish-plugins` 末尾用 Release 自带 `digest` 重建全量清单（零下载）后 `--clobber` 上传。
+- 删除仓库根目录陈旧的 `app-version.txt`（内容是 `debug.31 / vc116`）：版本唯一来源是
+  `tools/app-version.txt`，两份并存只会让人改错文件、版本号静默不生效。
+
+### 测试
+
+`RuntimeS6Test` 从 20 条增到 **27 条**，新增覆盖：失败分类 4 条
+（空间不足含精确 MB、实测值优先于消息、包损坏/不完整/权限可区分、已分类不重复分类）、
+`pruneParts` 3 条（按 mtime 只留最新、不跟随符号链接、缺目录与 `keep=0` 的容错）。
+
+### 工程
+
+- 单测已并入 `apk.yml` 的出包路径（`debug.35` 起）：单测挂了就不出包。
+  本轮它两次拦下真问题 —— 一次是测试里的 `\n` 被三层转义吃成真换行（Kotlin 语法错误），
+  一次是 4 条断言比较 `Info` 却断言 `Kind`（漏 `.kind`）。这两次如果没并进门禁，
+  都会直接出包发出去。
+
 ## [0.2.2-rc.5-debug.35] — 2026-11-24
 vc=120
 ### 工程：单测提到出包路径上（单测挂了就不出包）
