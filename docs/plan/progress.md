@@ -125,6 +125,14 @@ var+etc      783,464
 | **V4** | `LogStore.app` 的 `writeApp` 是**每行 flush**（`LogStore.kt:489`）⇒ `EventLog.record` 同步落盘。8 个启动打点约 8~40 ms，不影响 B 的"< 1s"验收 → B-1 照原计划打点 |
 | **V7** | 检查更新失败原先一律报"没找到带清单的 Release"（D2 修过限流那版，但**网络不通**仍落这句）。已改成 `ReleaseFailKind`：NETWORK / NO_MANIFEST / PARSE，各带中文前缀 |
 
+### A-1/A-2 已落地 + 镜像表实测（2026-11-25）
+- **A-1**：`GithubMirrors`（两段式探测、206 判据、直连优先、全灭回退）+ `atomUrls` 独立表
+- **A-2**：并行块下载（6 线程、`FileChannel` 定位写、`AtomicLong`、仅 `fetch>=32` 启用）
+- **镜像实测**：16 条候选 → **5 条可用**（gh-proxy.com / ghproxy.net / ghfast.top /
+  github.boki.moe / gh.monlor.com）；**只有 gh-proxy.com 能转 atom**
+- **补入口**：atom 走 `ATOM_MIRRORS`（原计划漏了，是实现缺口）；`httpGet` connect 15s→**6s**
+- 单测 **30 → 38**（A-1 六条 + atom 两条）
+
 ### A-0 · 多线路/并行的基线（2026-11-24 真机实测）
 设备 `debug.37`（改动前）跑一次**全量**运行时下载（143.5 MB）：
 

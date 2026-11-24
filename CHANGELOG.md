@@ -8,6 +8,64 @@
 - 设备侧清理：删除演练备份 `dsh-backup-drill.zip` 与 13 个历史 APK（约 2.4 GB）。
 
 **不发新版**：本批只有文档与文件清理。
+## [0.2.2-rc.5-debug.40] — 2026-11-25
+vc=125
+
+### 补入口：`releases.atom` 现在能走镜像（这原来是个单点故障）
+
+上一版把多线路做在 `/releases/download/` 上，但 **atom 是整条更新链的入口**：
+拿不到 tag 就拿不到任何下载 URL，选路根本没机会跑。真机实测（当前网络）：
+
+```text
+直连 atom     http=200  t=25.000s  size=0      ← 25 秒到点仍 size=0，等于不通
+直连 分片     http=000  t=25.001s              ← 完全不通
+镜像 atom     http=200  t=1.22s    size=9316    ← gh-proxy.com
+镜像 分片     http=200  t=1.22s    size=1888
+```
+
+**修法**：新增 `ATOM_MIRRORS` + `atomUrls()`，只放**实测能转普通 URL** 的镜像
+（当前仅 `gh-proxy.com`）。`httpGetWithMirrors` 按 URL 类型分流：
+
+```text
+/releases/download/*  → GithubMirrors.mirrored().take(6)   （分片表，5 条）
+其它（atom 等）        → GithubMirrors.atomUrls()          （atom 表，1 条）
+```
+
+⚠️ 不能拿整表顺序试 atom —— 另外 4 条对 atom 明确回 403/404，试了只是白等 4 个超时。
+
+### 超时收紧：直连不通时不再白等 15 秒
+
+| 位置 | 改前 | 改后 | 为什么 |
+|---|---|---|---|
+| `httpGet`（atom / 清单 / manifest） | connect 15s / read 20s | **connect 6s** / read 20s | 实测直连 25s 都不通，15s 纯属白等；压短后总耗时「15s 失败」→「6s + 1.2s 成功」 |
+| `downloadRange`（分块） | connect 15s / read 30s | **connect 8s** / **read 60s** | 8 秒连不上说明这条线路坏了，快速失败好换线；60s 给慢镜像读够 |
+
+海外/网络好的用户 6 秒内就成功，不受影响。
+
+### 镜像表按真机实测裁剪：16 → 5
+
+| 镜像 | atom | 分片 | Range |
+|---|---|---|---|
+| **gh-proxy.com** | **200 / 1.22s** | 200 / 1888B | **206** |
+| ghproxy.net | 403 | 200 / 1.23s | 206 |
+| ghfast.top | 403 | 200 / 1.31s | 206 |
+| github.boki.moe | 404 | 200 / 1.37s | 206 |
+| gh.monlor.com | 404 | 200 / 1.43s | 206 |
+| **ghproxy.cfd** | 000 | **200 / 22474B（HTML）** | **200** ❌ |
+| 其余 9 条 | 000 / 403 / 429 / 裸 302 | — | ❌ |
+
+**16 条里 9 条是死的（56%）**。淘汰 `ghproxy.cfd` 尤其重要：它**接受 `Range` 头却返回
+200 全文**（还给了 22474 字节 HTML 错误页）—— 若放它进来，分块下载会走"跳过前缀"分支，
+2296 个块每块重下前缀 = **O(n²) 流量**。这次实测正好给"判据必须是 206"提供了一个活样本。
+
+### 测试 36 → 38
+
+- `atomUsesDedicatedMirrorListNotTheDownloadOne`：atom 必须有候选、**分片表不该匹配 atom**
+- `atomMirrorListIsSubsetOfTheWorkingMirrors`：atom 表必须是分片表的子集（两张表别不一致）
+
+第二条测试当场抓到一个真 bug：`atomUrls` 只判了 `contains("github.com")`，没排除
+`/releases/download/` ⇒ 分片 URL 也会拿到 atom 候选，白白丢掉另外 4 条可用线路。
+
 ## [0.2.2-rc.5-debug.39] — 2026-11-24
 vc=124
 

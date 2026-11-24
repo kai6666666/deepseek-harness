@@ -206,6 +206,48 @@ ch.close()
 | 5 | 选出的线路确实更快 | 日志打印 3 个候选的 `bytesPerSec`，primary 必须是最高 |
 | 6 | 增量仍然只下变化块 | 复用 `docs/agents/runtime-delta.md` 的演练：篡改 part2，看日志仍是「用增量分片」 |
 
+## A5. 镜像表实测（2026-11-25，16 条候选）
+
+**方法**：设备上 `curl` 逐条打三项 —— 「atom（普通 URL）」「分片（`/releases/download/`）」
+「`Range: bytes=0-1023`」。判据：**分片必须 200 且字节数精确（1888）**、**Range 必须 206**。
+
+**直连对照（当前网络）**：
+
+```text
+direct atom   http=200  t=25.000s  size=0     ← 25 秒到点仍 size=0，等于不通
+direct part   http=000  t=25.001s             ← 完全不通
+```
+
+| 镜像 | atom | 分片 | Range | 结论 |
+|---|---|---|---|---|
+| **gh-proxy.com** | **200 / 1.22s / 9316B** | 200 / 1.22s / 1888B | **206** | ⭐ **唯一两者都行** |
+| ghproxy.net | 403 | 200 / 1.23s / 1888B | 206 | 分片可用 |
+| ghfast.top | 403 | 200 / 1.31s / 1888B | 206 | 分片可用 |
+| github.boki.moe | 404 | 200 / 1.37s / 1888B | 206 | 分片可用 |
+| gh.monlor.com | 404 | 200 / 1.43s / 1888B | 206 | 分片可用 |
+| **ghproxy.cfd** | 000 | **200 / 22474B（HTML）** | **200** | ❌ 假 Range，淘汰 |
+| ghproxy.com / mirror.ghproxy.com / hub.gitmirror.com / github.moeyy.xyz / gh.jasonzeng.dev / github.tbedu.top / gh.llkk.cc | 000 | 000 | 000 | ❌ 死 |
+| gh.h233.eu.org | 000 | 403 | 403 | ❌ 死 |
+| gh-proxy.net | 302 | 302 | 302 | ❌ 裸重定向 |
+| ghfile.geekertao.top | 429 | 429 | 429 | ❌ 限流 |
+
+**三条结论**：
+
+1. **16 里 9 死（56%）** ⇒ 印证 C5「照抄 Operit 的 34 条会带回一堆死线路」。
+   最终只保留 **5 条**（按实测延迟升序）。
+2. **只有 `gh-proxy.com` 能转 atom** ⇒ 必须为 atom 单开一张表（`ATOM_MIRRORS`）。
+   拿整表顺序试只是白等 4 个超时 —— 而那 4 条对 atom 明确回 403/404。
+3. **`ghproxy.cfd` 正是 A-R1 担心的那种**：接受 `Range` 头却返回 **200 + 22474 字节 HTML**。
+   若放它进来，`downloadRange` 会走"跳过前缀"分支，2296 块 × 每块重下前缀 = O(n²)。
+   ⇒ **判据必须是 206** 这条实现是对的，实测给了它一个活样本。
+
+**由此产生的两个实现修正**（原计划没有）：
+
+| 项 | 原计划 | 实测后 |
+|---|---|---|
+| `httpGet` 超时 | 15s | **6s** —— 直连 25s 都不通，15s 纯属白等；压短后总耗时从「15s 失败」变成「6s + 1.2s 成功」 |
+| `downloadRange` 超时 | connect 15s / read 30s | **connect 8s / read 60s** —— 快换线 + 给慢镜像读够 |
+
 ## A5. 风险与对策（见 §C 查漏补缺）
 
 ---
