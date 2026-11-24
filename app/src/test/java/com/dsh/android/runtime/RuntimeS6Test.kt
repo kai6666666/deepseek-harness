@@ -209,9 +209,8 @@ class RuntimeS6Test {
         val failure = RootfsInstaller.Failure(original)
         // 即使外部传了「空间不足」的实测值，也不该覆盖已分类的结果
         assertEquals(original, RuntimeFailure.classify(failure, 1L, RuntimeFiles.ASSUME_UNPACKED_BYTES))
-        assertEquals("t
-d
-a", failure.message)
+        // 断言用 Info.message()，避免在测试里写 \n 转义（曾经被 shell 层吃掉变成真换行）
+        assertEquals(original.message(), failure.message)
     }
 
     // ---------- P0：增量基线清理 ----------
