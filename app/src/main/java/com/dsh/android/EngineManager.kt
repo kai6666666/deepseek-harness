@@ -6904,7 +6904,8 @@ class EngineManager private constructor(private val context: Context) {
         if (targetProfile == RESCUE_PROFILE_NAME) EventLog.record("engine.start.rescue", mapOf("profile" to targetProfile))
         // P3：每次启动都清扫中断安装留下的 staging/old —— stamp 命中时不会再走安装路径，
         // 只靠 RootfsInstaller 的清扫会让「装到一半被杀」的残骸永久留着（真机实测 695 MB）。
-        runCatching { RuntimeFiles.sweepStale(File(context.filesDir, "runtime")) }
+        // V2：把当前 pid 传进去 —— parts/ 下的 `.staging-<ver>-<pid>` 只有"不是本进程"的才算残留。
+        runCatching { RuntimeFiles.sweepStale(File(context.filesDir, "runtime"), android.os.Process.myPid().toLong()) }
             .onSuccess { if (it.isNotEmpty()) Log.i(TAG, "启动清扫残留：" + it.joinToString()) }
             .onFailure { Log.w(TAG, "启动清扫失败：" + it.message) }
         val host = ProotHost(context, manifest, dshHome = dshHome, workspace = workspaceDir)

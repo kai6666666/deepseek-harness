@@ -141,19 +141,50 @@ internal object RuntimeFiles {
      * 启动清扫：被中断的安装会留下接近满额的 `rootfs.staging-*` 与交换残留
      * `rootfs.old-*`（真机实测曾累积 797 MB）。只扫 runtimeDir 下的一级目录。
      */
-    fun sweepStale(runtimeDir: File): List<String> {
+    fun sweepStale(runtimeDir: File, currentPid: Long = -1L): List<String> {
         val dir = runtimeDir.canonicalFile
         require(dir == runtimeDir.absoluteFile.canonicalFile)
+        val removed = ArrayList<String>()
+
+        // ① runtime/ 下一级：解包中断留下的 rootfs.staging-* 与交换残留 rootfs.old-*
         val victims = (dir.listFiles() ?: emptyArray()).filter {
             it.isDirectory && (it.name.startsWith("rootfs.staging-") || it.name.startsWith("rootfs.old-"))
         }
-        val removed = ArrayList<String>()
         for (v in victims) {
             deleteTree(v)
             removed += v.name
         }
+
+        // ② runtime/parts/ 下的 `.staging-*`：`RuntimeDelta.runApply` 的临时目录。
+        //    上面那一段只扫一级目录，扫不到这里 —— 而 apply 被系统杀掉时，这份半成品
+        //    （最大等同一个完整分片集合，144 MB 级）会**永久残留**，没人清。
+        //
+        //    判据用 **pid** 而不是 mtime：目录名就是
+        //    `.staging-<runtimeVersion>-<pid>`，直接比 pid 最准，也不会误删
+        //    "另一个正在跑的 apply"（多进程/多 profile 场景）。
+        //    pid 解析不出来（老格式/人工造的目录）才退回 mtime 兜底：
+        //    只有早于 [STALE_PARTS_AGE_MS]（24h）的才删 —— 宁可留一天，不误删在写的。
+        val parts = File(dir, "parts")
+        if (parts.isDirectory) {
+            val now = System.currentTimeMillis()
+            val stale = (parts.listFiles() ?: emptyArray()).filter { f ->
+                if (!f.isDirectory || !f.name.startsWith(".staging-")) return@filter false
+                val pid = f.name.substringAfterLast('-').toLongOrNull()
+                when {
+                    pid != null && currentPid > 0L -> pid != currentPid
+                    else -> now - f.lastModified() > STALE_PARTS_AGE_MS
+                }
+            }
+            for (v in stale) {
+                deleteTree(v)
+                removed += "parts/" + v.name
+            }
+        }
         return removed
     }
+
+    /** parts 里 `.staging-*` 的 mtime 兜底阈值（pid 解析不出来时才用）。 */
+    private const val STALE_PARTS_AGE_MS = 24L * 60 * 60 * 1000
 
     /**
      * P0：清理多余的增量基线目录（`runtime/parts/<runtimeVersion>/`）。
@@ -175,8 +206,14 @@ internal object RuntimeFiles {
         val dir = partsDir.canonicalFile
         require(dir == partsDir.absoluteFile.canonicalFile)
         if (!dir.isDirectory) return emptyList()
+        // ⚠️ 必须排除 `.` 开头的目录：`RuntimeDelta.runApply` 的临时目录是
+        //    `parts/.staging-<ver>-<pid>`，apply 被系统杀掉后会残留。若不排除，
+        //    它会作为"一个版本"参与下面的 mtime 排序，把**真正的当前基线**挤掉
+        //    （残留半成品的 mtime 往往更新），导致下次更新退化成全量。
+        //    `RuntimeDelta.localBase` 早就用 `!name.startsWith(".")` 挡了，
+        //    这里判据必须一致 —— 见 docs/plan/pa-pb-plan.md §V1。
         val versions = (dir.listFiles() ?: emptyArray())
-            .filter { it.isDirectory && !Files.isSymbolicLink(it.toPath()) }
+            .filter { it.isDirectory && !it.name.startsWith(".") && !Files.isSymbolicLink(it.toPath()) }
             .sortedByDescending { it.lastModified() }
         if (versions.size <= keep) return emptyList()
         val removed = ArrayList<String>()

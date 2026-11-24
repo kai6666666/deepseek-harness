@@ -84,7 +84,7 @@ object RuntimeDelta {
             val local = localManifest(filesDir)
             fromVersion = local
             val rel = latestRuntimeRelease()
-                ?: throw IllegalStateException(lastReleaseError ?: "没找到带 $CHUNKS_NAME 的 Release")
+                ?: throw IllegalStateException(lastReleaseError ?: "检查更新失败：原因未知（既没拿到 atom 也没拿到清单，试了 ${ReleaseFailKind.values().size} 类判据）")
             val chunksText = rel.chunksText ?: httpGet(rel.chunksUrl)
                 ?: throw IllegalStateException("下载分块清单失败：${rel.chunksUrl}")
             val doc = JSONObject(chunksText)
@@ -184,7 +184,7 @@ object RuntimeDelta {
         try {
             val local = localManifest(filesDir)
             val rel = latestRuntimeRelease()
-                ?: throw IllegalStateException(lastReleaseError ?: "没找到带 $CHUNKS_NAME 的 Release")
+                ?: throw IllegalStateException(lastReleaseError ?: "检查更新失败：原因未知（既没拿到 atom 也没拿到清单，试了 ${ReleaseFailKind.values().size} 类判据）")
             val doc = JSONObject(rel.chunksText ?: httpGet(rel.chunksUrl)
                 ?: throw IllegalStateException("下载分块清单失败：${rel.chunksUrl}"))
             val plan = planDelta(doc, rel, filesDir)
@@ -313,7 +313,39 @@ object RuntimeDelta {
     )
 
     /** 最近一次取 Release 失败的真实原因（避免把 403 误报成「没找到」）。 */
+    /**
+     * 检查更新失败的三类原因 —— 用户该做的事完全不同，不能都报"没找到 Release"。
+     *
+     * 历史：`debug.34`（D2）修的是「匿名 API 限流 403 被误报成没找到带清单的 Release」。
+     * 但**网络整体不通**仍会落进同一句话，用户会以为是发布缺资产、去翻 Release 页 ——
+     * 方向完全错。见 `docs/plan/pa-pb-plan.md` §V7。
+     */
+    internal enum class ReleaseFailKind(val label: String) {
+        NETWORK("网络层失败"),
+        NO_MANIFEST("Release 里没有运行时清单"),
+        PARSE("响应解析失败"),
+    }
+
+    /** 最近一次检查失败的分类，`null` 表示没失败过。 */
+    private var lastReleaseKind: ReleaseFailKind? = null
     private var lastReleaseError: String? = null
+
+    private fun failRelease(kind: ReleaseFailKind, detail: String): RuntimeRelease? {
+        lastReleaseKind = kind
+        lastReleaseError = kind.label + "：" + detail
+        return null
+    }
+
+    /**
+     * 最近一次检查失败的种类（`null` = 没失败过）。
+     *
+     * 存在的意义：UI 可以据此决定"要不要引导用户检查网络"（NETWORK）而不是
+     * "去 Release 页看看是不是发布缺资产"（NO_MANIFEST）。
+     */
+    val lastFailureKind: String? get() = lastReleaseKind?.name
+
+    /** 给 UI/诊断用的完整失败描述（含分类前缀）；成功时为 `null`。 */
+    val lastFailureMessage: String? get() = lastReleaseError
 
     /** 在最近的 Release 里找 `runtime-chunks.json`（手动发布的最新一版）。
      *
@@ -331,20 +363,32 @@ object RuntimeDelta {
      */
     private fun latestRuntimeRelease(): RuntimeRelease? {
         lastReleaseError = null
+        lastReleaseKind = null
         try {
             val atom = httpGet("https://github.com/$REPO/releases.atom")
-                ?: throw IllegalStateException("读取 releases.atom 失败（网络不通或被拦截）")
+                ?: return failRelease(
+                    ReleaseFailKind.NETWORK,
+                    "读取 releases.atom 失败（超时 / 连接被拒 / 被拦截）—— 与「发布缺资产」无关",
+                )
             val tags = Regex("""/releases/tag/([^"<\s]+)""").findAll(atom)
                 .map { it.groupValues[1] }
                 .distinct()
                 .take(5)
                 .toList()
-            if (tags.isEmpty()) throw IllegalStateException("releases.atom 里没有 release tag")
+            if (tags.isEmpty()) {
+                return failRelease(ReleaseFailKind.PARSE, "releases.atom 能取到，但里面解析不出任何 tag")
+            }
+            // 沿途记下每个 tag 的失败原因，最后拼成一句人能看懂的
+            val misses = ArrayList<String>()
             for (tag in tags) {
                 val base = "https://github.com/$REPO/releases/download/$tag/"
                 val txt = httpGet(base + CHUNKS_NAME)
-                if (txt == null || !txt.contains("\"runtimeVersion\"")) {
-                    lastReleaseError = "tag $tag 下没有可用的 $CHUNKS_NAME"
+                if (txt == null) {
+                    misses += "$tag（下载失败）"
+                    continue
+                }
+                if (!txt.contains("\"runtimeVersion\"")) {
+                    misses += "$tag（清单里没有 runtimeVersion）"
                     continue
                 }
                 return RuntimeRelease(
@@ -356,10 +400,13 @@ object RuntimeDelta {
                     chunksText = txt,
                 )
             }
-            return null
+            // 网络是通的（atom 拿到了），只是这 5 个 tag 都没有清单 ⇒ 这才是"发布缺资产"
+            return failRelease(
+                ReleaseFailKind.NO_MANIFEST,
+                "最近 ${tags.size} 个 tag（${tags.joinToString(", ")}）都没有可用的 $CHUNKS_NAME；明细：${misses.joinToString("；")}",
+            )
         } catch (t: Throwable) {
-            lastReleaseError = t.message ?: t.toString()
-            return null
+            return failRelease(ReleaseFailKind.NETWORK, t.message ?: t.toString())
         }
     }
 

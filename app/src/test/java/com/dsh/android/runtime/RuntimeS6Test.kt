@@ -257,4 +257,87 @@ class RuntimeS6Test {
             fail("keep=0 应该被拒绝")
         } catch (_: IllegalArgumentException) { }
     }
+
+    // ---------- Phase 0 / V1：pruneParts 必须忽略 `.staging-*` ----------
+
+    @Test fun prunePartsIgnoresDotStagingDirs() {
+        val root = tmp.newFolder()
+        val parts = File(root, "runtime/parts").apply { mkdirs() }
+        val now = System.currentTimeMillis()
+
+        // 两个「真版本」：按 mtime，v-old 更旧
+        val old = File(parts, "v-old").apply { mkdirs() }
+        file(old, "part1", "o")
+        old.setLastModified(now - 120_000)
+        val fresh = File(parts, "v-new").apply { mkdirs() }
+        file(fresh, "part1", "n")
+        fresh.setLastModified(now - 60_000)
+
+        // 一个「被杀留下的半成品」：mtime 最新（这正是它会挤掉真基线的原因）
+        val staging = File(parts, ".staging-v-new-999").apply { mkdirs() }
+        file(staging, "part1", "partial")
+        staging.setLastModified(now)
+
+        // keep=1 必须只删 v-old；`.staging-*` 既不能参与排序，也不能被 pruneParts 删
+        //（它归 sweepStale 管 —— 那是"启动时清残留"的地方，判据是 pid）
+        assertEquals(listOf("v-old"), RuntimeFiles.pruneParts(parts, keep = 1))
+        assertFalse(old.exists())
+        assertTrue(File(fresh, "part1").isFile)
+        assertTrue(staging.isDirectory)
+        assertEquals("partial", File(staging, "part1").readText())
+    }
+
+    // ---------- Phase 0 / V2：sweepStale 要清 parts/.staging-*，但不碰本进程 ----------
+
+    @Test fun sweepStaleClearsForeignStagingAndKeepsOwnPid() {
+        val runtime = tmp.newFolder()
+        val now = System.currentTimeMillis()
+
+        // ① 一级目录：解包/交换残留
+        val rs = File(runtime, "rootfs.staging-abc").apply { mkdirs() }
+        val ro = File(runtime, "rootfs.old-123").apply { mkdirs() }
+
+        // ② parts 下的 apply 临时目录
+        val parts = File(runtime, "parts").apply { mkdirs() }
+        val mine = File(parts, ".staging-r1-4242").apply { mkdirs() }
+        val foreign = File(parts, ".staging-r1-7777").apply { mkdirs() }
+        val legacyOld = File(parts, ".staging-oldformat").apply { mkdirs() }
+        legacyOld.setLastModified(now - 25L * 60 * 60 * 1000)   // 超过 24h 兜底
+        val legacyFresh = File(parts, ".staging-r1-nopid").apply { mkdirs() }
+        legacyFresh.setLastModified(now)                         // 未超 24h，保留
+        val realBaseline = File(parts, "r1-arm64-v8a-dsh0.2.2").apply { mkdirs() }
+        file(realBaseline, "part1", "keep")
+
+        val removed = RuntimeFiles.sweepStale(runtime, currentPid = 4242)
+
+        // 一级两条 + 别人的 staging + 超龄的 legacy
+        assertEquals(
+            listOf("rootfs.staging-abc", "rootfs.old-123",
+                "parts/.staging-r1-7777", "parts/.staging-oldformat"),
+            removed,
+        )
+        // 本进程自己的 staging 不能删（可能正在写）
+        assertTrue(mine.isDirectory)
+        // 未超龄、pid 解析不出来的也不删（宁可留一天）
+        assertTrue(legacyFresh.isDirectory)
+        // 真基线永远不动
+        assertTrue(File(realBaseline, "part1").isFile)
+        assertFalse(rs.exists())
+        assertFalse(ro.exists())
+    }
+
+    @Test fun sweepStaleWithoutPidFallsBackToMtime() {
+        val runtime = tmp.newFolder()
+        val parts = File(runtime, "parts").apply { mkdirs() }
+        val now = System.currentTimeMillis()
+        val young = File(parts, ".staging-r1-1234").apply { mkdirs() }
+        young.setLastModified(now - 60_000)
+        val ancient = File(parts, ".staging-r1-5678").apply { mkdirs() }
+        ancient.setLastModified(now - 25L * 60 * 60 * 1000)
+
+        // currentPid 默认 -1 ⇒ 不看 pid，只看 mtime
+        assertEquals(listOf("parts/.staging-r1-5678"), RuntimeFiles.sweepStale(runtime))
+        assertTrue(young.isDirectory)
+        assertFalse(ancient.exists())
+    }
 }
