@@ -1,5 +1,10 @@
 # A + B 详细计划：多线路下载（A）/ 启动计时（B）
 
+> 本文是**唯一权威计划**。曾另有一份平行草稿（`multiline-and-startup.md`），
+> 经逐条交叉比对后**已合并进本文并删除** —— 它独有的内容只有两项：
+> **A3.1 并行块下载** 与 **C4-#17**（其余部分本文更完备）。
+> 合并判据见 §C4-#17 与 A3.1 的注释。
+
 > 立项：2026-11-24　目标版本：`0.2.2-rc.5-debug.38`（vc123）
 > 参考实现：工作区 `Operit-main`（`util/GithubReleaseUtil.kt`、`core/application/OperitApplication.kt`）
 > 决策依据：`docs/plan/progress.md` D7 / D8
@@ -124,6 +129,39 @@ private const val REPO = "kai6666666/deepseek-harness"
 **不落盘**：镜像可用性变化快，落盘反而会用过期结果。
 
 TTL 内再次更新直接复用；跨 App 重启重新测（成本 ≤256 KB，可接受）。
+
+### A3.1 并行块下载（**A 的必做项，不是可选优化**）
+
+多线路只解决"下得动"，不解决"下得快"。现状是**串行**：
+
+```kotlin
+// RuntimeDelta.kt:213
+for (c in fp.fetch) {                 // 79 MB 全量 = 79448384 / 65536 ≈ 1212 个块
+    val buf = downloadRange(fp.url, off, len)   // 每块一次 HTTP：建连 + TLS + 302
+}
+```
+
+每次建连 100~300 ms ⇒ **光握手就是 3 分钟**，线路再快也白搭。Operit 的
+`FullUpdateInstaller` / `PatchUpdateInstaller` 都是 `DOWNLOAD_THREAD_COUNT = 6`。
+
+**做法**：
+
+| 项 | 取值 | 理由 |
+|---|---|---|
+| 并发度 | **6**（硬上限） | 与 Operit 一致；移动网络下再高会被限速 |
+| 启用条件 | **仅当 `fp.fetch.size >= 32`** | 增量常态只下几块，开 6 线程纯属浪费（见 A-R8） |
+| 写入方式 | **`FileChannel.write(ByteBuffer, position)`** | ⚠️ **`RandomAccessFile.seek()+write()` 是两步，非原子** —— 6 个线程交错会把块写到错误偏移，且是**静默损坏**（块 sha256 在写之前校验，写完不再验） |
+| 进度 | `var done` → **`AtomicLong`** | 否则丢更新、百分比倒退（`RootfsInstaller` 已经踩过一次，用 `AtomicLong` 解决的） |
+| 失败 | 计入 `errors` 后**统一抛** | 不做逐块重试（与 C-#7 的重试语义一致：只在"整个下载阶段"降级一次） |
+
+```kotlin
+// 关键三行
+val ch = FileChannel.open(dst.toPath(), StandardOpenOption.WRITE, StandardOpenOption.CREATE)
+ch.write(ByteBuffer.wrap(buf), off)   // positional write，内核层面原子
+ch.close()
+```
+
+**整文件终校（`RuntimeDelta.kt:232`）在并行下更不可省** —— 它是最后一道防线，**保留不动**。
 
 ## A4. 验收标准
 
@@ -261,6 +299,7 @@ echo "DSH_BOOT_NODE_EXEC $(date +%s%3N)" >&2 ; exec /usr/bin/node ...
 | **14** | 34 个镜像**全部并发**发请求 | 移动网络下并发连接数被限、也可能被代理方按"滥用"限速，反而更慢 | 并发上限 **8**（信号量/`Semaphore`），分批跑：先跑前 12 个，存活不足 2 个再跑剩下的 |
 | **15** | **宿主与 guest 的时钟不能相减** | `nodeExec` 打的是 guest 的 `date`，宿主是本地时区；两者时区/时钟都可能不同 → 直接相减会得出负值或荒谬数字 | **只做相对量**：guest 侧打**两个**点（`nodeExec` 与 `nodeReady`，都在 guest 内用同一时钟），宿主只用「收到这两行日志的宿主时刻」算**传输延迟**；跨边界不做绝对差 |
 | **16** | `ProotLaunch` 里加 `echo` 会**污染 stdout** | 现有代码若按行解析 stdout（找 pid、找 banner），多一行可能被误认作有效输出 | 前缀用不可能冲突的 `DSH_BOOT_`；产出前先 `grep` 一遍现有解析逻辑（`ProotHost` 里对 stdout 的处理），确认前缀不参与任何判断 |
+| **17** | **串行 1212 次请求才是真瓶颈**（本条来自平行计划的交叉校验） | 多线路做完，用户体感几乎不变；且**并行化若用 `RandomAccessFile.seek+write` 会静默写错块偏移** | 见新增 **A3.1**：并发 6、`FileChannel.write(buf, position)` 定位写、`done` 改 `AtomicLong`、仅 `fetch.size >= 32` 时启用 |
 
 ### C4.1 顺带确认的三件事（不是盲点，但要写死）
 
