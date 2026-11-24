@@ -8,6 +8,42 @@
 - 设备侧清理：删除演练备份 `dsh-backup-drill.zip` 与 13 个历史 APK（约 2.4 GB）。
 
 **不发新版**：本批只有文档与文件清理。
+## [0.2.2-rc.5-debug.35] — 2026-11-24
+vc=120
+### 工程：单测提到出包路径上（单测挂了就不出包）
+单测原来只跑在 `compile.yml`（PR 快速反馈），而真正出包的 `apk.yml` 不跑 ——
+`RuntimeS6Test` 因此红了两天没人发现。本版把单测插到 `assembleSystemDebug` 的
+「编译门禁（engine）」之后：
+
+```yaml
+      - name: 单元测试门禁（app 单测，含 S6 回归）
+        run: bash ./gradlew :app:testSystemDebugUnitTest --console=plain --stacktrace
+      - name: 单测报告（失败时也上传）
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-unit-tests
+```
+
+实证（run `45328267758`）：step16 / step17 均 `success`，artifact `app-unit-tests`
+6,280 B；step29「发布到 Release」仍 `skipped`，不会误发。
+
+### 仓库卫生：删掉会误导人的旧版版本文件
+仓库根目录还留着 `app-version.txt`（内容是 `0.2.2-rc.5-debug.31` / `vc 116`），
+但版本唯一来源早就迁到 `tools/app-version.txt`，所有工作流（`apk.yml` /
+`publish-apk.yml`）也只读 `tools/` 下那份。根目录这份已删除 —— 否则改错文件
+会让版本号静默不生效。
+
+### 文档
+- `docs/plan/progress.md`：全景进度、决策 D1/D2/D3、10 条问题台账、P0/P1/P2 待办；
+- `docs/agents/runtime-delta.md`：P2 设计 + 3 次演练 + Atom 改造 + 真机取证方法；
+- `docs/agents/plugin-data-repair.md`：升级/重建 runtime 后两类数据失效的判定与修复；
+- `docs/agents/mobile-ui.md`：16dp 三列表、标题 `padding-left` 根因、幂等纪律。
+
+### 无行为变更
+本版只动 CI 与仓库文件，`app/` 下 Kotlin 代码零改动（`purgeLegacy` 与 Atom
+增量已在 `debug.34` 落地）。装上去与 `debug.34` 行为一致，仅版本号推进。
+
 ## [0.2.2-rc.5-debug.34] — 2026-11-24
 vc=119
 ### 运行时增量（P2）：不再依赖 GitHub API 配额
