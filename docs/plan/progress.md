@@ -1,6 +1,6 @@
 # DSH for Android · 进度与计划
 
-> 快照时间：2026-11-24 06:40（UTC+8）　当前发布：`v0.2.2-rc.5-debug.35` / vc120
+> 快照时间：2026-11-24 19:20（UTC+8）　当前发布：`v0.2.2-rc.5-debug.36` / vc121
 > 架构：单宿主 PRoot + glibc 单运行时（rootfs 内 `/usr/bin/node`、`/opt/dsh`），WebView 加载官方 Web GUI
 > 身份：`com.dsh.android` / targetSdk 35 / 维护态（只修 bug，不改身份与架构）
 
@@ -8,9 +8,17 @@
 `app-version.txt`（debug.31/vc116，会让人改错文件）+ `publish-apk.yml` 末自动重建全量
 `SHA256SUMS.txt`（原来只算 APK 一行，分片是后续 job 才上传的）。
 
-> 设备侧已装 `debug.35 / vc120`：runtime stamp 保持 `…4ef4d5ef4ac0`（未重解包）、
-> `DETAIL.md` 15 个、`parts` 144 MB 保留。启动日志：`engine.ready ms=47708` →
-> `Web 界面加载完成` → `插件已激活（onUiReady）`。
+> 设备侧已装 `debug.36 / vc121`：runtime stamp 保持 `…4ef4d5ef4ac0`（未重解包）、
+> `DETAIL.md` 15 个、`parts` 144 MB 保留。启动日志：`engine.ready ms=49134` →
+> `插件已激活（onUiReady）`。
+
+**P0 + P2 已全部落地（debug.36）**：
+
+| 项 | 落地形态 |
+|---|---|
+| 首启失败兜底 | `RuntimeFailure`（5 类）+ `RootfsInstaller.Failure` + `EngineManager` 分类文案，`EventLog` 记 `engine.failed.kind` |
+| `parts` 清理 | `RuntimeFiles.pruneParts(keep=1)` 按 mtime 只留最新，跳过符号链接，删不掉不抛 |
+| CHANGELOG 自动化 | `tools/changelog.py`，本轮首次在真实发版流程里用上（生成了 debug.36 小节骨架）|
 
 ---
 
@@ -96,9 +104,9 @@ var+etc      783,464
 ### P0 · 稳定性
 | 项 | 说明 | 状态 |
 |---|---|---|
-| 首启失败兜底 | 运行时全在 APK，理论上无网络依赖；仍需确认「存储不足 / 解包中断」时的提示与重试 | 待做 |
-| `parts` 自动清理策略 | 目前只有 1 版（144 MB，已是最小形态）；多版本堆积时才需要 | 待做（低优先） |
-| 崩溃/异常上报 | 现有 `app.log`/`web.log`/`engine.log` 三份日志，缺「一键导出诊断包」 | 待做 |
+| 首启失败兜底 | 新增 `RuntimeFailure` 分类（空间不足/包损坏/不完整/权限/未知）+「标题+差多少 MB+下一步」文案；`EngineManager` 把 `kind/code/retryable/freeMb` 写进 `EventLog` | ✅ **已完成（debug.36）** |
+| `parts` 自动清理策略 | `RuntimeFiles.pruneParts(partsDir, keep=1)`：按 mtime 只留最新一版、跳过符号链接、删不掉不抛；在 stamp 写完后调用 `pruneOldBaselines()` | ✅ **已完成（debug.36）** |
+| 崩溃/异常上报 | 现有 `app.log`/`web.log`/`engine.log` 三份日志，缺「一键导出诊断包」 | 已有 `DiagnosticBundle.kt`（主人确认功能重复，无需再做） |
 
 ### P1 · 体验
 | 项 | 说明 | 状态 |
@@ -111,7 +119,7 @@ var+etc      783,464
 | 项 | 说明 | 状态 |
 |---|---|---|
 | `compile.yml` 纳入 `apk.yml` | 单测现在独立跑，`apk.yml` 不跑单测 → 曾让 `RuntimeS6Test` 红了两天没人知道 | ✅ **已完成（2026-11-24，debug.34 之后）** |
-| CHANGELOG 自动化 | 现在手写 + `version.sh --check` 校验，可改成从提交生成 | 待做（低优先） |
+| CHANGELOG 自动化 | `tools/changelog.py`：从 Conventional Commits 生成小节草稿，支持 git log 与 GitHub API 两条路，`--since` 支持 tag（先解成 ISO 时间） | ✅ **已完成（debug.36）** |
 | Release 资产自动校验 | 现在靠人工跑脚本比对清单/分片；`SHA256SUMS.txt` 已改为 publish 末自动重建 | ✅ 部分完成（2026-11-24） |
 
 **单测门禁落地细节**（`.github/workflows/apk.yml`，插入在「编译门禁（engine）」之后）：
