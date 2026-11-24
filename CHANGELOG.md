@@ -8,6 +8,70 @@
 - 设备侧清理：删除演练备份 `dsh-backup-drill.zip` 与 13 个历史 APK（约 2.4 GB）。
 
 **不发新版**：本批只有文档与文件清理。
+## [0.2.2-rc.5-debug.39] — 2026-11-24
+vc=124
+
+### 运行时更新：多线路 + 并行块下载（A-1 / A-2）
+
+**改前的实测基线**（`debug.37`，全量 143.5 MB）：
+
+```text
+23:26:48  check 开始
+23:27:28  "正在下载运行时… 2.6 MB / 143.5 MB"    ← 30 秒只下了 2.6 MB
+```
+
+| 指标 | 改前 |
+|---|---|
+| 吞吐 | **≈ 87 KB/s** |
+| 预计耗时 | **≈ 27 分钟** |
+| 请求数 | **2296 次串行**，单线路直连 `github.com` |
+
+⇒ 瓶颈是**请求数**（每次建连 + 302 + Range），不是带宽。
+
+### A-1 新增 `GithubMirrors`：自动选最快线路
+
+- **只对 `github.com` + `/releases/download/` 生效**。`api.github.com` 与
+  `releases.atom` 不走镜像 —— 前缀式代理不转 API，硬塞 100% 失败。
+- **两段式探测，总流量 ≤192 KB**（Operit 那套是 `34 × 256 KB = 8.5 MB`，移动网络下是负优化）：
+  1. 全部并发发 `Range: bytes=0-0`（每条约 1 字节），验 206 + 从 `Content-Range` 拿真实大小
+  2. 只给 RTT 最快的前 3 条做 64 KB 真速测
+- **判据必须是 206**：很多代理接受 `Range` 头却返回 **200 全文**，而块下载在 200 时会
+  "跳过前缀"（off 可达几十 MB）⇒ 2296 个块变成 **O(n²) 流量灾难**。
+  探测阶段就把这种镜像剔除。
+- **直连优先**：直连 1 字节探活 + 64 KB 速测，≥512 KiB/s 就**跳过镜像全测**
+  —— 海外/科学上网用户零额外延迟。
+- **全灭回退直连**（`degraded=true`）：选路失败不是错误，行为与改前完全一致。
+- 缓存只在内存（TTL 30 分钟）：镜像可用性变化快，落盘的过期结果比没有更糟。
+
+### A-2 并行块下载（`RuntimeDelta`）
+
+- 块数 **≥32 才并行**（6 线程）：增量常态只下几块，为几十 KB 起线程池反而更慢。
+- **写入用 `FileChannel.write(buf, position)`**，不是 `RandomAccessFile`：
+  `seek()`+`write()` 是**两步、非原子**，6 线程交错会把块写到错误偏移 ——
+  而且是**静默损坏**（块的 sha256 在写入**之前**校验，写完不再验）。
+- `done` 改 `AtomicLong`；`message` 节流 200 ms（否则 6 线程把日志刷屏、真正的错误被淹没）。
+- 串行路径保留给增量。
+
+### 接入
+
+- `runApply` 里**只选一次线路**（绝不每块都探），结果写
+  `EventLog.record("runtime.download.via", {via, bps, degraded})`。
+- `downloadRange` 增加 `base` 参数，按选中镜像改写 URL。
+- 清单 `runtime-chunks.json` 与 `manifest.json` 走新增的 `httpGetWithMirrors`
+  （顺序试前 6 条镜像）：这两个文件本身也在 `/releases/download/` 下，
+  直连不通时**连"要下什么"都拿不到**，所以它们不能等"测速选最快"。
+
+### 测试 30 → 36
+
+新增 6 条（全部用注入的假 `probe`，不碰真网络，因此能进 `apk.yml` 单测门禁）：
+
+- `mirroredOnlyRewritesReleaseDownloadUrls`：过滤规则 + 拼接无双斜杠
+- `pickPrefersDirectWhenFastEnough`：直连达标时**只探 2 次**、不碰镜像
+- `pickChoosesFastestMirrorAndExcludesNonRange`：选最快 + **排除不支持 Range 的**
+- `pickFallsBackToDirectWhenEveryMirrorFails`：全灭回退 + `degraded`
+- `pickCachesChoiceAndReusesIt`：缓存命中不再探测、换 URL 失效
+- `pickWithNoMirrorCandidatesStaysDirect`：非 release URL 不产生候选
+
 ## [0.2.2-rc.5-debug.38] — 2026-11-24
 vc=123
 

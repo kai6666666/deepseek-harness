@@ -1,2 +1,2 @@
-versionName=0.2.2-rc.5-debug.38
-versionCode=123
+versionName=0.2.2-rc.5-debug.39
+versionCode=124
