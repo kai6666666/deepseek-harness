@@ -191,13 +191,13 @@ class RuntimeS6Test {
 
     @Test fun corruptPartialAndPermissionAreDistinguished() {
         assertEquals(RuntimeFailure.Kind.CORRUPT_ASSET,
-            RuntimeFailure.classify(IOException("rootfs分片校验失败：part2 sha256=dead"))) 
+            RuntimeFailure.classify(IOException("rootfs分片校验失败：part2 sha256=dead")).kind)
         assertEquals(RuntimeFailure.Kind.INCOMPLETE,
-            RuntimeFailure.classify(IOException("rootfs critical files missing: usr/bin/node")))
+            RuntimeFailure.classify(IOException("rootfs critical files missing: usr/bin/node")).kind)
         assertEquals(RuntimeFailure.Kind.PERMISSION,
-            RuntimeFailure.classify(SecurityException("EACCES")))
+            RuntimeFailure.classify(SecurityException("EACCES")).kind)
         assertEquals(RuntimeFailure.Kind.PERMISSION,
-            RuntimeFailure.classify(IOException("无法创建 staging：/data/x")))
+            RuntimeFailure.classify(IOException("无法创建 staging：/data/x")).kind)
     }
 
     @Test fun preClassifiedFailureIsNotReclassified() {
