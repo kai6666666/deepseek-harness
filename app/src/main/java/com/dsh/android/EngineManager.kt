@@ -3,6 +3,7 @@ package com.dsh.android
 import android.content.Context
 import com.dsh.android.runtime.ProotHost
 import com.dsh.android.runtime.RootfsInstaller
+import com.dsh.android.runtime.RuntimeFailure
 import com.dsh.android.runtime.RuntimeManifest
 import com.dsh.android.runtime.RuntimeFiles
 import com.dsh.android.runtime.PluginUpdater
@@ -6778,7 +6779,20 @@ class EngineManager private constructor(private val context: Context) {
             throw c
         } catch (t: Throwable) {
             Log.e(TAG, "运行时准备失败", t)
-            failStart(generation, "运行时准备失败：${t.message}", tail = listOf(t.toString()))
+            // P0：不再把裸 message 丢给用户。分类后给「标题 + 说明 + 下一步」，
+            //     并把 kind/code 写进 EventLog，事后能按种类统计（空间不足 vs 包损坏）。
+            val free = runCatching { context.filesDir.usableSpace }.getOrDefault(-1L)
+            val info = RuntimeFailure.classify(t, free)
+            EventLog.record(
+                "engine.failed.kind",
+                mapOf(
+                    "kind" to info.kind.name,
+                    "code" to info.code,
+                    "retryable" to info.retryable.toString(),
+                    "freeMb" to (if (free > 0) free / 1024 / 1024 else -1).toString(),
+                ),
+            )
+            failStart(generation, info.message(), tail = listOf(t.toString()))
             return
         }
         runCatching { ensureDevEnvScripts() }

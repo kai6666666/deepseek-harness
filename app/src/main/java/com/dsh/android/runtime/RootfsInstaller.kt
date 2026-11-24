@@ -35,6 +35,35 @@ class RootfsInstaller(private val context: Context) {
     private val stamp: File get() = File(runtimeDir, ".rootfs.stamp")
     private val manifestFile: File get() = File(runtimeDir, "manifest.json")
 
+    /**
+     * 带用户可读分类的安装失败（P0）。
+     *
+     * 继承 `IOException` 是为了不破坏既有 `catch (t: IOException)` 与 [RuntimeFiles] 的契约；
+     * 额外挂一个 [RuntimeFailure.Info]，让 `EngineManager` 不用再猜 message。
+     */
+    internal class Failure(
+        val info: RuntimeFailure.Info,
+        cause: Throwable? = null,
+    ) : IOException(info.message(), cause)
+
+    /**
+     * P0：只留当前版本的增量基线（`runtime/parts/`）。
+     *
+     * 调用点放在「stamp 已写、swap 已完成」之后：此时当前基线目录刚被写过，mtime 最新，
+     * `pruneParts(keep = 1)` 必然保留它。失败只记日志 —— 清理不该影响安装结果。
+     */
+    private fun pruneOldBaselines() {
+        runCatching { RuntimeFiles.pruneParts(File(runtimeDir, "parts"), keep = 1) }
+            .onSuccess { if (it.isNotEmpty()) Log.i(TAG, "清理旧增量基线：" + it.joinToString()) }
+            .onFailure { Log.w(TAG, "清理旧增量基线失败：" + it.message) }
+    }
+
+    private fun spaceFailure(free: Long): Failure =
+        Failure(RuntimeFailure.classify(IOException("存储空间不足"), free))
+
+    private fun corruptFailure(detail: String): Failure =
+        Failure(RuntimeFailure.classify(IOException(detail)))
+
     fun isInstalled(manifest: RuntimeManifest): Boolean = runCatching {
         stamp.isFile && stamp.readText().trim() == manifest.runtimeVersion &&
             RuntimeFiles.missingCriticalFiles(rootfs).isEmpty()
@@ -71,12 +100,7 @@ class RootfsInstaller(private val context: Context) {
             .onSuccess { if (it.isNotEmpty()) Log.i(TAG, "清扫中断残留：" + it.joinToString()) }
             .onFailure { Log.w(TAG, "清扫残留失败：" + it.message) }
         val free = context.filesDir.usableSpace
-        if (RuntimeFiles.insufficientSpace(free)) {
-            throw IOException(
-                "存储空间不足：需要约 " + (RuntimeFiles.ASSUME_UNPACKED_BYTES / 1024 / 1024) +
-                    " MB，剩余 " + (free / 1024 / 1024) + " MB"
-            )
-        }
+        if (RuntimeFiles.insufficientSpace(free)) throw spaceFailure(free)
 
         val xz = File(context.cacheDir, "rootfs-" + manifest.runtimeVersion + ".tar.xz")
         val tCopy = System.currentTimeMillis()
@@ -88,7 +112,7 @@ class RootfsInstaller(private val context: Context) {
         DshLog.i("DSH", "stage sha256: " + (System.currentTimeMillis() - tSha) + " ms")
         if (!got.equals(manifest.rootfsSha256, ignoreCase = true)) {
             xz.delete()
-            throw IOException("rootfs 校验失败：sha256=" + got + "，manifest=" + manifest.rootfsSha256)
+            throw corruptFailure("rootfs 校验失败：sha256=" + got + "，manifest=" + manifest.rootfsSha256)
         }
 
         val staging = File(
@@ -115,6 +139,7 @@ class RootfsInstaller(private val context: Context) {
 
         copyAsset("runtime/manifest.json", manifestFile, -1, onProgress)
         stamp.writeText(manifest.runtimeVersion)
+        pruneOldBaselines()
         onProgress(Progress("done", 1, 1, manifest.runtimeVersion))
         Log.i(TAG, "rootfs 就绪：" + rootfs.absolutePath + "（" + manifest.runtimeVersion + "）")
         return rootfs
@@ -132,9 +157,7 @@ class RootfsInstaller(private val context: Context) {
         runCatching { RuntimeFiles.sweepStale(runtimeDir) }
             .onSuccess { if (it.isNotEmpty()) Log.i(TAG, "清扫中断残留：" + it.joinToString()) }
         val free = context.filesDir.usableSpace
-        if (RuntimeFiles.insufficientSpace(free)) {
-            throw IOException("存储空间不足：需要约 " + (RuntimeFiles.ASSUME_UNPACKED_BYTES / 1024 / 1024) + " MB，剩余 " + (free / 1024 / 1024) + " MB")
-        }
+        if (RuntimeFiles.insufficientSpace(free)) throw spaceFailure(free)
         val parts = manifest.rootfsParts
         val totalXz = parts.sumOf { it.bytes }.coerceAtLeast(1)
         val tCopy = System.currentTimeMillis()
@@ -160,7 +183,7 @@ class RootfsInstaller(private val context: Context) {
             val got = sha256(f)
             if (!got.equals(p.sha256, ignoreCase = true)) {
                 f.delete()
-                throw IOException("rootfs分片校验失败：part" + i + " sha256=" + got)
+                throw corruptFailure("rootfs分片校验失败：part" + i + " sha256=" + got)
             }
             xzFiles.add(f)
         }
@@ -209,6 +232,7 @@ class RootfsInstaller(private val context: Context) {
         }
         copyAsset("runtime/manifest.json", manifestFile, -1, onProgress)
         stamp.writeText(manifest.runtimeVersion)
+        pruneOldBaselines()
         onProgress(Progress("done", 1, 1, manifest.runtimeVersion))
         DshLog.i("DSH", "rootfs 就绪（分片）：" + rootfs.absolutePath + "（" + manifest.runtimeVersion + "）")
         return rootfs

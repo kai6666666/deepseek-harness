@@ -155,6 +155,38 @@ internal object RuntimeFiles {
         return removed
     }
 
+    /**
+     * P0：清理多余的增量基线目录（`runtime/parts/<runtimeVersion>/`）。
+     *
+     * 为什么需要：`RuntimeDelta` 会把下好的分片留在 `parts/<ver>/` 当下一轮的增量基线。
+     * 只留当前版本时是 144 MB，但每升一次 runtime 就多一份 —— 历史上跑几次演练就能
+     * 堆到 400 MB 以上，而 `RootfsInstaller` 的 `sweepStale` 只扫 `rootfs.staging-*` /
+     * `rootfs.old-*`，碰不到这里。
+     *
+     * 规则：
+     * - **保留 `keep` 个 mtime 最新的目录**（默认 1 = 只留当前基线）。
+     * - 判据用 mtime 而不是目录名字典序：`runtimeVersion` 里含时间戳之外的哈希，
+     *   字典序没有时间含义（`…4ef4d5ef4ac0` vs `…0eb17d43…`）。
+     * - 符号链接目录一律跳过（可能指到用户数据）。
+     * - 删不掉不抛：清理失败不能拖累启动。
+     */
+    fun pruneParts(partsDir: File, keep: Int = 1): List<String> {
+        require(keep >= 1) { "keep 必须 >= 1" }
+        val dir = partsDir.canonicalFile
+        require(dir == partsDir.absoluteFile.canonicalFile)
+        if (!dir.isDirectory) return emptyList()
+        val versions = (dir.listFiles() ?: emptyArray())
+            .filter { it.isDirectory && !Files.isSymbolicLink(it.toPath()) }
+            .sortedByDescending { it.lastModified() }
+        if (versions.size <= keep) return emptyList()
+        val removed = ArrayList<String>()
+        for (v in versions.drop(keep)) {
+            // 删不掉不算失败：下次启动还会再试一次，清理永远不该拖累启动。
+            runCatching { deleteTree(v) }.onSuccess { removed += v.name }
+        }
+        return removed
+    }
+
     /** Guest diagnostic paths refer to rootfs files, not Android's /opt or /usr. */
     fun managedFile(raw: File, filesDir: File, dshHome: File): File? {
         val rootfs = File(filesDir, "runtime/rootfs")

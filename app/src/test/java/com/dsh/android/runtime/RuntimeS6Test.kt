@@ -163,4 +163,99 @@ class RuntimeS6Test {
         assertEquals(raw, p.inputStream.bufferedReader().readText())
         assertEquals(0, p.waitFor())
     }
+
+    // ---------- P0：首启失败分类 ----------
+
+    @Test fun spaceShortageIsReportedWithExactMbAndAnAction() {
+        val need = RuntimeFiles.ASSUME_UNPACKED_BYTES
+        val free = 800L * 1024 * 1024
+        val info = RuntimeFailure.classify(IOException("存储空间不足"), free, need)
+        assertEquals(RuntimeFailure.Kind.INSUFFICIENT_SPACE, info.kind)
+        assertEquals("space", info.code)
+        assertTrue(info.message().contains("800 MB"))
+        assertTrue(info.message().contains("还差约"))
+        assertTrue(info.action.contains("重试"))
+    }
+
+    @Test fun measuredSpaceWinsEvenWhenMessageIsWrapped() {
+        val need = RuntimeFiles.ASSUME_UNPACKED_BYTES
+        val wrapped = IOException("解包失败：boom")
+        assertEquals(RuntimeFailure.Kind.INSUFFICIENT_SPACE,
+            RuntimeFailure.classify(wrapped, 100L, need).kind)
+        // 读不到空间（-1 / 0）时不能猜成「不足」
+        assertEquals(RuntimeFailure.Kind.UNKNOWN,
+            RuntimeFailure.classify(wrapped, -1L, need).kind)
+        assertEquals(RuntimeFailure.Kind.UNKNOWN,
+            RuntimeFailure.classify(wrapped, 0L, need).kind)
+    }
+
+    @Test fun corruptPartialAndPermissionAreDistinguished() {
+        assertEquals(RuntimeFailure.Kind.CORRUPT_ASSET,
+            RuntimeFailure.classify(IOException("rootfs分片校验失败：part2 sha256=dead"))) 
+        assertEquals(RuntimeFailure.Kind.INCOMPLETE,
+            RuntimeFailure.classify(IOException("rootfs critical files missing: usr/bin/node")))
+        assertEquals(RuntimeFailure.Kind.PERMISSION,
+            RuntimeFailure.classify(SecurityException("EACCES")))
+        assertEquals(RuntimeFailure.Kind.PERMISSION,
+            RuntimeFailure.classify(IOException("无法创建 staging：/data/x")))
+    }
+
+    @Test fun preClassifiedFailureIsNotReclassified() {
+        val original = RuntimeFailure.Info(
+            kind = RuntimeFailure.Kind.CORRUPT_ASSET,
+            code = "asset-corrupt",
+            title = "t", detail = "d", action = "a",
+        )
+        val failure = RootfsInstaller.Failure(original)
+        // 即使外部传了「空间不足」的实测值，也不该覆盖已分类的结果
+        assertEquals(original, RuntimeFailure.classify(failure, 1L, RuntimeFiles.ASSUME_UNPACKED_BYTES))
+        assertEquals("t
+d
+a", failure.message)
+    }
+
+    // ---------- P0：增量基线清理 ----------
+
+    @Test fun prunePartsKeepsNewestBaselineOnly() {
+        val root = tmp.newFolder()
+        val parts = File(root, "runtime/parts").apply { mkdirs() }
+        val old = File(parts, "r1-old").apply { mkdirs() }
+        file(old, "part1", "o")
+        val fresh = File(parts, "r1-new").apply { mkdirs() }
+        file(fresh, "part1", "n")
+        old.setLastModified(System.currentTimeMillis() - 60_000)
+        fresh.setLastModified(System.currentTimeMillis())
+        assertEquals(listOf("r1-old"), RuntimeFiles.pruneParts(parts, keep = 1))
+        assertFalse(old.exists())
+        assertTrue(File(fresh, "part1").isFile)
+        // 幂等：再跑一次什么都不删
+        assertTrue(RuntimeFiles.pruneParts(parts, keep = 1).isEmpty())
+    }
+
+    @Test fun prunePartsNeverFollowsSymlinkedVersionDirs() {
+        val root = tmp.newFolder()
+        val parts = File(root, "runtime/parts").apply { mkdirs() }
+        val userData = file(root, "home/.dsh/sessions/a", "keep me").parentFile
+        val real = File(parts, "r1-real").apply { mkdirs() }
+        file(real, "part1", "x")
+        real.setLastModified(System.currentTimeMillis() - 60_000)
+        Files.createSymbolicLink(File(parts, "r1-link").toPath(), userData.toPath())
+        val newer = File(parts, "r1-new").apply { mkdirs() }
+        newer.setLastModified(System.currentTimeMillis())
+        val removed = RuntimeFiles.pruneParts(parts, keep = 1)
+        // 符号链接目录不被统计、更不会被删；真目录按 mtime 只留最新
+        assertEquals(listOf("r1-real"), removed)
+        assertEquals("keep me", File(userData, "a").readText())
+        assertTrue(Files.isSymbolicLink(File(parts, "r1-link").toPath()))
+    }
+
+    @Test fun prunePartsToleratesMissingDirAndBadKeep() {
+        val missing = File(tmp.newFolder(), "nope")
+        assertTrue(RuntimeFiles.pruneParts(missing).isEmpty())
+        val parts = File(tmp.newFolder(), "parts").apply { mkdirs() }
+        try {
+            RuntimeFiles.pruneParts(parts, keep = 0)
+            fail("keep=0 应该被拒绝")
+        } catch (_: IllegalArgumentException) { }
+    }
 }
