@@ -172,7 +172,11 @@ internal object GithubMirrors {
      * 只返回实测能转普通 URL 的镜像（当前 = GhProxyCom）。空表 ⇒ 调用方退回直连。
      */
     fun atomUrls(url: String): Map<String, String> {
+        // 只给**非** /releases/download/ 的普通 URL（atom 等）；分片有自己的表。
+        // 漏了这行会让分片 URL 也拿到 atom 候选 —— 被单测
+        // atomUsesDedicatedMirrorListNotTheDownloadOne 抓过（RuntimeS6Test.kt:484）。
         if (!url.contains("github.com")) return emptyMap()
+        if (url.contains("/releases/download/")) return emptyMap()
         val out = LinkedHashMap<String, String>(ATOM_MIRRORS.size)
         for ((name, prefix) in ATOM_MIRRORS) {
             out[name] = prefix.trimEnd('/') + "/" + url
