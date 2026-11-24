@@ -413,8 +413,10 @@ class RuntimeS6Test {
         assertEquals(fastName, c.name)
         assertEquals("mirror:$fastName", c.via)
         assertFalse("不该排除成 degraded", c.degraded)
-        // base 必须能拼回原 url
-        assertEquals(dlUrl, GithubMirrors.rewriteOne(c.base, dlUrl))
+        // base 是镜像**前缀**（如 https://ghfast.top/），用它改写必须得到完整镜像 URL
+        assertEquals(mirrors[fastName], GithubMirrors.rewriteOne(c.base, dlUrl))
+        assertEquals("base 应等于镜像前缀（去掉原 url 后缀）",
+            mirrors[fastName]!!.removeSuffix(dlUrl), c.base)
     }
 
     @Test fun pickFallsBackToDirectWhenEveryMirrorFails() {
