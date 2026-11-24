@@ -340,4 +340,123 @@ class RuntimeS6Test {
         assertTrue(young.isDirectory)
         assertFalse(ancient.exists())
     }
+
+    // ---------- A-1：GithubMirrors 选路（注入 probe，不碰网络） ----------
+
+    private val dlUrl = "https://github.com/o/r/releases/download/v1/rootfs-part1-arm64-v8a.tar.xz"
+
+    /** 假探测：按 URL 查表；`counter` 用来断言"到底探了几次"。 */
+    private fun fakeProbe(
+        table: Map<String, GithubMirrors.Probe>,
+        counter: java.util.concurrent.atomic.AtomicInteger? = null,
+    ): (String, String, Long, Int, Long) -> GithubMirrors.Probe =
+        { name, url, _, _, _ ->
+            counter?.incrementAndGet()
+            table[url] ?: GithubMirrors.Probe(name, url, ok = false, error = "not in table")
+        }
+
+    @Test fun mirroredOnlyRewritesReleaseDownloadUrls() {
+        GithubMirrors.clearCache()
+        // 非 github.com：不镜像
+        assertTrue(GithubMirrors.mirrored("https://example.com/x/releases/download/v1/a").isEmpty())
+        // github.com 但不在 /releases/download/ 下（比如 atom）：不镜像
+        assertTrue(GithubMirrors.mirrored("https://github.com/o/r/releases.atom").isEmpty())
+        assertTrue(GithubMirrors.mirrored("https://api.github.com/repos/o/r/releases").isEmpty())
+        // 正常分片：条目数 == 表大小，且**没有双斜杠**
+        val m = GithubMirrors.mirrored(dlUrl)
+        assertEquals(GithubMirrors.mirrorCount, m.size)
+        for ((_, url) in m) {
+            assertFalse("拼接出现双斜杠：$url", url.contains(".top//") || url.contains(".com//") || url.contains("net//"))
+            assertTrue(url.endsWith(dlUrl))
+            assertTrue(url.startsWith("https://"))
+        }
+        // rewriteOne(null) 原样返回
+        assertEquals(dlUrl, GithubMirrors.rewriteOne(null, dlUrl))
+    }
+
+    @Test fun pickPrefersDirectWhenFastEnough() {
+        GithubMirrors.clearCache()
+        val counter = java.util.concurrent.atomic.AtomicInteger()
+        // 直连两次探测（1 字节探活 + 64KB 速测）都很快 ⇒ 应直接返回直连，**不探镜像**
+        val probe = fakeProbe(
+            mapOf(dlUrl to GithubMirrors.Probe("direct", dlUrl, ok = true, ranges = true,
+                rttMs = 50, bytesPerSec = 2L * 1024 * 1024)),
+            counter,
+        )
+        val c = GithubMirrors.pick(dlUrl, 1000L, probe = probe)
+        assertNull("直连达标时 base 必须是 null（= 不走镜像）", c.base)
+        assertEquals("direct", c.name)
+        assertEquals("直连只该探 2 次（探活 + 速测）", 2, counter.get())
+    }
+
+    @Test fun pickChoosesFastestMirrorAndExcludesNonRange() {
+        GithubMirrors.clearCache()
+        val mirrors = GithubMirrors.mirrored(dlUrl)
+        val fastName = mirrors.keys.first()
+        val slowName = mirrors.keys.elementAt(1)
+        val noRangeName = mirrors.keys.elementAt(2)
+
+        val table = HashMap<String, GithubMirrors.Probe>()
+        // 直连慢（但可用）
+        table[dlUrl] = GithubMirrors.Probe("direct", dlUrl, ok = true, ranges = true,
+            rttMs = 900, bytesPerSec = 10_000)
+        table[mirrors[fastName]!!] = GithubMirrors.Probe(fastName, mirrors[fastName]!!,
+            ok = true, ranges = true, rttMs = 80, bytesPerSec = 1_500_000)
+        table[mirrors[slowName]!!] = GithubMirrors.Probe(slowName, mirrors[slowName]!!,
+            ok = true, ranges = true, rttMs = 120, bytesPerSec = 300_000)
+        // 最快但**不支持 Range** ⇒ 必须被排除（否则块下载会 O(n²)）
+        table[mirrors[noRangeName]!!] = GithubMirrors.Probe(noRangeName, mirrors[noRangeName]!!,
+            ok = true, ranges = false, rttMs = 1, bytesPerSec = 9_000_000)
+
+        val c = GithubMirrors.pick(dlUrl, -1L, budgetMs = 300, probe = fakeProbe(table))
+        assertNotNull("应选中某条镜像", c.base)
+        assertEquals(fastName, c.name)
+        assertEquals("mirror:$fastName", c.via)
+        assertFalse("不该排除成 degraded", c.degraded)
+        // base 必须能拼回原 url
+        assertEquals(dlUrl, GithubMirrors.rewriteOne(c.base, dlUrl))
+    }
+
+    @Test fun pickFallsBackToDirectWhenEveryMirrorFails() {
+        GithubMirrors.clearCache()
+        val table = mapOf(
+            dlUrl to GithubMirrors.Probe("direct", dlUrl, ok = false, error = "no range"),
+        )
+        val c = GithubMirrors.pick(dlUrl, -1L, budgetMs = 200, probe = fakeProbe(table))
+        assertNull("全灭时必须回退直连", c.base)
+        assertEquals("direct", c.name)
+        assertTrue("没有任何镜像可用应标记 degraded", c.degraded)
+    }
+
+    @Test fun pickCachesChoiceAndReusesIt() {
+        GithubMirrors.clearCache()
+        val counter = java.util.concurrent.atomic.AtomicInteger()
+        val table = mapOf(dlUrl to GithubMirrors.Probe("direct", dlUrl, ok = true,
+            ranges = true, rttMs = 50, bytesPerSec = 2L * 1024 * 1024))
+        val probe = fakeProbe(table, counter)
+
+        val first = GithubMirrors.pick(dlUrl, 1000L, probe = probe)
+        val afterFirst = counter.get()
+        assertNull(first.base)
+
+        // 第二次：命中缓存（直连缓存直接返回，不再探测）
+        val second = GithubMirrors.pick(dlUrl, 1000L, probe = probe)
+        assertEquals(first, second)
+        assertEquals("缓存命中不该再探测", afterFirst, counter.get())
+
+        // 换个 URL ⇒ 缓存失效，必须重新探
+        val other = dlUrl.replace("part1", "part2")
+        GithubMirrors.pick(other, 1000L, probe = probe)
+        assertTrue("不同 URL 必须重新探", counter.get() > afterFirst)
+        GithubMirrors.clearCache()
+    }
+
+    @Test fun pickWithNoMirrorCandidatesStaysDirect() {
+        GithubMirrors.clearCache()
+        // 不是 release 下载 URL ⇒ 没有镜像候选；也没传 probe 表 ⇒ 直连失败
+        val c = GithubMirrors.pick("https://example.com/whatever.bin", -1L, budgetMs = 100,
+            probe = fakeProbe(emptyMap()))
+        assertNull(c.base)
+        assertTrue(c.degraded)
+    }
 }

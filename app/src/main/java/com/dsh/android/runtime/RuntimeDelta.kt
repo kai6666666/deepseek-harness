@@ -1,13 +1,22 @@
 package com.dsh.android.runtime
 
 import com.dsh.android.log.DshLog as Log
+import com.dsh.android.log.EventLog
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.io.RandomAccessFile
 import java.net.HttpURLConnection
 import java.net.URL
+import java.nio.ByteBuffer
+import java.nio.channels.FileChannel
+import java.nio.file.StandardOpenOption
 import java.security.MessageDigest
+import java.util.Collections
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.concurrent.thread
 
 /**
@@ -185,12 +194,38 @@ object RuntimeDelta {
             val local = localManifest(filesDir)
             val rel = latestRuntimeRelease()
                 ?: throw IllegalStateException(lastReleaseError ?: "检查更新失败：原因未知（既没拿到 atom 也没拿到清单，试了 ${ReleaseFailKind.values().size} 类判据）")
-            val doc = JSONObject(rel.chunksText ?: httpGet(rel.chunksUrl)
+            val doc = JSONObject(rel.chunksText ?: httpGetWithMirrors(rel.chunksUrl)
                 ?: throw IllegalStateException("下载分块清单失败：${rel.chunksUrl}"))
             val plan = planDelta(doc, rel, filesDir)
             if (plan.version.isEmpty()) throw IllegalStateException("清单缺 runtimeVersion")
             if (local == plan.version) {
                 state = "applied"; message = "运行时已是最新（${plan.version}）"; return
+            }
+            // ── A-1：整个 apply 只选一次线路，全程复用（绝不每个块都探一次） ──
+            runCatching {
+                val probeUrl = plan.files.firstOrNull()?.let { fp ->
+                    fp.url.ifEmpty { rel.baseUrl?.let { it + fp.name } ?: "" }
+                }.orEmpty()
+                val probeBytes = plan.files.firstOrNull()?.bytes ?: -1L
+                if (probeUrl.isNotEmpty()) {
+                    val choice = GithubMirrors.pick(probeUrl, probeBytes)
+                    downloadBase = choice.base
+                    downloadVia = choice.via
+                    EventLog.record(
+                        "runtime.download.via",
+                        mapOf(
+                            "via" to choice.via,
+                            "bps" to choice.bytesPerSec.toString(),
+                            "degraded" to choice.degraded.toString(),
+                        ),
+                    )
+                    Log.i(TAG, "选路结果：${choice.via}（${choice.bytesPerSec / 1024} KB/s）")
+                }
+            }.onFailure {
+                // 选路失败不是错误：downloadBase 保持 null ⇒ 与改动前行为完全一致
+                downloadBase = null
+                downloadVia = "direct"
+                Log.w(TAG, "选路失败，回退直连：" + it.message)
             }
             val staging = File(filesDir, "runtime/parts/.staging-${plan.version}-${android.os.Process.myPid()}")
             RuntimeFiles.deleteTree(staging)
@@ -204,28 +239,17 @@ object RuntimeDelta {
                         fp.base.copyTo(dst, overwrite = true)
                         continue
                     }
-                    val raf = RandomAccessFile(dst, "rw")
-                    try {
+                    val base = downloadBase
+                    // 先把文件撑到目标长度，并把本地旧内容整体拷进去（并行时各线程只覆盖自己的块）
+                    RandomAccessFile(dst, "rw").use { raf ->
                         raf.setLength(fp.bytes)
-                        // ① 先把本地旧文件整体拷进去（有的话），再覆盖变化的块
                         if (fp.base != null && fp.base.isFile) copyInto(fp.base, raf)
-                        // ② 逐块 Range 下载
-                        for (c in fp.fetch) {
-                            val off = c.optLong("o")
-                            val len = c.optLong("l")
-                            val want = c.optString("h")
-                            val buf = downloadRange(fp.url, off, len)
-                                ?: throw IllegalStateException("分块下载失败 ${fp.name}@$off")
-                            if (buf.size.toLong() != len) throw IllegalStateException("分块长度不符 ${fp.name}@$off")
-                            val got = sha256(buf)
-                            if (!got.equals(want, ignoreCase = true)) throw IllegalStateException("分块 sha256 不符 ${fp.name}@$off")
-                            raf.seek(off)
-                            raf.write(buf)
-                            done += len
-                            message = "正在下载运行时… " + human(done) + " / " + human(needBytes)
-                        }
-                    } finally {
-                        runCatching { raf.close() }
+                    }
+                    // ② 分块下载：块多就并行（A-2），块少就串行（增量的常态）
+                    if (fp.fetch.size >= PARALLEL_MIN_CHUNKS) {
+                        done = fetchParallel(fp, dst, base, done)
+                    } else {
+                        done = fetchSerial(fp, dst, base, done, needBytes)
                     }
                     // ③ 整文件终校
                     val whole = sha256(dst)
@@ -234,7 +258,7 @@ object RuntimeDelta {
                     }
                 }
                 // ④ 落盘：manifest.json 一起带过去（版本号就在这里）
-                val manifestJson = httpGet(rel.manifestUrl ?: rel.chunksUrl) ?: ""
+                val manifestJson = httpGetWithMirrors(rel.manifestUrl ?: rel.chunksUrl) ?: ""
                 if (manifestJson.isNotEmpty()) {
                     runCatching { File(staging, "manifest.json").writeText(manifestJson) }
                 }
@@ -264,6 +288,102 @@ object RuntimeDelta {
             state = "error"; message = t.message ?: t.toString()
             Log.w(TAG, "应用失败：" + message)
         }
+    }
+
+    /** 进度节流：并行时 6 个线程会疯狂更新，日志会被刷屏且看不到真正的错误。 */
+    private val lastProgressAt = AtomicLong(0L)
+
+    private fun reportProgress(done: Long, total: Long) {
+        val now = System.currentTimeMillis()
+        val prev = lastProgressAt.get()
+        if (now - prev < PROGRESS_MIN_INTERVAL_MS) return
+        if (!lastProgressAt.compareAndSet(prev, now)) return
+        message = "正在下载运行时… " + human(done) + " / " + human(total)
+    }
+
+    /** 串行下载（增量的常态路径；块少时比开线程池快）。 */
+    private fun fetchSerial(
+        fp: FilePlan,
+        dst: File,
+        base: String?,
+        startDone: Long,
+        total: Long,
+    ): Long {
+        var done = startDone
+        RandomAccessFile(dst, "rw").use { raf ->
+            for (c in fp.fetch) {
+                val off = c.optLong("o")
+                val len = c.optLong("l")
+                val want = c.optString("h")
+                val buf = downloadRange(fp.url, off, len, base)
+                    ?: throw IllegalStateException("分块下载失败 ${fp.name}@$off")
+                if (buf.size.toLong() != len) throw IllegalStateException("分块长度不符 ${fp.name}@$off")
+                if (!sha256(buf).equals(want, ignoreCase = true)) {
+                    throw IllegalStateException("分块 sha256 不符 ${fp.name}@$off")
+                }
+                raf.seek(off)
+                raf.write(buf)
+                done += len
+                reportProgress(done, total)
+            }
+        }
+        return done
+    }
+
+    /**
+     * 并行块下载（A-2）。
+     *
+     * ⚠️ **写入必须用 `FileChannel.write(buf, position)`**，不能用 `RandomAccessFile`：
+     * `seek()` + `write()` 是**两步、非原子**，6 个线程交错会把块写到错误偏移 ——
+     * 而且是**静默损坏**（块的 sha256 在写入**之前**校验，写完不再验，只靠最后整文件终校兜底，
+     * 那时只能整个重下）。positional write 在内核层面是原子的。见 `pa-pb-plan.md` §E2。
+     */
+    private fun fetchParallel(fp: FilePlan, dst: File, base: String?, startDone: Long): Long {
+        val done = AtomicLong(startDone)
+        val total = fp.fetch.sumOf { it.optLong("l") } + startDone
+        val errors = Collections.synchronizedList(ArrayList<Throwable>())
+        val latch = CountDownLatch(fp.fetch.size)
+        val pool = Executors.newFixedThreadPool(FETCH_THREADS)
+        FileChannel.open(
+            dst.toPath(),
+            StandardOpenOption.WRITE, StandardOpenOption.CREATE,
+        ).use { ch ->
+            try {
+                for (c in fp.fetch) {
+                    pool.execute {
+                        try {
+                            val off = c.optLong("o")
+                            val len = c.optLong("l")
+                            val want = c.optString("h")
+                            val buf = downloadRange(fp.url, off, len, base)
+                                ?: throw IllegalStateException("分块下载失败 ${fp.name}@$off")
+                            if (buf.size.toLong() != len) {
+                                throw IllegalStateException("分块长度不符 ${fp.name}@$off")
+                            }
+                            if (!sha256(buf).equals(want, ignoreCase = true)) {
+                                throw IllegalStateException("分块 sha256 不符 ${fp.name}@$off")
+                            }
+                            // positional write：不依赖共享的文件指针，线程安全
+                            val bb = ByteBuffer.wrap(buf)
+                            var written = 0
+                            while (bb.hasRemaining()) {
+                                written += ch.write(bb, off + written)
+                            }
+                            reportProgress(done.addAndGet(len), total)
+                        } catch (t: Throwable) {
+                            errors.add(t)
+                        } finally {
+                            latch.countDown()
+                        }
+                    }
+                }
+                latch.await(60, TimeUnit.MINUTES)
+            } finally {
+                pool.shutdownNow()
+            }
+        }
+        if (errors.isNotEmpty()) throw errors.first()
+        return done.get()
     }
 
     /** 只保留最近 [KEEP_VERSIONS] 个版本的分片（每个约 145 MB）。 */
@@ -327,6 +447,33 @@ object RuntimeDelta {
     }
 
     /** 最近一次检查失败的分类，`null` 表示没失败过。 */
+    /**
+     * 块下载的并发度（A-2）。
+     *
+     * 全量 143.5 MB = 2296 个 64 KiB 块；串行时每次请求要建连 + 302 + Range，
+     * 真机实测只有 **≈87 KB/s ⇒ 27 分钟**（见 `pa-pb-plan.md` §A0）。
+     * 6 与 Operit 的 `DOWNLOAD_THREAD_COUNT` 一致；再高在移动网络下会被限速。
+     */
+    private const val FETCH_THREADS = 6
+
+    /**
+     * 只有块数 ≥ 这个值才开并行。
+     *
+     * 增量常态只下几块（几十 KB），为它起 6 个线程 + 6 条 HTTP 连接纯属浪费，
+     * 反而比串行慢。见 `pa-pb-plan.md` §A-R8。
+     */
+    private const val PARALLEL_MIN_CHUNKS = 32
+
+    /** 进度上报节流间隔（并行时 6 线程会疯狂更新 message）。 */
+    private const val PROGRESS_MIN_INTERVAL_MS = 200L
+
+    /**
+     * 最近一次选路结果（A-1 的 `GithubMirrors.pick`）。
+     * `base == null` = 走直连，行为与改动前完全一致。
+     */
+    @Volatile private var downloadBase: String? = null
+    @Volatile private var downloadVia: String = "direct"
+
     private var lastReleaseKind: ReleaseFailKind? = null
     private var lastReleaseError: String? = null
 
@@ -459,6 +606,29 @@ object RuntimeDelta {
         }
     }
 
+    /**
+     * 小文件的取回：**先直连，失败再按镜像表顺序试**（E1 的结论）。
+     *
+     * 为什么不能"测速选最快"：`runtime-chunks.json` / `manifest.json` 本身就在
+     * `/releases/download/` 下，直连不通时**连"要下什么"都拿不到** —— 此时还没有
+     * 任何速度可比。所以这里用「顺序试 + 短超时」，拿到就返回。
+     *
+     * 只试前 6 条：小文件几十 KB，试太多反而慢；剩下 10 条留给分片下载的测速阶段。
+     */
+    private fun httpGetWithMirrors(url: String): String? {
+        httpGet(url)?.let { return it }
+        val candidates = GithubMirrors.mirrored(url).entries.take(6)
+        if (candidates.isEmpty()) return null
+        for ((name, mirrored) in candidates) {
+            val txt = httpGet(mirrored)
+            if (txt != null) {
+                Log.i(TAG, "小文件走镜像 $name：${url.substringAfterLast('/')}")
+                return txt
+            }
+        }
+        return null
+    }
+
     private fun httpGet(url: String): String? = runCatching {
         val c = URL(url).openConnection() as HttpURLConnection
         c.connectTimeout = 15000
@@ -473,9 +643,16 @@ object RuntimeDelta {
         }
     }.getOrNull()
 
-    /** 取一个字节区间（GitHub Release 资产支持 Range：302 后裸下载即可，不带鉴权头）。 */
-    private fun downloadRange(url: String, off: Long, len: Long): ByteArray? = runCatching {
-        val c = URL(url).openConnection() as HttpURLConnection
+    /**
+     * 取一个字节区间（GitHub Release 资产支持 Range：302 后裸下载即可，不带鉴权头）。
+     *
+     * @param base 选中的镜像前缀；非空时把 url 改写成「镜像 + 原 URL」。
+     *             镜像**必须真的支持 Range**（探测阶段已验 206），否则下面的
+     *             `code == 200` 分支会退化成"每块重下前缀"，2296 个块就是 O(n²)。
+     */
+    private fun downloadRange(url: String, off: Long, len: Long, base: String? = null): ByteArray? = runCatching {
+        val target = GithubMirrors.rewriteOne(base, url)
+        val c = URL(target).openConnection() as HttpURLConnection
         c.connectTimeout = 15000
         c.readTimeout = 30000
         c.instanceFollowRedirects = true
