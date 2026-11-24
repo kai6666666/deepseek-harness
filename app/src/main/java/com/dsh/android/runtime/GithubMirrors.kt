@@ -185,16 +185,10 @@ internal object GithubMirrors {
             if (directSpeed.ok && directSpeed.bytesPerSec >= DIRECT_GOOD_BPS) {
                 val c = Choice(base = null, name = "direct", bytesPerSec = directSpeed.bytesPerSec)
                 saveCache(expectedUrl, c, now)
-                Log.i(
-                    TAG,
-                    "mirror.pick 直连达标 ${directSpeed.bytesPerSec / 1024} KB/s，跳过镜像",
-                )
+                logI("mirror.pick 直连达标 ${directSpeed.bytesPerSec / 1024} KB/s，跳过镜像")
                 return c
             }
-            Log.i(
-                TAG,
-                "mirror.pick 直连可用但未达阈值（${directSpeed.bytesPerSec / 1024} KB/s），开始比镜像",
-            )
+            logI("mirror.pick 直连可用但未达阈值（${directSpeed.bytesPerSec / 1024} KB/s），开始比镜像")
         } else {
             logW( "mirror.pick 直连不可用（${directHead.error ?: "无 Range"}），转镜像")
         }
