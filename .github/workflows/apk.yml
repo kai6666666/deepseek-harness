@@ -188,6 +188,19 @@ jobs:
 
       - name: 编译门禁（engine 包，不需要资产）
         run: KTCACHE="$HOME/.kt" bash tools/verify-engine.sh
+      # 单测曾经只跑在 compile.yml 里，而 apk.yml 不跑 —— RuntimeS6Test 红了两天没人知道。
+      # 这里把它提到出包路径上：单测挂了就不出包。compile.yml 仍保留作为 PR 的快速反馈。
+      - name: 单元测试门禁（app 单测，含 S6 回归）
+        run: bash ./gradlew :app:testSystemDebugUnitTest --console=plain --stacktrace
+
+      - name: 单测报告（失败时也上传）
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-unit-tests
+          path: app/build/reports/tests/testSystemDebugUnitTest
+          if-no-files-found: ignore
+
 
       - name: 版本戳（读 tools/app-version.txt 与模板）
         run: |
