@@ -1,6 +1,6 @@
 # DSH for Android · 进度与计划
 
-> 快照时间：2026-11-24 19:40（UTC+8）　当前发布：`v0.2.2-rc.5-debug.36` / vc121
+> 快照时间：2026-11-24 20:35（UTC+8）　当前发布：`v0.2.2-rc.5-debug.37` / vc122
 > 架构：单宿主 PRoot + glibc 单运行时（rootfs 内 `/usr/bin/node`、`/opt/dsh`），WebView 加载官方 Web GUI
 > 身份：`com.dsh.android` / targetSdk 35 / 维护态（只修 bug，不改身份与架构）
 
@@ -8,9 +8,9 @@
 `app-version.txt`（debug.31/vc116，会让人改错文件）+ `publish-apk.yml` 末自动重建全量
 `SHA256SUMS.txt`（原来只算 APK 一行，分片是后续 job 才上传的）。
 
-> 设备侧已装 `debug.36 / vc121`：runtime stamp 保持 `…4ef4d5ef4ac0`（未重解包）、
-> `DETAIL.md` 15 个、`parts` 144 MB 保留。启动日志：`engine.ready ms=49134` →
-> `插件已激活（onUiReady）`。
+> 设备侧已装 `debug.37 / vc122`：runtime stamp 保持 `…4ef4d5ef4ac0`（未重解包）、
+> `DETAIL.md` 15 个、`parts` 144 MB 保留。启动日志：`engine.ready ms=50459`；
+> 同一次会话里出现「键盘弹出 / 内容让位 / 键盘收起」→ Web UI 可交互。
 
 **P0 + P2 已全部落地（debug.36）**：
 
