@@ -418,8 +418,21 @@ LogStore.app('I', "Event", "$name$detail (t+${elapsed}ms)")   // ← 也写 app.
 val w = writer ?: return                                       // 再写 events.jsonl
 ```
 
-⇒ B-1 动手前**必须先确认 `LogStore.app` 是缓冲写还是每次 flush**。若是同步落盘，
-8 个点会自带开销，违反 B6-#4「对启动耗时额外开销 < 1 s」的验收前提。
+⇒ B-1 动手前必须先确认 `LogStore.app` 是缓冲写还是每次 flush。
+
+**✅ 已确认（2026-11-24，Phase 0 执行时读码）**：`LogStore.writeApp` 是**每行 `flush()`**，
+`LogStore.kt:479` 的注释写得很清楚：
+
+```text
+⚠️ `flush()` **每行都调**：这就是「崩溃时日志完整」的代价与保障。
+不 flush 的话最后几行留在用户态缓冲里，进程一死就没了 —— 而那几行通常正是最关键的。
+```
+
+⇒ **`EventLog.record` 是同步落盘**（`LogStore.app` + `events.jsonl` 缓冲两段）。
+
+**结论：B-1 不需要新增"轻量入口"**。估算 8 个点 × 1~5 ms ≈ **8~40 ms**，
+远低于 B6-#4 的"< 1 s 影响"验收线；`boot.phase.gui` 在 WebView 回调（主线程）只有 1 次
+flush，不构成 ANR 风险。**照原计划打 8 个点即可**。
 
 **处置**：B-1 的第一步不是写打点，而是**读 `LogStore.app` 的实现**并在文档记下结论；
 若确认是同步，则打点改走"只写 `events.jsonl`"的轻量入口（新增 `EventLog.mark()`），不双写。
@@ -492,12 +505,16 @@ A4-#6 要验"增量仍然只下变化块"，前提是 `parts/<ver>/` 基线**存
 
 这四件事**不属于 A/B 的功能范围**，但会直接影响 A/B 的验收能不能做成：
 
-| 步 | 内容 | 改动量 | 验证 |
+**✅ 四项均已完成（2026-11-24，commit `d00fb0c1c3`，CI run `45414435263` 全绿）。**
+
+| 步 | 内容 | 实际改动 | 验证结果 |
 |---|---|---|---|
-| **V1** | `RuntimeFiles.pruneParts` 过滤 `.` 开头（与 `localBase` 判据对齐） | 1 行 + 1 条单测 | 单测：`parts/` 放 `.staging-x` / `v-old` / `v-new`，`keep=1` 只删 `v-old` |
-| **V2** | `sweepStale` 增加扫 `runtime/parts/.staging-*`（只删早于本次进程启动的） | ~10 行 | 单测 + 真机：造一个 `.staging-*` 后重启，应被清掉 |
-| **V4** | 读 `LogStore.app` 实现，确认是否缓冲写；记入文档 | 只读 + 文档 | 结论写进本文 B 章节 |
-| **V7** | `lastReleaseError` 区分「网络层失败 / 没有清单 / 清单解析失败」 | ~15 行 | 断网跑一次检查更新，报错必须是"网络层失败"而不是"没找到 Release" |
+| **V1** | `pruneParts` 过滤 `.` 开头 | `RuntimeFiles.kt` 1 行 + 注释 | 单测 `prunePartsIgnoresDotStagingDirs` 通过（`.staging-*` 既不参与排序也不被删） |
+| **V2** | `sweepStale` 扫 `parts/.staging-*` | `RuntimeFiles.kt` ~25 行；3 个调用点传 `currentPid` | 单测 2 条通过（别人的 staging 被删 / 本进程与未超龄的保留 / 真基线不动） |
+| **V4** | 确认 `LogStore.app` 是否缓冲 | 只读 + 本文档 | **每行 flush**（见上方 V4 段结论），B-1 照原计划打点 |
+| **V7** | 检查更新失败分三类 | `RuntimeDelta.kt` ~35 行（`ReleaseFailKind` + `failRelease` + 2 个 accessor） | 编译通过；真机断网验证留到 A/B 联调时做 |
+
+**单测：27 → 30 条。**
 
 **为什么排在最前**：V1 的 bug 会让 A4-#6（"增量仍只下变化块"）**必然误判**；
 V4 的结论决定 B-1 用什么入口打点；V7 是 debug.34（D2）那类"误导用户"的残留形态。

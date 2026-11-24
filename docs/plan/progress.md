@@ -115,6 +115,16 @@ var+etc      783,464
 | 三列表 16dp / 标题对齐的手机尺寸回归 | 已在 1280×2772（dpr 3.25）验收；其它 dpr / 平板回归不做 | ⛔ **不做** |
 | `dsh-app-pet` 升级自愈 | 现在靠人工重装；不做自动死链重装 | ⛔ **不做** |
 
+### Phase 0 · A/B 前置修复（2026-11-24，commit `d00fb0c1c3`）
+第三轮查漏补缺产出的 4 件小事，都已落地，**CI run `45414435263` 全绿（单测 27 → 30）**：
+
+| 项 | 内容 |
+|---|---|
+| **V1** | `RuntimeFiles.pruneParts` 没排除 `.` 开头的目录，会把 `parts/.staging-*` 当成"一个版本"参与 mtime 排序，从而**挤掉真正的当前基线** → 更新退化成全量。已修（判据与 `RuntimeDelta.localBase` 对齐） |
+| **V2** | `sweepStale` 只扫一级的 `rootfs.staging-*` / `rootfs.old-*`，扫不到 `parts/.staging-*` ⇒ apply 被杀后 144 MB 级半成品永久残留。已修（判据用 pid，pid 解析不出才用 24h mtime 兜底） |
+| **V4** | `LogStore.app` 的 `writeApp` 是**每行 flush**（`LogStore.kt:489`）⇒ `EventLog.record` 同步落盘。8 个启动打点约 8~40 ms，不影响 B 的"< 1s"验收 → B-1 照原计划打点 |
+| **V7** | 检查更新失败原先一律报"没找到带清单的 Release"（D2 修过限流那版，但**网络不通**仍落这句）。已改成 `ReleaseFailKind`：NETWORK / NO_MANIFEST / PARSE，各带中文前缀 |
+
 ### P2 · 工程
 | 项 | 说明 | 状态 |
 |---|---|---|

@@ -343,3 +343,19 @@ run-as com.dsh.android sh -c 'cd files/runtime
 
 ⚠️ `rootfs.old-*` 这种旧解包目录里含 **root 属主**的符号链接，`run-as` 删不掉
 （`find -delete` 会 permission denied），体积只有几十 KB，可以不管。
+
+---
+
+## 附：检查更新失败的三种原因（2026-11-24，debug.38 起）
+
+`RuntimeDelta.lastFailureKind` / `lastFailureMessage` 已经能区分：
+
+| kind | 含义 | 用户该做什么 |
+|---|---|---|
+| `NETWORK` | 读不到 `releases.atom`（超时 / 连接被拒 / 被拦截），或未知异常 | 检查网络 / 换线路（A 上线后会自动试镜像） |
+| `NO_MANIFEST` | atom 拿到了，但最近 5 个 tag 都没有 `runtime-chunks.json` | 这才是"发布缺资产"，去看 Release 页 |
+| `PARSE` | atom 能取到但解析不出任何 tag | 反馈给开发者 |
+
+历史教训：`debug.34`（D2）修的是「匿名 API 限流 403 被误报成没找到 Release」。
+但**网络整体不通**会落进同一句话，让用户以为是发布缺资产 —— 这是同一类误导的残留形态，
+本次一并修掉。
