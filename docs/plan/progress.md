@@ -1,6 +1,6 @@
 # DSH for Android · 进度与计划
 
-> 快照时间：2026-11-24 19:20（UTC+8）　当前发布：`v0.2.2-rc.5-debug.36` / vc121
+> 快照时间：2026-11-24 19:40（UTC+8）　当前发布：`v0.2.2-rc.5-debug.36` / vc121
 > 架构：单宿主 PRoot + glibc 单运行时（rootfs 内 `/usr/bin/node`、`/opt/dsh`），WebView 加载官方 Web GUI
 > 身份：`com.dsh.android` / targetSdk 35 / 维护态（只修 bug，不改身份与架构）
 
@@ -108,12 +108,12 @@ var+etc      783,464
 | `parts` 自动清理策略 | `RuntimeFiles.pruneParts(partsDir, keep=1)`：按 mtime 只留最新一版、跳过符号链接、删不掉不抛；在 stamp 写完后调用 `pruneOldBaselines()` | ✅ **已完成（debug.36）** |
 | 崩溃/异常上报 | 现有 `app.log`/`web.log`/`engine.log` 三份日志，缺「一键导出诊断包」 | 已有 `DiagnosticBundle.kt`（主人确认功能重复，无需再做） |
 
-### P1 · 体验
+### P1 · 体验（**三项全部不做**，主人 2026-11-24 决定）
 | 项 | 说明 | 状态 |
 |---|---|---|
-| 「关于 → 检查更新」UI 路径实测 | 目前验证走的是 `auto-dryrun` 钩子 + 产物 sha；真实点按的弹窗文案（增量 KB / 全量 MB）未截图确认 | 待做 |
-| 三列表 16dp / 标题对齐的手机尺寸回归 | 已在 1280×2772（dpr 3.25）验收；其它 dpr / 平板未测 | 待做 |
-| `dsh-app-pet` 升级自愈 | 现在靠人工重装；可在启动时检测 `.l2s` 死链并自动重装 | 待做（nice-to-have） |
+| 「关于 → 检查更新」UI 路径实测 | 主人已亲验通过（弹窗正常显示）；剩余「增量 KB / 全量 MB 文案细看」不做 | ⛔ **不做** |
+| 三列表 16dp / 标题对齐的手机尺寸回归 | 已在 1280×2772（dpr 3.25）验收；其它 dpr / 平板回归不做 | ⛔ **不做** |
+| `dsh-app-pet` 升级自愈 | 现在靠人工重装；不做自动死链重装 | ⛔ **不做** |
 
 ### P2 · 工程
 | 项 | 说明 | 状态 |
@@ -179,6 +179,42 @@ am force-stop com.dsh.android; am start -n com.dsh.android/.MainActivity
 
 ### D3 · 运行时清扫只删 `termux/usr`（2026-11-24，debug.34）
 `termux/home` 是用户自定义环境，整删 `termux` 会丢用户数据。返回值语义不变（仍报 `termux`），两次调用幂等。
+
+### D4 · P1 三项体验项 → **全部不做**（2026-11-24）
+主人决定。逐项理由：
+
+| 项 | 为什么不做 |
+|---|---|
+| 检查更新弹窗文案细看 | 「关于 → 检查更新」已由主人亲验通过；增量/全量的 KB·MB 措辞属文案打磨，不影响正确性 —— 跑通的路径不再反复打扰 |
+| 多 dpr / 平板回归 | 主设备 1280×2772（dpr 3.25）已验收；没有第二台目标设备，回归只能靠模拟器，收益低于成本 |
+| `dsh-app-pet` 升级自愈 | 单插件、单用户场景；出错时可 5 分钟内人工重装。为它加一套死链探测+静默重装，风险（误删真实文件）大于收益 |
+
+**共同判断标准**：维护态下只修「会让功能不可用」的 bug。这三项都属于「体验打磨」，不是可用性缺陷。
+
+### D5 · 删除 `publish-release-from-run.yml`（2026-11-24）
+**发现**：仓库同时存在两个手动发布工作流，其中一个已经彻底过时：
+
+```yaml
+# publish-release-from-run.yml（已删）
+SYS=$(find dist/dsh-system-release -name '*.apk' | head -1)
+GECKO=$(find dist/dsh-gecko-release -name '*.apk' | head -1)
+test -n "$SYS" && test -n "$GECKO"        # ← gecko 变体早已不构建，这里必然失败
+```
+
+**两个危害**：
+1. **跑不通**：`apk.yml` 只产出 `dsh-system-*`，没有 `dsh-gecko-release`，所以卡在 `test -n "$GECKO"`。
+2. **跑通了更糟**：它只挂两个 APK，**不挂 runtime 分片 / manifest / plugins / runtime-chunks.json** —— 就算补上 gecko 让它成功，发出来的 Release 也没有增量能力（P2 直接失效），且 `SHA256SUMS.txt` 只有 2 行。它的 release notes 还是硬编码的 `dsh@0.2.2-rc.1` / `mobile-ui 1.1.0-163`。
+
+**决策**：删除。唯一正确的发布入口是 `publish-apk.yml`（`publish` + `publish-plugins` + SHA256SUMS 重建）。删除前已逐个扫描其余 7 个工作流，确认无引用（也没有 `workflow_run` 依赖）。
+
+### D6 · 保留 `apk-x64.yml` / `ci.yml` / `compile.yml` 三者的并存（2026-11-24）
+| 文件 | 定位 | 结论 |
+|---|---|---|
+| `apk-x64.yml` | 给雷电/MuMu 等 **x86_64 模拟器**出原生包，注释明确「不碰 Release」 | 保留（有用且边界清晰）|
+| `ci.yml` | **仓库卫生**：`secrets-guard` / `docs-check` / `engine-compile` | 保留 |
+| `compile.yml` | **PR 快速反馈**：`compileSystemDebugKotlin` + `testSystemDebugUnitTest` | 保留（与 apk.yml 的单测门禁重复，但它快、能在 PR 阶段就红） |
+
+`ci.yml` 的 `engine-compile` 与 `compile.yml` 有重叠，但两者都只是编译检查、失败表现一致，不构成「用错就出事」的分歧 —— 不做合并。
 
 ---
 
