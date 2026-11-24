@@ -102,9 +102,37 @@ var+etc      783,464
 ### P2 · 工程
 | 项 | 说明 | 状态 |
 |---|---|---|
-| `compile.yml` 纳入 `apk.yml` | 单测现在独立跑，`apk.yml` 不跑单测 → 曾让 `RuntimeS6Test` 红了两天没人知道 | 待做 |
+| `compile.yml` 纳入 `apk.yml` | 单测现在独立跑，`apk.yml` 不跑单测 → 曾让 `RuntimeS6Test` 红了两天没人知道 | ✅ **已完成（2026-11-24，debug.34 之后）** |
 | CHANGELOG 自动化 | 现在手写 + `version.sh --check` 校验，可改成从提交生成 | 待做（低优先） |
 | Release 资产自动校验 | 现在靠人工跑脚本比对清单/分片；可做成 publish 后的 gate | 待做 |
+
+**单测门禁落地细节**（`.github/workflows/apk.yml`，插入在「编译门禁（engine）」之后）：
+
+```yaml
+      # 单测曾经只跑在 compile.yml 里，而 apk.yml 不跑 —— RuntimeS6Test 红了两天没人知道。
+      # 这里把它提到出包路径上：单测挂了就不出包。compile.yml 仍保留作为 PR 的快速反馈。
+      - name: 单元测试门禁（app 单测，含 S6 回归）
+        run: bash ./gradlew :app:testSystemDebugUnitTest --console=plain --stacktrace
+
+      - name: 单测报告（失败时也上传）
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-unit-tests
+          path: app/build/reports/tests/testSystemDebugUnitTest
+          if-no-files-found: ignore
+```
+
+**实证**（run `45328267758`，`assembleSystemDebug` 全绿）：
+
+```text
+ 15 编译门禁（engine 包，不需要资产）                success
+ 16 单元测试门禁（app 单测，含 S6 回归）              success   ← 新增
+ 17 单测报告（失败时也上传）                        success   ← 新增
+ …
+ 29 发布到 Release（公开可下）                     skipped   ← 手动发布开关未开，不会误发
+artifacts: app-unit-tests 6,280 B                 ← 报告已产出
+```
 
 ---
 
