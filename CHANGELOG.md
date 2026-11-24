@@ -8,6 +8,74 @@
 - 设备侧清理：删除演练备份 `dsh-backup-drill.zip` 与 13 个历史 APK（约 2.4 GB）。
 
 **不发新版**：本批只有文档与文件清理。
+## [0.2.2-rc.5-debug.37] — 2026-11-24
+vc=122
+
+### 发布入口收口：删掉会发出"残废包"的旧工作流
+
+仓库里同时存在**两个手动发布工作流**。`publish-release-from-run.yml` 已经彻底过时：
+
+```yaml
+SYS=$(find dist/dsh-system-release -name '*.apk' | head -1)
+GECKO=$(find dist/dsh-gecko-release  -name '*.apk' | head -1)
+test -n "$SYS" && test -n "$GECKO"     # ← gecko 变体早已不构建
+```
+
+**两层危害**：
+
+1. **跑不通**：`apk.yml` 只产出 `dsh-system-*`，没有 `dsh-gecko-release`，卡在这行断言。
+2. **跑通了更糟**：它只挂两个 APK，**不挂 runtime 分片 / manifest / plugins /
+   `runtime-chunks.json`** —— 就算手工补上 gecko 让它成功，发出来的 Release
+   也没有增量能力（P2 直接失效），`SHA256SUMS.txt` 只有 2 行，
+   release notes 还是硬编码的 `dsh@0.2.2-rc.1` / `mobile-ui 1.1.0-163`。
+
+已删除。删除前逐个扫描其余 7 个工作流，确认无引用、无 `workflow_run` 依赖。
+**唯一正确的发布入口是 `publish-apk.yml`**（`publish` + `publish-plugins` + SHA256SUMS 重建）。
+
+### 工具目录：清掉 10 个已完成使命的一次性探针
+
+做了**引用审计**：对仓库内 442 个可读文本文件逐个搜索 `tools/` 下 120 个脚本的路径与文件名，
+判定「无任何文件引用」的共 18 个。其中 10 个是已完成使命的一次性取证探针，删除
+（git 历史里永久可查）：
+
+| 已删除 | 为什么 |
+|---|---|
+| `tools/probe/probe171.js` ~ `probe176.js` | 抽屉/设置页取证系列。问题已修（v7 起 CSS 首帧生效），中间版本不再需要 |
+| `tools/probe/probe181.js` ~ `probe184.js` | 头部栏对齐系列。结论已固化进 `docs/agents/mobile-ui.md` |
+
+**保留判据**：只要还被别的文件提到（哪怕只是文档）就留着 —— 说明它仍有解释价值。
+`probe170.js`（首个取证脚本，注释自带方法论）与 `probe-lralign.js`（几何一致性验收）因此保留。
+
+**没删的「无引用」脚本**：`probe-vmos.mjs`、`ui-drive.mjs`、`ui-standalone.mjs`、
+4 个 `uiagent-*` —— 它们是**手动工具**而非一次性探针。
+
+### `tools/legacy/`：把被推翻的方案留档
+
+新增 `tools/legacy/`，第一份归档是 `plugin-readme.py`（原 `tools/plugin-readme.py`）。
+
+它想用「补 `README.md`」修插件详情页的「插件声明的详细介绍文件无效」，方向是错的：
+
+1. 官方 `@deepseek-ai/dsh-plugin-detail` 读的是 **`docs/DETAIL.md`**，不是 `README.md`；
+2. 包旁的 `README.i18n.yaml` 是**双语区块哈希旁签**，塞 README 会让哈希对不上，
+   **反而制造新的「无效」**；
+3. 真正该修的是 `tools/runtime/build-runtime.sh` 的两条删除规则，
+   以及用 `tools/plugin-docs.py` 把 `docs/` 补回来。
+
+`tools/legacy/README.md` 里写了完整复盘，避免以后有人再走一遍这条路。
+
+### 文档
+
+- `docs/plan/progress.md`：P0/P2 三项转 ✅、P1 三项转 ⛔（D4）、新增 D5/D6 决策；
+- `tools/probe/README.md`：清单同步（只剩保留的 9 个），新增清理记录与
+  「写新探针的约定」（一次性问题标注「取证后即删」、结论要落进 docs 不靠探针保存）。
+
+### 无行为变更
+
+本版只动 CI 工作流与 `tools/` 下的脚本/文档，`app/` 下 Kotlin 零改动
+（`RuntimeFailure` / `pruneParts` / `changelog.py` 已在 `debug.36` 落地）。
+装上去与 `debug.36` 行为一致，仅版本号推进 —— 收口的目的是让「发布入口唯一」这件事
+有一个可追溯的版本号。
+
 ## [0.2.2-rc.5-debug.36] — 2026-11-24
 vc=121
 
