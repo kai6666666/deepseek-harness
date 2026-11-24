@@ -204,7 +204,7 @@ internal object GithubMirrors {
         if (candidates.isEmpty()) {
             return Choice(base = null, name = "direct", degraded = true)
         }
-        val heads = runConcurrent(candidates.entries.toList(), expectBytes, budgetMs, probe, 0L)
+        val heads = runConcurrent(candidates.entries.map { it.key to it.value }, expectBytes, budgetMs, probe, 0L)
             .filter { it.ok && it.ranges }
         if (heads.isEmpty()) {
             logW( "mirror.pick ${candidates.size} 条镜像全部不可用（Range 不可用或超时），回退直连")
