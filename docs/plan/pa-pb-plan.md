@@ -167,7 +167,7 @@ ch.close()
 
 | # | 验收项 | 方法 |
 |---|---|---|
-| 1 | 过滤条件正确 | 单测：`api.github.com/...` → 空；`github.com/x/y/releases/download/v1/a.apk` → 34 个 |
+| 1 | 过滤条件正确 | 单测：`api.github.com/...` → 空；`github.com/x/y/releases/download/v1/a.apk` → **`MIRRORS.size` 个**（原写"34 个"与 A5/C4.1「只保留 12–16 个」自相矛盾，见 V8） |
 | 2 | URL 拼接正确 | 单测：`prefix + originalUrl`（注意 mirror 尾斜杠，不能双斜杠） |
 | 3 | 全部镜像死 → 退回直连 | 真机拔网/断代理后跑一次检查更新，必须不报错、走直连 |
 | 4 | 探测流量 ≤ 256 KB | 日志里打印 `probe bytes=`，累计求和 |
@@ -348,6 +348,159 @@ B4  冷启动两次（一次解包、一次不解包）看瀑布图
 
 **A 先行的原因**：B 要真机多次冷启动才能取到有效样本，而每次冷启动都要下载/校验；
 A 先落地能让后续每次验机的下载更快更稳，也顺带在真实网络下验证了 A。
+
+---
+
+---
+
+## V. 第三轮查漏补缺（数据生命周期与既有机制的冲突，11 条）
+
+> 前两轮（C / C4）查的是**设计与实现**。这一轮换角度：**A/B 落地后会碰到哪些已经存在的东西**，
+> 以及**前两轮里哪些假设其实是错的**。
+
+### V1（严重，代码 bug）· `pruneParts` 会把 `.staging-*` 当成一个"版本"，可能删掉**正在用的基线**
+
+`RuntimeFiles.pruneParts` 的过滤条件：
+
+```kotlin
+.filter { it.isDirectory && !Files.isSymbolicLink(it.toPath()) }   // ← 没有过滤 "." 开头
+```
+
+而同一文件的 `RuntimeDelta.localBase` 是**过滤了**的：
+
+```kotlin
+val dirs = parts.listFiles { f -> f.isDirectory && !f.name.startsWith(".") } ?: return null
+```
+
+**两个函数对同一目录的判据不一致**。后果：
+
+1. `runApply` 的临时目录是 `runtime/parts/.staging-<ver>-<pid>`（`RuntimeDelta.kt:195`）；
+2. 若 apply 被系统杀掉，`.staging-*` 残留（见 V2）；
+3. 下次 `RootfsInstaller.pruneOldBaselines()` → `pruneParts(keep = 1)` **按 mtime 排序**时，
+   残留的 `.staging-*`（半成品，mtime 可能比真基线新）会被当成"最新版本"**保留**，
+   而**真正的当前基线 `parts/<ver>/` 被删除**；
+4. ⇒ 下一次更新退化成**全量**，且磁盘上留下一个半成品目录。
+
+**修法**（两行，本轮就做）：
+
+```kotlin
+.filter { it.isDirectory && !it.name.startsWith(".") && !Files.isSymbolicLink(it.toPath()) }
+```
+
+并在 `RuntimeS6Test` 加一条：`parts/` 下放 `.staging-x` 与 `v-old`、`v-new`，`pruneParts(keep=1)`
+必须**只删 `v-old`**、`.staging-x` 原样保留（它是别人正在写的，不该由这里清理）。
+
+### V2 · `sweepStale` 扫不到 `parts/.staging-*`
+
+`sweepStale(runtimeDir)` 只认 `rootfs.staging-*` 与 `rootfs.old-*`（一级目录），
+而 `RuntimeDelta` 的 staging 在 **`runtime/parts/`** 下面。⇒ 进程被杀后那份半成品
+（最大 144 MB）**永久残留，没人清**。
+
+**修法**：`sweepStale` 增加第二段——扫 `runtime/parts/.staging-*`（只删 `.` 开头且
+`lastModified` 早于当前进程启动时刻的，避免删到**另一个**正在跑的 apply）。
+
+### V3 · （**我推翻了自己的怀疑**）跨主机重定向**不会**丢 `Range`
+
+第三轮我怀疑："镜像 302 到别的 host 时，`HttpURLConnection` 会丢自定义头"。
+**实测推翻**：GitHub Release 下载本来就是
+`github.com` **302 → `objects.githubusercontent.com`**（跨 host），而 `debug.33/34` 的
+增量演练（篡改 part2 第 1000 字节、48 秒内恢复成清单值）正是走这条链路且 Range 正常。
+⇒ **不是漏洞**。记在这里是为了以后别再怀疑一遍。
+
+⚠️ 但**仍要**按 C4-#12/#13 处理"镜像明确不支持 Range"的情况 —— 那是另一回事。
+
+### V4 · `EventLog.record` **不是"纯内存"**，C-#11 的前提不成立
+
+C-#11 写"只写 `EventLog`（内存 + 异步落盘），不 fsync"。但 `EventLog.record` 实际是**双写**：
+
+```kotlin
+LogStore.app('I', "Event", "$name$detail (t+${elapsed}ms)")   // ← 也写 app.log
+val w = writer ?: return                                       // 再写 events.jsonl
+```
+
+⇒ B-1 动手前**必须先确认 `LogStore.app` 是缓冲写还是每次 flush**。若是同步落盘，
+8 个点会自带开销，违反 B6-#4「对启动耗时额外开销 < 1 s」的验收前提。
+
+**处置**：B-1 的第一步不是写打点，而是**读 `LogStore.app` 的实现**并在文档记下结论；
+若确认是同步，则打点改走"只写 `events.jsonl`"的轻量入口（新增 `EventLog.mark()`），不双写。
+
+### V5 · 计划只写"新增文档"，漏了"**要更新的既有文档**"
+
+| 文件 | 要改什么 |
+|---|---|
+| `docs/agents/runtime-delta.md` | P2 章节补「多线路选路 + 并行块下载」，并记 V1/V2 的修复 |
+| `docs/plan/progress.md` | P2 表加 A/B 两行；D8 已引用本文 |
+| `AGENTS.md` | 若新增 `GithubMirrors.kt` / `BootTimeline.kt`，需在文件清单里登记（该文件是接手入口） |
+
+### V6 · **没有基线对比**，无法证明"更快"
+
+A4 验收 #5 只要求"选出的线路是候选里最快的"，没有"**改动前后**全量下载耗时对比"。
+⇒ 加 **A-0 步骤**：动手前先跑一次全量下载（`rm -rf parts` + `auto-dryrun`），
+把耗时写进本文，作为对照基线。
+
+### V7 · 全线路失败时，用户仍会看到**debug.34 修过的那类误报**
+
+`latestRuntimeRelease()` 失败时，`lastReleaseError` 之外的兜底文案是
+"没找到带 runtime-chunks.json 的 Release"。D2 修的是"限流 403 被误报成没找到"，
+但**网络整体不通**仍会落进同一句话 ⇒ 用户方向完全错（以为是发布缺资产）。
+
+**修法**：`lastReleaseError` 必须区分三类并带进 `message`：
+`网络层失败（超时/连接拒绝，试了 N 条线路）` / `拿到 atom 但 5 个 tag 都没有清单` / `清单解析失败`。
+
+### V8 · A4-#1 的"34 个"与 A5「只保留 12–16」矛盾
+
+已在上方 A4 表格改正为 `MIRRORS.size`。（这条是自查出来的文档内部矛盾。）
+
+### V9 · 探测函数**不可注入**，单测躲不开真网络
+
+A3 的签名是 `suspend fun probeHeads(urls, expectBytes, timeoutMs)` —— 全是网络调用。
+单测跑 CI 时没有稳定外网 ⇒ 必须可注入：
+
+```kotlin
+fun probeHeads(urls: Map<String, String>, expectBytes: Long, timeoutMs: Int,
+               probe: (String, Int) -> Probe = ::defaultProbe): List<Probe>
+```
+
+否则 A4 验收 #1~#3 只能"真机手工验"，进不了 `apk.yml` 的单测门禁。
+
+### V10 · A 的验收 #6 依赖 `parts/` 基线，而 V1 可能已经把它删了
+
+A4-#6 要验"增量仍然只下变化块"，前提是 `parts/<ver>/` 基线**存在且完整**。
+但 V1 的 bug 会让基线被误删 ⇒ **A 验收前必须先修 V1**，否则会误判成"A 把增量搞坏了"。
+
+### V11 · 并行下载会让 `message` 刷屏（1212 次更新）
+
+`RuntimeDelta.message` 是 `@Volatile`，被 JS 桥每 500 ms 轮询。串行时最多 1212 次写/分钟；
+并行后 6 线程同时写，日志里 `engine`/`app.log` 可能被进度行淹没，且**看不到真正的错误**。
+
+**修法**：`message` 写入加节流 —— 仅当「距上次更新 ≥ 200 ms」**或**「进度百分比变化 ≥ 1%」才写。
+
+### V 汇总：本轮（A/B 之前）就该做的 4 件小事
+
+| 项 | 改动量 | 为什么必须先做 |
+|---|---|---|
+| V1 `pruneParts` 过滤 `.` 开头 | 1 行 + 1 条单测 | 否则 A 的增量验收会被误判 |
+| V2 `sweepStale` 扫 `parts/.staging-*` | ~10 行 | 否则残留 144 MB 永远清不掉 |
+| V4 确认 `LogStore.app` 是否缓冲 | 只读代码 + 记文档 | 否则 B 的"< 1s 开销"验收前提不成立 |
+| V7 报错区分三类失败 | ~15 行 | 否则用户又被误导一次 |
+
+---
+
+---
+
+## Phase 0（A/B 之前，第三轮审查产物）
+
+这四件事**不属于 A/B 的功能范围**，但会直接影响 A/B 的验收能不能做成：
+
+| 步 | 内容 | 改动量 | 验证 |
+|---|---|---|---|
+| **V1** | `RuntimeFiles.pruneParts` 过滤 `.` 开头（与 `localBase` 判据对齐） | 1 行 + 1 条单测 | 单测：`parts/` 放 `.staging-x` / `v-old` / `v-new`，`keep=1` 只删 `v-old` |
+| **V2** | `sweepStale` 增加扫 `runtime/parts/.staging-*`（只删早于本次进程启动的） | ~10 行 | 单测 + 真机：造一个 `.staging-*` 后重启，应被清掉 |
+| **V4** | 读 `LogStore.app` 实现，确认是否缓冲写；记入文档 | 只读 + 文档 | 结论写进本文 B 章节 |
+| **V7** | `lastReleaseError` 区分「网络层失败 / 没有清单 / 清单解析失败」 | ~15 行 | 断网跑一次检查更新，报错必须是"网络层失败"而不是"没找到 Release" |
+
+**为什么排在最前**：V1 的 bug 会让 A4-#6（"增量仍只下变化块"）**必然误判**；
+V4 的结论决定 B-1 用什么入口打点；V7 是 debug.34（D2）那类"误导用户"的残留形态。
 
 ---
 
