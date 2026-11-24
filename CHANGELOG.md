@@ -8,6 +8,87 @@
 - 设备侧清理：删除演练备份 `dsh-backup-drill.zip` 与 13 个历史 APK（约 2.4 GB）。
 
 **不发新版**：本批只有文档与文件清理。
+## [0.2.2-rc.5-debug.38] — 2026-11-24
+vc=123
+
+### 修复：`pruneParts` 会把 `parts/.staging-*` 当成一个"版本"，可能删掉**正在用的增量基线**
+
+`RuntimeFiles.pruneParts` 的过滤条件漏了排除 `.` 开头的目录，而同一文件的
+`RuntimeDelta.localBase` 是排除的 —— **两个函数对同一目录两套判据**。后果链：
+
+```text
+runApply 的临时目录 = parts/.staging-<ver>-<pid>
+  → apply 被系统杀掉后残留
+  → 下次 pruneOldBaselines() 按 mtime 排序时，残留半成品（mtime 更新）被当成"最新版本"保留
+  → 真正的当前基线 parts/<ver>/ 被删除
+  ⇒ 下一次更新退化成全量（143.5 MB ≈ 27 分钟，见下），磁盘上还留个 144 MB 级半成品
+```
+
+已修（一行）：判据与 `localBase` 对齐，`!it.name.startsWith(".")`。
+
+### 修复：`sweepStale` 扫不到 `parts/.staging-*`，被杀残留永久占空间
+
+`sweepStale` 只认一级的 `rootfs.staging-*` / `rootfs.old-*`，而 `RuntimeDelta` 的
+临时目录在 `runtime/parts/` 下面 ⇒ 进程被杀后那份半成品**永远没人清**。
+
+现在增加第二段扫描，判据用 **pid** 而不是 mtime（目录名末尾就是 pid）：
+
+```kotlin
+val pid = f.name.substringAfterLast('-').toLongOrNull()
+when {
+    pid != null && currentPid > 0L -> pid != currentPid      // 别人的残留才删
+    else -> now - f.lastModified() > STALE_PARTS_AGE_MS      // 解析不出 pid 才用 24h 兜底
+}
+```
+
+三个调用点（`EngineManager` 启动清扫 + `RootfsInstaller` 两处安装前清扫）都传 `currentPid`。
+
+### 修复：检查更新失败不再一律报「没找到带清单的 Release」
+
+`debug.34`（D2）修的是「匿名 API 限流 403 被误报成没找到 Release」。但**网络整体不通**
+仍会落进同一句话，让人以为是发布缺资产、去翻 Release 页 —— 方向完全错。
+
+新增 `ReleaseFailKind`：
+
+| kind | 什么时候 | 用户该做什么 |
+|---|---|---|
+| `NETWORK` | `releases.atom` 读不到（超时/连接被拒/被拦截），或未知异常 | 检查网络（A 上线后会自动试镜像） |
+| `NO_MANIFEST` | atom 拿到了，但最近 5 个 tag 都没有 `runtime-chunks.json` | 这才是"发布缺资产" |
+| `PARSE` | atom 能取到但解析不出任何 tag | 反馈 |
+
+另加 `lastFailureKind` / `lastFailureMessage` 两个只读 accessor 给 UI。
+兜底文案也从"没找到"改成"检查更新失败：原因未知（既没拿到 atom 也没拿到清单）"。
+
+### 已知基线：全量运行时要 27 分钟（下一版 A 的目标）
+
+在 `debug.37` 上真机实测一次全量下载（143.5 MB）：
+
+```text
+23:26:48  check 开始
+23:27:28  "正在下载运行时… 2.6 MB / 143.5 MB"    ← 30 秒只下了 2.6 MB
+```
+
+| 指标 | 实测 |
+|---|---|
+| 吞吐 | **≈ 87 KB/s** |
+| 预计耗时 | **≈ 27 分钟** |
+| 请求数 | **2296 次串行**，单线路直连 |
+
+⇒ 瓶颈是**请求数**（每次建连 + 302 + Range），不是带宽。多线路解决"下得动"，
+并行块下载解决"下得快"，两者缺一不可。
+
+### 测试
+
+`RuntimeS6Test` 27 → **30**：
+
+- `prunePartsIgnoresDotStagingDirs`：`.staging-*` 既不参与 mtime 排序、也不被 `pruneParts` 删
+- `sweepStaleClearsForeignStagingAndKeepsOwnPid`：删别人的 staging / 一级残留 / 超龄 legacy；
+  保留本进程的、未超龄且解析不出 pid 的、真基线
+- `sweepStaleWithoutPidFallsBackToMtime`：`currentPid = -1` 时只看 mtime
+
+本版 `app/` 只改了 `RuntimeFiles` / `RuntimeDelta` / `RootfsInstaller` / `EngineManager`
+的上述四处，**不动运行时结构与启动流程**。
+
 ## [0.2.2-rc.5-debug.37] — 2026-11-24
 vc=122
 
