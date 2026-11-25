@@ -6632,8 +6632,17 @@ process.on('exit', (c) => {
         // rootfs 由 nodeBin 推导：nodeBin = filesDir/usr/bin/node ⇒ filesDir/runtime/rootfs
         run {
             val filesDir = nodeBin.parentFile?.parentFile
-            if (filesDir != null) {
-                writeTimingPreload(File(filesDir, "runtime/rootfs"))?.let {
+            val rootfs = if (filesDir != null) File(filesDir, "runtime/rootfs") else null
+            // 默认关闭：只有 rootfs 里存在 .dsh-timing-on 标记才插 -r。
+            //
+            // 为什么默认关：单测环境没有 rootfs，且测试会断言 argv 的精确内容/长度。
+            // debug.46 第一次提交就是无条件插入，CI 在「单元测试门禁」直接红（编译门禁是过的）。
+            // 诊断需求是一次性的，不该让常驻行为多两个 argv 元素。
+            //
+            // 开启：touch $(filesDir)/runtime/rootfs/opt/dsh/.dsh-timing-on && 重启
+            // 关闭：rm 掉那个文件
+            if (rootfs != null && File(rootfs, "opt/dsh/.dsh-timing-on").isFile) {
+                writeTimingPreload(rootfs)?.let {
                     add("-r")
                     add(it.absolutePath)
                 }
