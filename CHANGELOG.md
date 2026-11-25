@@ -8,6 +8,48 @@
 - 设备侧清理：删除演练备份 `dsh-backup-drill.zip` 与 13 个历史 APK（约 2.4 GB）。
 
 **不发新版**：本批只有文档与文件清理。
+## [0.2.2-rc.5-debug.43] — 2026-11-25
+vc=128
+
+### 修复：插件索引源「删不掉」（客户端自己锁死了 `indexes`）
+
+**现象**：插件市场 →「发现」→「管理索引源」，点垃圾桶删不掉，底部红字「无法保存索引源」。
+
+**链路**：删除与添加走**同一个** `saveSources` → RPC `pluginMarket.setIndexes` →
+`settings.update`。所以「保存失败」的表现就是「删不掉」。三种错误文案里截图对应
+`kind: other` ⇒ 不是 URL 非法、也不是 settings 缺失，是**写入被拒**。
+
+**根因**：`EngineManager.writeMarketPatch()` 每次启动整体重写 `market.patch.yml`，其中：
+
+```yaml
+config:
+  indexes:
+    - https://dshopen.org/index.json                       ← 硬编码
+    - https://cdn.jsdelivr.net/npm/dsh-plugin-catalog/index.json
+  fetchTimeoutMs: 3000
+  cacheTtlMs: 3600000
+```
+
+而 `--patch` 在 profile 层之后应用、优先级更高，`config:` 又是**整段替换** ⇒
+用户删掉后启动被盖回来，且 `settings.update` 在 patch 层压制下直接抛错。
+
+**修法**：`writeMarketPatch()` 不再写 `indexes`，只保留 `fetchTimeoutMs` / `cacheTtlMs`。
+索引源归用户，客户端不再替他决定。
+
+### ⚠️ 升级后行为变化
+
+`config:` 整段替换 ⇒ **首次启动索引源会变空**（页面提示「还没有插件索引」）。
+需要 jsdelivr 的用户点一次「添加」即可，**之后能存住、也能删掉**。
+`dshopen.org` 在本机实测是 `Could not fetch … timeout`，本就不该被客户端硬塞。
+
+### 自查位置（`$DSH_HOME` = `files/home/.dsh`）
+
+| 文件 | 谁写 |
+|---|---|
+| `market.patch.yml` | 客户端每次启动覆盖（本版起不含 indexes）|
+| `profiles/web/cordis.patch.yml` | 用户层，索引源真正落点 |
+| `profiles/web/.dsh-open-market.json` | 插件管理器另一份记录 |
+
 ## [0.2.2-rc.5-debug.42] — 2026-11-25
 vc=127
 
