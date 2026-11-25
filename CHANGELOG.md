@@ -8,6 +8,45 @@
 - 设备侧清理：删除演练备份 `dsh-backup-drill.zip` 与 13 个历史 APK（约 2.4 GB）。
 
 **不发新版**：本批只有文档与文件清理。
+## [0.2.2-rc.5-debug.42] — 2026-11-25
+vc=127
+
+### 修复：`runtime-chunks.json` 下载不走镜像（`debug.41` 演练撞出来的）
+
+`debug.41` 修好了「apply 静默不启动」，真机上立刻暴露出下一层：
+
+```text
+18:12:08  小文件走镜像 GhProxyCom：releases.atom        ← atom 成功（1.2s）
+18:12:52  检查失败：Release 里没有运行时清单：最近 5 个 tag 全部「下载失败」
+```
+
+**根因**：`latestRuntimeRelease()` 探 tag 时用的是
+
+```kotlin
+val txt = httpGet(base + CHUNKS_NAME)     // ← 直连！不走镜像
+```
+
+真机同一分钟同一 URL 的对照：
+
+```text
+gh-proxy  http=200  t=2.72s   size=292451   ← 正确，正是文件大小
+direct    http=000  t=31.46s  size=0        ← 完全不通
+```
+
+⇒ 5 个 tag 全卡在直连上失败，而错误文案说的是「Release 里没有运行时清单」——
+**又一次把网络问题误导成发布缺资产**（同一类问题的第二次）。
+
+**修法**：探 tag 与 `runCheck` 两处都改走 `httpGetWithMirrors`。
+
+### 附：A-2「Range 分块 + 并行」在 167 MB 真实下载上验证有效
+
+```text
+单流 curl -C -：30 分钟只到 43 MB（≈24 KB/s）
+6 线程 Range 分块（16 MB/块 × 10）：186.4s，875 KB/s，zip testzip=None ✓
+```
+
+⇒ 再次印证 A-0 的结论：**瓶颈是请求数，不是带宽**。
+
 ## [0.2.2-rc.5-debug.41] — 2026-11-25
 vc=126
 
