@@ -796,3 +796,88 @@ run {
 **教训与探针那次同源：「没打印成功日志」就是失败。脚本里每个 print 都是断言，少一条就是没做。**
 
 ---
+
+### 4.14.8 第四种错法：语法对、行为变了、测试才是唯一防线
+
+`debug.46b` 在 `buildCommand()` 里**无条件**插了两个 argv 元素（`-r` + 探针路径）。
+
+CI 结果：
+
+```text
+15 编译门禁（engine 包，不需要资产）   success   ← 编译是过的
+16 单元测试门禁（app 单测，含 S6 回归）  failure   ← 挂在这里
+17 单测报告（失败时也上传）            success
+18 版本戳 ... 29 发布到 Release       skipped
+```
+
+**这说明语法和类型都没错**，是**行为契约**变了 —— 单测大概率在断言 argv 的精确内容或长度：
+
+```kotlin
+assertEquals(expectedArgv, buildCommand(...))   // 逐元素比对
+assertEquals(7, argv.size)                      // 断言长度
+```
+
+一旦多两个元素就红。
+
+**这和前面三种错法性质不同**：
+
+| # | 错法 | 有谁兜底 |
+|---|---|---|
+| 1 | `%` 格式化把脚本搞崩 | 解释器，立刻报 |
+| 2 | 静默跳过（条件被污染） | 无 —— 靠「没打印成功日志」自己察觉 |
+| 3 | 引用未声明变量 | `assert` + 编译器 |
+| **4** | **语法对、行为变了** | **只有单测** |
+
+⇒ **改 `buildCommand()` 这类「产出一个精确结构」的函数时，必须假定有逐元素断言。**
+要么别动默认路径，要么同步改测试，不能指望「多两个元素不影响运行」。
+
+### 4.14.9 最终形态：开关式探针
+
+```kotlin
+run {
+    val filesDir = nodeBin.parentFile?.parentFile
+    val rootfs = if (filesDir != null) File(filesDir, "runtime/rootfs") else null
+    // 默认关闭：只有 rootfs 里存在 .dsh-timing-on 标记才插 -r。
+    if (rootfs != null && File(rootfs, "opt/dsh/.dsh-timing-on").isFile) {
+        writeTimingPreload(rootfs)?.let {
+            add("-r")
+            add(it.absolutePath)
+        }
+    }
+}
+```
+
+| 环境 | `rootfs` | 标记 | argv |
+|---|---|---|---|
+| 单测（无 rootfs） | 不存在 | — | **完全不变** |
+| 真机，未开启 | 存在 | 不存在 | **完全不变** |
+| 真机，开启 | 存在 | 存在 | +2 元素 |
+
+用法：
+
+```bash
+# 开启
+run-as com.dsh.android sh -c 'touch files/runtime/rootfs/opt/dsh/.dsh-timing-on'
+# 关闭
+run-as com.dsh.android sh -c 'rm files/runtime/rootfs/opt/dsh/.dsh-timing-on'
+```
+
+**为什么用标记文件而不是环境变量**：环境变量要改 `extraEnv`，会牵动 PRoot 的环境拼装；
+标记文件只碰一个 `isFile()` 判断，零副作用。
+
+### 4.14.10 日志与 artifact 的两个 401
+
+排查 `debug.46b` 单测失败时，两条路都堵死：
+
+```text
+GET /actions/jobs/{id}/logs         → 401（缺 actions:read）
+GET /actions/artifacts/{id}/zip     → 401（302 重定向后 token 丢失）
+```
+
+CI 里只有两个 artifact 可列：`runtime-arm64-v8a`（150 MB）与 `build-logs`（40 KB）；
+「单测报告（失败时也上传）」那个 step 是 success，但 artifact 不在可列列表里（可能已 expired）。
+
+⇒ 结论：**当前 token 看不到 CI 日志，定位失败只能靠「改代码 + 重跑」二分**。
+若后续要长期维护，需要补一个带 `actions:read` 的 token，否则每次失败都是盲改。
+
+---
