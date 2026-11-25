@@ -1,5 +1,6 @@
 package com.dsh.android
 
+import com.dsh.android.log.BootTimeline
 import android.content.Context
 import com.dsh.android.runtime.ProotHost
 import com.dsh.android.runtime.RootfsInstaller
@@ -6754,6 +6755,9 @@ class EngineManager private constructor(private val context: Context) {
 
     private suspend fun startProot(manifest: RuntimeManifest, generation: Long) {
         val startMs = System.currentTimeMillis()
+        // B：启动分段计时从这里开始（相对时间轴，与 guest 时钟无关）
+        BootTimeline.start()
+        BootTimeline.mark("runtime")
         EventLog.record("engine.start.proot", mapOf("runtime" to manifest.runtimeVersion))
         val installer = RootfsInstaller(context)
         var phase = ""
@@ -6908,6 +6912,8 @@ class EngineManager private constructor(private val context: Context) {
         }
         activeOverlays = overlays
         activeEnv = prootEnv
+        // B：overlay/环境已经拼好，只差 spawn —— 之前的所有耗时都在这一段之前
+        BootTimeline.mark("preflight")
         if (!currentStart(generation)) return
         maybeIsolateBadBundles()
         if (!currentStart(generation)) return
@@ -6948,8 +6954,12 @@ class EngineManager private constructor(private val context: Context) {
             failStart(generation, "引擎进程启动失败：${t.message}", tail = listOf(t.toString()))
             return
         }
+        // B：进程已经 spawn 出去了（真正长耗时从此开始）
+        BootTimeline.mark("prootSpawn")
         val waitStart = System.nanoTime()
         val token = host.awaitToken(READY_TIMEOUT_MS)
+        // B：拿到 token = guest 里的 node 已经起来并打印了 URL
+        BootTimeline.mark("nodeExec")
         if (!currentStart(generation) || process !== proc) return
         if (token == null || !host.isAlive()) {
             val waited = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - waitStart)
@@ -7014,6 +7024,7 @@ class EngineManager private constructor(private val context: Context) {
             }
             return
         }
+        BootTimeline.mark("health")
         if (health == manifest.unauthStatus && gateway == null) {
             runCatching { RuntimeFiles.purgeLegacy(context.filesDir) }
                 .onSuccess { gone -> EventLog.record("runtime.purge", mapOf("removed" to gone.joinToString(), "data" to "in-place")) }
@@ -7022,6 +7033,11 @@ class EngineManager private constructor(private val context: Context) {
         synchronized(lifecycleLock) {
             if (!currentStart(generation) || process !== proc) return
             if (gateway == null) RescueBoot.clearFailure()
+            // B：一次落盘（8 个点各写一次 fsync 会卡主线程，这里合并成一条）
+            BootTimeline.mark("ready")
+            BootTimeline.finish()
+            EventLog.record("boot.timeline", mapOf("total" to BootTimeline.totalMs.toString()))
+            runCatching { Log.i(TAG, BootTimeline.dump()) }
             EventLog.record("engine.ready", mapOf("ms" to (System.currentTimeMillis() - startMs).toString(),
                 "profile" to targetProfile, "health" to health.toString(),
                 "runtime" to (if (host.launchedDirect) "direct" else "proot")))

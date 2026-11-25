@@ -255,7 +255,12 @@ class ProotHost(
         }
         // Environment values may be credentials; log structural facts only.
         Log.i(TAG, "launch: profile=$profile patches=${overlays.size} pidFile=$guestPidFile command=${command?.firstOrNull() ?: "dsh"}")
-        return pb.start().also { process = it }
+        // B：ProcessBuilder.start() 本身会 fork+exec，是 PRoot 首段的真实开销
+        val t = System.nanoTime()
+        return pb.start().also {
+            process = it
+            DshLog.i(TAG, "spawn.cost ms=" + (System.nanoTime() - t) / 1_000_000)
+        }
     }
 
     /**

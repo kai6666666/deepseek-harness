@@ -8,6 +8,54 @@
 - 设备侧清理：删除演练备份 `dsh-backup-drill.zip` 与 13 个历史 APK（约 2.4 GB）。
 
 **不发新版**：本批只有文档与文件清理。
+## [0.2.2-rc.5-debug.44] — 2026-11-25
+vc=129
+
+### 修复：插件安装源同样被客户端锁死（patch 全家审计的第二处）
+
+`debug.43` 修掉索引源之后，把 `$DSH_HOME` 下**全部 15 个 `*.patch.yml`** 逐个过了一遍。
+判据只有一条：**`config:` 整段替换 + `--patch` 优先级最高 ⇒ 写了用户可编辑字段就等于锁死**。
+
+| 文件 | 判定 |
+|---|---|
+| `market.patch.yml` | `indexes` 可增删 → 已修（debug.43）|
+| **`plugin-manager.patch.yml`** | `registry` / `fallbackRegistries` 可在 UI 改 → **本版修** |
+| `sandbox-proot` / `session-search` / `workspace` | 内部路径与实现参数 → 保留 |
+| 其余 10 个 | 只有 `insert` 或 `id`+`name` → 保留 |
+
+官方 UI 包 `dsh-client-ui-plugin-manager` 里有 `registryCustom` / `registryCustomField` /
+`registryCustomPick` / `registryChosen` / `registryComposition` / `fallbackRegistries`
+一整套字段 ⇒ 安装源明确是用户可编辑的，而客户端每次启动把 `config` 整段写死。
+
+**修法**：首次启动种一次默认（保证内网有个能用的镜像）并落 `.plugin-manager-seeded`
+标记；之后每次启动删除该 overlay，安装源完全交还给用户层。
+
+### 新增：启动分段计时（B 阶段第一步）
+
+真机 `engine.ready.proot` 在 **t+46~53 秒**，而 `ProotHost` 启动到 `engine.ready` 之间
+**约 48 秒没有任何日志** —— 拆不开就优化不了。
+
+新增 `BootTimeline`（`log/BootTimeline.kt`）：
+
+- 打点全在内存里（`nanoTime` + `ConcurrentHashMap`），**一次落盘**。
+  为什么：`LogStore.writeApp` 是每行 flush，8 个点各写一次 = 8 次 fsync，主线程扛不住。
+- 8 个点：`runtime` → `preflight` → `prootSpawn` → `nodeExec` → `health` → `ready` → `gui`
+  （`app` 由 Application 起点隐含），外加 `ProotHost` 的 `spawn.cost`（fork+exec 本身）。
+- 输出：`app.log` 里一条**瀑布图** + `events.jsonl` 里 `boot.timeline` 事件。
+
+```text
+boot.timeline  total=46720ms
+  runtime           0ms  Δ     0ms
+  preflight      1021ms  Δ  1021ms  ██
+  prootSpawn     1088ms  Δ    67ms  ▏
+  nodeExec      44180ms  Δ 43092ms  ████████████████████████████████████████
+  health        46718ms  Δ  2538ms  ██
+  ready         46718ms  Δ     0ms
+  gui           51200ms  Δ  4482ms  ████
+```
+
+**非目标**：不改启动顺序、不删步骤、不改超时、不做预热。本版只测量。
+
 ## [0.2.2-rc.5-debug.43] — 2026-11-25
 vc=128
 

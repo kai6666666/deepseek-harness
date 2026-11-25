@@ -1839,6 +1839,12 @@ class MainActivity : AppCompatActivity() {
          *   真正的收起动作由 `lifecycleScope` 在主线程做。
          */
         override fun onUiReady() {
+            // B：WebView 侧就绪 = 用户能看见界面（跨进程边界的最后一站）
+            runCatching {
+                com.dsh.android.log.BootTimeline.mark("gui")
+                com.dsh.android.log.BootTimeline.finish()
+                Log.i("DSH", com.dsh.android.log.BootTimeline.dump())
+            }
             Log.i(DshApplication.TAG, "插件已激活（onUiReady）")
             engine.notifyUiReady()
         }
