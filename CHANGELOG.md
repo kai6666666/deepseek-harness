@@ -42,6 +42,12 @@ config:
 需要 jsdelivr 的用户点一次「添加」即可，**之后能存住、也能删掉**。
 `dshopen.org` 在本机实测是 `Could not fetch … timeout`，本就不该被客户端硬塞。
 
+### ✅ 验证
+
+- **仿真**：手工删 `profiles/web/cordis.patch.yml` 里的 `dshopen.org` → 重启 → 只剩 jsdelivr，
+  `market.patch.yml` 无 `indexes`，`engine.ready.proot t+46720ms`。
+- **真机 UI**：点垃圾桶**能删**，红字「无法保存索引源」不再出现。
+
 ### 自查位置（`$DSH_HOME` = `files/home/.dsh`）
 
 | 文件 | 谁写 |

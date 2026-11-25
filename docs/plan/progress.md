@@ -360,6 +360,27 @@ zip testzip=None ✓（定位写没写错块）
 这是**正确行为**：`dshopen.org` 在本机实测 `Could not fetch … timeout`，本来就不该被客户端硬塞给用户。
 需要 jsdelivr 的用户点「添加」一次即可，之后**能存住了**。
 
+### ✅ 真机验证通过（2026-11-25，`debug.43 / vc128`）
+
+**两层验证都过了：**
+
+**① 仿真验证（不经 UI，直接验数据层）**
+
+```text
+手工把 profiles/web/cordis.patch.yml 里的 dshopen.org 删掉
+  → am force-stop + 重启，等 100 秒
+  → 重启后 indexes 只剩 jsdelivr           ← 删除保住了
+  → market.patch.yml 里没有 indexes 配置   ← patch 层不再覆盖
+  → engine.ready.proot t+46720ms           ← 引擎健康
+```
+
+**② 真机 UI 验证（主人亲手点）**
+
+对话框里点垃圾桶 → **能删**。红字「无法保存索引源」不再出现。
+
+**⇒ 闭环断开。** 修复前的行为是：同一个操作重启后必然被 `market.patch.yml` 的
+整段 `config` 盖回两条；现在用户删什么就是什么。
+
 ### 相关位置（都在 `$DSH_HOME`，可自查）
 
 | 文件 | 谁写 | 说明 |
