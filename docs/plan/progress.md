@@ -445,6 +445,56 @@ zip testzip=None ✓（定位写没写错块）
 
 ⇒ 既不丢「内网有个能用的镜像」这个默认，又不再劫持用户的选择。
 
+## 4.13 B 阶段第一步落地：48 秒黑箱被拆开（`debug.44 / vc129`）
+
+### 瀑布图（真机冷启，全量日志）
+
+```text
+boot.timeline  total=43653ms
+  runtime             0ms  Δ     0ms
+  preflight        2846ms  Δ  2846ms  ██
+  prootSpawn       2876ms  Δ    30ms  █
+  nodeExec        41449ms  Δ 38573ms  ███████████████████████████████████
+  health          43651ms  Δ  2202ms  ██
+  ready           43653ms  Δ     2ms  █
+```
+
+`gui` 打点：`total=53841ms`（WebView 那侧又花了 **10.2 秒**）。
+
+### 结论：**88% 的时间在 `nodeExec` 这一段**
+
+| 阶段 | 耗时 | 占比 | 说明 |
+|---|---|---|---|
+| `runtime` → `preflight` | **2,846 ms** | 6.5% | overlay / 环境 / quarantine 拼装 |
+| `preflight` → `prootSpawn` | **30 ms** | 0.07% | `ProcessBuilder.start()` 的 fork+exec，**极快** |
+| `prootSpawn` → `nodeExec` | **38,573 ms** | **88.4%** | PRoot 装载 + node 冷启 + 引擎初始化（到打印 URL）|
+| `nodeExec` → `health` | **2,202 ms** | 5.0% | HTTP health 探测（`health=401`，第一次就通）|
+| `health` → `ready` | 2 ms | — | 收尾 |
+| `ready` → `gui` | **10,188 ms** | 独立一段 | WebView 加载 + 首帧 |
+
+### 三个被证伪的猜想
+
+1. **「health 探测在空转」** —— 假的。`health` 只占 **2.2 秒**，而且是第一次探测就拿到 401。
+2. **「fork/exec 慢」** —— 假的。`prootSpawn` 只花 **30 毫秒**。
+3. **「是 Android 侧拼 overlay 慢」** —— 部分。`preflight` 2.8 秒，占 6.5%，但不是主因。
+
+⇒ **真正的主因是 guest 内部**：PRoot loader 装载 + node 冷启到能打印 URL，**38.6 秒**。
+这一段在 Android 侧看不到，只能从 guest 内部再切分（B 的下一步：跨边界打点
+`echo "DSH_BOOT_NODE_EXEC $(date +%s%3N)" >&2 ; exec node`，以及看 `engine.log` 首行时间）。
+
+### 已知限制
+
+- `spawn.cost` 那一行没进 `engine.log`（`DshLog.i` 的落到哪个文件要再确认，或者被 `redirectErrorStream` 吞了）。
+  不影响主结论：`prootSpawn` 的 Δ 只有 30 ms。
+- 宿主与 guest 时钟不能相减，跨边界点只做相对量。
+
+### 新增工具
+
+| 脚本 | 用途 |
+|---|---|
+| `tools/startup-timeline.py` | 从 `app.log` 解析 `boot.timeline` 块，单次瀑布图 / `--all` 多次并排 / `--json` 机读 |
+| `tools/pm-console-probe.py` | 给 `dsh-client-ui-plugin-market` 的 `saveSources` 失败分支注入 `console.error`，把真实 `error.message` 打到 logcat（这次「无法保存索引源」就是缺这一行才多花一轮）|
+
 ## 6. 决策记录
 
 ### D1 · P5 减包 → **不做**（2026-11-24）
