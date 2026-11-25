@@ -6627,6 +6627,18 @@ process.on('exit', (c) => {
         port: Int?,
     ): List<String> = buildList {
         add(nodeBin.absolutePath)
+        // guest 侧时间戳探针：把「node 启动完成 / 引擎打印 URL」两刻打进 stderr
+        // （redirectErrorStream=true 时会进 engine.log）。
+        // rootfs 由 nodeBin 推导：nodeBin = filesDir/usr/bin/node ⇒ filesDir/runtime/rootfs
+        run {
+            val filesDir = nodeBin.parentFile?.parentFile
+            if (filesDir != null) {
+                writeTimingPreload(File(filesDir, "runtime/rootfs"))?.let {
+                    add("-r")
+                    add(it.absolutePath)
+                }
+            }
+        }
         add(binJs.absolutePath)
         add("--profile"); add(profile)
         for (patch in overlays) {
