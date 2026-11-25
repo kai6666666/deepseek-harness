@@ -51,6 +51,21 @@ object RuntimeDelta {
 
     // ── 状态（页面轮询 stateJson） ─────────────────────────────
     @Volatile private var state: String = "idle" // idle|checking|ready|applying|applied|error
+
+    /**
+     * `runCheck` 算出来的结论，给 `runApply` 复用。
+     *
+     * 为什么需要：`runApply` 原本自己又调一次 `latestRuntimeRelease()` + `planDelta()` ——
+     * 那意味着用户在界面上看到「全量 143.5 MB」并点应用之后，**还要再等一遍
+     * atom + 多 tag 探测**（走镜像也要 6~10 秒）。缓存后这一步直接省掉。
+     *
+     * 5 分钟 TTL：用户可能看完提示去干别的，回来再点应用 —— 太久的结果不该直接信。
+     * 过了 TTL 或版本对不上就重算（`runApply` 里已有 fallback 路径）。
+     */
+    @Volatile private var cachedPlan: Plan? = null
+    @Volatile private var cachedRel: RuntimeRelease? = null
+    @Volatile private var cachedAtMs: Long = 0L
+    private const val PLAN_TTL_MS = 5L * 60 * 1000
     @Volatile private var message: String = ""
     @Volatile private var fromVersion: String? = null
     @Volatile private var toVersion: String? = null
@@ -79,9 +94,21 @@ object RuntimeDelta {
         return true
     }
 
-    /** 把已算好的差异下载并落地（异步，立刻返回）。 */
+    /**
+     * 把已算好的差异下载并落地（异步，立刻返回）。
+     *
+     * ⚠️ 返回 `false` 时**必须留下痕迹**：dryrun 钩子原来固定 `sleep(10s)` 后调这里，
+     * 而 `runCheck` 走镜像 + 探测多个 tag 要 20+ 秒 ⇒ `state` 还是 `"checking"`，
+     * 于是这次调用**静默返回 false**，30 秒后打印的还是 `state=ready`，看起来像"apply 没跑"。
+     * 现在把原因写进 `message` 并打日志。
+     */
     fun applyAsync(filesDir: File): Boolean {
-        if (state != "ready") return false
+        val cur = state
+        if (cur != "ready") {
+            message = "还不能应用：当前状态=$cur（检查还没完成或已失败）"
+            Log.w(TAG, "applyAsync 被拒绝：$message")
+            return false
+        }
         state = "applying"; message = "正在下载运行时…"
         thread(name = "RuntimeDelta-apply", isDaemon = true) { runApply(filesDir) }
         return true
@@ -107,6 +134,10 @@ object RuntimeDelta {
                 return
             }
             val plan = planDelta(doc, rel, filesDir)
+            // 存起来给 runApply 复用（省掉 apply 侧重复的 atom + 探测）
+            cachedPlan = plan
+            cachedRel = rel
+            cachedAtMs = System.currentTimeMillis()
             totalBytes = plan.totalBytes
             needBytes = plan.needBytes
             incremental = plan.incremental
@@ -192,11 +223,25 @@ object RuntimeDelta {
     private fun runApply(filesDir: File) {
         try {
             val local = localManifest(filesDir)
-            val rel = latestRuntimeRelease()
+            val rel0 = latestRuntimeRelease()
                 ?: throw IllegalStateException(lastReleaseError ?: "检查更新失败：原因未知（既没拿到 atom 也没拿到清单，试了 ${ReleaseFailKind.values().size} 类判据）")
-            val doc = JSONObject(rel.chunksText ?: httpGetWithMirrors(rel.chunksUrl)
-                ?: throw IllegalStateException("下载分块清单失败：${rel.chunksUrl}"))
-            val plan = planDelta(doc, rel, filesDir)
+            // 优先复用 runCheck 的结论（省掉重复的 atom + 多 tag 探测）
+            val cached = cachedPlan
+            val cachedAge = System.currentTimeMillis() - cachedAtMs
+            val plan: Plan
+            val rel: RuntimeRelease
+            if (cached != null && cachedAge in 0..PLAN_TTL_MS) {
+                plan = cached
+                rel = cachedRel ?: latestRuntimeRelease()
+                    ?: throw IllegalStateException(lastReleaseError ?: "检查更新失败")
+                Log.i(TAG, "apply 复用检查结果（${cachedAge}ms 前算的，need=${plan.needBytes}）")
+            } else {
+                val doc = JSONObject(rel0.chunksText ?: httpGetWithMirrors(rel0.chunksUrl)
+                    ?: throw IllegalStateException("下载分块清单失败：${rel0.chunksUrl}"))
+                plan = planDelta(doc, rel0, filesDir)
+                rel = rel0
+                Log.i(TAG, "apply 重新计算计划（缓存过期或不存在）")
+            }
             if (plan.version.isEmpty()) throw IllegalStateException("清单缺 runtimeVersion")
             if (local == plan.version) {
                 state = "applied"; message = "运行时已是最新（${plan.version}）"; return

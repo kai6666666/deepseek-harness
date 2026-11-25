@@ -822,15 +822,39 @@ class MainActivity : AppCompatActivity() {
         if (java.io.File(filesDir, "runtime/auto-dryrun").isFile) {
             // ⚠️ 子线程里直接调 DshLog 往往**不落盘**（这次演练全丢，只能靠产物 sha 取证）
             fun dryLog(msg: String) { runOnUiThread { Log.i("DSH", msg) } }
+
+            /**
+             * 轮询等一个终态，最多 [maxMs]。
+             *
+             * 为什么要它：`RuntimeDelta` 是异步状态机（checking → ready → applying → applied），
+             * 各阶段耗时随网络波动（走镜像 1.2s、直连超时 6s、全量下载可能十几分钟）。
+             * 固定 sleep 必然在某个网络条件下踩空。
+             */
+            fun dryWait(maxMs: Long, done: (String) -> Boolean) {
+                var waited = 0L
+                while (waited < maxMs) {
+                    Thread.sleep(2_000)
+                    waited += 2_000
+                    val st = RuntimeDelta.stateJson(filesDir)
+                    if (done(st)) return
+                }
+                dryLog("auto-dryrun: 等待超时 ${maxMs}ms")
+            }
             Thread({
                 runCatching {
                     Thread.sleep(12_000)
                     dryLog("auto-dryrun: check 开始")
                     RuntimeDelta.checkAsync(filesDir)
-                    Thread.sleep(10_000)
+                    // ⚠️ 原来是固定 sleep(10_000) 就调 applyAsync。但走镜像 + 探测多个 tag
+                    //    要 20+ 秒，于是 applyAsync 看到 state 还是 "checking" 就**静默返回 false**，
+                    //    30 秒后打印的还是 state=ready —— 看起来像"apply 没跑"。
+                    //    现在改成**轮询等终态**（ready / error），最多 90 秒。
+                    dryWait(90_000) { st -> st.contains("\"state\":\"ready\"") || st.contains("\"state\":\"error\"") }
                     dryLog("auto-dryrun: check 结果=" + RuntimeDelta.stateJson(filesDir))
-                    RuntimeDelta.applyAsync(filesDir)
-                    Thread.sleep(30_000)
+                    val accepted = RuntimeDelta.applyAsync(filesDir)
+                    dryLog("auto-dryrun: applyAsync 返回=$accepted")
+                    // 应用阶段可能是全量 143 MB：轮询等 applied / error，最多 30 分钟
+                    dryWait(1_800_000) { st -> st.contains("\"state\":\"applied\"") || st.contains("\"state\":\"error\"") }
                     dryLog("auto-dryrun: apply 结果=" + RuntimeDelta.stateJson(filesDir))
                     java.io.File(filesDir, "runtime/auto-dryrun").delete()
                 }.onFailure { dryLog("auto-dryrun 异常：" + it.message) }
