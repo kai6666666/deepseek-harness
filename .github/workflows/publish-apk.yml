@@ -112,6 +112,11 @@ jobs:
               $( [ "${{ inputs.prerelease }}" = "1" ] && echo --prerelease || echo --latest )
           fi
           gh release upload "${{ inputs.tag }}" "out/$APK_NAME" out/SHA256SUMS.txt --clobber
+          # 断言：upload 之后资产必须真的在。之前 debug.45 出现过「create 成功、
+          # upload 全挂 ⇒ Release 是空壳但只看页面看不出来」的情况。
+          ASSET_COUNT=$(gh release view "${{ inputs.tag }}" --json assets -q '.assets | length')
+          echo "release assets = $ASSET_COUNT"
+          [ "$ASSET_COUNT" -ge 2 ] || { echo "::error::Release 只有 $ASSET_COUNT 个资产，APK 或 SHA256SUMS 没传上去"; exit 1; }
           gh release view "${{ inputs.tag }}" --json tagName,isPrerelease,assets \
             -q '"\(.tagName) prerelease=\(.isPrerelease) assets=\([.assets[].name]|join(","))"'
 
