@@ -287,6 +287,87 @@ zip testzip=None ✓（定位写没写错块）
 3. `ghproxy.cfd` 那类「接受 Range 却返回 200 + HTML」的假镜像已从表里剔除，
    判据 `必须 206` 保留。
 
+## 4.11 插件索引源「删不掉」：是客户端自己把 `indexes` 锁死了
+
+### 现象
+
+插件市场 →「发现」→「管理索引源」，点垃圾桶删不掉，底部红字 **「无法保存索引源」**。
+
+### 调用链（读码，都在 rootfs 的官方包里）
+
+```text
+点垃圾桶 → removeSource → saveSources(urls 过滤后)
+         → RPC pluginMarket.setIndexes(urls)
+         → settings.update(entryId, { indexes })
+```
+
+**删除和添加走的是同一个函数** —— 所以「保存失败」的表现就是「删不掉」。
+
+`sourceFailure()`（client.js:2478）只有三种结果：
+
+| 条件 | 文案 |
+|---|---|
+| `plugin-market/invalid-index-url` | 请使用 http/https 地址… / 已添加过这个索引源 |
+| `plugin-market/settings-unavailable` | 当前环境无法保存索引源 |
+| 其它（`kind: other`）| **无法保存索引源** ← 截图是这个 |
+
+⇒ 既不是 URL 不合法，也不是 settings 服务缺失，是 **`settings.update()` 写入被拒**。
+
+### 根因：我们自己生成的 `market.patch.yml` 把 config 整段盖回去
+
+`EngineManager.writeMarketPatch()`（每次启动都整体重写 `$DSH_HOME/market.patch.yml`）原来写死：
+
+```yaml
+- id: plugin-market
+  name: "@deepseek-ai/dsh-plugin-market"
+  config:
+    indexes:
+      - https://dshopen.org/index.json                        ← 硬编码
+      - https://cdn.jsdelivr.net/npm/dsh-plugin-catalog/index.json
+    fetchTimeoutMs: 3000
+    cacheTtlMs: 3600000
+```
+
+而引擎的规则是：**`--patch` 在 profile 层之后应用、优先级更高，且 `config:` 是整段替换**。
+
+于是形成一个闭环：
+
+```text
+用户在 UI 删掉 dshopen.org
+  → settings.update 写 profile 层的 cordis.patch.yml
+  → 下次启动 market.patch.yml 用整段 config 盖回去（indexes 又变两条）
+  → 且在 patch 层压制下 settings.update 直接抛错 → 红字「无法保存索引源」
+```
+
+这就是为什么「加不进也删不掉」，而且**用户会以为是自己操作错了**。
+
+### 修法：索引源归用户，客户端不替他决定
+
+`writeMarketPatch()` 不再写 `indexes`，只保留网络参数：
+
+```yaml
+- id: plugin-market
+  name: "@deepseek-ai/dsh-plugin-market"
+  config:
+    # ⚠️ 故意不写 indexes —— 见函数内注释
+    fetchTimeoutMs: 3000
+    cacheTtlMs: 3600000
+```
+
+### 副作用（必须知道）
+
+`config:` 是整段替换，所以**升级后首次启动，索引源会变成空**（页面显示「还没有插件索引」）。
+这是**正确行为**：`dshopen.org` 在本机实测 `Could not fetch … timeout`，本来就不该被客户端硬塞给用户。
+需要 jsdelivr 的用户点「添加」一次即可，之后**能存住了**。
+
+### 相关位置（都在 `$DSH_HOME`，可自查）
+
+| 文件 | 谁写 | 说明 |
+|---|---|---|
+| `market.patch.yml` | **客户端每次启动覆盖** | 已不再写 indexes |
+| `profiles/web/cordis.patch.yml` | **用户层**（`settings.update` 写这里）| 索引源的真正落点 |
+| `profiles/web/.dsh-open-market.json` | 插件管理器 | 另一份索引记录，升级后可清理 |
+
 ## 6. 决策记录
 
 ### D1 · P5 减包 → **不做**（2026-11-24）

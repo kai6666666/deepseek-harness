@@ -3027,17 +3027,21 @@ class EngineManager private constructor(private val context: Context) {
                     - id: $MARKET_PACKAGE
                       name: '$url'
                 # 插件市场的**网络行为**：默认 fetchTimeoutMs 15 s、cacheTtlMs 10 min。
-                # 这台机器的两个索引（dshopen.org / jsdelivr）在内网环境下一个都抓不动，
-                # 于是「插件市场」页每次进都要干等 15 s×N 才回落离线目录。
                 # 这里把单次抓取压到 3 s（够慢网跑完一个 index.json），缓存拉长到 1 h。
-                # ⚠️ `config:` 是**整段替换**，所以 indexes 必须原样重写一遍（与
-                #    profiles/web/cordis.patch.yml 里的一致）；官方改了索引要同步这里。
+                #
+                # ⚠️⚠️ 这里**故意不写 `indexes`**，这一行曾经是个真 bug：
+                #   `config:` 是**整段替换**，而 `--patch` 在 profile 层**之后**应用、
+                #   优先级更高。原来这里硬编码了 dshopen.org 与 jsdelivr 两条，于是
+                #   用户在「发现 → 索引源」里**删不掉、加不进**：
+                #     · 点垃圾桶 → setIndexes → settings.update（写 profile 层）
+                #     · 下次启动本文件又把这个 config 整段盖回去
+                #     · 更糟的是 settings.update 在 patch 层压制下会抛错，
+                #       UI 上表现为红字「无法保存索引源」——而用户以为自己操作错了。
+                #   索引源归**用户**，不归客户端：首次没有索引时页面会提示「添加索引源」，
+                #   用户自己加即可，客户端不再替他决定。
                 - id: plugin-market
                   name: "@deepseek-ai/dsh-plugin-market"
                   config:
-                    indexes:
-                      - https://dshopen.org/index.json
-                      - https://cdn.jsdelivr.net/npm/dsh-plugin-catalog/index.json
                     fetchTimeoutMs: 3000
                     cacheTtlMs: 3600000
                 """.trimIndent() + "\n"
