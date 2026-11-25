@@ -121,7 +121,7 @@ object RuntimeDelta {
             fromVersion = local
             val rel = latestRuntimeRelease()
                 ?: throw IllegalStateException(lastReleaseError ?: "检查更新失败：原因未知（既没拿到 atom 也没拿到清单，试了 ${ReleaseFailKind.values().size} 类判据）")
-            val chunksText = rel.chunksText ?: httpGet(rel.chunksUrl)
+            val chunksText = rel.chunksText ?: httpGetWithMirrors(rel.chunksUrl)
                 ?: throw IllegalStateException("下载分块清单失败：${rel.chunksUrl}")
             val doc = JSONObject(chunksText)
             val remoteVer = doc.optString("runtimeVersion")
@@ -574,7 +574,11 @@ object RuntimeDelta {
             val misses = ArrayList<String>()
             for (tag in tags) {
                 val base = "https://github.com/$REPO/releases/download/$tag/"
-                val txt = httpGet(base + CHUNKS_NAME)
+                // ⚠️ 必须走镜像。这里原来直接 `httpGet` ⇒ 直连 `github.com/.../releases/download/...`，
+                // 而真机实测**直连分片根本不通**（000 / 25s 超时），于是 5 个 tag 全部"下载失败"，
+                // 报出来的却是「Release 里没有运行时清单」—— 把网络问题误导成发布缺资产。
+                // 2026-11-25 真机：atom 走 GhProxyCom 成功，紧接着 5 个 tag 的 chunks 全失败 = 这个 bug。
+                val txt = httpGetWithMirrors(base + CHUNKS_NAME)
                 if (txt == null) {
                     misses += "$tag（下载失败）"
                     continue

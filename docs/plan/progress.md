@@ -183,6 +183,58 @@ artifacts: app-unit-tests 6,280 B                 ← 报告已产出
 
 ---
 
+## 4.9 debug.41 演练：修好 state 机，又撞出「chunks 不走镜像」
+
+### 修好的三件事（`debug.41 / vc126`，真机验证）
+
+| # | 改动 | 真机证据 |
+|---|---|---|
+| 1 | `applyAsync` 被拒时写 `message` + `Log.w` | 日志出现 `applyAsync 被拒绝：还不能应用：当前状态=error（检查还没完成或已失败）` |
+| 2 | dryrun 从固定 sleep 改成**轮询等终态** | check 一直等到 `error` 才往下走（18:11:51 → 18:12:53，62 秒）|
+| 3 | `runCheck` 的 Plan 缓存给 `runApply` 复用（5 分钟 TTL） | 未走到这步（check 先失败了），代码在 |
+
+⇒ **静默失败这条最贵的账还清了**：现在无论 check 失败还是时序不对，日志里都有明确原因。
+
+### 撞出的新 bug：`runtime-chunks.json` 下载不走镜像
+
+```text
+18:12:08  小文件走镜像 GhProxyCom：releases.atom        ← atom 成功（1.2s）
+18:12:52  检查失败：Release 里没有运行时清单：最近 5 个 tag
+          全部「下载失败」                              ← 但报成了「发布缺资产」
+```
+
+**根因**：`latestRuntimeRelease()` 里探 tag 用的是
+
+```kotlin
+val txt = httpGet(base + CHUNKS_NAME)     // ← 直连！不走镜像
+```
+
+而真机实测（同一分钟，同一 URL）：
+
+```text
+gh-proxy  http=200  t=2.72s   size=292451   ← 正确，正是文件大小
+direct    http=000  t=31.46s  size=0        ← 完全不通
+```
+
+⇒ 5 个 tag 全部卡在直连上失败，而错误文案说的是「Release 里没有运行时清单」——
+**又是把网络问题误导成发布缺资产**（和 D2 那次 `限流 403 被误报成没找到 Release` 是同一类）。
+
+**修法**：`httpGet(base + CHUNKS_NAME)` → `httpGetWithMirrors(...)`；`runCheck` 里
+`rel.chunksText ?: httpGet(rel.chunksUrl)` 同样改成走镜像。
+
+### 顺带验证：A-2 的「Range 分块 + 并行」在真实下载里是有效的
+
+本轮下载 167 MB 的 CI artifact 用的就是这套（Python 复刻）：
+
+```text
+分块数: 10（16 MB/块）
+下载完成 186.4s  875 KB/s  size=167088688
+zip 完整性校验: entries=6  testzip=None   ✓
+```
+
+单流 `curl -C -` 之前跑了 30 分钟只到 43 MB（≈24 KB/s），换 6 线程 Range 后 **875 KB/s**。
+⇒ 「瓶颈是请求数不是带宽」这个 A-0 结论再次被独立验证。
+
 ## 6. 决策记录
 
 ### D1 · P5 减包 → **不做**（2026-11-24）
