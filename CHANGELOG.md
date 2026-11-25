@@ -8,6 +8,44 @@
 - 设备侧清理：删除演练备份 `dsh-backup-drill.zip` 与 13 个历史 APK（约 2.4 GB）。
 
 **不发新版**：本批只有文档与文件清理。
+## [0.2.2-rc.5-debug.41] — 2026-11-25
+vc=126
+
+### 修复：`apply` 静默不启动（状态机 + dryrun 时序）
+
+真机现象（`debug.40`）：入口已经通了，check 也探明了「全量 143.5 MB」，但 apply 没跑：
+
+```text
+02:22:38  小文件走镜像 GhProxyCom：releases.atom        ← 入口 OK
+02:22:56  apply 结果 = {"state":"ready", ...全量 143.5 MB}  ← 但 parts/ 无 staging
+          events.jsonl 里也没有 runtime.download.via
+```
+
+**根因**：`auto-dryrun` 钩子是「`checkAsync()` → `sleep(10s)` → `applyAsync()`」。
+而 `runCheck` 现在要走镜像 + 探测多个 tag，耗时 20+ 秒 ⇒ 调 `applyAsync` 时
+`state` 还是 `"checking"`，而它开头是：
+
+```kotlin
+if (state != "ready") return false      // ← 静默返回，什么都没留
+```
+
+⇒ 30 秒后打印的还是 `state=ready`，看起来就像 apply 从没被触发。
+
+**三处修法**：
+
+1. **失败必须可见**：`applyAsync` 被拒时写 `message = "还不能应用：当前状态=$cur"` + `Log.w`。
+2. **dryrun 改成轮询等终态**（不再靠固定 sleep 猜）：
+   - check 等 `ready` / `error`，上限 90 秒
+   - apply 等 `applied` / `error`，上限 30 分钟（全量 143 MB 可能要十几分钟）
+3. **`runCheck` 的结果给 `runApply` 复用**（5 分钟 TTL）：原来 apply 会自己再跑一遍
+   `latestRuntimeRelease()` + `planDelta()` —— 等于用户「看到 143 MB 提示并点应用」之后
+   **还要再等一遍 atom + 多 tag 探测**（走镜像也要 6~10 秒）。现在直接复用。
+
+### 无行为变更（对最终用户）
+
+更新逻辑本身没变：仍是「检查 → 用户点应用 → 增量/全量下载 → 校验 → 落盘」。
+本版只修「应用阶段可能根本没启动」与「apply 侧白等一轮探测」。
+
 ## [0.2.2-rc.5-debug.40] — 2026-11-25
 vc=125
 
