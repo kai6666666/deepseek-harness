@@ -17,6 +17,10 @@ Usage:
     python3 tools/pm-console-probe.py --in client.js --check   # 只检查是否已打过
 
 The patch is idempotent: running it twice does not double-inject.
+
+⚠️ 第一版这里用了 `catch(_){},` —— 块语句后接逗号是 **JS 语法错误**，整个
+client.js 会加载失败，表现为「发现」Tab 直接消失（比原来的 bug 更糟）。
+教训：注入到压缩后的 JS 里，语句之间只能用 `;`，不能用逗号表达式跨块。
 """
 
 from __future__ import annotations
@@ -39,7 +43,7 @@ PATCHED = (
     "try{console.error(" + MARKER + ","
     "JSON.stringify({code:answer.error&&answer.error.code,"
     "message:answer.error&&answer.error.message,"
-    "details:answer.error&&answer.error.details}))}catch(_){},"
+    "details:answer.error&&answer.error.details}))}catch(_){};"
     "this.selectAdded=false;"
     "this.patch({saving:false,sourceFailure:sourceFailure(answer.error)});return}"
 )
@@ -77,7 +81,7 @@ def apply_patch(src: str) -> tuple[str, str]:
         "try{console.error(" + MARKER + ","
         "JSON.stringify({code:answer.error&&answer.error.code,"
         "message:answer.error&&answer.error.message,"
-        "details:answer.error&&answer.error.details}))}catch(_){},"
+        "details:answer.error&&answer.error.details}))}catch(_){};"
         + body + "return}"
     )
     return src[:m.start()] + inj + src[m.end():], 'regex'

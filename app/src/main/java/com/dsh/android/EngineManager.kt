@@ -3050,7 +3050,19 @@ class EngineManager private constructor(private val context: Context) {
                 # 插件市场的**网络行为**：默认 fetchTimeoutMs 15 s、cacheTtlMs 10 min。
                 # 这里把单次抓取压到 3 s（够慢网跑完一个 index.json），缓存拉长到 1 h。
                 #
-                # ⚠️⚠️ 这里**故意不写 `indexes`**，这一行曾经是个真 bug：
+                # ⚠️⚠️⚠️ **整个 `- id: plugin-market` 段已于 debug.45 删除**，原因见下：
+                #   真机 logcat 拿到官方明确拒绝（debug.44 探针）：
+                #     {"code":"gateway/internal",
+                #      "message":"Configuration for \"plugin-market\" is overridden
+                #                 by a home patch or command-line overlay"}
+                #   ⇒ 只要 `plugin-market` 还出现在**任何** patch 里（哪怕只写
+                #     fetchTimeoutMs），settings.update 就整体被拒，用户在
+                #     「索引源」里加/删都会报「无法保存索引源」。
+                #   ⇒ 代价：拿不回 3 s 抓取超时与 1 h 缓存（回到官方默认 15 s / 10 min）。
+                #     这个交换是划算的：**能改索引源** 远比 **少等几秒** 重要，
+                #     而且缓存仍是 10 min，不是每次都干等。
+                #
+                # ⚠️⚠️ 这里曾**故意不写 `indexes`**（更早的一版），那只是治了一半：
                 #   `config:` 是**整段替换**，而 `--patch` 在 profile 层**之后**应用、
                 #   优先级更高。原来这里硬编码了 dshopen.org 与 jsdelivr 两条，于是
                 #   用户在「发现 → 索引源」里**删不掉、加不进**：
@@ -3060,11 +3072,9 @@ class EngineManager private constructor(private val context: Context) {
                 #       UI 上表现为红字「无法保存索引源」——而用户以为自己操作错了。
                 #   索引源归**用户**，不归客户端：首次没有索引时页面会提示「添加索引源」，
                 #   用户自己加即可，客户端不再替他决定。
-                - id: plugin-market
-                  name: "@deepseek-ai/dsh-plugin-market"
-                  config:
-                    fetchTimeoutMs: 3000
-                    cacheTtlMs: 3600000
+                #
+                # 本文件现在**只做一件事**：用 insert 把随 APK 分发的市场包挂上。
+                # 不再覆盖 plugin-market 的任何 config —— 这是用户能改索引源的前提。
                 """.trimIndent() + "\n"
             )
             patch

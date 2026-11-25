@@ -8,6 +8,55 @@
 - 设备侧清理：删除演练备份 `dsh-backup-drill.zip` 与 13 个历史 APK（约 2.4 GB）。
 
 **不发新版**：本批只有文档与文件清理。
+## [0.2.2-rc.5-debug.45] — 2026-11-25
+vc=130
+
+### 真错误终于拿到了：官方明确拒绝「被 patch 覆盖的配置」
+
+在 `debug.44` 的 `client.js` 里注入一行 `console.error` 后，logcat 拿到：
+
+```json
+{"code":"gateway/internal",
+ "message":"Configuration for \"plugin-market\" is overridden by a home patch or command-line overlay",
+ "details":{}}
+```
+
+⇒ **只要 `plugin-market` 还出现在任何 `*.patch.yml` 里（哪怕只写 `fetchTimeoutMs`），
+`settings.update` 就整体被拒**，用户在「索引源」里**加和删都会失败**，UI 上只显示
+一句「无法保存索引源」。
+
+`debug.43` 只去掉了 `indexes` 字段 —— 那只是治了一半：整个 `- id: plugin-market`
+段还在，判据照样命中。
+
+### 修法：`market.patch.yml` 只做「挂载」，不再碰 config
+
+```yaml
+- insert:
+    - id: dsh-android-market
+      name: 'file:///.../market/dsh-android-market/lib/index.js'
+```
+
+删掉整段：
+
+```yaml
+- id: plugin-market
+  name: "@deepseek-ai/dsh-plugin-market"
+  config:
+    fetchTimeoutMs: 3000
+    cacheTtlMs: 3600000
+```
+
+**代价**：失去 3 秒抓取超时与 1 小时缓存，回到官方默认 15 s / 10 min。
+这个交换是划算的 —— **能改索引源**远比**少等几秒**重要，而且缓存仍有 10 分钟。
+
+### 教训（写进注释，防止有人补回来）
+
+1. `config:` 是**整段替换**，`--patch` 又**优先级最高** ⇒ 写了用户可编辑字段就锁死。
+2. **不是「少写一个字段」就行** —— 判据是「这条 `id` 是否出现在 patch 里」，
+   只要出现，整个 `settings.update` 就被拒。
+3. 失败分支**必须打真实 `error.message`**。这次的 `gateway/internal` 一句话就定位了，
+   而前两轮是靠读压缩后的客户端反推的。
+
 ## [0.2.2-rc.5-debug.44] — 2026-11-25
 vc=129
 
