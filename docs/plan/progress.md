@@ -389,6 +389,62 @@ zip testzip=None ✓（定位写没写错块）
 | `profiles/web/cordis.patch.yml` | **用户层**（`settings.update` 写这里）| 索引源的真正落点 |
 | `profiles/web/.dsh-open-market.json` | 插件管理器 | 另一份索引记录，升级后可清理 |
 
+## 4.12 patch 全家审计：15 个 overlay 逐个过一遍，又抓到一处同类 bug
+
+索引源修完后，把 `$DSH_HOME` 下**全部 15 个 `*.patch.yml`** 逐个检查「里面有没有写
+**用户可编辑**字段」——因为 `config:` 整段替换 + `--patch` 优先级最高这个机制，
+**只要写了用户可编辑字段，就等于把它锁死**。
+
+### 全量清单
+
+| 文件 | 有 `config`？ | 判据：字段是否用户可编辑 | 结论 |
+|---|---|---|---|
+| `market.patch.yml` | 是 | `indexes` 可在 UI 增删 | ✅ 已修（debug.43）|
+| **`plugin-manager.patch.yml`** | 是 | **`registry` / `fallbackRegistries` 可在 UI 改** | ⚠️ **同类 bug，本版修** |
+| `sandbox-proot.patch.yml` | 是 | `runnerCommand` / `probeTimeoutMs` 是内部实现参数 | ✓ 保留 |
+| `session-search.patch.yml` | 是 | `path` / `openAt` 是内部路径与时机 | ✓ 保留 |
+| `workspace.patch.yml` | 是 | `documentsDirectory` 是内部路径 | ✓ 保留 |
+| 其余 10 个 | 否 | 只有 `insert` 挂载或 `id`+`name` | ✓ 保留 |
+
+### 抓到的第二处：`plugin-manager` 的安装源
+
+官方 UI 包 `dsh-client-ui-plugin-manager` 里有整套字段：
+`registryCustom` / `registryCustomField` / `registryCustomPick` / `registryChosen` /
+`registryComposition` / `fallbackRegistries`
+⇒ **安装源明确是用户可编辑的**。
+
+而 `writePluginManagerPatch()` 原来每次启动写死：
+
+```yaml
+- id: plugin-manager
+  name: '@deepseek-ai/dsh-plugin-manager'
+  config:
+    registry: 'https://registry.npmmirror.com/'
+    fallbackRegistries:
+      - 'https://registry.npmmirror.com/'
+      - 'https://registry.npmjs.org/'
+```
+
+⇒ 用户改安装源 → `settings.update` 写 profile 层 → 下次启动被整段盖回。
+**与 market 的 indexes 完全同构。**
+
+### 修法：种一次默认，之后放手
+
+原来那段注释的理由是「官方默认只有镜像源，`~/.npmrc` 也是镜像源，前端按 URL 去重
+⇒ 对话框只剩一项」。那是**展示层的美观问题**，代价却是把用户可编辑字段锁死 —— 不划算。
+
+现在改成：
+
+```text
+首次启动（没有 .plugin-manager-seeded 标记）
+  → 写带默认 registry 的 overlay，并落标记
+之后每次启动
+  → 删掉该 overlay（如果还在），返回 null
+  → 安装源完全交给用户层；~/.npmrc 里仍是镜像，官方默认合并后依然可用
+```
+
+⇒ 既不丢「内网有个能用的镜像」这个默认，又不再劫持用户的选择。
+
 ## 6. 决策记录
 
 ### D1 · P5 减包 → **不做**（2026-11-24）

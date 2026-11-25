@@ -1887,25 +1887,45 @@ class EngineManager private constructor(private val context: Context) {
      */
     private fun writePluginManagerPatch(): File? {
         val file = File(dshHome, PLUGIN_MANAGER_PATCH)
-        val yaml = buildString {
-            appendLine("# 由 DSH Android 客户端生成，请勿手改（每次启动会整体覆盖）。")
-            appendLine("# 插件安装源：首选国内镜像，回退 npm 官方源。")
-            appendLine("# 官方 fallbackRegistries 的默认值只有镜像源，而本机 ~/.npmrc 指的也是")
-            appendLine("# 镜像源，两者被前端按 URL 去重合并 ⇒ 对话框只剩一项。显式写出两项即可。")
-            appendLine("# 详见 EngineManager.writePluginManagerPatch() 的注释。")
-            appendLine("- id: plugin-manager")
-            appendLine("  name: '@deepseek-ai/dsh-plugin-manager'")
-            appendLine("  config:")
-            appendLine("    registry: '$NPM_MIRROR_REGISTRY'")
-            appendLine("    fallbackRegistries:")
-            appendLine("      - '$NPM_MIRROR_REGISTRY'")
-            appendLine("      - '$NPM_OFFICIAL_REGISTRY'")
-        }
+        val seeded = File(dshHome, SEEDED_PLUGIN_MANAGER)
+        // ── 只在**第一次**种下默认安装源，之后彻底放手 ────────────────────
+        //
+        // 这里曾经每次启动都把 `config.registry` / `config.fallbackRegistries`
+        // 整段重写。而 `plugin-manager` 的安装源在官方 UI 里是**用户可编辑**的
+        // （`dsh-client-ui-plugin-manager` 有 registryCustom / registryChosen /
+        // fallbackRegistries 一整套字段），于是又是同一个闭环：
+        //   用户改安装源 → settings.update 写 profile 层
+        //   → 下次启动本文件把 config 整段盖回去 → 改了也白改
+        // 这和 market 的 indexes 是**同一类** bug（见 writeMarketPatch 的注释）。
+        //
+        // 现在：首次启动种一次默认（保证内网环境有一个能用的镜像），之后删掉本
+        // patch，安装源完全交给用户层。`~/.npmrc` 里仍是镜像，官方默认值合并后
+        // 依然可用，不会出现"没有安装源"。
         return try {
-            if (!file.isFile || file.readText() != yaml) {
-                file.writeText(yaml)
-                Log.i(TAG, "已写入插件源 overlay: ${file.name}")
+            if (seeded.isFile) {
+                if (file.isFile) {
+                    file.delete()
+                    Log.i(TAG, "安装源 overlay 已交还用户层（删除 ${file.name}）")
+                }
+                return null
             }
+            val yaml = buildString {
+                appendLine("# 由 DSH Android 客户端生成，仅在**首次启动**种下默认安装源。")
+                appendLine("# 之后本文件会被删除，安装源交还给用户层（插件管理器里可自行增删）。")
+                appendLine("# 原因见 EngineManager.writePluginManagerPatch() 的注释：")
+                appendLine("#   `config:` 是整段替换且 `--patch` 优先级高于 profile 层，")
+                appendLine("#   常驻写 registry 会让用户改过的安装源永远被盖回去。")
+                appendLine("- id: plugin-manager")
+                appendLine("  name: '@deepseek-ai/dsh-plugin-manager'")
+                appendLine("  config:")
+                appendLine("    registry: '$NPM_MIRROR_REGISTRY'")
+                appendLine("    fallbackRegistries:")
+                appendLine("      - '$NPM_MIRROR_REGISTRY'")
+                appendLine("      - '$NPM_OFFICIAL_REGISTRY'")
+            }
+            file.writeText(yaml)
+            seeded.writeText("1")
+            Log.i(TAG, "已种下默认安装源（仅此一次）: ${file.name}")
             file
         } catch (t: Throwable) {
             Log.w(TAG, "写入插件源 overlay 失败: ${t.message}")
@@ -7973,6 +7993,9 @@ class EngineManager private constructor(private val context: Context) {
         private const val MARKET_ASSET = "market-plugin.zip"
         private const val MARKET_PACKAGE = "dsh-android-market"
         private const val MARKET_PATCH = "market.patch.yml"
+
+        /** 「默认安装源已经种过一次」的标记；有它就不再生成 plugin-manager overlay。 */
+        private const val SEEDED_PLUGIN_MANAGER = ".plugin-manager-seeded"
 
         /** 解包目录，相对 `$DSH_HOME`；与 [MOBILE_UI_DIR] 同理，刻意在 pnpm 管辖之外。 */
         private const val MARKET_DIR = "market"
