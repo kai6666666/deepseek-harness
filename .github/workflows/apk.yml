@@ -191,7 +191,31 @@ jobs:
       # 单测曾经只跑在 compile.yml 里，而 apk.yml 不跑 —— RuntimeS6Test 红了两天没人知道。
       # 这里把它提到出包路径上：单测挂了就不出包。compile.yml 仍保留作为 PR 的快速反馈。
       - name: 单元测试门禁（app 单测，含 S6 回归）
-        run: bash ./gradlew :app:testSystemDebugUnitTest --console=plain --stacktrace
+        # 失败时把摘要写进 ::error:: 注释。
+        #
+        # 为什么不能只靠 raw log：维护者手上的 PAT 读不了
+        # /actions/jobs/{id}/logs（401），但 /check-runs/{id}/annotations
+        # 是 200 可读的。::error:: 会把内容变成 annotation，于是失败原因
+        # 不点进 raw log 也能拿到 —— 同时改善 Files changed → checks 的显示。
+        run: |
+          set +e
+          bash ./gradlew :app:testSystemDebugUnitTest --console=plain --stacktrace \
+            --continue 2>&1 | tee /tmp/unit-test.log
+          RC=${PIPESTATUS[0]}
+          if [ $RC -ne 0 ]; then
+            echo "::error title=单测失败（exit $RC）::先看失败摘要："
+            # ① 断言级失败
+            grep -nE "AssertionError|ComparisonFailure|expected:|but was:|org.junit" /tmp/unit-test.log \
+              | head -8 | while IFS= read -r l; do echo "::error title=单测断言::$l"; done
+            # ② 编译级失败（测试代码引用了不存在的符号时才会这样）
+            grep -nE "e: file://|unresolved reference|Compilation error|error: " /tmp/unit-test.log \
+              | head -8 | while IFS= read -r l; do echo "::error title=单测编译::$l"; done
+            # ③ Gradle 级失败
+            grep -nE "FAILED|Execution failed|> Task .*FAILED" /tmp/unit-test.log \
+              | head -6 | while IFS= read -r l; do echo "::error title=单测任务::$l"; done
+            echo "::error title=单测失败汇总::报告目录存在=$( [ -d app/build/reports/tests/testSystemDebugUnitTest ] && echo yes || echo no )"
+            exit $RC
+          fi
 
       - name: 单测报告（失败时也上传）
         if: always()
@@ -199,7 +223,9 @@ jobs:
         with:
           name: app-unit-tests
           path: app/build/reports/tests/testSystemDebugUnitTest
-          if-no-files-found: ignore
+          # 以前是 ignore —— 那会让「报告根本没生成」这件事静默过去。
+          # 报告不存在往往意味着测试代码编译失败，是个要看见的信号。
+          if-no-files-found: warn
 
 
       - name: 版本戳（读 tools/app-version.txt 与模板）
