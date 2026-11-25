@@ -616,3 +616,183 @@ sign-upgrade-apk.yml (run_id + expected_signer=79d0dab6…) → 下载重签 APK
 
 **踩过的坑**：`versionCode` 必须严格递增；`CHANGELOG` 小节标题必须与 `versionName` 完全一致；
 发布前若改了 `build-runtime.sh`，务必从产物里**挖一遍** `docs/DETAIL.md` 是否真的带进去了（`detail_md` 计数）。
+
+## 4.14 索引源彻底结案 + 发布链空壳故障 + B 阶段 I/O 定性
+
+### 4.14.1 索引源：三版才修对，判据一句话
+
+真机验收（主人亲手操作）：
+
+```text
+添加 ✓   删除 ✓   重启后保留 ✓
+```
+
+但这一条从 debug.43 走到 debug.45 才真正修完，中间两版都是伪修复。
+
+**最终的错误信息**（靠 `tools/pm-console-probe.py` 注入 console.error 抓到）：
+
+```json
+{"code":"gateway/internal",
+ "message":"Configuration for \"plugin-market\" is overridden by a home patch or command-line overlay",
+ "details":{}}
+```
+
+**判据：只要 `plugin-market` 这个 id 出现在任何 `*.patch.yml` 里，整个
+`settings.update` 就会被拒绝。跟「写了几个字段」无关。**
+
+| 版本 | 做法 | 结果 |
+|---|---|---|
+| debug.43 | `market.patch.yml` 删掉 `indexes`，保留 `fetchTimeoutMs`/`cacheTtlMs` | ❌ 伪修复：id 还在 patch 里 |
+| debug.44 | 同上（只做了 patch 全家审计里的其它文件） | ❌ |
+| debug.45 | **整段删除 `- id: plugin-market`**，只留 `- insert:` 挂载 | ✅ |
+
+代价：失去 3 秒抓取超时与 1 小时缓存（回官方默认 15s / 10min）。
+权衡为「能改索引源 ≫ 少等几秒」。
+
+`writeMarketPatch()` 内部留了 20+ 行注释说明为什么不能把那段补回来。
+
+### 4.14.2 「发现」Tab 消失是我弄坏的
+
+注入探针时写了 `catch(_){},` —— **块语句后接逗号是 JS 语法错误**，
+整个 `client.js` 加载失败 ⇒ `dsh-client-ui-plugin-market` 插件没起来 ⇒ Tab 直接消失。
+
+比原 bug 更糟。三条教训：
+
+1. `{...}` 是块语句，后面接 `,` 在 JS 里不合法；压缩 JS 里语句间只能用 `;`
+2. 注入 rootfs 里的 JS **必须先 `node --check`** 再上机
+3. `indexes` 为空数组时「发现」Tab 会消失，用户失去添加入口 —— 已知设计缺陷，未修
+
+### 4.14.3 发布链：空壳 Release 故障
+
+`debug.45` 的 `publish-from-run`（run `45648358602`）在「建 / 更新 prerelease」**failure**。
+
+现象：
+
+```text
+v0.2.2-rc.5-debug.45   assets=0   prerelease=True   ← 空壳
+v0.2.2-rc.5-debug.44   assets=9   ✓
+```
+
+前两步 `取 APK artifact`、`校验产物与版本同源` 都 success ⇒ `gh release create` 成功建了对象，
+但 `gh release upload` 全挂。
+
+**处置**：删掉空壳 Release → 用同一份 inputs 重跑 → run `45654974791` success，9 个资产齐。
+
+**性质：一次性故障，不是流程缺陷**。但暴露了一个盲点 —— 只看 Release 页面看不出「空壳」，
+所以补了断言：
+
+```yaml
+ASSET_COUNT=$(gh release view "${TAG}" --json assets -q '.assets | length')
+[ "$ASSET_COUNT" -ge 2 ] || { echo "::error::Release 只有 $ASSET_COUNT 个资产"; exit 1; }
+```
+
+**附带发现**：`actions/jobs/{id}/logs` 用当前 token 返回 **401**（缺 `actions:read`）。
+所以这次是靠「删空壳 + 重跑」而不是「读日志定位」解决的。
+
+### 4.14.4 B 阶段：nodeExec 不是固定开销
+
+真机 4 次冷启（debug.44 / vc129）：
+
+| 时刻 | total | nodeExec Δ | preflight Δ |
+|---|---|---|---|
+| 22:41:57 | 54,846 ms | **49,647 ms** | 1,720 ms |
+| 23:17:09 | 51,639 ms | **46,750 ms** | 1,835 ms |
+| 23:22:19 | 48,297 ms | **43,224 ms** | 1,607 ms |
+| 23:49:51 | 67,725 ms | **63,964 ms** | 1,039 ms |
+
+- `nodeExec`：43.2 s ~ 64.0 s，**跨度 20.7 秒（1.48 倍）**
+- `preflight`：1.04 s ~ 1.84 s，**稳定**
+
+这个对比本身就是证据：`preflight` 干的是「读 overlay、拼环境、检查 quarantine」——小文件 stat/read，它稳定；
+`nodeExec` 干的是「PRoot 装载 + node 冷启 + require 图谱」——大量顺序小文件读取，它剧烈波动。
+
+**推论：瓶颈是页缓存命中率，不是 CPU、不是固定装载开销。**
+
+### 4.14.5 为什么不能用 date +%s%3N
+
+```text
+run-as ... ./usr/bin/date +%s%3N
+sh: ./usr/bin/date: No such file or directory
+```
+
+不是不支持 `%3N`，是**根本执行不了** —— 那是 Android 侧直接看 rootfs 文件，没有 PRoot 环境，
+动态链接器全在 guest 里。
+
+`bin/date` 是 133,480 B（像 GNU coreutils 不是 busybox），`%3N` 大概率支持，但要在 PRoot 里跑才能验，
+成本比绕过它高。
+
+### 4.14.6 打点方案：node -r 预加载
+
+入口：`nodeBin` + `/opt/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js`（`EngineManager.kt:6600`）。
+
+`/opt/dsh` 里**没有 `index.js`** —— `package.json` 写了 `main: index.js` 但文件不存在。
+
+用 node 原生 `-r` 挂 `/opt/dsh/.dsh-timing.js`：
+
+```javascript
+const _T0 = Date.now();
+process.stderr.write('[timing] NODE_START ' + _T0 + '\n');
+(() => {
+  const ow = process.stdout.write.bind(process.stdout);
+  let hit = false;
+  process.stdout.write = function (chunk, enc, cb) {
+    if (!hit) {
+      try {
+        const s = typeof chunk === 'string' ? chunk : String(chunk);
+        const m = s.match(/https?:\/\/[^\s'"`]+/);
+        if (m) {
+          hit = true;
+          process.stderr.write('[timing] URL_READY ' + Date.now()
+            + ' delta=' + (Date.now() - _T0) + ' url=' + m[0] + '\n');
+        }
+      } catch (_) {}
+    }
+    return ow(chunk, enc, cb);
+  };
+})();
+```
+
+为什么这么选：
+
+| 方案 | 不选的理由 |
+|---|---|
+| 改 `bin.js` | 属于 `@deepseek-ai/dsh` 包，runtime 更新会覆盖，破坏包完整性 |
+| `date +%3N` | Android 侧执行不了；进 PRoot 又要拿 pid |
+| `-r` 预加载 | node 原生选项，一个独立文件，删掉即恢复 |
+
+`argv` 改动（`add(nodeBin.absolutePath)` 之后），rootfs 由 `nodeBin` 推导不依赖 `context`：
+
+```kotlin
+add(nodeBin.absolutePath)
+run {
+    val filesDir = nodeBin.parentFile?.parentFile
+    if (filesDir != null) {
+        writeTimingPreload(File(filesDir, "runtime/rootfs"))?.let {
+            add("-r")
+            add(it.absolutePath)
+        }
+    }
+}
+```
+
+跑起来 `engine.log` 会多两行：
+
+```text
+[timing] NODE_START 1764...
+[timing] URL_READY 1764... delta=38000 url=http://127.0.0.1:...
+```
+
+`delta` = 「node 启动 + 引擎 require 图谱」。配合宿主侧的 `prootSpawn` 时刻，
+就能把 40 秒切成「PRoot 装载 / node 启动 / 引擎 require」三段。
+
+### 4.14.7 这轮我自己改错三次
+
+| # | 错 | 后果 | 谁抓到 |
+|---|---|---|---|
+| 1 | `FUNC % TIMING_JS` 里 `%3N` 让 `%` 格式化报错 | 脚本直接崩 | 自己，第一次跑就看到 |
+| 2 | 条件 `'.dsh-timing.js' not in km` 被自己刚插入的函数体污染，argv 段静默跳过 | **函数写了但没调用 = 完全无效**，不报错 | 第二次跑 `patched argv` 没打印 |
+| 3 | 修正时引用未声明的 `timingPreload` 局部变量 | 会编译失败 | `assert` 拦下 |
+
+**教训与探针那次同源：「没打印成功日志」就是失败。脚本里每个 print 都是断言，少一条就是没做。**
+
+---
