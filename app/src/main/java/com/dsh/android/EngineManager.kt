@@ -3029,44 +3029,6 @@ class EngineManager private constructor(private val context: Context) {
      * 这边 `- insert:` 加新条目），两者不互相覆盖，所以先后顺序不影响正确性 ——
      * 调用点上把它排在 `writePluginManagerPatch()` 附近只是就近分组。
      */
-    /**
-     * 写 guest 侧时间戳探针 /opt/dsh/.dsh-timing.js，再用 `node -r` 预加载。
-     *
-     * 为什么需要它：BootTimeline 只能测到「宿主 spawn 完成」到「拿到 URL」这一个
-     * 总时长（实测 43.2s ~ 64.0s，波动 1.48 倍）。要判断这 40+ 秒里
-     * 「PRoot 装载 / node 启动 / 引擎 require 图谱」各占多少，必须在 guest 内部打点。
-     *
-     * 为什么用 `-r` 而不是改 bin.js：bin.js 属于 @deepseek-ai/dsh 包，
-     * runtime 更新会覆盖，且改动会破坏包完整性校验。`-r` 是 node 原生选项，
-     * 只需一个独立文件，删掉即恢复。
-     *
-     * 为什么不用 `date +%s%3N`：guest 是 busybox 的 date，%3N 不一定支持，
-     * 而 node 里 Date.now() 一定有毫秒。
-     */
-    private fun writeTimingPreload(rootfs: File): File? {
-        return try {
-            val dir = File(rootfs, "opt/dsh")
-            if (!dir.isDirectory) return null
-            val f = File(dir, ".dsh-timing.js")
-            val body = """
-
-const _T0 = Date.now();
-process.stderr.write('[timing] NODE_START ' + _T0 + '\n');
-// 抓首次出现的 URL（引擎打印的带 token 的地址），出现即记 URL_READY
-(() => {
-  const ow = process.stdout.write.bind(process.stdout);
-  let hit = false;
-  process.stdout.write = function (chunk, enc, cb) {
-    if (!hit) {
-      try {
-        const s = typeof chunk === 'string' ? chunk : String(chunk);
-        const m = s.match(/https?:\/\/[^\s'"`]+/);
-        if (m) {
-          hit = true;
-          process.stderr.write('[timing] URL_READY ' + Date.now() + ' delta=' + (Date.now() - _T0) + ' url=' + m[0] + '\n');
-        }
-      } catch (_) {}
-    }
     return ow(chunk, enc, cb);
   };
 })();
@@ -6630,24 +6592,6 @@ process.on('exit', (c) => {
         // guest 侧时间戳探针：把「node 启动完成 / 引擎打印 URL」两刻打进 stderr
         // （redirectErrorStream=true 时会进 engine.log）。
         // rootfs 由 nodeBin 推导：nodeBin = filesDir/usr/bin/node ⇒ filesDir/runtime/rootfs
-        run {
-            val filesDir = nodeBin.parentFile?.parentFile
-            val rootfs = if (filesDir != null) File(filesDir, "runtime/rootfs") else null
-            // 默认关闭：只有 rootfs 里存在 .dsh-timing-on 标记才插 -r。
-            //
-            // 为什么默认关：单测环境没有 rootfs，且测试会断言 argv 的精确内容/长度。
-            // debug.46 第一次提交就是无条件插入，CI 在「单元测试门禁」直接红（编译门禁是过的）。
-            // 诊断需求是一次性的，不该让常驻行为多两个 argv 元素。
-            //
-            // 开启：touch $(filesDir)/runtime/rootfs/opt/dsh/.dsh-timing-on && 重启
-            // 关闭：rm 掉那个文件
-            if (rootfs != null && File(rootfs, "opt/dsh/.dsh-timing-on").isFile) {
-                writeTimingPreload(rootfs)?.let {
-                    add("-r")
-                    add(it.absolutePath)
-                }
-            }
-        }
         add(binJs.absolutePath)
         add("--profile"); add(profile)
         for (patch in overlays) {
