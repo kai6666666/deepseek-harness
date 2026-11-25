@@ -1,6 +1,7 @@
 package com.dsh.android.runtime
 
 import org.junit.Assert.*
+import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -12,6 +13,25 @@ class RuntimeS6Test {
     @get:Rule val tmp = TemporaryFolder()
     private fun file(root: File, name: String, text: String = name): File =
         File(root, name).apply { parentFile.mkdirs(); writeText(text) }
+    /**
+     * 建符号链接；文件系统不支持就跳过这个测试。
+     *
+     * CI 容器上 createSymbolicLink 可能抛 UnsupportedOperationException 或
+     * FileSystemException（取决于挂载方式与权限）。断言「符号链接行为正确」
+     * 的前提是环境能建出来，建不出来应该 skip，而不是判失败。
+     */
+    private fun symlink(link: java.io.File, target: java.io.File) {
+        try {
+            symlink(link, target)
+        } catch (e: UnsupportedOperationException) {
+            assumeTrue("当前文件系统不支持符号链接：${'$'}{e.message}", false)
+        } catch (e: IOException) {
+            assumeTrue("创建符号链接失败：${'$'}{e.message}", false)
+        } catch (e: SecurityException) {
+            assumeTrue("无权创建符号链接：${'$'}{e.message}", false)
+        }
+    }
+
     private val template = listOf("{NATIVE_LIB_DIR}/libproot.so", "--kill-on-exit", "--rootfs={ROOTFS}",
         "/usr/bin/env", "-i", "NODE_PATH=/opt/dsh/node_modules", "{GUEST_ENV}", "/bin/sh", "-c",
         "echo \$\$ > /tmp/dsh-web.pid; exec /usr/local/bin/dsh web {PATCHES} --host 127.0.0.1 --port {PORT} --no-open")
@@ -65,7 +85,7 @@ class RuntimeS6Test {
         val root = tmp.newFolder()
         val home = tmp.newFolder()
         val session = file(home, "sessions/keep.json", "keep")
-        Files.createSymbolicLink(File(root, "user-data").toPath(), home.toPath())
+        symlink(File(root, "user-data"), home)
         RuntimeFiles.deleteTree(root)
         assertEquals("keep", session.readText())
         assertFalse(root.exists())
@@ -85,9 +105,9 @@ class RuntimeS6Test {
         val root = File(parent, "rootfs").apply { mkdir() }
         val stage = File(parent, "stage").apply { mkdir() }
         val data = file(parent, "data/keep", "user")
-        Files.createSymbolicLink(File(root, "outside").toPath(), data.parentFile.toPath())
+        symlink(File(root, "outside"), data.parentFile)
         file(stage, "node", "new")
-        Files.createSymbolicLink(File(stage, "alias").toPath(), File("node").toPath())
+        symlink(File(stage, "alias"), File("node"))
         val old = RuntimeFiles.swapRootfs(root, stage)
         assertNotNull(old)
         RuntimeFiles.deleteTree(old!!)
@@ -110,7 +130,7 @@ class RuntimeS6Test {
     @Test fun legacySymlinkIsMovedWithoutTraversingUserData() {
         val root = tmp.newFolder()
         val data = file(root, "home/.dsh/sessions/a", "still here")
-        Files.createSymbolicLink(File(root, "usr").toPath(), data.parentFile.toPath())
+        symlink(File(root, "usr"), data.parentFile)
         assertEquals(listOf("usr"), RuntimeFiles.purgeLegacy(root))
         assertEquals("still here", data.readText())
     }
@@ -238,7 +258,7 @@ class RuntimeS6Test {
         val real = File(parts, "r1-real").apply { mkdirs() }
         file(real, "part1", "x")
         real.setLastModified(System.currentTimeMillis() - 60_000)
-        Files.createSymbolicLink(File(parts, "r1-link").toPath(), userData.toPath())
+        symlink(File(parts, "r1-link"), userData)
         val newer = File(parts, "r1-new").apply { mkdirs() }
         newer.setLastModified(System.currentTimeMillis())
         val removed = RuntimeFiles.pruneParts(parts, keep = 1)
@@ -311,11 +331,14 @@ class RuntimeS6Test {
         val removed = RuntimeFiles.sweepStale(runtime, currentPid = 4242)
 
         // 一级两条 + 别人的 staging + 超龄的 legacy
+        // 用 set 比较：removed 的顺序取决于 listFiles() 的返回顺序，
+        // 而那个顺序在不同文件系统/内核上不保证稳定（曾在 CI 上偶发红）。
         assertEquals(
-            listOf("rootfs.staging-abc", "rootfs.old-123",
+            setOf("rootfs.staging-abc", "rootfs.old-123",
                 "parts/.staging-r1-7777", "parts/.staging-oldformat"),
-            removed,
+            removed.toSet(),
         )
+        assertEquals("不该有重复项", removed.size, removed.toSet().size)
         // 本进程自己的 staging 不能删（可能正在写）
         assertTrue(mine.isDirectory)
         // 未超龄、pid 解析不出来的也不删（宁可留一天）
