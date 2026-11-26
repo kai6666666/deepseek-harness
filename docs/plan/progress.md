@@ -904,34 +904,74 @@ CI 里只有两个 artifact 可列：`runtime-arm64-v8a`（150 MB）与 `build-l
   必须排除函数体自身那一行。验证手段不是「替换残留 0」（那把自调用也算作正确结果），
   而是「函数体内不含与函数同名的调用」。
 
-### 4.16 插件页弹层「一闪而过」的根因：双条件门
+### 4.16 插件页「添加插件」弹窗一闪/塌陷：定位到官方 Menu 实现，**未修复，已跳过**
 
-设备上「已安装」正常，「发现」「插件市场」点注册源按钮后弹层闪一下即消失。
-监听器假设已被扫描否决（`dsh-android-market` 两个文件与官方 `plugin-market` 的
-`addEventListener` 全为 0）。从 `deepseek-harness-dsh-v0.2.2-rc.5` 官方源码拿到未压缩 TypeScript：
+**现象**：插件页（「发现」「插件市场」两个 Tab）右上角 `∨` 展开的菜单，点击后一闪而过；
+改修过程中一度变成「不闪但内容塌陷成一条」。同页 `+` 按钮（打开 InstallDialog）与
+「已安装」Tab 的对应入口均正常。
 
-- `packages/client/ui-primitives/src/useDismissOnOutsidePointer.ts`
-  —— 监听 `document` 的 **`pointerdown`（冒泡）**，判据为
-  `!root.contains(target) && !portal.contains(target)` 则关闭。这段是正常的。
-- `packages/client/ui-plugin-manager/src/client/PluginManagerPage.tsx:1068` —— **根因**：
+**结论**：根因在官方 `@deepseek-ai/dsh-client-ui-primitives` 的 `Menu` 组件
+（rc.5 的 portal 渲染路径），不在本仓库代码。**决定跳过**，用户改用 `+` 按钮进入安装流程。
 
-  ```tsx
-  const registryShown = install.registryOpen && phase === 'idle'
-  ```
+#### 六次尝试与结果（全部真机验证）
 
-  弹层可见要求两个条件同时成立：按钮 state 置位 **且** 安装阶段严格为 `idle`。
-  任何把 `phase` 推离 `idle` 的动作（`checking`/`starting`/`running`/…）都会在下一帧
-  卸载弹层 —— 视觉上就是「一闪而过」。
-- `manager-store.ts:1250` 证明「从 catalog（发现/插件市场）打开」的路径是
-  `phase: 'checking', … registryOpen: false`，恰好只命中这两个 Tab；
-  「已安装」不走这条路径，所以正常。
-- 弹层另有 `createPortal` + **CSS Anchor Positioning**
-  （按钮 `style={{anchorName}}`、弹层 `style={{positionAnchor}}`），
-  WebView 不支持时位置会错乱。此条与「一闪」无关，但与截图里弹层位置能否贴合有关。
-- 不动 App 的修法：改 rootfs 内
-  `opt/dsh/node_modules/@deepseek-ai/dsh-client-ui-plugin-manager/lib/client.js`，
-  把该布尔条件放宽为只依赖 `registryOpen`（或 `phase === 'idle' || phase === 'checking'`）。
-  压缩代码里先用 `grep -bo` 定位该条件再 `dd` 替换。
+| # | 改动 | 结果 |
+|---|---|---|
+| 1 | `registryShown = install.registryOpen && phase === 'idle'` → `phase !== 'busy'`（等长 14 B） | **仍闪**。store 里 `open:false` 只有 `closeInstall`（`manager-store.ts:779`），弹层消失与 `registryShown` 无关 |
+| 2 | 排查「WebView 不支持 CSS Anchor」 | **排除**。内核 `com.google.android.webview 157.0.8103.50`，Chromium 157 完整支持 |
+| 3 | 排查 `dsh-android-market` 插件注入 `plugins.add.actions` 槽 | **排除**。`client.js` 里该槽 0 命中、`onDismiss` 0 命中 |
+| 4 | `Menu` 的 `portal:true` → `!1`（等长 11 B） | **不闪了**，但**塌陷**。因为 `listClassName`（`.X_2TxG_addMenu` 的 `width:320px` / `[role=menuitem]{height:72px}`）**只在 portal 路径挂到列表上** |
+| 5 | 给 `.X_2TxG_addGroup` 作用域补样式（hash 前缀） | **仍塌陷**，未命中 |
+| 6 | 改 `[class*=addGroup]` 与 `[role=menu]` 属性选择器，并加 `outline:2px solid red` 探针 | **探针出现**（说明内联 CSS 确实被加载）但**弹窗仍塌陷** |
+
+#### 判定依据（代码级）
+
+```text
+Menu.tsx:267     anchorName = `--dsh-menu-trigger-${menuId}`
+Menu.tsx:279-283 useLayoutEffect 里才 style.setProperty('anchor-name', ...)
+Menu.tsx:493     style={portal ? { positionAnchor: anchorName } : undefined}
+Menu.tsx:335     outside 判定只认 rootRef / anchorRef —— anchor 内联渲染时 anchorRef 为 undefined
+Menu.module.css  .portal 整段依赖 anchor()：top:max(...,calc(anchor(bottom) + 4px))
+                 + position-try-fallbacks:--dsh-menu-wide-below,…
+useModalLayer   只做焦点接管，不监听 pointerdown ⇒ 不是 Modal 关的
+onClose() 调用点 356/378/390/435/513 —— 没有一条在「打开瞬间」触发
+```
+
+`portal:true` 会闪、`portal:false` 不闪但丢样式 —— 两个行为互斥且都由官方组件内部决定，
+未打补丁前无法在样式层同时满足。
+
+#### 已做的处置
+
+- `client.js` **完整回滚**到 `lib/client.js.bak3`（357,239 B）：
+  `portal:true` + `phase===`idle`` + 额外 CSS 残留 0 —— 即官方原始行为。
+- 备份留存：`files/client.js.bak`(19:07) / `files/client.js.bak2`(23:16) /
+  `lib/client.js.bak3`(23:24) 均为 357,239 B 原版；`lib/client.js.bak4`(358,048) 是塌陷版。
+- `dsh-web-frontend/dist/assets/index-CSAdOBx6.css` 已回滚原样 92,252 B（`.bak1`）。
+
+#### 给后续维护者的建议
+
+1. **不要在这个按钮上继续调样式**。`listClassName` 是否生效由 portal 分支决定，
+   而 portal 分支的定位又依赖 `anchor()` 与首帧 `anchor-name` 写入时序，两者互锁。
+2. 正解是**升级 `@deepseek-ai/dsh-client-ui-primitives` / dsh 版本**，看官方是否已修
+   `Menu` 的 portal 定位；或向官方提 issue（附本节的 `portal:true`/`false` 对照）。
+3. 若必须自修，唯一可行路径是**改 `Menu.tsx` 源码**：让 portal 模式在
+   `position-anchor` 解析失败时回落到 `position:fixed` + JS 计算坐标，
+   并把 `listClassName` 无条件应用（不只 portal 分支）。这需要 fork 组件包，超出「只修 bug」的维护范围。
+
+#### 4.16.1 诊断手段清单（本轮新增）（本轮新增，均可复用）
+
+| 手段 | 可用性 | 说明 |
+|---|---|---|
+| `app.log` | ✅ | `boot.timeline` / `engine.ready` / 插件相关都在这 |
+| `/check-runs/{id}/annotations` | ✅ | 任意 token；配合 workflow 里 `echo "::error title=X::…"` |
+| `actions/artifacts/{id}/zip` | ✅ | 必须**禁用重定向**取 302 的 `Location`，再**不带 Authorization** 请求 |
+| `actions/jobs/{id}/logs` | ❌ 401 | classic 与 fine-grained 均失败 |
+| WebView CDP（`@webview_devtools_remote_<pid>`） | ❌ | socket 存在，但跨 uid（u0_a232 → u0_a643）被 SELinux 拒绝 |
+| 设备内联 CSS 是否生效 | ✅ | 加一条 `outline:2px solid red` 之类的可见探针，一眼判断 |
+| 偏移定位法 | ✅ | `grep -bo` 取偏移 + `dd bs=1 skip=N count=M`；改完**再插入内容会移动后续偏移**，须「先改偏移、再插入」 |
+
+**偏移陷阱（本轮踩过）**：先插入 CSS（在 210k）再按旧偏移改 274k 的 `portal`，
+写入落到错误位置，破坏了原文。正确顺序是**先按原偏移改，后插入**。
 
 ### 4.17 三个 401 的真相与可用的诊断通道
 
