@@ -985,3 +985,107 @@ onClose() 调用点 356/378/390/435/513 —— 没有一条在「打开瞬间」
 Authorization 头带到了 `productionresultssa*.blob.core.windows.net`，被存储侧拒绝。
 手动接 `Location` 即可下载。另外单测报告 zip 内**没有 XML**，只有 `classes/<Class>.html`，
 失败堆栈要从 HTML 里提取 —— 这也是「一直拿不到断言原文」的真正原因。
+
+
+---
+
+### 4.18 B 阶段第 1 层：guest 侧时间戳 wrapper（已落地，待真机采样）
+
+> 提交：`1347dae`（实现）、`ebf0f6f`（修编译）、`6e8f5a6`（CI 诊断通道）
+> 编译门禁：run `45860036613` **success** —— `:app:compileSystemDebugKotlin` 与
+> `:app:testSystemDebugUnitTest` 同时通过（新增 5 个用例已跑）。
+
+#### 4.18.1 口径：把 nodeExec 切成四段
+
+| 段 | 定义 | 数据来源 |
+|---|---|---|
+| PRoot 装载 | `node.start.epoch - host.epoch` | 宿主 spawn 前先写 `boot-timing.host.json` |
+| node 引导 | `preload - node.start` | `process.uptime()` 反推 node 进程诞生时刻 |
+| 模块解析 | `entry.end - preload` | `Module.prototype._compile` 包住 `bin.js` |
+| 首响应 | `first - entry.end` | 拦 `stdout/stderr.write` 里的 token 行 |
+
+顺带把第 2 层的账先记上：`epoch.listen` / `epoch.listening`
+（`net.Server.prototype.listen`）、`modules.count` / `modules.avg.ms` /
+`modules.top`（最慢 12 个）、`/proc/self/io` 的 `rchar` / `read_bytes` / `syscr`。
+
+#### 4.18.2 注入点为什么是 `NODE_OPTIONS`，不是往 argv 插 `-r`
+
+`manifest.json` 的 `launch.argv` 里，node 与入口之间还隔着一层包脚本：
+
+```sh
+#!/bin/sh
+exec /usr/local/bin/node /opt/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js "$@"
+```
+
+`manifest.json` 是 `tools/runtime/build-runtime.sh` 的**构建产物**、不在仓库里；
+`ProotLaunch.template()` 的形参也不该为观测长出新参数（§4.14.7 的教训：动 argv
+拼装极容易「写了但没生效」，而且不报错）。`NODE_OPTIONS` 由 node 自己解析、
+`--require` 在其白名单内，正好落在「node 与入口之间」。
+
+注入位置选 `{GUEST_ENV}`（`env -i` 的尾部）：后者覆盖 manifest 里的
+`NODE_OPTIONS=--dns-result-order=ipv4first`，所以**必须合并而不是覆盖**——
+这件事由 `BootTimingPreload.nodeOptions()` 负责，并有单测锁住。
+
+#### 4.18.3 交付物
+
+```text
+app/src/main/java/com/dsh/android/runtime/BootTimingPreload.kt      新增（guest 脚本全文内嵌）
+app/src/main/java/com/dsh/android/runtime/ProotHost.kt              +5 行（{GUEST_ENV} 注入一对键值，不动任何形参）
+app/src/test/java/com/dsh/android/runtime/BootTimingPreloadTest.kt  新增（5 个用例：合并/幂等/落盘/重写稳定）
+tools/boot-timing-report.py                                         新增（日志 → 四段瀑布图 + 读放大）
+```
+
+#### 4.18.4 观测数据落在哪
+
+```text
+files/logs/boot-timing.log                 一次启动一个块（--- boot-timing v1 reason=... ---）
+files/home/.dsh/boot-timing.host.json      宿主 spawn 时刻（跨时钟域对齐用）
+engine.log                                 [boot-timing] armed ... + 整块回显（stderr 同源）
+```
+
+#### 4.18.5 本轮自己踩的两个坑
+
+| # | 坑 | 后果 | 谁抓到 |
+|---|---|---|---|
+| 1 | `?.removePrefix("NODE_OPTIONS=")` **少一个右括号** | Kotlin 编译红，但报的是「Unresolved reference 'existing'」「Overload resolution ambiguity」这种连坐错，看不出真凶 | CI `compile.yml` |
+| 2 | `actions/jobs/{id}/logs` 仍 401，编译错误原文取不到 | 同一个红跑了两轮才有第一行错误 | 给 `compile.yml` 加 `::error::` 摘要 + `compile-log` artifact |
+
+**教训延续 §4.14.7：拿不到错误原文，就等于没有诊断通道。**
+这次把「失败必须可读」写进了 workflow 本身：
+
+```yaml
+- name: 编译与 S6 回归测试
+  run: |
+    set -o pipefail
+    ./gradlew ... 2>&1 | tee /tmp/build.log
+- name: 编译错误摘要（annotation 通道）
+  if: failure()
+  run: grep -E '^e: |error:' /tmp/build.log | head -40 | while read -r l; do echo "::error title=Kotlin::$l"; done
+- name: 上传编译日志
+  if: always()
+  uses: actions/upload-artifact@v4   # name: compile-log
+```
+
+#### 4.18.6 待做（真机）
+
+1. 装新 APK（versionName 仍是 `0.2.2-rc.5-debug.46`，`vc=131`；设备当前 `vc=130`）。
+2. 冷启一次：`am force-stop com.dsh.android` 后再启动。
+3. 取日志：
+
+   ```bash
+   run-as com.dsh.android cat files/logs/boot-timing.log > /sdcard/bt.log   # ⚠️见 §6.3-1，用 stdout 重定向到宿主
+   python3 tools/boot-timing-report.py bt.log
+   ```
+
+4. 冷启 3 次 + 热启 1 次，填 §4.18.7。
+5. 判读：`read_bytes` 增量显著 > 0 ⇒ 首次读盘是真成本（走第 3 层：预热/`posix_fadvise`）；
+   `read_bytes ≈ 0` 且 `rchar` 巨大 ⇒ 全命中页缓存，瓶颈在模块图规模（走第 2 层：模块裁剪/预编译缓存）。
+
+#### 4.18.7 真机数据（待填）
+
+| 次 | 场景 | PRoot 装载 | node 引导 | 模块解析 | 首响应 | 合计 | rchar / read_bytes |
+|---|---|---|---|---|---|---|---|
+| 1 | 冷启（force-stop） | — | — | — | — | — | — |
+| 2 | 冷启（force-stop） | — | — | — | — | — | — |
+| 3 | 冷启（force-stop） | — | — | — | — | — | — |
+| 4 | 热启 | — | — | — | — | — | — |

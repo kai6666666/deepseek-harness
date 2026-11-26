@@ -98,6 +98,10 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 
 ## 4. 未完成：B 阶段（启动耗时三段测量）—— **下一步就做这个**
 
+> **状态（update 2026-11-27）**：**第 1 层已实现**（`1347dae`，纯新增文件，
+> 未改 `ProotLaunch.template()` 形参），编译与单测在 CI 绿（run `45860036613`）。
+> 还差真机冷启采样，填 `progress.md` §4.18.7。操作与判读见本文 §10。
+
 ### 已有实测（`debug.44 / vc129`，4 次冷启）
 
 ```text
@@ -282,3 +286,61 @@ f400211bd revert timing（**没干净**，残留 19 行裸 JS，后由 4a6b1fdc 
 - 每轮结尾给**下一步动作**，不要问「要不要继续」。
 - 主人要求「检查代码，更新文档」时，要真的跑 `git status` / `grep` 验证，不要凭记忆写。
 - 真机验证必须由主人点击确认，不要替他断言「应该好了」。
+
+
+---
+
+## 10. B 阶段第 1 层已落地（update 2026-11-27 01:0x）—— 只剩真机采样
+
+### 10.1 状态
+
+```text
+实现      1347dae feat(boot-timing): B 阶段第 1 层（纯新增，不动 buildCommand/launch 形参）
+修编译    ebf0f6f nodeOptions 少一个右括号
+CI 诊断   6e8f5a6 compile.yml：::error:: 摘要 + compile-log artifact
+编译门禁  run 45860036613  success
+          :app:compileSystemDebugKotlin      ✅
+          :app:testSystemDebugUnitTest       ✅（含新增 BootTimingPreloadTest 5 例）
+APK       同 sha 的 apk.yml run 由 push 自动触发（产物名 dsh-system-debug）
+数据      **还没有**：真机 boot-timing.log 待采，progress §4.18.7 是空表
+```
+
+### 10.2 怎么验（两条命令）
+
+```bash
+# 1. 取日志（⚠️ run-as 里往 /sdcard 写会是 0 字节，必须 stdout 回宿主）
+run-as com.dsh.android cat files/logs/boot-timing.log
+
+# 2. 出四段瀑布图
+python3 tools/boot-timing-report.py -        # 或把上一步输出存成文件再传路径
+```
+
+判读要点：
+
+- `host.epoch=na` ⇒ `files/home/.dsh/boot-timing.host.json` 没写成功（`DSH_HOME` 绑定问题）。
+- 没有 `[boot-timing] armed` ⇒ `NODE_OPTIONS` 没进 guest（先看 `engine.log` 里 `launch:` 那行与 `{GUEST_ENV}` 注入点）。
+- `read_bytes` 增量 ≈ 0 且 `rchar` 巨大 ⇒ 全命中页缓存，瓶颈是模块图规模（走第 2 层）。
+- `read_bytes` 增量显著 > 0 ⇒ 首读盘是真成本（走第 3 层：预热 / `posix_fadvise`）。
+
+### 10.3 三个别再踩的点
+
+1. **不要**为了插 `-r` 去改 `ProotLaunch.template()` 的形参。manifest 的 `launch.argv` 里
+   node 与入口之间隔着 `/usr/local/bin/dsh` 包脚本，改 argv 只能改到包脚本外层；
+   本次走 `NODE_OPTIONS`（`--require` 在 node 白名单内），注入点在 `{GUEST_ENV}`。
+2. `NODE_OPTIONS` **必须合并** manifest 的 `--dns-result-order=ipv4first`，别覆盖。
+   `BootTimingPreload.nodeOptions()` 负责，`BootTimingPreloadTest` 锁住。
+3. guest 脚本只在引擎进程干活（`ENTRY.endsWith('@deepseek-ai/dsh/lib/bin.js')`），
+   其他 node（terminal / 插件子进程）只吐一行 `skip`，不会污染 `boot-timing.log`。
+
+### 10.4 CI 诊断通道更新（§6.1 补充一行）
+
+| 手段 | 状态 | 说明 |
+|---|---|---|
+| `/actions/jobs/{id}/logs` | 仍 401 | 不用再试 |
+| `/check-runs/{id}/annotations` | ✅ | `compile.yml` 失败时把 `e:` 行逐条变成 annotation，**错误原文可读** |
+| `compile-log` artifact | ✅ | 全量 gradle 输出；下载照 §6.1 的 302 写法 |
+
+### 10.5 顺带产出
+
+`tools/boot-timing-report.py` —— 读 `boot-timing.log` 直接渲染四段瀑布图 + 读放大
+（`read_bytes/rchar` ⇒ 页缓存命中率），支持 `--json`。
