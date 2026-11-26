@@ -8,6 +8,39 @@
 - 设备侧清理：删除演练备份 `dsh-backup-drill.zip` 与 13 个历史 APK（约 2.4 GB）。
 
 **不发新版**：本批只有文档与文件清理。
+## [0.2.2-rc.5-debug.46] — 2026-11-26
+vc=131
+
+### 修复：符号链接测试帮助函数自我递归，CI 连续五轮红
+`db0a56b85b` 的「符号链接加固」把 `symlink()` 函数体内那一行也替换成了
+`symlink(link, target)`，变成自己调自己 ⇒ 无限递归 ⇒ `StackOverflowError`，
+四个符号链接用例全部失败。改为
+`java.nio.file.Files.createSymbolicLink(link.toPath(), target.toPath())`。
+CI `45806006760` 全绿：38 个测试通过，4 个符号链接用例通过，APK 正常产出。
+
+### 修复：插件市场 Tab 消失（索引源修复的副作用）
+`plugin-market` 的 `indexes` 只剩 jsdelivr 一条，实测 5.04 s；追加同源备用镜像
+`https://fastly.jsdelivr.net/npm/dsh-plugin-catalog/index.json`，Tab 恢复。
+
+### 更正：`plugin-market` 的补丁判定
+之前记「该 id 出现在**任何** `*.patch.yml` 就会让 `settings.update` 被拒」不准确。
+正确判据是**只针对命令行 overlay**（App 每次启动生成的 `market.patch.yml`）；
+写入 `profiles/web/cordis.patch.yml`（用户配置层）是正常且必需的，
+这也解释了为什么「改索引源」一直是成功的。
+
+### 已知问题（已跳过，本版不修）
+插件页右上角 `∨` 的菜单在「发现」「插件市场」两个 Tab 会一闪而过（或修改后塌陷）。
+根因在官方 `@deepseek-ai/dsh-client-ui-primitives` 的 `Menu` portal 渲染路径：
+`.portal` 整段依赖 `anchor()` 定位，而 `listClassName`（宽度/行高）只在 portal 分支应用，
+两件事互锁 —— `portal:true` 闪、`portal:false` 塌。
+已完整回滚并记录六次尝试的对照与判定依据，详见 `docs/plan/progress.md` §4.16。
+**安装插件请用同页的 `+` 按钮**（打开 InstallDialog，一直正常）。
+
+### 诊断手段（新增，可复用）
+- `/check-runs/{id}/annotations` 可读，配合 workflow 里 `echo "::error title=X::…"`；
+- `actions/artifacts/{id}/zip` 需**手动接 302 的 `Location`** 且不带 Authorization（S3 预签名）；
+- `actions/jobs/{id}/logs` 仍 401（classic 与 fine-grained 均失败）。
+
 ## [0.2.2-rc.5-debug.45] — 2026-11-25
 vc=130
 
