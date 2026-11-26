@@ -3029,25 +3029,6 @@ class EngineManager private constructor(private val context: Context) {
      * 这边 `- insert:` 加新条目），两者不互相覆盖，所以先后顺序不影响正确性 ——
      * 调用点上把它排在 `writePluginManagerPatch()` 附近只是就近分组。
      */
-    return ow(chunk, enc, cb);
-  };
-})();
-process.on('exit', (c) => {
-  process.stderr.write('[timing] NODE_EXIT ' + Date.now() + ' code=' + c + '\n');
-});
-
-""".trimIndent()
-            // 内容不变就不重写，避免每次都动 mtime
-            if (!f.isFile || f.readText() != body) {
-                f.writeText(body)
-            }
-            f
-        } catch (e: Exception) {
-            DshLog.w(TAG, "写 timing 探针失败：${'$'}{e.message}")
-            null
-        }
-    }
-
     private fun writeMarketPatch(): File? {
         val patch = File(dshHome, MARKET_PATCH)
         val entry = File(dshHome, "$MARKET_DIR/$MARKET_PACKAGE/lib/index.js")
@@ -6589,9 +6570,6 @@ process.on('exit', (c) => {
         port: Int?,
     ): List<String> = buildList {
         add(nodeBin.absolutePath)
-        // guest 侧时间戳探针：把「node 启动完成 / 引擎打印 URL」两刻打进 stderr
-        // （redirectErrorStream=true 时会进 engine.log）。
-        // rootfs 由 nodeBin 推导：nodeBin = filesDir/usr/bin/node ⇒ filesDir/runtime/rootfs
         add(binJs.absolutePath)
         add("--profile"); add(profile)
         for (patch in overlays) {
