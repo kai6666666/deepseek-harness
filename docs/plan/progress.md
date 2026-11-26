@@ -881,3 +881,67 @@ CI 里只有两个 artifact 可列：`runtime-arm64-v8a`（150 MB）与 `build-l
 若后续要长期维护，需要补一个带 `actions:read` 的 token，否则每次失败都是盲改。
 
 ---
+
+### 4.15 CI 五连红的真正根因：测试帮助函数自己调自己
+
+- `db0a56b85b`「符号链接加固」引入了 `private fun symlink(link, target)`，本意是封装
+  `Files.createSymbolicLink` 并把平台不支持转成 `assumeTrue` 跳过。但批量替换把
+  **函数体内那一处**也改成了 `symlink(...)`：
+
+  ```kotlin
+  23 private fun symlink(link: java.io.File, target: java.io.File) {
+  24     try {
+  25         symlink(link, target)          // ← 自己调自己
+  26     } catch (e: UnsupportedOperationException) {
+  ```
+
+- 后果：**无限递归 → StackOverflowError**，四个用例全部失败：
+  `treeCleanupLeavesSymlinkTargetsIntact` / `prunePartsNeverFollowsSymlinkedVersionDirs` /
+  `successfulSwapPreservesNewSymlinksAndExternalData` / `legacySymlinkIsMovedWithoutTraversingUserData`。
+- 修法：`36897ba851` 把第 25 行改回
+  `java.nio.file.Files.createSymbolicLink(link.toPath(), target.toPath())`，自调用残留 0。
+- **教训（第五种错法）**：批量正则替换时，若替换目标是函数定义所在的文件，
+  必须排除函数体自身那一行。验证手段不是「替换残留 0」（那把自调用也算作正确结果），
+  而是「函数体内不含与函数同名的调用」。
+
+### 4.16 插件页弹层「一闪而过」的根因：双条件门
+
+设备上「已安装」正常，「发现」「插件市场」点注册源按钮后弹层闪一下即消失。
+监听器假设已被扫描否决（`dsh-android-market` 两个文件与官方 `plugin-market` 的
+`addEventListener` 全为 0）。从 `deepseek-harness-dsh-v0.2.2-rc.5` 官方源码拿到未压缩 TypeScript：
+
+- `packages/client/ui-primitives/src/useDismissOnOutsidePointer.ts`
+  —— 监听 `document` 的 **`pointerdown`（冒泡）**，判据为
+  `!root.contains(target) && !portal.contains(target)` 则关闭。这段是正常的。
+- `packages/client/ui-plugin-manager/src/client/PluginManagerPage.tsx:1068` —— **根因**：
+
+  ```tsx
+  const registryShown = install.registryOpen && phase === 'idle'
+  ```
+
+  弹层可见要求两个条件同时成立：按钮 state 置位 **且** 安装阶段严格为 `idle`。
+  任何把 `phase` 推离 `idle` 的动作（`checking`/`starting`/`running`/…）都会在下一帧
+  卸载弹层 —— 视觉上就是「一闪而过」。
+- `manager-store.ts:1250` 证明「从 catalog（发现/插件市场）打开」的路径是
+  `phase: 'checking', … registryOpen: false`，恰好只命中这两个 Tab；
+  「已安装」不走这条路径，所以正常。
+- 弹层另有 `createPortal` + **CSS Anchor Positioning**
+  （按钮 `style={{anchorName}}`、弹层 `style={{positionAnchor}}`），
+  WebView 不支持时位置会错乱。此条与「一闪」无关，但与截图里弹层位置能否贴合有关。
+- 不动 App 的修法：改 rootfs 内
+  `opt/dsh/node_modules/@deepseek-ai/dsh-client-ui-plugin-manager/lib/client.js`，
+  把该布尔条件放宽为只依赖 `registryOpen`（或 `phase === 'idle' || phase === 'checking'`）。
+  压缩代码里先用 `grep -bo` 定位该条件再 `dd` 替换。
+
+### 4.17 三个 401 的真相与可用的诊断通道
+
+| 目标 | 结果 | 条件 |
+|---|---|---|
+| `/actions/jobs/{id}/logs` | 401 | classic（`repo,workflow`）与 fine-grained 均失败 |
+| `/actions/artifacts/{id}/zip` | **可读** | 必须禁用重定向拿 302 的 `Location`，再用**不带 Authorization** 的请求取（S3 预签名自带授权） |
+| `/check-runs/{id}/annotations` | 200 | 任意 token；配合 workflow 内 `echo "::error title=X::..."` 使用 |
+
+结论：`artifacts` 那条 401 **不是权限不足**，而是 urllib 自动跟随 302 时把
+Authorization 头带到了 `productionresultssa*.blob.core.windows.net`，被存储侧拒绝。
+手动接 `Location` 即可下载。另外单测报告 zip 内**没有 XML**，只有 `classes/<Class>.html`，
+失败堆栈要从 HTML 里提取 —— 这也是「一直拿不到断言原文」的真正原因。
