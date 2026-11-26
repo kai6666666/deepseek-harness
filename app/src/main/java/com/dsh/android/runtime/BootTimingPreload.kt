@@ -4,52 +4,60 @@ import com.dsh.android.log.DshLog
 import java.io.File
 
 /**
- * B 阶段第 1 层：guest 侧时间戳 wrapper。
+ * B 阶段启动分段：guest 侧时间戳 wrapper（第 1 层 + 第 2 层 ESM 打点）。
  *
- * ## 它解决什么
- *
- * 宿主只看到 `preflight` → `prootSpawn` → `nodeExec` 三个点，中间 40~60 秒是黑盒。
- * 这个 wrapper 把黑盒拆成四段：
+ * ## 第 1 层（CJS wrapper）
  *
  * ```text
- * PRoot 装载 = node.start.epoch  - host.epoch      （宿主写的时间戳 → node 进程诞生）
- * node 引导 = preload           - node.start      （process.uptime() 反推）
- * 模块解析 = entry.end          - preload         （bin.js 及其同步 require 链）
- * 首响应   = first              - entry.end       （打印 token 行）
+ * PRoot 装载 = node.start.epoch - host.epoch     宿主 spawn 前写 boot-timing.host.json
+ * node 引导  = preload          - node.start     process.uptime() 反推
+ * 首响应    = first             - entry.end     拦 stdout/stderr 的 token 行
  * ```
  *
- * ## 为什么是 NODE_OPTIONS 而不是往 argv 插 `-r`
+ * ## 第 2 层（ESM loader hook）
  *
- * `manifest.json` 的 `launch.argv` 里 node 与入口之间还隔着一层 `/usr/local/bin/dsh`
- * 包脚本（`exec /usr/local/bin/node .../lib/bin.js "$@"`），而 manifest 是构建产物、
- * 不在仓库里；`ProotLaunch.template()` 的形参也不该为了观测而长出新参数。
- * `NODE_OPTIONS` 由 node 自己解析，`--require` 在其白名单内，正好是「node 与入口之间」。
- * 注入点选在 `{GUEST_ENV}`（在 `env -i` 的 `NODE_OPTIONS=...` 之后），后者覆盖前者。
+ * `@deepseek-ai/dsh` 的 package.json 是 `"type": "module"`，`lib/bin.js` 是 **ESM**，
+ * 不经过 `Module.prototype._compile` —— 真机实测 `epoch.entry.*` 恒为 na，而
+ * `listen → listening` 之间稳定卡 13.4 s（三次 14,428 / 13,387 / 13,451 ms）。
+ * 所以再挂一层 `--import`，用 `module.register()` 的 `resolve`/`load` 钩子把每个
+ * ESM 模块的「时刻 + 耗时」写进 `boot-timing-esm.log`，并按相邻时间差反推求值段。
  *
- * ## 时间基准
+ * 同时开 `--cpu-prof`（值 1 ms）落到 `$DSH_HOME/cpuprof/`：13.4 s 到底是 loader
+ * 还是 V8 编译，只有 function 级 self-time 能一锤定音。
  *
- * guest 侧只用 `Date.now()`（HANDOFF §6.3：宿主机直接跑 `./usr/bin/date` 会 ENOENT），
- * 单调区间用 `process.hrtime.bigint()`。跨边界对齐靠宿主在 spawn 前写下的 `hostEpoch`。
+ * ## 注入方式（不动任何既有形参）
  *
- * ## 落盘
+ * `NODE_OPTIONS` = 模板里原有的 `--dns-result-order=ipv4first`
+ *               + `--require <cjs>` + `--import file://<esm>` + `--cpu-prof*`
+ * 注入点在 `{GUEST_ENV}`（`env -i` 尾部，后者覆盖前者）。
+ * manifest 的 launch.argv 里 node 与入口之间还隔着 /usr/local/bin/dsh 包脚本，
+ * 且 manifest 是构建产物，所以 argv 改不动也不该改 —— 详见 progress §4.18.2。
  *
- * stderr 一行一份（`LogStore.engine` → `engine.log`），同时 append 到
- * `files/logs/boot-timing.log`（与 `app.log` 同目录，便于和 `boot.timeline` 对照）。
+ * 失败一律返回 null / 静默：观测绝不阻塞启动。
  */
 internal object BootTimingPreload {
 
-    /** guest 内的绝对路径（rootfs 根 = `/`）。 */
+    /** 第 1 层：CJS 预加载（`--require`）。 */
     const val GUEST_PATH: String = "/opt/dsh/.dsh-boot-timing.cjs"
+
+    /** 第 2 层：ESM 预加载（`--import`），只负责 register。 */
+    const val GUEST_ESM_PATH: String = "/opt/dsh/.dsh-boot-timing.esm.mjs"
+
+    /** 第 2 层：loader hooks（在独立线程里跑 resolve/load）。 */
+    const val GUEST_HOOKS_PATH: String = "/opt/dsh/.dsh-boot-timing-hooks.mjs"
 
     /** 宿主写进 `$DSH_HOME` 的 spawn 时间戳，guest 侧读同名文件对齐时间轴。 */
     const val HOST_STAMP: String = "boot-timing.host.json"
 
+    /** `--cpu-prof` 的输出目录（相对 `$DSH_HOME`）。 */
+    const val HOST_PROFILE_DIR: String = "cpuprof"
+
     private const val TAG = "BootTiming"
 
     /**
-     * 写 guest 脚本 + 宿主时间戳，返回要注入环境的 (KEY, VALUE)。
+     * 写三个 guest 脚本 + 宿主时间戳 + 建 cpuprof 目录，返回要注入的 (KEY, VALUE)。
      *
-     * 任何一步失败都返回 null —— 观测失败绝不能让启动失败。
+     * 任何一步关键失败都返回 null —— 观测失败绝不能让启动失败。
      */
     fun guestEnv(
         rootfs: File,
@@ -58,36 +66,53 @@ internal object BootTimingPreload {
         profile: String = "web",
         now: Long = System.currentTimeMillis(),
     ): Pair<String, String>? {
-        if (!writeScript(File(rootfs, GUEST_PATH.trimStart('/')))) return null
+        if (!writeGuestFile(rootfs, GUEST_PATH, SCRIPT_CJS)) return null
+        if (!writeGuestFile(rootfs, GUEST_ESM_PATH, SCRIPT_ESM)) return null
+        if (!writeGuestFile(rootfs, GUEST_HOOKS_PATH, SCRIPT_HOOKS)) return null
         writeHostStamp(dshHome, profile, now)
-        val value = nodeOptions(template, GUEST_PATH) ?: return null
+        runCatching { File(dshHome, HOST_PROFILE_DIR).mkdirs() }
+        val value = nodeOptions(template, GUEST_PATH, GUEST_ESM_PATH, dshHome.canonicalPath) ?: return null
         return "NODE_OPTIONS" to value
     }
 
     /**
-     * 把 `--require <guestPath>` 并进模板里已有的 `NODE_OPTIONS=...`。
+     * 把观测参数并进模板里已有的 `NODE_OPTIONS=...`。
      *
      * 模板里那条是 `--dns-result-order=ipv4first`，丢掉会改变 DNS 行为，
-     * 所以这里合并而不是覆盖。幂等：路径已在内时不再重复追加。
+     * 所以合并而不是覆盖；且**幂等**：同样的参数已在内时不再重复追加。
      */
-    fun nodeOptions(template: List<String>, guestPath: String): String? {
-        if (guestPath.isBlank()) return null
-        val requireArg = "--require " + guestPath
+    fun nodeOptions(
+        template: List<String>,
+        cjsPath: String,
+        esmPath: String,
+        dshHomeGuest: String = "",
+    ): String? {
+        if (cjsPath.isBlank()) return null
+        val wanted = ArrayList<String>()
+        wanted += "--require " + cjsPath
+        if (esmPath.isNotBlank()) wanted += "--import file://" + esmPath
+        if (dshHomeGuest.isNotBlank()) {
+            wanted += "--cpu-prof"
+            wanted += "--cpu-prof-dir=" + dshHomeGuest + "/" + HOST_PROFILE_DIR
+            wanted += "--cpu-prof-interval=1000"
+        }
         val existing = template.firstOrNull { it.startsWith("NODE_OPTIONS=") }
             ?.removePrefix("NODE_OPTIONS=")
             ?.trim()
             .orEmpty()
-        if (existing.contains(guestPath)) return existing
-        return if (existing.isEmpty()) requireArg else existing + " " + requireArg
+        val missing = wanted.filterNot { existing.contains(it) }
+        if (missing.isEmpty()) return existing
+        return if (existing.isEmpty()) missing.joinToString(" ") else existing + " " + missing.joinToString(" ")
     }
 
-    private fun writeScript(file: File): Boolean = runCatching {
+    private fun writeGuestFile(rootfs: File, guestPath: String, text: String): Boolean = runCatching {
+        val file = File(rootfs, guestPath.trimStart('/'))
         file.parentFile?.mkdirs()
-        if (!file.isFile || file.readText() != SCRIPT) file.writeText(SCRIPT)
+        if (!file.isFile || file.readText() != text) file.writeText(text)
         file.setReadable(true, false)
         true
     }.getOrElse {
-        DshLog.w(TAG, "preload 写入失败：" + it.message)
+        DshLog.w(TAG, "写入失败 " + guestPath + "：" + it.message)
         false
     }
 
@@ -105,8 +130,8 @@ internal object BootTimingPreload {
         }
     }
 
-    /** guest 侧脚本全文。`.cjs` 是必须的：`NODE_OPTIONS` 的 `--require` 只吃 CommonJS。 */
-    internal val SCRIPT: String = """
+    /** 第 1 层：CJS wrapper（分段打点 + /proc/self/io 采样）。 */
+    internal val SCRIPT_CJS: String = """
 /* DSH Android —— B 阶段第 1 层：guest 侧时间戳 wrapper（纯观测，不改引擎行为）。
  * 由 BootTimingPreload.kt 每次启动前幂等写入 rootfs，
  * 通过 NODE_OPTIONS=--require /opt/dsh/.dsh-boot-timing.cjs 预加载。
@@ -307,5 +332,75 @@ internal object BootTimingPreload {
 
     note('armed pid=' + process.pid + ' uptime.ms=' + UPTIME_MS + ' host.epoch=' + num(HOST_EPOCH) + ' listenHook=1');
 })();
+"""
+
+    /** 第 2 层：ESM 预加载，只做 `module.register()`；非引擎入口直接跳过。 */
+    internal val SCRIPT_ESM: String = """
+import { register } from 'node:module';
+import path from 'node:path';
+
+const entry = String(process.argv[1] || '').replace(/\\/g, '/');
+const isEngine = entry.endsWith('@deepseek-ai/dsh/lib/bin.js');
+if (!isEngine) {
+  process.stderr.write('[boot-timing-esm] skip entry=' + entry + '\n');
+} else {
+  const base = process.env.DSH_FILES || process.env.DSH_HOME || '/tmp';
+  const logFile = base.endsWith('/logs') ? path.join(base, 'boot-timing-esm.log') : path.join(base, 'logs', 'boot-timing-esm.log');
+  try {
+    register(new URL('./.dsh-boot-timing-hooks.mjs', import.meta.url).href, {
+      parentURL: import.meta.url,
+      data: { logFile, t0: Date.now() },
+    });
+    process.stderr.write('[boot-timing-esm] register ok log=' + logFile + '\n');
+  } catch (e) {
+    process.stderr.write('[boot-timing-esm] register failed: ' + (e && e.message) + '\n');
+  }
+}
+"""
+
+    /** 第 2 层：loader hooks。逐条 append（不攒批），保证进程被杀也不丢尾部。 */
+    internal val SCRIPT_HOOKS: String = """
+import fs from 'node:fs';
+import { performance } from 'node:perf_hooks';
+
+let LOG = '/tmp/boot-timing-esm.log';
+let BUF = [];
+let count = 0;
+
+function flush() {
+  if (!BUF.length) return;
+  const blob = BUF.join('\n') + '\n';
+  BUF = [];
+  try { fs.appendFileSync(LOG, blob); } catch (e) { }
+}
+
+function record(kind, ms, url) {
+  count += 1;
+  BUF.push(kind + ' t=' + Date.now() + ' ms=' + ms.toFixed(2) + ' ' + url);
+  flush();
+}
+
+export function initialize(data) {
+  if (data && data.logFile) LOG = data.logFile;
+  BUF.push('--- esm-timing v1 start=' + Date.now() + ' pid=' + process.pid + ' ---');
+  flush();
+  try { setInterval(flush, 250).unref(); process.on('exit', flush); } catch (e) { }
+}
+
+export async function resolve(specifier, context, nextResolve) {
+  const t = performance.now();
+  const r = await nextResolve(specifier, context);
+  const ms = performance.now() - t;
+  if (ms >= 0.5) record('resolve', ms, r.url || specifier);
+  return r;
+}
+
+export async function load(url, context, nextLoad) {
+  const t = performance.now();
+  const r = await nextLoad(url, context);
+  const ms = performance.now() - t;
+  record('load', ms, url);
+  return r;
+}
 """
 }

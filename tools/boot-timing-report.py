@@ -67,12 +67,25 @@ def render(block, index):
     entry_end = f(kv, 'epoch.entry.end')
     first = f(kv, 'epoch.first')
 
-    stages = [
-        ('PRoot 装载', delta(node_start, host)),
-        ('node 引导', delta(pre, node_start)),
-        ('模块解析', delta(entry_end, pre)),
-        ('首响应', delta(first, entry_end)),
-    ]
+    listen = kv.get('epoch.listen')
+    listening = kv.get('epoch.listening')
+    listen = int(listen) if listen and listen.isdigit() else None
+    listening = int(listening) if listening and listening.isdigit() else None
+    if listen is not None and listening is not None:
+        stages = [
+            ('PRoot 装载', delta(node_start, host)),
+            ('node 引导', delta(pre, node_start)),
+            ('preload→listen', delta(listen, pre)),
+            ('listen→listening', delta(listening, listen)),
+            ('listening→首响应', delta(first, listening)),
+        ]
+    else:
+        stages = [
+            ('PRoot 装载', delta(node_start, host)),
+            ('node 引导', delta(pre, node_start)),
+            ('模块解析', delta(entry_end, pre)),
+            ('首响应', delta(first, entry_end)),
+        ]
     known = [(n, v) for n, v in stages if v is not None]
     total = delta(first, host) if first is not None and host is not None else None
     longest = max([v for _, v in known], default=1) or 1
