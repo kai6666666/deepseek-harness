@@ -227,6 +227,11 @@ class ProotHost(
                         //   `com.dsh.android`，P4 换包名后路径全部落空，
                         //   表现为「设置 → 开发环境：无法获取状态（引擎插件未激活？）」。
                         put("DSH_FILES", context.filesDir.canonicalPath)
+                        // B 阶段第 1 层：guest 侧时间戳 wrapper。
+                        //   注入手段是 NODE_OPTIONS（`env -i` 里后者覆盖前者），
+                        //   不碰本函数的任何形参，也不改 manifest 的 launch.argv。
+                        BootTimingPreload.guestEnv(rootfs, dshHome, template, profile)
+                            ?.let { (key, value) -> put(key, value) }
                         put("TZ", TimeZone.getDefault().id)
                         if (File(rootfs, "etc/ssl/certs/ca-certificates.crt").isFile) {
                             put("SSL_CERT_FILE", "/etc/ssl/certs/ca-certificates.crt")
