@@ -383,3 +383,25 @@ python3 tools/boot-timing-report.py -        # 或把上一步输出存成文件
 **下一步优先级**（已写进 `progress.md` §4.19.3）：
 P0 = 用 `--import` 拆开那 13.4 s；P0 = 摘掉用不到的插件（otel / yaml / compression）；
 P1 = `NODE_COMPILE_CACHE` 落 `$DSH_HOME/v8cache`；P2 = 预热 rootfs（性价比最低）。
+
+### 10.7 第 2 层结论（2026-11-27 03:12）：68 份 zod 把启动拖死了
+
+**结论：不是 loader 慢，是依赖图重复。** 一次冷启 **19,604 条 ESM 事件**，其中
+**zod 相关 16,333 条（83%）**；rootfs 里有 **68 份 zod**（67 份 4.6.6 + 顶层 4.6.7，每份 3,008 KB ≈ 204 MB），
+而 zod v4 的 `locales/index.js` 一次 import 全部语言包（`locales` 目录 278 个）。
+单文件都不慢（最慢 10.58 ms），是每秒 ~350 个模块 × 30 秒。
+
+**诊断态有代价**：挂上 ESM 钩子 + `--cpu-prof`（1 ms）后冷启 42 s → **71.3 s（+29 s）**。
+所以这两个开关**只能调试用，必须默认关**（当前还是无条件注入，待收口）。
+
+**修复优先级**（详见 `progress.md` §4.20.5）：
+A 运行时去重（`npm dedupe` / pnpm hoisted，先统一 zod 版本）⇒ 预计省 25~30 s；
+B symlink 收敛（不必重建 rootfs，但版本必须先统一）；
+C 诊断开关收口（把 +29 s 还回去）；D `NODE_COMPILE_CACHE`；E 预热（天花板 5 s）。
+
+**复现**：
+```bash
+adb shell am force-stop com.dsh.android && adb shell am start -n com.dsh.android/.MainActivity
+adb shell run-as com.dsh.android cat files/logs/boot-timing-esm.log > esm.log
+python3 tools/boot-timing-esm.py --esm esm.log --top 20
+```

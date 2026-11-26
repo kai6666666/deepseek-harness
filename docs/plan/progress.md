@@ -1141,3 +1141,83 @@ adb shell am start -n com.dsh.android/.MainActivity
 adb shell run-as com.dsh.android cat files/logs/boot-timing.log > bt.log
 python3 tools/boot-timing-report.py bt.log
 ```
+
+---
+
+### 4.20 第 2 层：把那 13.4 s 拆开了 —— **是依赖图重复，不是 loader 慢**
+
+> 提交：`78cb95a`（第 2 层实现）
+> 编译门禁 run `45879663322` success；APK run `45879656619` success；
+> 重签 run `45881336438` success（signer `79d0dab6…`）；
+> 装机 `vc=131 / debug.46`（2026-11-27 03:12）。
+> 真机采样：03:12 冷启一次（**诊断态**，见 4.20.3）。
+
+#### 4.20.1 新增的两把尺子
+
+| 尺子 | 实现 | 落点 |
+|---|---|---|
+| ESM loader 时间线 | `--import` + `module.register()`，`resolve` / `load` 钩子逐条记 `t=Date.now() ms=…` | `files/logs/boot-timing-esm.log` |
+| V8 采样 | `--cpu-prof --cpu-prof-interval=1000` | `files/home/.dsh/cpuprof/*.cpuprofile` |
+
+两份都在 `NODE_OPTIONS` 里追加，仍沿用 `{GUEST_ENV}` 注入点，**没有改任何既有形参**。
+分析器：`tools/boot-timing-esm.py --esm <log>` / `--prof <cpuprofile>`。
+
+#### 4.20.2 真机数据（19,604 条 ESM 事件）
+
+```text
+ESM 事件      19,604 条（load 5,781 / resolve 13,823）
+不同 URL       5,714 个
+zod 相关事件   16,333 条   ← 占全部事件的 83%
+@deepseek-ai   17,405 条
+execa 419 / @earendil-works 604 / dshmarket 321 / got 62 / diff 50 / commander 43
+每秒事件数      300~391 条，连续 30 秒不断（1795720377 → 1795720406）
+```
+
+单文件都不慢（最慢 `zod/v4/locales/eo.js` 10.58 ms），**慢的是条数**：每秒 ~350 个模块，
+每个 ~3 ms，30 秒就是一万次。PRoot 的 ptrace 翻译层把这个常数放大到了无法忽略。
+
+#### 4.20.3 根因：68 份 zod
+
+```text
+/opt/dsh/node_modules/@deepseek-ai/*/node_modules/zod   67 份（4.6.6）
+/opt/dsh/node_modules/zod                                1 份（4.6.7）
+合计 68 份，每份 3,008 KB  ⇒ 约 204 MB 重复代码
+locales 目录 278 个（zod v4 的 locales/index.js 一次 import 全部语言包）
+```
+
+每个 `@deepseek-ai/dsh-*` 插件各自带一份 `zod`，而 zod v4 的 `locales/index.js`
+会把几十个语言包全 import 进来 —— 于是「一份 zod」在启动期被放大成 68×几十个模块。
+这就是 `listen → listening` 那 13.4 s 的来源（不是 server 慢，是事件循环还没轮到它）。
+
+> ⚠️ 版本还不一致：67 份是 `4.6.6`，顶层是 `4.6.7`。所以**不能**直接 symlink，
+> 必须先统一版本（见 4.20.5 的 A 方案）。
+
+#### 4.20.4 诊断态本身的开销（重要）
+
+同一台设备：基线冷启 `42,150 / 41,987 ms`；挂上 ESM 钩子 + 1 ms 采样后 `71,297 ms`。
+**+29 s**，其中钩子逐条 `appendFileSync` 与 profile 采样各占一部分。
+
+⇒ 结论：这两把尺子**只能诊断用，必须默认关闭**。落地形态应是「启动参数 / 调试开关」，
+而不是常开。当前实现由 `BootTimingPreload` 无条件注入，属于**待收口项**（4.20.5 的 C 方案）。
+
+#### 4.20.5 修复方案（按性价比）
+
+| # | 方案 | 预期 | 风险 |
+|---|---|---|---|
+| **A** | 运行时安装改为**去重**：`npm dedupe` 或 pnpm `node-linker=hoisted`，让 68 份 zod 收敛成 1 份（先统一到 4.6.7） | ESM 事件 19.6k → ~3.3k，按 350/s 估算 loader 段 ~9 s，**省 25~30 s** | 需重建 runtime，改 `tools/runtime/build-runtime.sh` 的安装步骤 |
+| **B** | 启动时把嵌套 zod 换成 symlink 指向顶层（Node 默认按 realpath 缓存 URL ⇒ 只加载一次） | 与 A 同量级，且不必重建 rootfs | 版本必须先统一；rootfs 更新会覆盖，需做成启动自检 |
+| **C** | 诊断开关收口：`NODE_OPTIONS` 里的 `--import` / `--cpu-prof` 改成 `DSH_BOOT_TRACE=1` 才注入 | 把 +29 s 还回去 | 无 |
+| **D** | `NODE_COMPILE_CACHE` 指向 `$DSH_HOME/v8cache` | 省解析/编译的那部分（10.4~12.5 s 里的一部分） | 需 node ≥22（现在是 24.22.1 ✓） |
+| **E** | 预热 rootfs / `posix_fadvise` | 天花板 5 s | 最低 |
+
+#### 4.20.6 复现
+
+```bash
+adb shell am force-stop com.dsh.android
+adb shell am start -n com.dsh.android/.MainActivity
+adb shell run-as com.dsh.android cat files/logs/boot-timing-esm.log > esm.log
+python3 tools/boot-timing-esm.py --esm esm.log --top 20
+# 设备侧快速聚合（无需把大文件搬出来）
+adb shell run-as com.dsh.android sh -c \
+  'grep -o "node_modules/[^/]*" files/logs/boot-timing-esm.log | sed "s#node_modules/##" | sort | uniq -c | sort -rn | head'
+```
