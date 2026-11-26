@@ -74,7 +74,7 @@ internal object BootTimingPreload {
         if (guestPath.isBlank()) return null
         val requireArg = "--require " + guestPath
         val existing = template.firstOrNull { it.startsWith("NODE_OPTIONS=") }
-            ?.removePrefix("NODE_OPTIONS="
+            ?.removePrefix("NODE_OPTIONS=")
             ?.trim()
             .orEmpty()
         if (existing.contains(guestPath)) return existing
