@@ -344,3 +344,42 @@ python3 tools/boot-timing-report.py -        # 或把上一步输出存成文件
 
 `tools/boot-timing-report.py` —— 读 `boot-timing.log` 直接渲染四段瀑布图 + 读放大
 （`read_bytes/rchar` ⇒ 页缓存命中率），支持 `--json`。
+
+### 10.6 真机采样结果（2026-11-27 02:27~02:31，debug.46 / vc131）
+
+**装机有一道坑**：`apk.yml` 产出的 `dsh-system-debug` 是 CI 现场生成的 debug 身份，
+直接 `pm install` 会 `INSTALL_FAILED_UPDATE_INCOMPATIBLE`（签名不匹配）。
+必须先 dispatch `sign-upgrade-apk.yml`（id `422137521`）：
+
+```json
+{"ref":"main","inputs":{
+  "run_id":"<成功的 apk.yml run>",
+  "expected_signer":"79d0dab6822c276f054bb9d53a24dd65fc54b3a185c902a3372b1090a448dc96"}}
+```
+
+产物 `dsh-system-debug-upgrade-signed` 里的 `dsh-android-<ver>-arm64.apk` 才是可直接
+`pm install -r -d` 的包（v2+v3 签名，证书 `CN=DeepSeek Harness`）。
+
+**三次真机数据**（`files/logs/boot-timing.log`）：
+
+| 次 | 场景 | PRoot 装载 | node 引导 | preload→listen | listen→listening | listening→首响应 | 合计 | rchar / read_bytes |
+|---|---|---|---|---|---|---|---|---|
+| 1 | 装完首启（页缓存冷） | 126 ms | 64 ms | 32,270 ms | 14,428 ms | 880 ms | **47,578 ms** | +79.95 MB / **+129.06 MB** |
+| 2 | 冷启（缓存暖） | 112 ms | 91 ms | 28,101 ms | 13,387 ms | 662 ms | **42,150 ms** | +79.95 MB / 0 B |
+| 3 | 冷启（缓存暖） | 123 ms | 99 ms | 27,746 ms | 13,451 ms | 790 ms | **41,987 ms** | +79.95 MB / 0 B |
+
+**结论（推翻了 §4 里「瓶颈是页缓存命中率」的假设）**：
+
+1. 页缓存只值 **5.4 s**（129 MB 磁盘读 → 0 B，时间 47.6 → 42.0）。「预热 rootfs」天花板就在这里。
+2. **模块编译 10.4~12.5 s**（623 个 CJS，平均 17~20 ms/个，`undici/index.js` 单个 0.7~1.0 s）
+   是纯 CPU 成本，PRoot 的 ptrace 翻译层把 `open/stat` 放大了。
+3. **`listen()` 之后还有稳定的 13.4 s 同步阻塞**（14,428 / 13,387 / 13,451），
+   这段是 ESM 模块求值 + 插件初始化，`modules.compile.ms` 里**没有统计到**。
+
+**新发现**：`@deepseek-ai/dsh` 的 `"type": "module"` 让 `bin.js` 成为 ESM，
+所以 `Module.prototype._compile` 抓不到入口 → `epoch.entry.*` 恒为 `na`。
+下一版要么挂 `--import` / `module.register()`，要么直接用 `listen/listening/first` 分段（已验证够用）。
+
+**下一步优先级**（已写进 `progress.md` §4.19.3）：
+P0 = 用 `--import` 拆开那 13.4 s；P0 = 摘掉用不到的插件（otel / yaml / compression）；
+P1 = `NODE_COMPILE_CACHE` 落 `$DSH_HOME/v8cache`；P2 = 预热 rootfs（性价比最低）。

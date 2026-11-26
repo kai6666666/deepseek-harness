@@ -989,7 +989,7 @@ Authorization 头带到了 `productionresultssa*.blob.core.windows.net`，被存
 
 ---
 
-### 4.18 B 阶段第 1 层：guest 侧时间戳 wrapper（已落地，待真机采样）
+### 4.18 B 阶段第 1 层：guest 侧时间戳 wrapper（已落地，已真机采样）
 
 > 提交：`1347dae`（实现）、`ebf0f6f`（修编译）、`6e8f5a6`（CI 诊断通道）
 > 编译门禁：run `45860036613` **success** —— `:app:compileSystemDebugKotlin` 与
@@ -1081,11 +1081,63 @@ engine.log                                 [boot-timing] armed ... + 整块回�
 5. 判读：`read_bytes` 增量显著 > 0 ⇒ 首次读盘是真成本（走第 3 层：预热/`posix_fadvise`）；
    `read_bytes ≈ 0` 且 `rchar` 巨大 ⇒ 全命中页缓存，瓶颈在模块图规模（走第 2 层：模块裁剪/预编译缓存）。
 
-#### 4.18.7 真机数据（待填）
+#### 4.18.7 真机数据（已填，2026-11-27 02:27~02:31，debug.46 / vc131）
 
-| 次 | 场景 | PRoot 装载 | node 引导 | 模块解析 | 首响应 | 合计 | rchar / read_bytes |
-|---|---|---|---|---|---|---|---|
-| 1 | 冷启（force-stop） | — | — | — | — | — | — |
-| 2 | 冷启（force-stop） | — | — | — | — | — | — |
-| 3 | 冷启（force-stop） | — | — | — | — | — | — |
-| 4 | 热启 | — | — | — | — | — | — |
+装机包：`dsh-android-0.2.2-rc.5-debug.46-arm64.apk`（`sign-upgrade-apk.yml` 用既有发行身份重签，
+证书 SHA-256 `79d0dab6…a448dc96`；未签名包直接 `pm install` 会 `INSTALL_FAILED_UPDATE_INCOMPATIBLE`）。
+
+| 次 | 场景 | PRoot 装载 | node 引导 | preload→listen | listen→listening | listening→首响应 | 合计（preload→首响应） | 模块/编译 | rchar / read_bytes |
+|---|---|---|---|---|---|---|---|---|---|
+| 1 | 装完首启（页缓存全冷） | 126 ms | 64 ms | 32,270 ms | **14,428 ms** | 880 ms | **47,578 ms** | 623 / 12,546 ms | +79.95 MB / **+129.06 MB** |
+| 2 | 冷启（force-stop，缓存暖） | 112 ms | 91 ms | 28,101 ms | **13,387 ms** | 662 ms | **42,150 ms** | 623 / 10,569 ms | +79.95 MB / **0 B** |
+| 3 | 冷启（force-stop，缓存暖） | 123 ms | 99 ms | 27,746 ms | **13,451 ms** | 790 ms | **41,987 ms** | 623 / 10,412 ms | +79.95 MB / **0 B** |
+
+宿主侧同一轮 `boot.timeline total=47,297 ms`（第 3 次），与 guest 的 41,987 ms 差约 5.3 s，
+正好是 `BootTimeline.start()` 到 `prootSpawn` 之间的 preflight/overlay 段——两条时间轴自洽。
+
+---
+
+### 4.19 B 阶段结论：瓶颈不是页缓存，是**模块加载**
+
+#### 4.19.1 三条硬数据
+
+1. **页缓存只值 5.4 秒。** 第 1 次（磁盘全冷）47.6 s，第 2/3 次（页缓存全命中）42.0~42.2 s。
+   磁盘读从 **129.06 MB** 掉到 **0 B**，时间只掉 11.4%。
+   ⇒ 「预热 rootfs / `posix_fadvise`」这条路的天花板是 5 秒，做完也就 47.6 → 42。
+2. **模块编译 10.4~12.5 秒是实打实的 CPU。** 623 个 CJS 模块、平均 16.7~20.1 ms/个。
+   最贵的是 `undici/index.js` 732~988 ms、`@opentelemetry/core` 427~559 ms、`yaml` 225~288 ms。
+   平均 17 ms/模块对一个 123 MB 的 arm64 node 来说**不正常**（PC 上同规模约 1~3 ms），
+   典型原因是 PRoot 下 `open/stat` 走了 ptrace 翻译层。
+3. **`listen()` 之后还有 13.4 秒的同步阻塞。** `epoch.listen → epoch.listening` 三次分别是
+   14,428 / 13,387 / 13,451 ms，**极其稳定**，与页缓存无关。
+   这段时间事件循环还没转起来 ⇒ 只能是同步的模块求值/插件初始化；
+   而 `modules.compile.ms` 只统计了 CJS（623 个），**ESM 模块完全没被计入**。
+
+#### 4.19.2 为什么 `entry.start/entry.end` 全是 `na`（本轮新发现）
+
+`@deepseek-ai/dsh/package.json` 里有 `"type": "module"`，`bin.js` 是 **ESM**。
+ESM 走 `lib/internal/modules/esm/*` 的 loader，**不经过 `Module.prototype._compile`**，
+所以我们挂在 CJS 链上的入口打点必然落空（623 个计数全是 CJS 依赖，如 undici / yaml / opentelemetry）。
+
+下一版要么改挂 `module.register()` / `--import`，要么干脆不信入口——本轮已经证明
+`listen/listening/first` 三个点在 ESM 下照样准，够分段了。
+
+#### 4.19.3 下一步（优先级已变）
+
+| 优先级 | 动作 | 依据 |
+|---|---|---|
+| **P0** | 把 `listen→listening` 那 13.4 s 拆开：`--import` 挂 ESM loader 记每个 ESM 模块的 `resolve/load/evaluate` 时刻 | 三次数值稳定在 13.4 s，是全链路里最干净的一块可优化时间 |
+| **P0** | 关掉不需要的插件（`@opentelemetry/*`、`yaml`、`compression` 若走不到就摘掉） | 单个 `undici/index.js` 就 0.7~1.0 s，`@opentelemetry/core` 再 0.43~0.56 s |
+| P1 | `NODE_COMPILE_CACHE`（node ≥22 的 V8 code cache）指向 `$DSH_HOME/v8cache`，让第 2 次起跳过编译 | 10.4~12.5 s 的编译是纯 CPU，缓存一次可长期受益 |
+| P2 | 预热 rootfs（`posix_fadvise`/顺序 touch） | 天花板 5 s，做完 47.6 → 42，性价比最低 |
+
+#### 4.19.4 复现命令
+
+```bash
+# 冷启
+adb shell am force-stop com.dsh.android
+adb shell am start -n com.dsh.android/.MainActivity
+# 取数据（只能 stdout 回宿主，run-as 里重定向到 /sdcard 会是 0 字节）
+adb shell run-as com.dsh.android cat files/logs/boot-timing.log > bt.log
+python3 tools/boot-timing-report.py bt.log
+```
