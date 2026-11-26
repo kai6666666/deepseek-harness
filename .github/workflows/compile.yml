@@ -51,7 +51,32 @@ jobs:
       - name: 修可执行位
         run: chmod +x gradlew || true
       - name: 编译与 S6 回归测试
-        run: ./gradlew :app:compileSystemDebugKotlin :app:testSystemDebugUnitTest --console=plain --no-daemon
+        run: |
+          set -o pipefail
+          ./gradlew :app:compileSystemDebugKotlin :app:testSystemDebugUnitTest --console=plain --no-daemon 2>&1 | tee /tmp/build.log
+
+      # jobs/logs 接口对本仓库 token 恒 401，所以失败信息只能自己搬出来：
+      # ① 用 ::error:: 变成 annotation（check-runs/{id}/annotations 可读）；
+      # ② 全量日志作为 artifact（配合 artifact 的 302 直取）。
+      - name: 编译错误摘要（annotation 通道）
+        if: failure()
+        run: |
+          echo '--- kotlin errors ---'
+          grep -nE '^e: |error:|FAILURE: Build|Caused by:' /tmp/build.log | head -40 || true
+          grep -nE '^e: |error:' /tmp/build.log | head -40 | while IFS= read -r line; do
+            echo "::error title=Kotlin::${line}"
+          done || true
+          echo '--- tail ---'
+          tail -40 /tmp/build.log || true
+
+      - name: 上传编译日志
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: compile-log
+          path: /tmp/build.log
+          if-no-files-found: warn
+          retention-days: 7
       - name: S6 test reports
         if: always()
         uses: actions/upload-artifact@v4
