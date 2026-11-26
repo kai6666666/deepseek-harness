@@ -22,7 +22,7 @@ class RuntimeS6Test {
      */
     private fun symlink(link: java.io.File, target: java.io.File) {
         try {
-            symlink(link, target)
+            java.nio.file.Files.createSymbolicLink(link.toPath(), target.toPath())
         } catch (e: UnsupportedOperationException) {
             assumeTrue("当前文件系统不支持符号链接：${'$'}{e.message}", false)
         } catch (e: IOException) {
