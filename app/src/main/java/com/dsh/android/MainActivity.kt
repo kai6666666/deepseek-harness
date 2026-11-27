@@ -932,6 +932,8 @@ class MainActivity : AppCompatActivity() {
         observeImeInsets()   // 修复 65：键盘高度自学习 + 预判交接
         // 前台服务要在引擎启动前拉起：它同时是「进程不被回收」和 WakeLock 的持有者，
         // 晚一步的话，引擎刚起就切后台仍可能被系统盯上。
+            // B 阶段 B3-#1：app 点（走到“准备拉起引擎”这一刻）
+            com.dsh.android.log.BootTimeline.mark("app")
         EngineService.start(this)
         ensureBatteryExempt()
         ensureStorageAccess()

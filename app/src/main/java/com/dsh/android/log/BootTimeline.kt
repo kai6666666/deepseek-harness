@@ -35,6 +35,9 @@ object BootTimeline {
     /** 名称 → 相对 start() 的毫秒数。 */
     private val marks = ConcurrentHashMap<String, Long>()
 
+    /** 每个打点的附加字段（如 `unpacked=true`），随 `dump()` 一起输出。 */
+    private val extras = ConcurrentHashMap<String, Map<String, String>>()
+
     @Volatile
     private var t0: Long = 0L
 
@@ -47,8 +50,16 @@ object BootTimeline {
     fun start() {
         marks.clear()
         order.clear()
+        extras.clear()
         totalMs = -1L
-        t0 = System.nanoTime()
+        // ⚠️ 不覆盖已有的 t0：进程级起点（`markProcessStart()`）必须保留，
+        //    否则 `app` 点（MainActivity 里的 onCreate）会比 t0 还早，算出来是负数。
+        if (t0 == 0L) t0 = System.nanoTime()
+    }
+
+    /** 进程级起点：在 `Application.onCreate` 最初调用一次，之后所有点都相对它。 */
+    fun markProcessStart() {
+        if (t0 == 0L) t0 = System.nanoTime()
     }
 
     /**
@@ -56,10 +67,13 @@ object BootTimeline {
      *
      * 未调用 [start] 时自动开始（例如 `Application.onCreate` 早于引擎启动）。
      */
-    fun mark(name: String) {
+    fun mark(name: String, extra: Map<String, String> = emptyMap()) {
         if (t0 == 0L) t0 = System.nanoTime()
         val ms = (System.nanoTime() - t0) / 1_000_000
-        if (marks.putIfAbsent(name, ms) == null) order.add(name)
+        if (marks.putIfAbsent(name, ms) == null) {
+            order.add(name)
+            if (extra.isNotEmpty()) extras[name] = extra
+        }
     }
 
     /** 结束计时，返回总毫秒数。 */
@@ -103,6 +117,9 @@ object BootTimeline {
                 .append(delta.toString().padStart(6))
                 .append("ms  ")
                 .append("█".repeat(cells.ifAtLeastOne(delta)))
+            extras[name]?.takeIf { it.isNotEmpty() }?.let { e ->
+                sb.append("  ").append(e.entries.joinToString(" ") { "${it.key}=${it.value}" })
+            }
             prev = at
         }
         return sb.toString()

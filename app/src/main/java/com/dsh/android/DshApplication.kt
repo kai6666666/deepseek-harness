@@ -91,6 +91,8 @@ class DshApplication : Application() {
         super.onCreate()
         if (!isMainProcess(this)) return
         instance = this
+        // B 阶段：进程级计时起点（`app` 点相对它算，且 BootTimeline.start() 不再覆盖它）
+        com.dsh.android.log.BootTimeline.markProcessStart()
         DshLog.i(TAG, "DSH application created")
         EventLog.record("app.onCreate")
         // ⚠️ 必须在**任何通知发出之前**清理残留（见该方法注释）：上一次配对把进程拖到

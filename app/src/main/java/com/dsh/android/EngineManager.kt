@@ -6767,9 +6767,10 @@ class EngineManager private constructor(private val context: Context) {
         val startMs = System.currentTimeMillis()
         // B：启动分段计时从这里开始（相对时间轴，与 guest 时钟无关）
         BootTimeline.start()
-        BootTimeline.mark("runtime")
         EventLog.record("engine.start.proot", mapOf("runtime" to manifest.runtimeVersion))
         val installer = RootfsInstaller(context)
+        // B6-#3：`unpacked` 判据 —— 进 ensure 之前是否已经装好（装好=true 时不会解包）
+        val alreadyInstalled = runCatching { installer.isInstalled(manifest) }.getOrDefault(true)
         var phase = ""
         var lastPercent = -1
         try {
@@ -6794,6 +6795,8 @@ class EngineManager private constructor(private val context: Context) {
                     _state.value = State.Extracting(pct.coerceAtMost(99))
                 }
             }
+            // B3-#2：runtime 点 = ensure 返回（命中 stamp 或解包完），带 unpacked 标记
+            BootTimeline.mark("runtime", mapOf("unpacked" to (!alreadyInstalled).toString()))
             _state.value = State.Starting
             if (!currentStart(generation)) return
             val rescueProfileDir = ensureRescueProfile()
@@ -6952,7 +6955,12 @@ class EngineManager private constructor(private val context: Context) {
         val proc = try {
             synchronized(lifecycleLock) {
                 if (!currentStart(generation)) return
+                var mountedMarked = false
                 host.start(prootEnv, overlays, targetProfile) { line ->
+                    if (!mountedMarked && line.isNotBlank()) {
+                        mountedMarked = true
+                        BootTimeline.mark("prootMounted")
+                    }
                     LogStore.engine(line)
                     if (currentStart(generation)) synchronized(logLines) {
                         logLines.addLast(line)

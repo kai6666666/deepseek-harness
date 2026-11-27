@@ -342,6 +342,8 @@ internal object GithubMirrors {
             }
             val elapsedMs = ((System.nanoTime() - start) / 1_000_000).coerceAtLeast(1L)
             val bps = if (sampleBytes > 0L) got * 1000L / elapsedMs else -1L
+            // A4-#4：单次探测的字节数落盘，日志里可直接求和（预算 256 KB）
+            logI("mirror.probe bytes=" + got + " total=" + total + " bps=" + bps + " name=" + name)
             Probe(name, url, ok = true, bytes = total, ranges = true, rttMs = rtt, bytesPerSec = bps)
         } catch (t: Throwable) {
             Probe(name, url, ok = false, error = t.message ?: t.javaClass.simpleName)
