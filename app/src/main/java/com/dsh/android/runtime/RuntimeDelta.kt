@@ -196,23 +196,19 @@ object RuntimeDelta {
                 ?: throw IllegalStateException("Release 里没有分片 $n（旧版发布缺资产）")
             // 本地旧分片：优先 parts/<本地ver>/，其次 runtime/ 根下的同名文件
             val base = localBase(filesDir, n)
-            val fetch = ArrayList<JSONObject>()
-            if (base != null && base.length() == bytes) {
-                val localHashes = chunkHashes(base, chunkSize)
-                for (i in 0 until chunks.length()) {
-                    val c = chunks.getJSONObject(i)
-                    val h = c.optString("h")
-                    if (i >= localHashes.size || localHashes[i] != h) fetch.add(c)
-                }
-                if (fetch.isEmpty()) {
-                    // 整文件相同：不需要任何下载
-                    out.add(FilePlan(n, url, bytes, sha, chunkSize, emptyList(), base))
-                    continue
-                }
-                anyIncremental = true
-            } else {
-                for (i in 0 until chunks.length()) fetch.add(chunks.getJSONObject(i))
+            val remoteHashes = ArrayList<String>(chunks.length())
+            for (i in 0 until chunks.length()) remoteHashes.add(chunks.getJSONObject(i).optString("h"))
+            val localHashes = if (base != null && base.length() == bytes) chunkHashes(base, chunkSize) else null
+            // A4-#6：只取 hash 变化的块（纯函数，见文件末尾 `changedChunkIndexes`）
+            val idx = changedChunkIndexes(localHashes, remoteHashes)
+            val fetch = ArrayList<JSONObject>(idx.size)
+            for (i in idx) fetch.add(chunks.getJSONObject(i))
+            if (localHashes != null && fetch.isEmpty()) {
+                // 整文件相同：不需要任何下载
+                out.add(FilePlan(n, url, bytes, sha, chunkSize, emptyList(), base))
+                continue
             }
+            if (localHashes != null) anyIncremental = true
             for (c in fetch) need += c.optLong("l")
             out.add(FilePlan(n, url, bytes, sha, chunkSize, fetch, if (base != null && base.length() == bytes) base else null))
         }
@@ -777,4 +773,20 @@ object RuntimeDelta {
         b >= 1024L -> String.format("%d KB", b / 1024)
         else -> "$b B"
     }
+}
+
+/**
+ * A4-#6：分块增量判定（纯函数，不碰 JSON/网络，便于 JVM 单测）。
+ *
+ * @param local 本地基线按同一 chunkSize 算出的块 hash；`null` 表示没有“同长度基线” ⇒ 全量。
+ * @param remote 远端清单里的块 hash（顺序即块号）。
+ * @return 需要重新下载的块号（升序）；空表示整文件可复用。
+ */
+internal fun changedChunkIndexes(local: List<String>?, remote: List<String>): List<Int> {
+    if (local == null) return remote.indices.toList()
+    val out = ArrayList<Int>()
+    for (i in remote.indices) {
+        if (i >= local.size || local[i] != remote[i]) out.add(i)
+    }
+    return out
 }
