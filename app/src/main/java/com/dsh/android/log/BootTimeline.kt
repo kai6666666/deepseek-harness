@@ -48,13 +48,15 @@ object BootTimeline {
 
     /** 重置并开始计时。每次 `EngineManager.start()` 开头调用一次。 */
     fun start() {
+        // `app` 点在 `EngineManager` 之前打（进程级），start() 不能把它丢掉，
+        // 否则 dump 里永远看不到它（真机 vc133 实测）。
+        val keepApp = marks["app"]
         marks.clear()
         order.clear()
         extras.clear()
         totalMs = -1L
-        // ⚠️ 不覆盖已有的 t0：进程级起点（`markProcessStart()`）必须保留，
-        //    否则 `app` 点（MainActivity 里的 onCreate）会比 t0 还早，算出来是负数。
         if (t0 == 0L) t0 = System.nanoTime()
+        if (keepApp != null) { marks["app"] = keepApp; order.add("app") }
     }
 
     /** 进程级起点：在 `Application.onCreate` 最初调用一次，之后所有点都相对它。 */

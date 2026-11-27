@@ -48,6 +48,16 @@ class BootTimelineTest {
     }
 
     @Test
+    fun appMarkSurvivesStart() {
+        BootTimeline.markProcessStart()
+        BootTimeline.mark("app")
+        BootTimeline.start()          // EngineManager 在 startProot 里调这个
+        BootTimeline.mark("runtime", mapOf("unpacked" to "false"))
+        val dump = BootTimeline.dump()
+        assertTrue("app 点必须在 start() 之后仍存在：\n" + dump, dump.contains("app"))
+        assertTrue(dump.indexOf("app") < dump.indexOf("runtime"))
+    }
+    @Test
     fun dumpWithoutMarksIsStable() {
         BootTimeline.start()
         assertTrue(BootTimeline.dump().contains("boot.timeline"))
