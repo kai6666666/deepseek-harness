@@ -355,6 +355,21 @@ if [ "${DSH_RT_SKIP_ENGINE:-0}" != "1" ]; then
   [ "$(find "$ROOTFS/opt/dsh/node_modules" -maxdepth 4 -type d -name zod | wc -l)" = "1" ] || die "zod 数量断言失败（应恰为 1 份）"
 fi
 
+# ---------- 3.36 摘掉启动期白加载的 @opentelemetry（P2） ----------
+# 真机实测：去掉它之后，启动期 CJS 模块数 623 → 358，compile 8.4 s → 3.8 s，
+# 总分段 17.25 s → 15.8 s（progress §4.23）。engine 仍 health=401、无 MODULE_NOT_FOUND。
+# ⚠️ 反例：yaml 不能摘 —— `dsh-skill-office` / `dsh-plugin-manager` 是静态 import，
+#   真机摘掉后直接 ERR_MODULE_NOT_FOUND，插件 failed to import。
+# ⚠️ 若将来某个插件在运行期按需启用 tracing，这里会以 MODULE_NOT_FOUND 显式暴露；
+#   构建时用 DSH_RT_KEEP_OTEL=1 可保留。
+if [ "${DSH_RT_SKIP_ENGINE:-0}" != "1" ] && [ "${DSH_RT_KEEP_OTEL:-0}" != "1" ]; then
+  if [ -d "$ROOTFS/opt/dsh/node_modules/@opentelemetry" ]; then
+    rm -rf "$ROOTFS/opt/dsh/node_modules/@opentelemetry"
+    log "prune: 已移除 @opentelemetry（启动期少加载 ~265 个模块）"
+  fi
+  [ ! -d "$ROOTFS/opt/dsh/node_modules/@opentelemetry" ] || die "@opentelemetry 未被移除"
+fi
+
 # ---------- 3.4 C 适配层（glibc 重编） ----------
 JNI_SRC=$REPO_ROOT/app/src/main/jni
 if [ -f "$JNI_SRC/boo-sandbox-run.c" ]; then
