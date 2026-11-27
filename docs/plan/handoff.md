@@ -539,3 +539,13 @@ ESM 事件 19,604 → 3,575，zod 事件 16,333 → 390。
   modules **247**（手工态 358）、compile **2.77 s**（手工态 3.8 s）。
 - 仍差最后一段：`0 < need ≪ total` 的偏量端到端，需 71 MB 的远端 part1 当基线；判据已固定。
 - 设备残留：`parts.old1` / `.rootfs.stamp.old1` 可删；`auto-dryrun` marker 已删。
+
+### 10.17 发 debug.48 并装机验证（`4.31`）
+
+- 版本 `0.2.2-rc.5-debug.48 / vc133`；APK `46025136774` → sign `46026968723`（artifact `15211739535`）→ 装机成功。
+- 真机 `boot.timeline`：**8 个点**（`runtime` 带 `unpacked=false`、新增 `prootMounted 3078ms`、`nodeExec…ready`），
+  `app` 点**未出现**——根因是 `startProot()` 的 `BootTimeline.start()` 会清 marks；已修（`9e38126`，
+  `start()` 保留 app + 单测 `appMarkSurvivesStart`），**待 debug.49 真机确认**。
+- `applyAsync` 短路真机验证：日志 `applyAsync 跳过：运行时已是最新，无需应用`，且手工放的 `parts/<ver>/.keep` 未被清。
+- 推送又撞 GnuTLS → 用 `api_push.py`（**必须给完整 40 位 sha**）。
+- 待办：debug.49（含 app 点）出包 + 装机；Release `debug.48` 如需公开下载再 dispatch `publish-apk.yml`。
