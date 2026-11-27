@@ -528,3 +528,14 @@ ESM 事件 19,604 → 3,575，zod 事件 16,333 → 390。
   （全量 / 一致→0 块 / 单块 / 尾部 / 空清单），编译门禁已绿。
 - **留给真实升级的判据**：`incremental=true` 且 `needBytes < totalBytes`，rootfs 校验通过即闭环。
 - 演练钩子用法：`touch` 开、`rm -f` 关（**必须关**，否则每次启动都 check）。本轮 marker 已删。
+
+### 10.16 装 `debug.47` 验增量（`4.30`）
+
+- 装机：**vc=132 / debug.47**（Release 重签包），runtime 换成 `…-4820e2beae27`，`@opentelemetry` 已不存在。
+- **增量两态真机验证**：无本地清单 → `全量 138.7 MB`；装好后 → `needBytes=0 / totalBytes=0`（0 字节）。
+- **修掉一个副作用**：`applyAsync` 在 0 字节时仍会换入空 staging，把 `parts/` 基线清空；
+  已加短路（`needBytes==0 && totalBytes==0` 直接返回，不动磁盘）。
+- **冷启**：首启 67.8 s（含 74 MB 解包）→ 第 2 次 18.8 s → 第 3 次 **16.2 s**；
+  modules **247**（手工态 358）、compile **2.77 s**（手工态 3.8 s）。
+- 仍差最后一段：`0 < need ≪ total` 的偏量端到端，需 71 MB 的远端 part1 当基线；判据已固定。
+- 设备残留：`parts.old1` / `.rootfs.stamp.old1` 可删；`auto-dryrun` marker 已删。

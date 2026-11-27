@@ -1859,3 +1859,81 @@ run-as com.dsh.android rm -f files/runtime/auto-dryrun
 ```
 
 本轮已确认 marker 已删除（`ls` → No such file）。
+
+---
+
+### 4.30 装 `debug.47` 验增量（A4-#6 真机闭环：到「0 字节」这一半）
+
+> 装机：`vc=132 / 0.2.2-rc.5-debug.47`（Release 重签包，`dsh-android-0.2.2-rc.5-debug.47-arm64.apk`，161,793,263 B）
+> 真机时间线：21:47 装 →21:51 首启（含解包）→21:56 / 21:59 两次 check
+
+#### 4.30.1 装完先看 runtime 有没有换掉
+
+```text
+首启前：.rootfs.stamp = …-4ef4d5ef4ac0（debug.46 的 runtime）
+首启后：.rootfs.stamp = …-4820e2beae27（debug.47 的 runtime）✓
+        parts/ 里也出现 …-4820e2beae27/（安装器按分片落盘）
+        rootfs/opt/dsh/node_modules/@opentelemetry → No such file ✓（构建期已摘）
+        engine.ready 67,754 ms（首次含 74 MB xz 解包，属预期）
+```
+
+> 中途发现一个真实行为：**`files/runtime/parts/` 与根目录下的 `manifest.json` 必须同时存在，增量才有基线**。
+> 我们为了强制从 APK 重装，把旧 `parts/` 和 `.rootfs.stamp` 挪走（`parts.old1` / `.rootfs.stamp.old1` 仍在），
+> 重装后两者才重新生成。
+
+#### 4.30.2 增量链路的两次真机判定
+
+| 时刻 | 本地基线 | 日志 / stateJson |
+|---|---|---|
+| 21:51:55（安装中，manifest 还没落地） | 无 | `发现运行时 …-4820…：全量 138.7 MB` |
+| 21:56:57（装好后） | 有 | `运行时已是最新（…-4820…）` |
+| 21:59:36（auto-dryrun 复测） | 有 | `state=ready, from=…-4820, to=…-4820, needBytes=0, totalBytes=0, incremental=false` |
+
+⇒ **版本一致时严格 0 字节**，链路正确；`from/to` 都取自真实清单，不是常量。
+
+#### 4.30.3 顺手抓到一个副作用（已修）
+
+`applyAsync` 在 `needBytes=0 / totalBytes=0` 时**仍然会进 runApply**，把空的 staging 换进 `parts/<ver>`，
+于是 **parts 基线被清空** —— 下一次升级就会从「增量」退化成「全量」。
+
+已在 `applyAsync` 开头加短路（`needBytes==0 && totalBytes==0` → 直接返回 true，不动磁盘）：
+
+```kotlin
+if (needBytes == 0L && totalBytes == 0L) {
+    message = "运行时已是最新，无需应用"
+    Log.i(TAG, "applyAsync 跳过：$message")
+    return true
+}
+```
+
+#### 4.30.4 装完后冷启数据（debug.47 + 自带精简 runtime）
+
+| 场景 | preload→首响应 | modules.count | modules.compile.ms | engine.ready |
+|---|---|---|---|---|
+| 首启（含解包） | — | — | — | 67,754 ms |
+| 第 2 次冷启 | 18,791 ms | **247** | 3,015 ms | 23,776 ms |
+| 第 3 次冷启（cache 回温） | **16,161 ms** | 247 | **2,774 ms** | 20,780 ms |
+
+对比 §4.23 手工精简态（358 模块 / 3.8 s）：构建期就瘦身的 runtime **再少 111 个模块、编译再省 1 s**。
+冷启稳定在 **16.2 s** 量级（与 15.7 s 同级，差异来自模块路径变化后 V8 cache 冷了一轮）。
+
+#### 4.30.5 A4-#6 到底验到哪一步（如实）
+
+```text
+✅ 真机验证 1：无本地清单 → 判全量（138.7 MB），逻辑与日志都对
+✅ 真机验证 2：本地清单与远端一致 → needBytes=0 / totalBytes=0，0 字节
+✅ 判定层：changedChunkIndexes 5 例单测（全量 / 一致→0 / 单块 / 尾部 / 空）
+⚠️ 差最后一段：0 < needBytes < totalBytes 的「只下变化块」端到端，
+   需要一个与远端等长的本地 base（= 71 MB 的 part1），当前带宽下不划算。
+   判据已固定：真实升级时看 `incremental=true` 且 `needBytes ≪ totalBytes`。
+这次装机顺带清掉了 parts 基线（副作用已修），下次升级会先重建 parts，再谈增量。
+```
+
+#### 4.30.6 设备现状
+
+```text
+版本      vc=132 / 0.2.2-rc.5-debug.47（Release 同源）
+runtime   …-4820e2beae27（构建期已去重 zod、摘 otel）
+冷启      16.2 s 量级
+演练残留  files/runtime/parts.old1、.rootfs.stamp.old1（可删）；auto-dryrun marker 已删
+```

@@ -109,6 +109,14 @@ object RuntimeDelta {
             Log.w(TAG, "applyAsync 被拒绝：$message")
             return false
         }
+        // A4-#6 真机发现：本地已是最新时 needBytes/totalBytes 都是 0，
+        // 这时若继续 apply，runApply 会走到“换入空 staging”的分支，把 parts/ 基线清掉；
+        // 下一次升级就白丢增量基线。所以这里直接短路。
+        if (needBytes == 0L && totalBytes == 0L) {
+            message = "运行时已是最新，无需应用"
+            Log.i(TAG, "applyAsync 跳过：$message")
+            return true
+        }
         state = "applying"; message = "正在下载运行时…"
         thread(name = "RuntimeDelta-apply", isDaemon = true) { runApply(filesDir) }
         return true
