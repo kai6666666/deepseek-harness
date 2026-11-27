@@ -8,6 +8,36 @@
 - 设备侧清理：删除演练备份 `dsh-backup-drill.zip` 与 13 个历史 APK（约 2.4 GB）。
 
 **不发新版**：本批只有文档与文件清理。
+## [0.2.2-rc.5-debug.47] — 2026-11-27
+vc=132
+
+### 启动耗时（B 阶段收尾）：冷启 42.0 s → 15.7~15.8 s
+
+四步都在同一台真机上验证过（`am force-stop` 后冷启，三次取区间）：
+
+| 步 | 做法 | 效果 |
+|---|---|---|
+| A | runtime 里摘掉 67 份嵌套 `zod`（68→1），ESM 才能按同一 URL 命中缓存 | 42.0 → 21~22 s |
+| P1 | engine 进程内 `module.enableCompileCache($DSH_HOME/v8cache)`，周期 `flushCompileCache()` | 21 → 17.1~17.3 s |
+| P2 | runtime 里摘掉 `@opentelemetry`（无静态 import，可摘）；`yaml` 保留（静态 import，摘了必崩） | 17.2 → 15.7~15.8 s |
+| C | 诊断开关收口：只有 `files/boot-trace.enable` 存在才注入 `--import` / `--cpu-prof` | 让诊断不再常驻 +14.7~29 s |
+
+启动期 CJS 模块数 **623 → 358**，`modules.compile` **8.4 s → 3.8 s**。
+
+### 新增可观测
+
+- `files/logs/boot-timing.log`：五段瀑布（PRoot 装载 / node 引导 / preload→listen / listen→listening / →首响应），
+  附 `modules.top`、`/proc/self/io` 的读放大；
+- `files/logs/boot-timing-esm.log` + `$DSH_HOME/cpuprof/*.cpuprofile`：仅当 `boot-trace` 开关打开时为 ESM 钩子与 V8 采样；
+- `tools/boot-timing-report.py` / `tools/boot-timing-esm.py`：日志 → 瀑布图 / ESM 排行 / profile self-time。
+
+### 升级提示
+
+`runtime` 的内容哈希变了（脚本改动计入 `INPUTS`），所以升级后**会重新解包一次 runtime（约 146 MB）**——
+首次启动包含解包开销，之后的冷启才是 15.7 s 级别。
+
+---
+
 ## [0.2.2-rc.5-debug.46] — 2026-11-26
 vc=131
 
