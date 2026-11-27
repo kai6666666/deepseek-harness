@@ -8,6 +8,27 @@
 - 设备侧清理：删除演练备份 `dsh-backup-drill.zip` 与 13 个历史 APK（约 2.4 GB）。
 
 **不发新版**：本批只有文档与文件清理。
+## [0.2.2-rc.5-debug.48] — 2026-11-27
+vc=133
+
+### 观测补全（A + B 计划欠账收尾）
+
+- `BootTimeline` 增加 `app`（`MainActivity` 准备拉起引擎前）与 `prootMounted`（guest 首条输出）两个点；
+- `runtime` 点按计划语义移到 `ensure()` **之后**，并带 `unpacked=true/false`（首装 vs 常态一眼可分）；
+- `dump()` 支持附加字段输出；新增 `BootTimelineTest`（4 例）与 `RuntimeDeltaChunkTest`（5 例，分块增量判定）。
+
+### 修复：增量基线会被自己清掉
+
+`RuntimeDelta.applyAsync` 在 `needBytes=0 / totalBytes=0`（运行时已是最新）时**仍然会进 runApply**，
+把空 staging 换进 `parts/<ver>` —— 下一次升级就从「增量」退化成「全量」。
+现在短路返回，不动磁盘。
+
+### A4-#6 增量验证进展（真机）
+
+- 无本地清单 → 判全量 138.7 MB；清单一致 → `needBytes=0 / totalBytes=0`（0 字节）；
+- 偏量端到端（`0 < need ≪ total`）仍需一次真实升级，判据：`incremental=true` 且 `needBytes ≪ totalBytes`。
+
+---
 ## [0.2.2-rc.5-debug.47] — 2026-11-27
 vc=132
 
