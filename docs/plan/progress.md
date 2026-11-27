@@ -1793,3 +1793,69 @@ am force-stop … && am start …
 | A4-#4 探测流量 | ⚠️ 无字段 | ✅ 每次探测一行 `mirror.probe bytes=` |
 | 第 3 层热启 | ⚠️ 未做 | ✅ 已做并给出结论（热启无启动段） |
 | A4-#6 增量复验 | ⚠️ | ⚠️ 仍待网络（步骤已固定） |
+
+---
+
+### 4.29 A4-#6「增量仍只下变化块」执行记录
+
+> 提交：`3ed06eb`；编译门禁 run `46005205561` **success**（含新增 `RuntimeDeltaChunkTest`）
+> 真机：2026-11-27 21:09~21:12（`files/runtime/auto-dryrun` 钩子）
+
+#### 4.29.1 真机这一步跑出了什么
+
+```text
+2026-11-27 21:09:44 [RuntimeDelta] 发现运行时 r1-…-4820e2beae27：全量 138.7 MB
+2026-11-27 21:11:58 [DSH] auto-dryrun: check 开始          ← 钩子按设计 12 s 后触发
+```
+
+- 设备上现存 `runtime/parts/r1-…-4ef4d5ef4ac0/`（旧构建）；远端清单是 `…-4820e2beae27`（debug.47）。
+- `planDelta` 的增量判据是**按 64 KB 块比 hash，但前提是「本地 base 与远端文件等长」**：
+  跨版本时 part1/part2 的长度已经变了（70,258,484 → 70,257,472，782,228 → 782,800），
+  于是直接判**全量**。**这是设计预期，不是 bug。**
+- 为什么没能做出「只差几块」的真机演练：要造等长 base，必须拿到远端那份 70 MB 的 part 文件；
+  当前 S3 限速 ~12 KB/s，不划算。演练在 `check` 阶段抓完证据后**立即 force-stop**，没有进入 apply（避免 138.7 MB 流量）。
+
+#### 4.29.2 判定层改为可测（这是本轮真正的交付)
+
+把 `planDelta` 里的块比对抽成纯函数（不碰 JSON / 网络）：
+
+```kotlin
+internal fun changedChunkIndexes(local: List<String>?, remote: List<String>): List<Int> {
+    if (local == null) return remote.indices.toList()      // 没有同长度基线 ⇒ 全量
+    val out = ArrayList<Int>()
+    for (i in remote.indices) if (i >= local.size || local[i] != remote[i]) out.add(i)
+    return out
+}
+```
+
+`RuntimeDeltaChunkTest`（5 例，编译门禁已跑过）：
+
+| 用例 | 断言 |
+|---|---|
+| `noBaseMeansFullDownload` | `local=null` → 返回所有块号 |
+| `identicalBaseNeedsNothing` | 完全一致 → 空列表（整文件复用） |
+| `onlyChangedChunkIsFetched` | 只改第 3 块 → 只返回 `[2]` |
+| `shorterLocalCountsTailAsChanged` | 本地短 → 尾部块全部算变化 |
+| `emptyRemoteNeedsNothing` | 远端空清单 → 空列表 |
+
+`planDelta` 同步改成调用它，行为不变（`incremental` 标志、`need/total` 语义都保持）。
+
+#### 4.29.3 真机验收判据（留给下一次真实升级）
+
+```text
+当设备真的从 N 升到 N+1 时，看两处：
+1) app.log：`发现运行时 <ver>：增量 X MB / 全量 Y MB`（或 stateJson 的 needBytes < totalBytes）
+2) stateJson：`incremental=true`
+只要 X 明显小于 Y，且最终 rootfs 校验通过，A4-#6 就算真机闭环。
+```
+
+#### 4.29.4 演练钩子的正确用法（写下来，别再摸）
+
+```bash
+# 开：下一次冷启 12 s 后自动 check（不改代码）
+run-as com.dsh.android touch files/runtime/auto-dryrun
+# 关（**必须**：否则每次启动都跑一次检查）
+run-as com.dsh.android rm -f files/runtime/auto-dryrun
+```
+
+本轮已确认 marker 已删除（`ls` → No such file）。

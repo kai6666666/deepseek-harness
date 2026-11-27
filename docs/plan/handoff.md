@@ -518,3 +518,13 @@ ESM 事件 19,604 → 3,575，zod 事件 16,333 → 390。
 - **A4-#6 增量复验**：仍缺网络（S3 ~12 KB/s），演练步骤已固定，未谎称完成。
 - ⚠️ **口径变更**：`runtime` 点移到 `ensure()` 之后（install 不再算进 `preflight`），
   历史 `boot.timeline` 不能逐行对比新版本。
+
+### 10.15 A4-#6 执行记录（`3ed06eb`，compile `46005205561` green）
+
+- **真机**：`touch files/runtime/auto-dryrun` → 12 s 后 check，日志 `发现运行时 …-4820e2beae27：全量 138.7 MB`。
+  跨版本时 part1/part2 **长度已变**（70,258,484→70,257,472；782,228→782,800），`planDelta` 直接判全量 —— **设计预期**。
+  抓到证据后立即 force-stop，没进 apply（避免 138.7 MB）。
+- **判定层可测化**：把块比对抽成 `changedChunkIndexes(local, remote)` 纯函数，`RuntimeDeltaChunkTest` 5 例
+  （全量 / 一致→0 块 / 单块 / 尾部 / 空清单），编译门禁已绿。
+- **留给真实升级的判据**：`incremental=true` 且 `needBytes < totalBytes`，rootfs 校验通过即闭环。
+- 演练钩子用法：`touch` 开、`rm -f` 关（**必须关**，否则每次启动都 check）。本轮 marker 已删。
