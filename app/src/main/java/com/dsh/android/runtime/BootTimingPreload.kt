@@ -242,6 +242,14 @@ internal object BootTimingPreload {
             var st = cacheDir ? mc.enableCompileCache(cacheDir) : mc.enableCompileCache();
             var got = (typeof mc.getCompileCacheDir === 'function') ? mc.getCompileCacheDir() : '';
             CACHE_STATE = 'on dir=' + got + ' st=' + JSON.stringify(st);
+            // 周期 flush：冷启被 force-stop（SIGKILL）时 node 的退出刷盘不会发生，
+            // 只有定期冲盘才能让下一次冷启真的吃到缓存。8s×4 覆盖加载窗口，之后停。
+            var _flushes = 0;
+            var _ft = setInterval(function () {
+                try { if (typeof mc.flushCompileCache === 'function') { mc.flushCompileCache(); _flushes += 1; } } catch (e2) { }
+                if (_flushes >= 4) clearInterval(_ft);
+            }, 8000);
+            if (_ft.unref) _ft.unref();
         }
     } catch (e) {
         CACHE_STATE = 'fail ' + (e && e.message);
