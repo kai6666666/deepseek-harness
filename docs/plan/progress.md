@@ -1301,3 +1301,95 @@ adb shell run-as com.dsh.android touch files/boot-trace.enable
 # 关掉
 adb shell run-as com.dsh.android rm -f files/boot-trace.enable
 ```
+
+---
+
+### 4.22 P1：V8 compile cache（真机 −2~4 s；附一个必须知道的坑）
+
+> 提交：`b5fc1e8`（cache 主体）、`f1eaa71`（单测修复）、`b4c5e52`（周期 flush）
+> CI：compile `45984357062` / `45987895860` success；APK `45984340408` success
+> 真机：19:04~19:12 多次冷启（trace off）
+
+#### 4.22.1 做法
+
+```text
+位置     CJS wrapper 里，只在 IS_ENGINE 分支执行（工具/子进程不碰）
+API      module.enableCompileCache($DSH_HOME/v8cache)   （node ≥ 22.1；真机 24.22.1）
+自检     BootTimingPreload.ensureV8Cache()：建目录 + 体积统计，>128 MB 清空重建
+```
+
+真机 `engine.log` 回报：
+
+```text
+[v8cache] st={"status":1,"directory":"/data/user/0/com.dsh.android/files/home/.dsh/v8cache"}
+          dir=/data/user/0/com.dsh.android/files/home/.dsh/v8cache/v24.22.1-arm64-964aae3f-0
+```
+
+#### 4.22.2 坑：`force-stop` 是 SIGKILL，退出刷盘不会发生
+
+第一次真机验证：cache 目录建好了、`status=1`（已启用），但 **`find … -type f` = 0 个文件**。
+原因不是权限，也不是 API 用错 —— node 的 compile cache 默认在**进程正常退出**时落盘，而
+`am force-stop` 直接 SIGKILL，什么都不写。
+
+修法：在 wrapper 里加**周期 flush**（`module.flushCompileCache()`，8 s × 4 次，覆盖加载窗口）：
+
+```js
+var _flushes = 0;
+var _ft = setInterval(function () {
+  try { if (typeof mc.flushCompileCache === 'function') { mc.flushCompileCache(); _flushes += 1; } } catch (e2) { }
+  if (_flushes >= 4) clearInterval(_ft);
+}, 8000);
+if (_ft.unref) _ft.unref();
+```
+
+实测（本地 fixture，`kill -9` 验证）：没有周期 flush 时目录 0 文件；加上之后被杀也留下
+`2 files / 27 KB`。真机上稳定成 **1,508 文件 / 12 MB**。
+
+#### 4.22.3 数据
+
+**合成 fixture**（400 个 CJS × 1,500 行）：
+
+| 场景 | wall | modules.compile.ms |
+|---|---|---|
+| 无 cache | 3,139 ms | 997 ms |
+| 首次（写 cache） | 4,211 ms | 1,421 ms |
+| 命中（第 2/3/4 次） | 2,270~2,317 ms | **394~412 ms（−60%）** |
+
+**真机**（A 后，trace off）：
+
+| | preload→首响应 | modules.compile.ms | engine.ready |
+|---|---|---|---|
+| 无 cache（§4.21.3） | 20,872 / 22,061 / 22,760 | 8,705 / 9,472 / 10,438 | 26,184 / 28,458 |
+| 首次（填 cache） | 19,264 | 8,666 | 24,530 |
+| 命中（第 2/3 次） | **17,139 / 17,250** | **8,342 / 8,430** | **21,704 / 21,943** |
+
+⇒ 真机收益 **2~4 s（≈10~15%）**，远小于 fixture 的 −60%。
+
+#### 4.22.4 为什么真机收益小（结论）
+
+V8 code cache 只省「解析 + 编译」那一段；真机上 `modules.compile.ms` 里还混着
+**PRoot ptrace 放大的 open/stat/read** —— 那部分缓存无能为力。fixture 在原生文件系统上跑，
+所以把「编译」这一项的收益看得特别清楚；真机被 PRoot 摊平了。
+
+要继续往下压，只剩两个方向（都不在 cache 这条线上）：
+
+1. **减模块**：`@opentelemetry/*` + `yaml` 合计约 0.9 s，若运行期用不到可直接摘；
+2. **动 PRoot 层**（ptrace 翻译开销）——属于架构级改动，超出"维护态只修 bug"的边界。
+
+#### 4.22.5 装机状态
+
+APK `45984340408`（`f1eaa71`，含 cache 但**不含**周期 flush）已构建 + 重签（`45986268441`，
+artifact `15191293358`）。`b4c5e52` 的 APK 也在构。
+
+⚠️ 本轮**未能装机**：S3 artifact 下载被限速到 **~12 KB/s**（162 MB 需数小时），
+改用设备侧等价验证（把同一段 cache 代码写成 `/opt/dsh/.dsh-v8cache.cjs`，
+并在 `/usr/local/bin/dsh` 里加 `--require`，原文件备份为 `.bak`）。
+两者行为一致：都是 `enableCompileCache($DSH_HOME/v8cache)` + 周期 flush。
+
+设备侧临时改动（可随时还原）：
+
+```bash
+run-as com.dsh.android sh -c 'cp files/runtime/rootfs/usr/local/bin/dsh.bak files/runtime/rootfs/usr/local/bin/dsh'
+run-as com.dsh.android sh -c 'rm -f files/runtime/rootfs/opt/dsh/.dsh-v8cache.cjs'
+run-as com.dsh.android sh -c 'rm -f files/home/.dsh/v8cache/*'
+```

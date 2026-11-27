@@ -432,3 +432,25 @@ ESM 事件 19,604 → 3,575，zod 事件 16,333 → 390。
 
 **下一步 P1**：`NODE_COMPILE_CACHE=$DSH_HOME/v8cache`（node 24.22.1 支持），
 目标是吃掉 `modules.compile.ms` 那 8.7~10.4 s 的一部分，预计再省 2~5 s。
+
+### 10.9 P1：V8 compile cache（2026-11-27 19:12）：21 s → 17.1~17.3 s
+
+**做法**：CJS wrapper 里只对引擎进程 `module.enableCompileCache($DSH_HOME/v8cache)`；
+`ensureV8Cache()` 建目录 + 128 MB 体积自检。真机 `status=1`、缓存 1,508 文件 / 12 MB。
+
+**必须知道的坑**：`am force-stop` = SIGKILL，node 的 compile cache 默认**只在正常退出时落盘**
+（第一次真机验证 0 文件）。修法是周期 `module.flushCompileCache()`，8 s × 4 次，
+覆盖加载窗口 —— 加上之后被杀也能留下缓存。
+
+| | preload→首响应 | modules.compile.ms | engine.ready |
+|---|---|---|---|
+| 无 cache | 20,872 / 22,061 / 22,760 | 8,705 / 9,472 / 10,438 | 26,184 / 28,458 |
+| 首次（填） | 19,264 | 8,666 | 24,530 |
+| 命中 | **17,139 / 17,250** | 8,342 / 8,430 | **21,704 / 21,943** |
+
+真机只赚 **2~4 s**（fixture 的 −60% 在真机被 PRoot 的 open/stat 摊平）。
+继续压只剩两条：摘 `@opentelemetry/*` + `yaml`（约 0.9 s），或动 PRoot 层（架构级）。
+
+⚠️ 本轮**未装机**：S3 artifact 限速 ~12 KB/s。已用设备侧等价手段验证
+（`/opt/dsh/.dsh-v8cache.cjs` + `/usr/local/bin/dsh` 加 `--require`，原文件 `.bak`）。
+还原命令见 `progress.md` §4.22.5。
