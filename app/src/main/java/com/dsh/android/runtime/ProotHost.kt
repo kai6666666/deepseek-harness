@@ -230,6 +230,8 @@ class ProotHost(
                         // B 阶段第 1 层：guest 侧时间戳 wrapper。
                         //   注入手段是 NODE_OPTIONS（`env -i` 里后者覆盖前者），
                         //   不碰本函数的任何形参，也不改 manifest 的 launch.argv。
+                        // V8 compile cache：首次冷启写入，之后读；体积自检在 ensureV8Cache 里做。
+                        DshLog.i(TAG, "v8cache bytes=" + BootTimingPreload.ensureV8Cache(dshHome))
                         BootTimingPreload.guestEnv(
                             rootfs, dshHome, template, profile,
                             trace = BootTimingPreload.traceEnabled(context.filesDir),

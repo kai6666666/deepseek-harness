@@ -63,7 +63,7 @@ jobs:
         run: |
           echo '--- kotlin errors ---'
           grep -nE '^e: |error:|FAILURE: Build|Caused by:' /tmp/build.log | head -40 || true
-          grep -nE '^e: |error:' /tmp/build.log | head -40 | while IFS= read -r line; do
+          grep -nE '^e: |error:|FAILED|Caused by: ' /tmp/build.log | grep -v 'BUILD FAILED' | head -40 | while IFS= read -r line; do
             echo "::error title=Kotlin::${line}"
           done || true
           echo '--- tail ---'

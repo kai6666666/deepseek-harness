@@ -142,10 +142,8 @@ internal object BootTimingPreload {
         val bytes = files.sumOf { it.length() }
         if (bytes > V8_CACHE_MAX_BYTES) {
             files.forEach { runCatching { it.delete() } }
-            DshLog.w(TAG, "v8cache 超限（" + bytes + " B）已清空")
             return 0L
         }
-        DshLog.i(TAG, "v8cache files=" + files.size + " bytes=" + bytes)
         return bytes
     }
 
