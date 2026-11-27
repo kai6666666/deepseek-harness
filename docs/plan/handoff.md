@@ -466,3 +466,17 @@ ESM 事件 19,604 → 3,575，zod 事件 16,333 → 390。
 
 **当前基线**：42 s → 21~22 s（zod）→ 17.1~17.3 s（V8 cache）→ **15.7~15.8 s（摘 otel）**。
 剩余每模块 ~10 ms 主要是 PRoot ptrace；再往下要动 PRoot 层，属架构级，需单独立项。
+
+### 10.11 debug.47 已发布 + direct（免 proot）立项
+
+**出包**：`debug.47 / vc132`，`VERSION PASS`。
+- apk `45993811002` success；sign `45995760602`；publish `45995765867`。
+- Release `v0.2.2-rc.5-debug.47`（prerelease，9 资产）：
+  APK **161,695,548 B**（debug.45 是 166,794,428，−5.1 MB）；rootfs **74.4 MB**（−5.1 MB）。
+- 升级会**重新解包 runtime**（`INPUTS` 变了），首次启动含解包开销。
+- 设备未装新 APK（S3 限速 ~12 KB/s）；设备上是等价状态，还原命令见 §4.22.5。
+
+**direct 立项**（`progress.md` §4.25）：`DirectLaunch` 骨架已在，历史实测 direct 6.5 s vs proot 32.6 s。
+本机实测：`direct=on` → `direct.spawn argv0=…/libld-linux.so` → **50 ms 内 alive=false** → 自动回退 proot；
+子进程零输出（loader 层就死了）。闸门 `direct-failed-<runtimeVersion>` 已按设计生效，已清理。
+第一步是给 `spawnDirect` 补 `exitValue` + 前 200 ms 的 stderr 落盘，再按 §4.25.3 的五步清单推进。

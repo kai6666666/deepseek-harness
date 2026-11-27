@@ -1480,3 +1480,138 @@ A + P1 + P2：摘 otel         15.7 ~ 15.8 s
 - 每模块约 10 ms 的加载成本，主体是 **PRoot 的 ptrace 翻译**；
 - 再往下只有两条：**(a)** 继续找"条件启用"的包（收益越来越小、验证成本越来越高）；
   **(b)** 动 PRoot 层（架构级，超出"维护态只修 bug"的边界，需要单独立项）。
+
+---
+
+### 4.24 收尾出包：`debug.47 (vc132)` 已发布
+
+> 提交：`856b1aa`（版本 + CHANGELOG）
+> 版本体检：`sh tools/version.sh --check` → **VERSION PASS** `app=0.2.2-rc.5-debug.47 vc=132 engine=0.2.2-rc.5`
+
+#### 4.24.1 流水线
+
+```text
+apk.yml        45993811002  success（runtime job + assemble 均绿）
+  dsh-system-debug        15195407977  160,677,621 B
+  dsh-system-release      15194519800  160,662,418 B
+  runtime-arm64-v8a       15194364816  145,756,677 B
+  plugins-mobile-ui       15195651327      337,984 B
+  app-unit-tests          15194564414        7,972 B
+sign-upgrade   45995760602  success
+  dsh-system-debug-upgrade-signed   15194779626  162,047,813 B
+publish-apk    45995765867  success
+  Release  v0.2.2-rc.5-debug.47（prerelease，9 个资产）
+```
+
+Release 资产（节选）：
+
+```text
+dsh-android-0.2.2-rc.5-debug.47-arm64.apk      161,695,548 B
+rootfs-arm64-v8a.tar.xz                         74,434,544 B
+rootfs-part1-arm64-v8a.tar.xz                   70,257,472 B
+rootfs-part2-arm64-v8a.tar.xz                      782,800 B
+manifest.json                                        3,503 B
+plugins-mobile-ui-1.1.0-237.zip                    242,351 B
+```
+
+#### 4.24.2 和上一版比，产物真的变小了
+
+| | debug.45（收尾前） | debug.47 | 变化 |
+|---|---|---|---|
+| APK | 166,794,428 B | **161,695,548 B** | −5.1 MB |
+| rootfs（tar.xz） | 79,540,740 B | **74,434,544 B** | −5.1 MB |
+
+对应的是删掉的 67 份 `zod`（204 MB 未压缩）与 `@opentelemetry`（265 个模块）——
+xz 对重复内容压缩率极高，所以磁盘上的差值远小于原始体积差。
+
+#### 4.24.3 升级行为（必须知道）
+
+`RUNTIME_VERSION` 里带 `INPUTS`（= 构建脚本自身 + 依赖 + patches 的 sha256），
+本轮改了 `build-runtime.sh`，所以 runtime 版本号变了 ⇒ **升级后会重新解包一次 runtime（约 146 MB）**。
+首次启动包含解包开销，之后的冷启才是 15.7 s 级别。
+
+#### 4.24.4 装机状态
+
+- `dsh-system-debug-upgrade-signed`（15194779626）已生成，可直接 `pm install -r -d`；
+- 本轮**仍未在设备上装**：S3 依旧限速（~12 KB/s 量级），162 MB 下载不划算。
+  设备当前跑的是**等价状态**（rootfs 手工去重 + 摘 otel + `--require` 缓存），
+  相关临时改动与还原命令见 §4.22.5。
+
+---
+
+### 4.25 立项：动 PRoot（direct 免 proot 直启）—— 一页纸
+
+> 状态：**立项/待批**。本轮只做到「把失败点钉死 + 给出排查清单」，没有改代码。
+> 结论先说：`DirectLaunch` 这条路项目里**已经有骨架**，而且历史实测 direct **6.5 s** vs
+> proot **32.6 s**（`DirectLaunch.kt` 头部注释）；本机实测直启**失败于 50 ms 内**，
+> 失败点是 loader 层，还没有拿到子进程的 stderr —— 这就是第一步。
+
+#### 4.25.1 为什么还值得做
+
+当前 15.7 s 的结构：
+
+```text
+preload→listen ≈ 10 s   （358 个模块，每模块约 10 ms；V8 部分已被 compile cache 吃掉）
+listen→listening ≈ 2.2 s
+→首响应 ≈ 0.5 s
+```
+
+同一份模块图在**原生文件系统**上（fixture，400 模块）每模块约 1.0~2.5 ms，
+真机是 10~17 ms —— **6~10 倍差距全在 PRoot 的 ptrace 翻译**。
+direct 一旦能起，这一块直接归零；历史数据说能到 6.5 s 量级（≈ 再省 8~9 s）。
+
+#### 4.25.2 本机实测（2026-11-27 19:51）
+
+```bash
+touch files/direct-enabled      # 显式开启闸门
+am force-stop … && am start …
+```
+
+```text
+[19:51:28.076] launch: direct=on profile=web patches=14 cwd=…/rootfs/root
+[19:51:28.079] direct.spawn pid=? argv0=/data/app/…/lib/arm64/libld-linux.so
+[19:51:28.130] direct 未就绪（alive=false, 50 ms），回退 proot
+[19:51:48.028] engine.ready ms=21708 … runtime=proot        ← 自动回退成功，用户无感
+```
+
+- 子进程**没有任何输出**（`engine.log` 在该时刻无行）⇒ 死在 `execve` 之后的 loader 初始化，
+  还没进 node；
+- 已写 `direct-failed-r1-arm64-v8a-dsh0.2.2-rc.5-node24.22.1-ubuntu24.04.5-<hash>` 闸门文件
+  ⇒ 同一 runtime 不会反复重试（设计正确）；
+- 已手动清理：`rm files/direct-enabled files/direct-failed-*`，设备回到 proot 模式。
+
+#### 4.25.3 排查清单（按顺序，每步都有可观测产物）
+
+| # | 动作 | 产出 | 预计 |
+|---|---|---|---|
+| 1 | `spawnDirect` 里补：`process.onExit()` 记 `exitValue`，并把子进程 stderr/stdout 在**前 200 ms 内**无条件落 `app.log` | 一行 `direct.exit code=…` + loader 原文 | 0.5 h |
+| 2 | proot 内跑 `ldd /usr/bin/node` / `readelf -d`，把 `--library-path` 与缺库对齐 | 缺失库清单 | 0.5 h |
+| 3 | 校验 `nativeLibraryDir/libld-linux.so` 的权限与 `exec` 能力（Android 10+ 只允许 apk_data_file 里 exec，代码已按此选路径） | `ls -l` + SELinux 拒绝日志（`dmesg`/`logcat`） | 0.5 h |
+| 4 | 复核 direct 的 environment/cwd：`DSH_HOME`、`HOME`、`TMPDIR`、`LD_LIBRARY_PATH`、`/dev/null`、`/proc/self/exe` | 与 proot 版逐项 diff | 1 h |
+| 5 | 若仍失败：做一个最小复现 `libld-linux.so --library-path … node -e 1`，把 argv 打到日志 | 最小 argv | 1 h |
+
+#### 4.25.4 风险与边界
+
+- **语义差异**：direct 没有 bind，guest 绝对路径 = 宿主真实路径。项目已经把
+  `startCommand`（工具/诊断的一次性 node）**恒定锁在 proot**，正是为了不让工具输出对不上；
+  direct 只用于 web profile。
+- **回滚**：删 `files/direct-enabled` 即回 proot；已有 `direct-failed-<ver>` 闸门避免反复试错。
+- **架构约束**：HANDOFF §1 写的是"维护态只修 bug，不改身份与架构"。direct 开关**已经存在**，
+  本次是修 bug，不是改架构；但如果要把它**默认打开**，那就是产品决策，需要单独一轮验收
+  （会话/终端/文件选择器/aria 全都要在 direct 下过一遍）。
+
+#### 4.25.5 验收指标
+
+```text
+1. engine.ready runtime=direct 且 health=401，冷启 ≤ 8 s（三次中位数）
+2. 会话可读写、终端工具照常（仍走 proot 分支）
+3. 回滚演练：删 marker → 下一次冷启 runtime=proot
+```
+
+#### 4.25.6 备选路线（direct 短期修不好时）
+
+| 路线 | 做法 | 预期 | 风险 |
+|---|---|---|---|
+| B | 用 esbuild/rollup 把 engine 入口打成少量 bundle | 模块数 358 → 个位数，每模块开销近似归零 | 插件是运行期动态加载，bundle 只能覆盖核心；插件仍走原路径 |
+| C | 给 hot path 的模块做 `NODE_COMPILE_CACHE` + 预读（`posix_fadvise`） | 已知天花板 5 s，已吃过一部分 | 低 |
+| D | 精简插件集（按 profile 只装用到的） | 线性减少模块数 | 功能取舍，需产品决策 |
