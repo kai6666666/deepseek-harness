@@ -480,3 +480,17 @@ ESM 事件 19,604 → 3,575，zod 事件 16,333 → 390。
 本机实测：`direct=on` → `direct.spawn argv0=…/libld-linux.so` → **50 ms 内 alive=false** → 自动回退 proot；
 子进程零输出（loader 层就死了）。闸门 `direct-failed-<runtimeVersion>` 已按设计生效，已清理。
 第一步是给 `spawnDirect` 补 `exitValue` + 前 200 ms 的 stderr 落盘，再按 §4.25.3 的五步清单推进。
+
+### 10.12 决策：**A 不动**（2026-11-27）—— 保持 PRoot，direct 封存
+
+- 运行时继续 **单宿主 PRoot + glibc**；`DirectLaunch` 代码保留、**默认关**，
+  `direct-failed-<runtimeVersion>` 闸门保留（自动回退已验证）。§4.25 立项转为**挂起**，不是废弃。
+- 设备已清理 `files/direct-enabled` 与 `files/direct-failed-*`（两个都不存在）。
+- **重启 direct 的三条硬门槛**（缺一不重启）：
+  1) 先补 `spawnDirect` 的 `exitValue` + 前 200 ms stderr 落盘；
+  2) 拿到 `runtime=direct` + `health=401` + DNS 探测通过；
+  3) 产品同意多模式验收面（会话/终端/文件选择器/附件/救援全过）。
+- 冻结基线：冷启 **15.7~15.8 s**；产物 `v0.2.2-rc.5-debug.47`；
+  设备跑 vc131 + 等价态（还原命令见 §4.22.5）。
+- 后续只做维护：四道闸（trace 开关 / v8cache 自检 / zod 断言 / otel prune）都可回滚，
+  测法见 §4.19~§4.23。

@@ -1615,3 +1615,59 @@ am force-stop … && am start …
 | B | 用 esbuild/rollup 把 engine 入口打成少量 bundle | 模块数 358 → 个位数，每模块开销近似归零 | 插件是运行期动态加载，bundle 只能覆盖核心；插件仍走原路径 |
 | C | 给 hot path 的模块做 `NODE_COMPILE_CACHE` + 预读（`posix_fadvise`） | 已知天花板 5 s，已吃过一部分 | 低 |
 | D | 精简插件集（按 profile 只装用到的） | 线性减少模块数 | 功能取舍，需产品决策 |
+
+---
+
+### 4.26 决策：**A 不动** —— 保持 PRoot，direct 封存（2026-11-27）
+
+> 决议人：主人。结论：**不启动 direct（免 proot）改造**，B 阶段到此收尾并冻结基线。
+
+#### 4.26.1 决议内容
+
+| 项 | 结论 |
+|---|---|
+| 运行时 | **继续用单宿主 PRoot + glibc**（HANDOFF §1 的定盘星不变） |
+| `DirectLaunch` 代码 | **保留、不删除**；默认关（`files/direct-enabled` 不存在即 disabled，已验证） |
+| `direct-failed-<runtimeVersion>` 闸门 | 保留（同一 runtime 只试一次、失败自动回退，19:51 实测有效） |
+| 立项文档 §4.25 | 保留为**已评估、暂不采用**；不是废弃，是挂起 |
+| 设备状态 | 已清理全部 direct marker：`ls files/direct-enabled files/direct-failed-*` → 两个都不存在 |
+
+#### 4.26.2 为什么不动（理由归档）
+
+1. **收益 8~9 s，但代价是整个语义面**：bind 消失（路径/`/proc`/`/dev/shm`）、root→app uid、
+   DNS 走真实 `/etc/resolv.conf`、pid/信号/救援链路全要重写。
+2. **双轨制是长期状态**：`startCommand` 与工具链天生依赖 bind 语义，direct 只能覆盖引擎主进程
+   —— 等于用两套运行路径换一个数字。
+3. **与"维护态"边界冲突**：默认打开要重验会话/终端/文件选择器/附件/救援，属产品决策，不是修 bug。
+4. **本机 50 ms 失败点至今没有原文**（子进程零输出）——在拿不到 loader 报错之前推进，
+   等于用猜测换风险。
+5. 当前收益已经吃满：**42.0 s → 15.7~15.8 s（−63%）**，且每一步都有真机数据与回滚点。
+
+#### 4.26.3 重启 direct 的三条硬门槛（写死，避免以后凭感觉翻案）
+
+```text
+1. 先补诊断：spawnDirect 记 exitValue + 前 200 ms 的 stderr 无条件落 app.log
+   （没有这条，任何"修好了"都无法证伪）
+2. 拿到 runtime=direct 且 health=401，且 DNS 探测（一次外网解析）通过
+3. 产品侧同意多模式并存的验收面：会话 / 终端 / 文件选择器 / 附件 / 救援 全过一遍
+三条缺一，不重启。
+```
+
+#### 4.26.4 冻结后的现状（交接用）
+
+```text
+代码     HEAD=f0699c7（main）；DirectLaunch 默认关；build-trace / v8cache / zod / otel 四道闸都在
+基线     冷启 15.7~15.8 s（trace off，三次）
+         preload→listen ≈10 s ／ listen→listening ≈2.2 s ／ →首响应 ≈0.5 s
+产物     v0.2.2-rc.5-debug.47（prerelease，9 资产）；APK 161,695,548 B；rootfs 74.4 MB
+设备     vc=131(debug.46) + 等价态：rootfs 手工去重 / 摘 otel / --require 挂 v8cache
+         （还原命令见 §4.22.5；装 debug.47 后建议先还原，再让 APK 自己的机制接管）
+```
+
+#### 4.26.5 后续只做维护，不再做架构改动
+
+- 启动分段与 profile 工具**保留**（`boot-timing.log` / `boot-timing-esm.log` / `tools/*.py`），
+  排障时仍可 `touch files/boot-trace.enable` 打开诊断；
+- 四道构建/运行期闸门**都能回滚**：zod 断言、otel prune（`DSH_RT_KEEP_OTEL=1`）、
+  v8cache 体积自检、trace 开关；
+- 若未来 Android 大版本或 dsh 升级导致回归，按 `progress.md` §4.19~§4.23 的测法重新量一遍即可。
