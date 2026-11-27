@@ -405,3 +405,30 @@ adb shell am force-stop com.dsh.android && adb shell am start -n com.dsh.android
 adb shell run-as com.dsh.android cat files/logs/boot-timing-esm.log > esm.log
 python3 tools/boot-timing-esm.py --esm esm.log --top 20
 ```
+
+### 10.8 C → A 已落地（2026-11-27 12:46）：冷启 42 s → 21 s
+
+**C（诊断开关收口）**：只有 `files/boot-trace.enable` 存在时才注入 `--import` / `--cpu-prof`。
+```bash
+adb shell run-as com.dsh.android touch files/boot-trace.enable   # 下次冷启生效
+adb shell run-as com.dsh.android rm -f files/boot-trace.enable    # 关掉
+```
+第 1 层（`--require` CJS wrapper）保持常开，成本只有 token 时一次落盘。
+
+**A（zod 去重）**：`tools/runtime/build-runtime.sh` 新增 §3.35，engine 装完后
+`dedupe_nested zod` 删掉 67 份嵌套副本并断言「全树 zod 恰为 1 份」，否则 `die`。
+**symlink 不管用**（ESM 不做 realpath，68 条 URL 照样 68 次加载，真机已验证）。
+
+**真机三次冷启（trace off）**：
+
+| 次 | listen→listening | preload→首响应 | engine.ready |
+|---|---|---|---|
+| 1 | 3,408 ms | 22,061 ms | 28,458 ms |
+| 2 | 3,504 ms | 22,760 ms | — |
+| 3 | 3,074 ms | 20,872 ms | 26,184 ms |
+
+对比 A 之前：`listen→listening` 13.4 s → 3.1~3.5 s（−75%），总段 42 s → 21 s（−47%），
+ESM 事件 19,604 → 3,575，zod 事件 16,333 → 390。
+
+**下一步 P1**：`NODE_COMPILE_CACHE=$DSH_HOME/v8cache`（node 24.22.1 支持），
+目标是吃掉 `modules.compile.ms` 那 8.7~10.4 s 的一部分，预计再省 2~5 s。
