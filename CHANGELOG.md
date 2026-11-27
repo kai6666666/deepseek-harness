@@ -8,6 +8,25 @@
 - 设备侧清理：删除演练备份 `dsh-backup-drill.zip` 与 13 个历史 APK（约 2.4 GB）。
 
 **不发新版**：本批只有文档与文件清理。
+## [0.2.2-rc.5-debug.49] — 2026-11-27
+vc=134
+
+### 修复：`boot.timeline` 里 `app` 点被 `start()` 擦掉
+
+`MainActivity` 在 `EngineService.start()` 之前打 `app`（进程级），而 `EngineManager.startProot()`
+里的 `BootTimeline.start()` 会 `marks.clear()` —— 结果 dump 里永远看不到 `app`（`vc133` 真机实测 8 点）。
+现在 `start()` 只保留 `app` 一个点，其余照旧清空；新增单测 `appMarkSurvivesStart`。
+
+预期：`boot.timeline` 变为 **9 点**（`app → runtime(unpacked=false) → preflight → prootSpawn → prootMounted
+→ nodeExec → health → ready → gui`）。
+
+### 一并带上（debug.48 已有）
+
+- `prootMounted` 点、`runtime` 带 `unpacked=true/false`；
+- `applyAsync` 在 0 字节时短路（不再把 `parts/` 基线清空）；
+- `RuntimeDeltaChunkTest`（分块增量判定）与 `BootTimelineTest`。
+
+---
 ## [0.2.2-rc.5-debug.48] — 2026-11-27
 vc=133
 
