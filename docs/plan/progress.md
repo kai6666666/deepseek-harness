@@ -1393,3 +1393,90 @@ run-as com.dsh.android sh -c 'cp files/runtime/rootfs/usr/local/bin/dsh.bak file
 run-as com.dsh.android sh -c 'rm -f files/runtime/rootfs/opt/dsh/.dsh-v8cache.cjs'
 run-as com.dsh.android sh -c 'rm -f files/home/.dsh/v8cache/*'
 ```
+
+---
+
+### 4.23 P2：摘掉 `@opentelemetry`（−265 模块 / −4.6 s 编译）+ yaml 的反例
+
+> 提交：`7988eab`（构建期 prune）
+> 真机：19:28~19:33，多次冷启（trace off，A + V8 cache 已生效）
+
+#### 4.23.1 先确认「还有没有别的重复包」
+
+```text
+find node_modules -mindepth 4 -maxdepth 4 -type d -name node_modules | wc -l
+→ 0        # zod 去重后，engine 树里已经没有任何嵌套 node_modules
+```
+
+⇒ 「像 zod 那样的重复依赖」已经没有了，剩下的只能从「用不到的包」下手。
+
+顺带查了 profile 侧：`files/home/.dsh/profiles/web/node_modules` 只有 5 个包，
+其中 `undici@7.30.2` 与 rootfs 的 `undici@8.11.2` **大版本不同**，是插件刻意钉的版本，
+不能合并（真合并会改行为）。
+
+#### 4.23.2 实验：把 `@opentelemetry` 移走
+
+```bash
+run-as com.dsh.android sh -c 'mv $R/@opentelemetry $R/.bak-opentelemetry'
+```
+
+三次冷启结果（engine 均 `health=401`、`engine.log` 无 `MODULE_NOT_FOUND`）：
+
+| | modules.count | modules.compile.ms | preload→首响应 | engine.ready |
+|---|---|---|---|---|
+| 有 otel | 623 | 8,430 ~ 8,666 | 17,250 | 21,943 |
+| 摘掉 otel | **358** | **3,765 ~ 3,842** | **15,698 ~ 15,819** | 19,845 ~ 20,171 |
+
+⇒ 一口气少 **265 个 CJS 模块**、编译少 **约 4.6 s**、总分段少 **1.4~1.6 s**。
+（编译降得多、总时间降得少：V8 cache 已经在吃编译，剩下的时间又摊到 PRoot 的 open/stat 上。）
+
+#### 4.23.3 反例：`yaml` 不能摘
+
+同样手法移走 `node_modules/yaml`：
+
+```text
+modules.count 358 → 281，compile 3,842 → 2,803（看着更美）
+但 engine 不再 ready，engine.log：
+  failed to import: Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'yaml'
+    imported from /opt/dsh/node_modules/@deepseek-ai/dsh-skill-office/lib/index.js
+    imported from /opt/dsh/node_modules/@deepseek-ai/dsh-plugin-manager/lib/index.js
+```
+
+两个插件是**静态 import**，摘掉即崩。已原样还原（`mv .bak-yaml yaml`），
+还原后 `modules=358 / compile=3,765 / 总 15,787 ms`，与摘 otel 后的基线一致。
+
+**判据记下来**：能不能摘，不看它慢不慢，只看「有没有静态 import」。
+`@opentelemetry` 之所以能摘，是因为没有任何插件在加载链上静态 import 它
+（tracing 走的是条件启用）；`yaml` 恰好相反。
+
+#### 4.23.4 落地形态
+
+`tools/runtime/build-runtime.sh` 新增 §3.36：
+
+```sh
+if [ "${DSH_RT_SKIP_ENGINE:-0}" != "1" ] && [ "${DSH_RT_KEEP_OTEL:-0}" != "1" ]; then
+  rm -rf "$ROOTFS/opt/dsh/node_modules/@opentelemetry"
+  [ ! -d "$ROOTFS/opt/dsh/node_modules/@opentelemetry" ] || die "@opentelemetry 未被移除"
+fi
+```
+
+- `DSH_RT_KEEP_OTEL=1` 是逃生门：将来某插件运行期真要用 tracing，构建时保留即可。
+- 若真被摘而某功能按需 import，会以 `MODULE_NOT_FOUND` **显式**暴露，不会静默错。
+
+#### 4.23.5 当前基线（全链路）
+
+```text
+起点（B 阶段前）            47.6 s（磁盘冷）/ 42.0 s
+A：zod 去重（68→1）          21 ~ 22 s
+A + P1：V8 compile cache     17.1 ~ 17.3 s
+A + P1 + P2：摘 otel         15.7 ~ 15.8 s
+   结构：preload→listen ≈ 10 s ／ listen→listening ≈ 2.2 s ／ →首响应 ≈ 0.5 s
+         另有宿主侧 preflight → spawn ≈ 1.1 s（不在 guest 计时内）
+```
+
+#### 4.23.6 剩下的天花板
+
+- `modules=358` 里已没有重复包、没有明显可摘的静态依赖；
+- 每模块约 10 ms 的加载成本，主体是 **PRoot 的 ptrace 翻译**；
+- 再往下只有两条：**(a)** 继续找"条件启用"的包（收益越来越小、验证成本越来越高）；
+  **(b)** 动 PRoot 层（架构级，超出"维护态只修 bug"的边界，需要单独立项）。

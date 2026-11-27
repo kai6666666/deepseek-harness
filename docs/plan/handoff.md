@@ -454,3 +454,15 @@ ESM 事件 19,604 → 3,575，zod 事件 16,333 → 390。
 ⚠️ 本轮**未装机**：S3 artifact 限速 ~12 KB/s。已用设备侧等价手段验证
 （`/opt/dsh/.dsh-v8cache.cjs` + `/usr/local/bin/dsh` 加 `--require`，原文件 `.bak`）。
 还原命令见 `progress.md` §4.22.5。
+
+### 10.10 P2：摘 `@opentelemetry`（2026-11-27 19:33）：17.2 s → 15.7~15.8 s
+
+- **判据**：能不能摘，不看包大不大，只看「有没有静态 import」。
+- `@opentelemetry`：没有插件在加载链上静态 import（tracing 条件启用）⇒ 可摘。
+  真机 **modules 623→358，compile 8,430→3,765 ms，总分段 17,250→15,698~15,819 ms**。
+- `yaml`：`dsh-skill-office` 与 `dsh-plugin-manager` **静态 import** ⇒ 摘掉即
+  `ERR_MODULE_NOT_FOUND`，engine 不 ready。**已作反例写进文档，不要重试。**
+- 落地：`tools/runtime/build-runtime.sh` §3.36 prune，带断言与 `DSH_RT_KEEP_OTEL=1` 逃生门。
+
+**当前基线**：42 s → 21~22 s（zod）→ 17.1~17.3 s（V8 cache）→ **15.7~15.8 s（摘 otel）**。
+剩余每模块 ~10 ms 主要是 PRoot ptrace；再往下要动 PRoot 层，属架构级，需单独立项。
