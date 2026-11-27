@@ -52,6 +52,12 @@ internal object BootTimingPreload {
     /** `--cpu-prof` 的输出目录（相对 `$DSH_HOME`）。 */
     const val HOST_PROFILE_DIR: String = "cpuprof"
 
+    /** V8 compile cache目录（相对 `$DSH_HOME`）；node ≥22.1 的 `module.enableCompileCache()` 写入。 */
+    const val V8_CACHE_DIR: String = "v8cache"
+
+    /** 缓存目录上限：超过就清空重建（node 会按需重写），避免无界增长。 */
+    const val V8_CACHE_MAX_BYTES: Long = 128L * 1024 * 1024
+
     private const val TAG = "BootTiming"
 
     /** 诊断开关：`files/boot-trace.enable` 存在时，才注入 `--import` 与 `--cpu-prof`。
@@ -79,6 +85,7 @@ internal object BootTimingPreload {
     ): Pair<String, String>? {
         if (!writeGuestFile(rootfs, GUEST_PATH, SCRIPT_CJS)) return null
         writeHostStamp(dshHome, profile, now)
+        ensureV8Cache(dshHome)
         val value: String? = if (trace) {
             if (!writeGuestFile(rootfs, GUEST_ESM_PATH, SCRIPT_ESM)) return null
             if (!writeGuestFile(rootfs, GUEST_HOOKS_PATH, SCRIPT_HOOKS)) return null
@@ -120,6 +127,26 @@ internal object BootTimingPreload {
         val missing = wanted.filterNot { existing.contains(it) }
         if (missing.isEmpty()) return existing
         return if (existing.isEmpty()) missing.joinToString(" ") else existing + " " + missing.joinToString(" ")
+    }
+
+    /**
+     * 建 `v8cache` 目录并做体积自检：超过阈值就清空重建。返回当前字节数。
+     *
+     * 为什么要清：缓存文件按模块内容哈希命名，模块一升级旧文件就没人认领，会无界增长。
+     * 128 MB 对 6~7 MB 的稳态占用是十几倍余量，只有异常情况才会触发。
+     */
+    fun ensureV8Cache(dshHome: File): Long {
+        val dir = File(dshHome, V8_CACHE_DIR)
+        runCatching { dir.mkdirs() }
+        val files = runCatching { dir.listFiles()?.filter { it.isFile } ?: emptyList() }.getOrDefault(emptyList())
+        val bytes = files.sumOf { it.length() }
+        if (bytes > V8_CACHE_MAX_BYTES) {
+            files.forEach { runCatching { it.delete() } }
+            DshLog.w(TAG, "v8cache 超限（" + bytes + " B）已清空")
+            return 0L
+        }
+        DshLog.i(TAG, "v8cache files=" + files.size + " bytes=" + bytes)
+        return bytes
     }
 
     private fun writeGuestFile(rootfs: File, guestPath: String, text: String): Boolean = runCatching {
@@ -207,6 +234,21 @@ internal object BootTimingPreload {
             return out;
         } catch (e) { return null; }
     }
+
+    // V8 compile cache：只对引擎进程开。node >= 22.1 提供 module.enableCompileCache()。
+    var CACHE_STATE = 'off';
+    try {
+        var mc = require('module');
+        if (mc && typeof mc.enableCompileCache === 'function') {
+            var cacheDir = process.env.DSH_V8CACHE || (DSH_HOME ? DSH_HOME + '/v8cache' : '');
+            var st = cacheDir ? mc.enableCompileCache(cacheDir) : mc.enableCompileCache();
+            var got = (typeof mc.getCompileCacheDir === 'function') ? mc.getCompileCacheDir() : '';
+            CACHE_STATE = 'on dir=' + got + ' st=' + JSON.stringify(st);
+        }
+    } catch (e) {
+        CACHE_STATE = 'fail ' + (e && e.message);
+    }
+    if (CACHE_STATE !== 'off') note('compile-cache ' + CACHE_STATE);
 
     var HOST_EPOCH = readHostEpoch();
     var UPTIME_MS = uptimeMs();

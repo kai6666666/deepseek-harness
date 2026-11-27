@@ -97,6 +97,8 @@ class BootTimingPreloadTest {
         assertFalse(File(rootfs, BootTimingPreload.GUEST_ESM_PATH.trimStart('/')).exists())
         assertFalse(File(home, BootTimingPreload.HOST_PROFILE_DIR).exists())
         assertTrue(File(home, BootTimingPreload.HOST_STAMP).isFile)
+        // V8 编译缓存与 trace 开关无关：默认就建目录（第一次冷启写入，之后读）
+        assertTrue(File(home, BootTimingPreload.V8_CACHE_DIR).isDirectory)
     }
 
     @Test
@@ -109,6 +111,24 @@ class BootTimingPreloadTest {
         assertTrue(File(rootfs, BootTimingPreload.GUEST_ESM_PATH.trimStart('/')).isFile)
         assertTrue(File(rootfs, BootTimingPreload.GUEST_HOOKS_PATH.trimStart('/')).isFile)
         assertTrue(File(home, BootTimingPreload.HOST_PROFILE_DIR).isDirectory)
+    }
+
+    @Test
+    fun compileCacheIsWiredIntoGuestScript() {
+        assertTrue(BootTimingPreload.SCRIPT_CJS.contains("enableCompileCache"))
+        assertTrue(BootTimingPreload.SCRIPT_CJS.contains(BootTimingPreload.V8_CACHE_DIR))
+        assertTrue(BootTimingPreload.V8_CACHE_MAX_BYTES > 0)
+    }
+
+    @Test
+    fun ensureV8CacheCreatesDirAndReportsSize() {
+        val home = tmp.newFolder("home-cache")
+        val first = BootTimingPreload.ensureV8Cache(home)
+        assertEquals(0L, first)
+        val dir = File(home, BootTimingPreload.V8_CACHE_DIR)
+        assertTrue(dir.isDirectory)
+        File(dir, "a.cache").writeBytes(ByteArray(1024))
+        assertEquals(1024L, BootTimingPreload.ensureV8Cache(home))
     }
 
     @Test
