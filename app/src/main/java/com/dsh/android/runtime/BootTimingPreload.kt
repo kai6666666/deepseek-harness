@@ -54,6 +54,16 @@ internal object BootTimingPreload {
 
     private const val TAG = "BootTiming"
 
+    /** 诊断开关：`files/boot-trace.enable` 存在时，才注入 `--import` 与 `--cpu-prof`。
+     *
+     * 真机实测：常开这两项会把冷启从 42 s 拉到 71 s（+29 s）。所以默认关，
+     * 需要采样时用 `run-as com.dsh.android touch files/boot-trace.enable` 打开，重启即生效。
+ */
+    const val TRACE_FLAG: String = "boot-trace.enable"
+
+    /** 诊断开关是否打开。 */
+    fun traceEnabled(filesDir: File): Boolean = File(filesDir, TRACE_FLAG).isFile
+
     /**
      * 写三个 guest 脚本 + 宿主时间戳 + 建 cpuprof 目录，返回要注入的 (KEY, VALUE)。
      *
@@ -65,13 +75,19 @@ internal object BootTimingPreload {
         template: List<String>,
         profile: String = "web",
         now: Long = System.currentTimeMillis(),
+        trace: Boolean = false,
     ): Pair<String, String>? {
         if (!writeGuestFile(rootfs, GUEST_PATH, SCRIPT_CJS)) return null
-        if (!writeGuestFile(rootfs, GUEST_ESM_PATH, SCRIPT_ESM)) return null
-        if (!writeGuestFile(rootfs, GUEST_HOOKS_PATH, SCRIPT_HOOKS)) return null
         writeHostStamp(dshHome, profile, now)
-        runCatching { File(dshHome, HOST_PROFILE_DIR).mkdirs() }
-        val value = nodeOptions(template, GUEST_PATH, GUEST_ESM_PATH, dshHome.canonicalPath) ?: return null
+        val value: String? = if (trace) {
+            if (!writeGuestFile(rootfs, GUEST_ESM_PATH, SCRIPT_ESM)) return null
+            if (!writeGuestFile(rootfs, GUEST_HOOKS_PATH, SCRIPT_HOOKS)) return null
+            runCatching { File(dshHome, HOST_PROFILE_DIR).mkdirs() }
+            nodeOptions(template, GUEST_PATH, GUEST_ESM_PATH, dshHome.canonicalPath, true)
+        } else {
+            nodeOptions(template, GUEST_PATH, GUEST_ESM_PATH, dshHome.canonicalPath, false)
+        }
+        if (value == null) return null
         return "NODE_OPTIONS" to value
     }
 
@@ -86,12 +102,13 @@ internal object BootTimingPreload {
         cjsPath: String,
         esmPath: String,
         dshHomeGuest: String = "",
+        trace: Boolean = false,
     ): String? {
         if (cjsPath.isBlank()) return null
         val wanted = ArrayList<String>()
         wanted += "--require " + cjsPath
-        if (esmPath.isNotBlank()) wanted += "--import file://" + esmPath
-        if (dshHomeGuest.isNotBlank()) {
+        if (trace && esmPath.isNotBlank()) wanted += "--import file://" + esmPath
+        if (trace && dshHomeGuest.isNotBlank()) {
             wanted += "--cpu-prof"
             wanted += "--cpu-prof-dir=" + dshHomeGuest + "/" + HOST_PROFILE_DIR
             wanted += "--cpu-prof-interval=1000"
