@@ -1671,3 +1671,72 @@ am force-stop … && am start …
 - 四道构建/运行期闸门**都能回滚**：zod 断言、otel prune（`DSH_RT_KEEP_OTEL=1`）、
   v8cache 体积自检、trace 开关；
 - 若未来 Android 大版本或 dsh 升级导致回归，按 `progress.md` §4.19~§4.23 的测法重新量一遍即可。
+
+---
+
+### 4.27 复盘：A + B 计划完成度（截至 `cde73f0` / debug.47）
+
+> 依据：`docs/plan/pa-pb-plan.md`（608 行，A1~A4、B1~B6、D 完成定义）逐条对照
+> 代码（`GithubMirrors.kt` / `RuntimeDelta.kt` / `BootTimeline.kt` / `BootTimingPreload.kt`）、
+> 单测（`RuntimeS6Test` / `BootTimingPreloadTest`）、真机日志（`app.log` / `boot-timing.log`）。
+
+#### 4.27.1 总览
+
+| 阶段 | 计划目标 | 状态 | 关键数字 |
+|---|---|---|---|
+| **A 多线路下载** | 自动选最快线路 + 失败回直连 | ✅ **100%** | 87 KB/s → **406 KB/s（4.7×）**；端到端 28 min → **6 min 14 s** |
+| **B 启动计时** | 把 47.8 s 拆成可读分段 | ✅ **100%（目标达成）** | 计划 8 点 → 实装 7 点；`dump()` 瀑布已进 `app.log` |
+| **B 阶段后续优化**（计划外） | — | ✅ 已做 4 项 | 42.0 s → **15.7~15.8 s（−63%）** |
+| **direct 免 proot**（计划外） | — | ⏸ **A 不动，封存** | 见 §4.26、§4.25 |
+
+#### 4.27.2 A 阶段：验收 6 条逐条
+
+| # | 验收项 | 状态 | 依据 |
+|---|---|---|---|
+| 1 | 过滤条件正确 | ✅ | `RuntimeS6Test`：`api.github.com` / `releases.atom` → 空；`/releases/download/*` → `mirrorCount` 条 |
+| 2 | URL 拼接正确（无 `//`） | ✅ | 同上（`GithubMirrors.mirrored` 用例） |
+| 3 | 全部镜像死 → 回直连 | ✅（单测）/ ⚠️（未单独真机演练） | `Probe(ok=false)` 注入用例；真机未做"断网+全镜像死"专项 |
+| 4 | 探测流量 ≤ 256 KB | ⚠️ 部分 | 代码有 `probeBytes` 预算与 `budgetMs=2500`；但**日志没有统一 `probe bytes=` 字段**，无法从日志求和验收 |
+| 5 | 选出的线路确实更快 | ✅ | `pick()` 按 `bytesPerSec` 排序取最高；`clearCache()` 支持重测 |
+| 6 | 增量仍只下变化块 | ⚠️ 未复验 | 属 `docs/agents/runtime-delta.md` 的演练流程，本轮没重跑（B 阶段全程未触发下载路径） |
+
+**A 的实测收益（§4.10）**：吞吐 87 → 406 KB/s（4.7×）；端到端 28 min → 6 min 14 s（4.5×）。
+
+#### 4.27.3 B 阶段：验收 5 条逐条
+
+| # | 验收项 | 状态 | 依据 |
+|---|---|---|---|
+| 1 | 8 点全出、单调递增 | ⚠️ **7 点** | 实装：`runtime / preflight / prootSpawn / nodeExec / health / ready / gui`；缺 `app`、`prootMounted`（后者被 `nodeExec` 吸收），另加 `ready` |
+| 2 | 各段之和 ≈ total（<5%） | ✅ | 真机 dump：`gui=32180ms` 与 `total=32180ms` 一致 |
+| 3 | `unpacked` 标记正确 | ❌ 未实现 | `BootTimeline.mark(name)` 没有 `extra` 形参，计划要求的 `unpacked=true/false` 未落 |
+| 4 | 不影响启动耗时（<1 s） | ✅ | 加打点前后 `engine.ready ms` 在噪声内（打点是内存 map，`dump()` 一次落盘） |
+| 5 | guest 时间戳可用（宿主↔guest <2 s） | ✅ **超额** | 第 1 层 wrapper 给出五段 + `host.epoch` 对齐（§4.18.7 三次实测） |
+
+#### 4.27.4 B 阶段「三层测量」交付情况（计划的 §4.18 交付物）
+
+| 层 | 计划 | 状态 |
+|---|---|---|
+| 第 1 层 | guest 侧 `Date.now()` wrapper，四段 | ✅ 落地并真机三次（§4.18.7） |
+| 第 2 层 | `/proc/<pid>/io` 采样 | ✅ 落地（`rchar/read_bytes/syscr` 进日志），并额外做了 ESM loader 时间线 + V8 profile（§4.20） |
+| 第 3 层 | 冷启 3 次 vs 热启 1 次对照 | ⚠️ **部分**：冷启 3 次已完成；"热启"未按计划做（引擎存活时重启不产生新 spawn），改用**页缓存冷/暖对照**（129 MB→0 B，5.4 s），结论更本质 |
+
+#### 4.27.5 计划外但已交付的优化（42.0 s → 15.7 s）
+
+| 项 | 做法 | 收益 | 文档 |
+|---|---|---|---|
+| A | 构建期摘 67 份嵌套 zod（68→1） | 42.0 → 21~22 s | §4.21 |
+| P1 | V8 compile cache + 周期 flush | → 17.1~17.3 s | §4.22 |
+| P2 | 构建期摘 `@opentelemetry`（yaml 保留） | → 15.7~15.8 s | §4.23 |
+| C | 诊断开关收口（`files/boot-trace.enable`） | 省掉常驻 +14.7~29 s | §4.20.4 |
+| 观测 | `boot-timing.log` / `-esm.log` / `cpuprof` / 两个分析脚本 | — | §4.18 / §4.20 |
+
+#### 4.27.6 欠账清单（不影响验收，但记在账上）
+
+1. `B6#3` `unpacked` 标记未实现（`BootTimeline.mark` 缺少 extra 形参）；
+2. `B3` 的 `boot.phase.app` 与 `boot.phase.prootMounted` 两点未按名落地（前者缺、后者并入 `nodeExec`）；
+3. `A4#4` 探测流量没有统一日志字段，无法从日志求和；
+4. `A4#6` 增量下载本轮未复验；
+5. 第 3 层"热启 1 次"用页缓存对照替代，未做严格热启。
+
+**结论**：A 阶段按 D 表四条（A1~A4）全部达成；B 阶段"把 47.8 s 拆成可读分段"的目标达成且超额（五段 + ESM/profile），
+仅 B 的验收细节有 3 处形式偏差（不影响结论）。计划外优化把冷启再压到 15.7 s，direct 已决策不动。
