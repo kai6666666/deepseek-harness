@@ -2011,3 +2011,64 @@ boot.timeline total=22,444 ms（含 gui 前）
 | `app` 点 | ⚠️ 代码已修（9e38126）+ 单测，**待 debug.49 真机确认** |
 | `applyAsync` 短路 | ✅ 真机验证（日志 + parts `.keep` 未被清） |
 | 发布 | `v0.2.2-rc.5-debug.48` 的 APK 已装机；Release 尚未 dispatch（需要时一条命令） |
+
+---
+
+### 4.32 发 `debug.49 (vc134)`：A/B 计划 9 点全部真机落地
+
+> 提交：`87aca83`（release 版本 + CHANGELOG）
+> CI：APK `46045137370` success；sign `46046726803` success（artifact `15223236142`）；
+> publish `46047668340` success → Release `v0.2.2-rc.5-debug.49`（prerelease，9 资产）
+
+#### 4.32.1 发版与装机
+
+```text
+versionName 0.2.2-rc.5-debug.49 / versionCode 134（VERSION PASS）
+APK 161,697,588 B（Release 资产）→ 装机 pm install -r -d Success → vc=134
+```
+
+#### 4.32.2 真机 `boot.timeline`：**9 点齐全**
+
+```text
+02:10:42 boot.timeline total=24994ms
+  app               454ms  Δ   454ms  █                 ← 本轮修复的点
+  runtime           803ms  Δ   349ms  █  unpacked=false
+  preflight        3697ms  Δ  2894ms  ████
+  prootSpawn       3738ms  Δ    41ms  █
+  prootMounted     4063ms  Δ   325ms  █
+  nodeExec        22044ms  Δ 17981ms  ████████████████████████████
+  health          24992ms  Δ  2948ms  ████
+  ready           24994ms  Δ     2ms  █
+  （gui 在 WebView 首帧后追加，量级 +10 s）
+engine.ready 24,291 ms / health=401 / runtime=proot
+```
+
+对比 vc133（8 点、无 `app`）→ **vc134 的 `app=454 ms` 成功保留**，与单测
+`appMarkSurvivesStart` 的预期一致（`start()` 只保留 `app`，不再整体清空）。
+
+#### 4.32.3 冷启数据（vc134）
+
+```text
+preload→首响应  16,737 ms
+modules.count   247（构建期去 zod + 摘 otel 后的稳态）
+modules.compile 2,848 ms
+engine.ready    21,044 ms
+```
+
+与 §4.30 的 16.2 s 同级，说明「多打一个点」没有可见开销。
+
+#### 4.32.4 至此 A / B 计划的验收状态
+
+| 计划项 | 状态 | 证据 |
+|---|---|---|
+| A1~A4（多线路 + 判定） | ✅ | 单测 + 真机 `全量 138.7 MB` / `needBytes=0` |
+| A4-#6 偏量端到端 | ⚠️ | 判定层单测；端到端需一次真实增量升级 |
+| B1~B6（分段观测） | ✅ | 9 点齐全、误差 0、`unpacked` 有值、不影响耗时、guest 时间戳超额 |
+| B 三层测量 | ✅ | 第 1/2 层落地；第 3 层用页缓存对照 + 热启结论结案 |
+| 计划外优化 | ✅ | 42.0 s → 16.7 s（−60%）；direct 已决策不动 |
+
+#### 4.32.5 遗留（不影响验收）
+
+1. `A4-#6` 的「0 < need ≪ total」需一次真实升级（判据已固定）；
+2. `gui` 点没有单独的 Δ 说明（它在 `ready` 之后由 WebView 回调追加，属既有行为）；
+3. 设备上仍有 `parts.old1` / `.rootfs.stamp.old1` 等演练残留（可删）。

@@ -549,3 +549,14 @@ ESM 事件 19,604 → 3,575，zod 事件 16,333 → 390。
 - `applyAsync` 短路真机验证：日志 `applyAsync 跳过：运行时已是最新，无需应用`，且手工放的 `parts/<ver>/.keep` 未被清。
 - 推送又撞 GnuTLS → 用 `api_push.py`（**必须给完整 40 位 sha**）。
 - 待办：debug.49（含 app 点）出包 + 装机；Release `debug.48` 如需公开下载再 dispatch `publish-apk.yml`。
+
+### 10.18 发 debug.49 并验证 9 点（`4.32`）
+
+- `debug.49 / vc134`：APK `46045137370` → sign `46046726803`（artifact `15223236142`）→ publish `46047668340`
+  → Release `v0.2.2-rc.5-debug.49`（prerelease，9 资产，APK 161,697,588 B）。已装机 vc=134。
+- 真机 `boot.timeline` **9 点齐全**：`app 454ms` / `runtime 803ms (unpacked=false)` / `preflight 3697` /
+  `prootSpawn 3738` / `prootMounted 4063` / `nodeExec 22044` / `health 24992` / `ready 24994` / `gui`（+10 s 量级）。
+- 冷启：`preload→首响应 16,737 ms`、modules **247**、compile **2,848 ms**、engine.ready 21,044 ms。
+- A/B 计划验收：A1~A4 ✅（A4-#6 偏量端到端待真实升级）；B1~B6 ✅（9 点、误差 0、unpacked、无额外开销、
+  guest 时间戳超额）；三层测量 ✅；计划外 42.0 s → 16.7 s。
+- 遗留：A4-#6 偏量端到端；设备演练残留 `parts.old1` / `.rootfs.stamp.old1` 可删。
