@@ -505,3 +505,16 @@ ESM 事件 19,604 → 3,575，zod 事件 16,333 → 390。
 - **B 三层测量**：第 1/2 层完成；第 3 层“热启”改用页缓存冷/暖对照（129 MB→0 B，5.4 s）。
 - **计划外优化**：zod 去重 → 21~22 s；V8 cache → 17.1~17.3 s；摘 otel → **15.7~15.8 s**；
   诊断开关收口。direct 已决策**不动**（§4.26）。
+
+### 10.14 欠账补齐（`281cd69`，编译门禁 `46003867429` green）
+
+- **B6-#3**：`BootTimeline.mark(name, extra)` + `dump()` 输出 `unpacked=…`；
+  `EngineManager` 用 `installer.isInstalled()` 在 `ensure()` 前判定。
+- **B3-#1/#5**：`DshApplication` 设进程级 t0（`markProcessStart`），`MainActivity` 打 `app`，
+  guest 首条输出打 `prootMounted`；`start()` 不再覆盖 t0。
+- **A4-#4**：每次探测落 `mirror.probe bytes=… total=… bps=… name=…`，可求和（预算 256 KB）。
+- **第 3 层热启**：实测热重入 pid 不变、`engine.ready`/`boot.timeline` 计数不变 ⇒ **热启无启动段**，
+  冷热差异只能用页缓存表达（§4.19.1：129 MB → 0 B / 5.4 s）。
+- **A4-#6 增量复验**：仍缺网络（S3 ~12 KB/s），演练步骤已固定，未谎称完成。
+- ⚠️ **口径变更**：`runtime` 点移到 `ensure()` 之后（install 不再算进 `preflight`），
+  历史 `boot.timeline` 不能逐行对比新版本。

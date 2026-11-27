@@ -1740,3 +1740,56 @@ am force-stop … && am start …
 
 **结论**：A 阶段按 D 表四条（A1~A4）全部达成；B 阶段"把 47.8 s 拆成可读分段"的目标达成且超额（五段 + ESM/profile），
 仅 B 的验收细节有 3 处形式偏差（不影响结论）。计划外优化把冷启再压到 15.7 s，direct 已决策不动。
+
+---
+
+### 4.28 欠账补齐（§4.27.6 的 5 条）
+
+> 提交：`281cd69`；编译门禁 run `46003867429` **success**（含新增 `BootTimelineTest`）
+> APK run `46003850040` 同 sha 构建中（含新打点，未装机——网络仍受限）
+
+#### 4.28.1 代码侧（4 条已补齐）
+
+| 欠账 | 修法 | 验证 |
+|---|---|---|
+| B6-#3 `unpacked` 标记 | `BootTimeline.mark(name, extra: Map<String,String>)`，`dump()` 追加 `unpacked=…`；`EngineManager` 在 `ensure()` **前**用 `installer.isInstalled(manifest)` 判定，`ensure()` 返回后打 `runtime` 点 | `BootTimelineTest.extraShowsUpInDump` / `markIsIdempotentAndKeepsFirstExtra` |
+| B3-#1 `app` 点 | `DshApplication.onCreate` 调 `BootTimeline.markProcessStart()`（进程级 t0）；`MainActivity` 在 `EngineService.start()` 前 `mark("app")`；`start()` **不再覆盖**已有 t0 | `startDoesNotResetProcessAnchor`（app ≥ 0） |
+| B3-#5 `prootMounted` 点 | `EngineManager` 在 guest 输出回调里，首条非空行打一次 `prootMounted` | 编译门禁 + 待真机 |
+| A4-#4 探测流量 | `defaultProbe` 每次探测落一行 `mirror.probe bytes=<got> total=<total> bps=<bps> name=<name>`，日志可直接求和（预算 256 KB） | 编译门禁；真机需触发一次下载 |
+
+> 说明：`runtime` 点按计划语义移到 `ensure()` **之后**（原来打在最前面，导致 install 被算进 `preflight`）。
+> 这会让历史 `boot.timeline` 数值不可直接与新版本逐行对比，属**口径修正**，已在此记录。
+
+#### 4.28.2 真机侧（1 条已补：第 3 层的「热启」）
+
+```text
+操作：引擎已 ready 的情况下，连续两次 am start（Activity 热重入）
+结果：进程 pid 17628 不变；engine.ready 计数 42 → 42；boot.timeline 计数 63 → 63
+      app.log 最后一条 engine.ready 仍是 19:51:48（冷启那次）
+结论：热启不产生新的启动段（没有 node spawn），所以第 3 层的“热启 1 次”不能用 boot.timeline 对比；
+      “冷”与“热”的差异只能用**页缓存**表达 —— 这正是 §4.19.1 的 129 MB → 0 B / 5.4 s 那条数据。
+```
+
+#### 4.28.3 仍未复验（1 条，需网络）
+
+**A4-#6「增量仍只下变化块」**：需要一个真实 runtime 更新来触发 `RuntimeDelta`。
+当前 S3 限速 ~12 KB/s，146 MB 的演练成本过高，故**不谎称完成**。演练步骤已固定：
+
+```bash
+# 1) 让设备上的 runtime 版本落后：装一个 runtimeVersion 不同的 APK（或改 files/runtime/manifest.json 的版本戳）
+# 2) 触发一次启动，观察 app.log：
+#      · 出现 `runtime.delta` / `using incremental parts` 一类记录
+#      · 实际传输字节数 ≈ 变化分片大小，而不是 146 MB
+# 3) 复验完把 manifest/戳还原，或直接覆盖安装正式版
+```
+
+#### 4.28.4 现在的验收状态
+
+| 计划项 | 之前 | 现在 |
+|---|---|---|
+| B6-#3 unpacked | ❌ | ✅ 代码 + 单测 |
+| B3 app 点 | 缺 | ✅ 代码 |
+| B3 prootMounted 点 | 缺 | ✅ 代码（真机待装新 APK） |
+| A4-#4 探测流量 | ⚠️ 无字段 | ✅ 每次探测一行 `mirror.probe bytes=` |
+| 第 3 层热启 | ⚠️ 未做 | ✅ 已做并给出结论（热启无启动段） |
+| A4-#6 增量复验 | ⚠️ | ⚠️ 仍待网络（步骤已固定） |
