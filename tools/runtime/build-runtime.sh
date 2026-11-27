@@ -326,6 +326,35 @@ else
   log "跳过引擎安装（DSH_RT_SKIP_ENGINE=1）"
 fi
 
+# ---------- 3.35 依赖去重（B 阶段 A 方案） ----------
+# 真机实测（progress §4.20）：rootfs 里有 68 份 zod（67 份 4.6.6 + 顶层 4.6.7），
+# zod v4 的 locales/index.js 一次 import 全部语言包，于是启动期 19,604 条 ESM 事件里
+# 16,333 条（83%）是 zod —— `listen → listening` 卡 13.4 s 的元凶。
+# npm 的 hoist 因为各插件精确 pin 版本不会合并，所以这里直接摘掉嵌套副本：
+# 删掉之后 Node 从上层 node_modules 解析，68 个 import 点拿到的是**同一个 URL**，
+# ESM 才能按 URL 命中缓存。（symlink 不行：ESM 不做 realpath，68 条 URL 照样 68 次加载。）
+dedupe_nested() {
+  name=$1
+  base="$ROOTFS/opt/dsh/node_modules"
+  before=$(find "$base" -mindepth 2 -maxdepth 4 -type d -name "$name" | wc -l)
+  if [ "$before" = "0" ]; then
+    log "dedupe($name): 无嵌套副本"
+    return 0
+  fi
+  find "$base" -mindepth 2 -maxdepth 4 -type d -name "$name" -exec rm -rf {} + 2>/dev/null || true
+  left=$(find "$base" -maxdepth 4 -type d -name "$name" | wc -l)
+  log "dedupe($name): 移除 $before 份嵌套副本，剩 $left 份"
+  if [ "$left" != "1" ]; then
+    log "dedupe($name) 失败：剩 $left 份"
+    return 1
+  fi
+  return 0
+}
+if [ "${DSH_RT_SKIP_ENGINE:-0}" != "1" ]; then
+  dedupe_nested zod || die "zod 去重失败"
+  [ "$(find "$ROOTFS/opt/dsh/node_modules" -maxdepth 4 -type d -name zod | wc -l)" = "1" ] || die "zod 数量断言失败（应恰为 1 份）"
+fi
+
 # ---------- 3.4 C 适配层（glibc 重编） ----------
 JNI_SRC=$REPO_ROOT/app/src/main/jni
 if [ -f "$JNI_SRC/boo-sandbox-run.c" ]; then
