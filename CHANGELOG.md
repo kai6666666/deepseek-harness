@@ -8,6 +8,34 @@
 - 设备侧清理：删除演练备份 `dsh-backup-drill.zip` 与 13 个历史 APK（约 2.4 GB）。
 
 **不发新版**：本批只有文档与文件清理。
+## [0.2.2-rc.5-debug.59] — 2026-11-28
+vc=144
+修两条真机日志里的告警：插件市场说明图片 401、GitHub Release 拉取 403。
+### ① 插件市场 README 图片 401（`detail-file` 资源加载失败）
+```text
+现象：21:32:10.905 [W] JavaBridge 页面脚本错误: 资源加载失败:
+      /api/plugin-manager/detail-file?bundle=dshmarket&document=README.md&path=assets%2Fdemo-en.png
+实测：curl 同 URL → 401，body=unauthorized（路由存在，是凭据问题，不是 404）
+根因：<img> 是浏览器原生请求，拿不到接口需要的 dsh-auth 凭据
+修法：mobile-ui 插件追加 mpDetailFileImageFix ——
+      error 事件 + MutationObserver 发现失败的 detail-file 图片，
+      改用 fetch(credentials:'include') 重取一次，成功则 blob: 回填 src
+```
+### ② Release 拉取 403（GitHub 匿名额度被自己烧光）
+```text
+现象：21:55:28.971 [W] [ReleaseFeed] release-feed Release 拉取失败：HTTP 403
+实测：curl api.github.com → 403 rate limit exceeded，
+      X-RateLimit-Limit=60 / Remaining=0 / Used=60
+根因：旧 ReleaseFeed 只缓存成功结果，403 后每 500ms 轮询都重新发请求
+      ⇒ 一个用户几分钟打光 60/h 额度；且无落盘、无兜底
+修法：ReleaseFeed 重写 ——
+      ① ETag 条件请求（304 不耗额度）
+      ② 失败指数退避，并按 X-RateLimit-Reset 推迟重试
+      ③ 成功结果落盘 files/release-feed-cache.json，冷启动先渲染旧数据（stale=true）
+      ④ API 不可用时改拉 releases.atom 兜底（Atom 不走 REST 限额）
+```
+版本：插件 `1.1.0-200 → 1.1.0-201`（三处同源），`mobile-ui.zip` 249,903 B。
+
 ## [0.2.2-rc.5-debug.58] — 2026-11-28
 vc=143
 

@@ -12527,3 +12527,64 @@ if (!window.__mpHeaderMenuTimer) {
     }
     requestAnimationFrame(tick);
 })();
+
+/* ── 修复 59-B：插件市场说明里的图片 401（detail-file 需凭据）────────────────
+   现象：README 里的 ![](assets/demo-en.png) 被渲染成
+        <img src="/api/plugin-manager/detail-file?...">；
+        该接口要 dsh-auth cookie，而 <img> 是浏览器原生发起的请求，
+        一旦丢 cookie（或走 dsh-app:// 桥失败）就 401，页面报「资源加载失败」。
+   做法：监听 img 的 error + MutationObserver，只用 fetch(credentials:'include')
+        重取一次，成功就 blob: 回填。只改 img.src，不碰上游组件结构。
+*/
+(function mpDetailFileImageFix() {
+if (window.__mpDetailImgFix) return;
+window.__mpDetailImgFix = true;
+var RE = /\/api\/plugin-(manager|market)\/detail-file\?/;
+function wants(img) {
+if (!img || img.tagName !== 'IMG') return false;
+return RE.test(img.getAttribute('src') || img.src || '');
+}
+async function refetch(img) {
+if (img.dataset.mpImg) return;
+var src = img.getAttribute('src');
+if (!src || !RE.test(src)) return;
+img.dataset.mpImg = '1';
+try {
+var abs = new URL(src, location.href).href;
+var r = await fetch(abs, { credentials: 'include' });
+if (!r.ok && abs.indexOf(location.origin) === 0) {
+try {
+var r2 = await fetch('dsh-app://app' + abs.slice(location.origin.length), { credentials: 'include' });
+if (r2.ok) r = r2;
+} catch (_) {}
+}
+if (!r.ok) { img.dataset.mpImg = '2'; return; }
+var blob = await r.blob();
+if (!blob || !blob.size) { img.dataset.mpImg = '2'; return; }
+var url = URL.createObjectURL(blob);
+img.addEventListener('load', function () { try { URL.revokeObjectURL(url); } catch (_) {} }, { once: true });
+img.src = url;
+img.dataset.mpImg = '2';
+} catch (_) { img.dataset.mpImg = '2'; }
+}
+function sweep(root) {
+var list;
+try {
+list = root.querySelectorAll ? root.querySelectorAll('img[src*="/api/plugin-manager/detail-file"],img[src*="/api/plugin-market/detail-file"]') : [];
+} catch (_) { return; }
+for (var i = 0; i < list.length; i++) {
+var img = list[i];
+if (img.dataset.mpImg) continue;
+if (img.complete && img.naturalWidth > 0) { img.dataset.mpImg = '2'; continue; }
+refetch(img);
+}
+}
+document.addEventListener('error', function (e) { if (wants(e.target)) refetch(e.target); }, true);
+function start() {
+sweep(document);
+try { new MutationObserver(function () { sweep(document); }).observe(document.documentElement, { childList: true, subtree: true }); } catch (_) {}
+setInterval(function () { sweep(document); }, 3000);
+}
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true });
+else start();
+})();

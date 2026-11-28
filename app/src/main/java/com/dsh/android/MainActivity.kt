@@ -2468,7 +2468,11 @@ class MainActivity : AppCompatActivity() {
             false
         }
 
-        override fun releasesJson(): String = ReleaseFeed.get()
+        override fun releasesJson(): String {
+            // 落盘缓存的根：init 只需一次（内部幂等），放在这里保证「关于」页一进来就有旧数据可渲染。
+            ReleaseFeed.init(filesDir)
+            return ReleaseFeed.get()
+        }
 
         override fun pluginUpdateCheck(): Boolean = PluginUpdater.checkAsync(filesDir, pluginInstallDir)
 
