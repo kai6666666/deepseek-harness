@@ -2448,3 +2448,50 @@ python3 tools/boot-timing-report.py /tmp/bt.log
 单测        tools/tests/test_boot_timing_report.py（13 例）
 远端 main   d44ee69
 ```
+### 4.37 状态栏双入口弹层 + 轨迹堆叠：**真因是陈旧热包压制内置前端**
+
+> 版本：`0.2.2-rc.5-debug.54 / vc139`（已装机）。提交：`eeb5ca6`（弹层+CSS）、`eb6ca31`（zip 重打）、`38d0ebf`（热包闸门）
+
+#### 4.37.1 现象与三连连环坑
+
+用户在 vc138 报「①点了没弹 ②轨迹仍堆叠」。实测结论：**改的代码根本没上设备**。
+
+```text
+设备 files/home/.dsh/mobile-ui/dsh-android-mobile/lib/client.js
+  657,311 B · 2026-11-24 · grep mpOpenStats = 0        ← 旧版
+设备 files/runtime/plugins/mobile-ui-1.1.0-237.zip      ← 陈旧热包，242,351 B
+设备 .mobile_ui_version = 1.1.0-237
+```
+
+`ensureMobileUi()` 的顺序是「热包优先于内置 assets」：`want = hot?.second ?: MOBILE_UI_VERSION`，
+只要 `client.js` 存在且 `stamp == want` 就 **直接 return**。残留热包的版本号 ≥ 内置常量，
+于是无论怎么 bump 内置常量、怎么重打 `assets/mobile-ui.zip`，都会被那行 `return` 吃掉。
+
+⇒ **教训：只改 `MOBILE_UI_VERSION` 是无效修法，必须同时处理 `files/runtime/plugins/` 里的热包。**
+
+#### 4.37.2 已做的修复
+
+| # | 位置 | 内容 |
+|---|---|---|
+| 1 | 设备 | `mobile-ui-1.1.0-237.zip` → `plugins/.stale/`（保留可回滚）+ 删 `.mobile_ui_version` |
+| 2 | 仓库 | `ensureMobileUi()` 加闸门：`hotMobileUiBundle()?.takeIf { cmpVersion(it.second, MOBILE_UI_VERSION) > 0 }` |
+| 3 | 仓库 | `mobile-ui.zip` 重打（244,243 B，含 ①弹层 ②轨迹换行） |
+
+闸门语义：**热更新只能向前**——热包必须严格新于内置版本才参与，旧残包再也不会永久压制升级。
+
+#### 4.37.3 真机证据（删热包后首次启动）
+
+```text
+2026-11-28 14:37:07  [DSH] 已安装移动端 UI 插件 dsh-android-mobile 1.1.0-237 (664582 字节)
+lib/client.js = 664,582 B · 2026-11-28 14:37 · grep mpOpenStats = 2
+vc139 · engine.ready 21,235 ms · health=401 · runtime=proot
+```
+
+#### 4.37.4 待验收（三项）
+
+1. 点「N轮N步」药丸 → 弹「会话统计」卡（轮/步、模型、工具、TTFT、tok/s）
+2. 点「NAS K·缓存X%」药丸 → 弹「Token 用量」卡（总量/命中率/未缓存/缓存读/输出）
+3. 轨迹长句换行、右侧不再堆叠、字体不变
+
+字段为「—」时的含义：该数据来自服务端投影（`dsh-session-stats` / `dsh-token-meter`），
+客户端只持有降档前的药丸原文（`dataset.mpRaw`），拿不到的项就显「—」。

@@ -617,3 +617,47 @@ ESM 事件 19,604 → 3,575，zod 事件 16,333 → 390。
 - 提交 `d44ee69`（6 文件，快进推送）；不改 app 代码、不动版本号（仍 debug.51/vc136）。
 - 坑：`api_push.py` 不认未跟踪目录（IsADirectoryError）→ 改走
   `git fetch → git reset --mixed origin/main → git add -A → commit → push`；跑单测后要清 `__pycache__`。
+
+### 10.23 接手必读：mobile-ui 插件「改了不生效」的三个台阶
+
+本轮把「①弹层 ②轨迹CSS 全未生效」挖到底，结论是一条很容易重踩的链条。排查请按顺序：
+
+#### 台阶 1：文件到没到设备
+
+```bash
+run-as com.dsh.android sh -c \
+  'ls -l files/home/.dsh/mobile-ui/dsh-android-mobile/lib/client.js; \
+   grep -c mpOpenStats files/home/.dsh/mobile-ui/dsh-android-mobile/lib/client.js'
+```
+
+`grep` 为 0 ⇒ 你的改动**没上设备**，后面两步不用看了。
+
+#### 台阶 2：热包是否压制内置
+
+```bash
+run-as com.dsh.android sh -c 'ls -l files/runtime/plugins/; cat files/home/.dsh/mobile-ui/dsh-android-mobile/.mobile_ui_version'
+```
+
+`ensureMobileUi()` 的判定是 `want = hot?.second ?: MOBILE_UI_VERSION` + `stamp == want → return`。
+所以：
+
+- 有 `mobile-ui-<ver>.zip` 且 `<ver> >= 内置常量` ⇒ **内置包永远不生效**（已加闸门 `cmpVersion > 0` 修掉）
+- 仍要人工救急时：`mv plugins/mobile-ui-*.zip plugins/.stale/ && rm .mobile_ui_version`，重启即重解
+
+#### 台阶 3：前端到底加载了哪份
+
+```bash
+run-as com.dsh.android sh -c 'grep -a "移动端 UI" files/logs/app.log | tail -2'
+# 期望：已安装移动端 UI 插件 dsh-android-mobile <ver> (<字节数>)
+# 字节数应与 app/src/main/assets/mobile-ui.zip 里的 lib/client.js 完全一致
+```
+
+#### 本轮结论速查
+
+| 项 | 值 |
+|---|---|
+| 版本 | `0.2.2-rc.5-debug.54 / vc139`（已装，Release 未 dispatch） |
+| 相关提交 | `eeb5ca6` / `eb6ca31` / `38d0ebf` |
+| 热包闸门 | `EngineManager.ensureMobileUi()` `takeIf { cmpVersion(...) > 0 }` |
+| 弹层数据源 | `dataset.mpRaw`（降档前原文）；拿不到的字段显「—」 |
+| 轨迹修复 | `height:auto` / `pre-wrap` / `overflow-wrap:anywhere` / trailing `flex:1 1 100%`，**不碰 font-size** |
