@@ -437,12 +437,11 @@ object RuntimeDelta {
 
     /** 只保留最近 [KEEP_VERSIONS] 个版本的分片（每个约 145 MB）。 */
     private fun pruneOldParts(root: File) {
-        runCatching {
-            val dir = File(root, "runtime/parts")
-            val versions = dir.listFiles { f -> f.isDirectory && !f.name.startsWith(".") }
-                ?.sortedByDescending { it.name } ?: return@runCatching
-            versions.drop(KEEP_VERSIONS).forEach { RuntimeFiles.deleteTree(it) }
-        }
+        // ⚠️ 曾经是 `sortedByDescending { it.name }`（按字典序）——2026-11-28 真机演练实测：
+        //   `…-r2` 与 `…-rA` 同时存在时，字典序把 `rA` 判成「更新」，于是**刚下载好的 r2 被删掉**，
+        //   解包阶段只好退回 APK assets 的旧分片 → `rootfs分片校验失败`。
+        //   语义正解与 `RootfsInstaller.pruneOldParts` 一致：按 mtime，谁的基线最新留谁。
+        runCatching { RuntimeFiles.pruneParts(File(root, "runtime/parts"), KEEP_VERSIONS) }
     }
 
     // ── 给 RootfsInstaller 的接口（增量 ↔ 安装的接缝）─────────────

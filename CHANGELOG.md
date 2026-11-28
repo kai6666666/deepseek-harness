@@ -8,6 +8,17 @@
 - 设备侧清理：删除演练备份 `dsh-backup-drill.zip` 与 13 个历史 APK（约 2.4 GB）。
 
 **不发新版**：本批只有文档与文件清理。
+## [0.2.2-rc.5-debug.51] — 2026-11-28
+vc=136
+
+### 修复：`pruneOldParts` 按目录名字典序保留，会删掉刚下好的新基线
+
+`RuntimeDelta.pruneOldParts` 原来是 `sortedByDescending { it.name }`（字典序）。A4-#6 真机演练里
+`…-r2` 与 `…-rA` 并存时，字典序把 `rA` 当「更新」⇒ **刚下载的 `r2` 被删** ⇒ 解包退回 APK 旧分片
+⇒ `rootfs分片校验失败`。改为复用 `RuntimeFiles.pruneParts`（按 mtime，与 `RootfsInstaller` 同一套语义）。
+
+---
+
 ## [0.2.2-rc.5-debug.50] — 2026-11-28
 vc=135
 
