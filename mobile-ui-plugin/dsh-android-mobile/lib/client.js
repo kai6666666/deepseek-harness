@@ -1464,24 +1464,23 @@ window.__ModuleLoader__.load({
     column-gap: 10px !important;
   }
 }
-.mp-stats-mask{position:fixed;inset:0;z-index:2147483000;display:flex;align-items:flex-end;
-  justify-content:center;background:color-mix(in srgb,CanvasText 38%,transparent);padding:16px;
-  padding-bottom:calc(16px + env(safe-area-inset-bottom));}
-.mp-stats-card{width:100%;max-width:520px;max-height:70vh;overflow:auto;border-radius:16px;
-  background:var(--dsw-alias-bg-layer-1,Canvas);color:var(--dsw-alias-label-primary,CanvasText);
-  padding:16px 18px;box-shadow:0 12px 40px color-mix(in srgb,CanvasText 22%,transparent);font-size:14px;line-height:1.5;}
-.mp-stats-title{font-size:15px;font-weight:600;margin:0 0 10px;display:flex;
-  justify-content:space-between;align-items:center;}
-.mp-stats-close{border:0;background:transparent;color:inherit;font-size:18px;line-height:1;
-  padding:4px 6px;opacity:.7;}
-.mp-stats-row{display:flex;justify-content:space-between;gap:12px;padding:6px 0;
-  border-top:1px solid var(--dsw-alias-border-l4,color-mix(in srgb,CanvasText 14%,transparent));}
-.mp-stats-row:first-of-type{border-top:0;}
-.mp-stats-k{opacity:.72;}
-.mp-stats-v{font-variant-numeric:tabular-nums;font-weight:600;}
-.mp-stats-raw{margin-top:10px;padding-top:10px;border-top:1px solid var(--dsw-alias-border-l4,color-mix(in srgb,CanvasText 14%,transparent));
-  font-size:12px;opacity:.6;overflow-wrap:anywhere;white-space:pre-wrap;}
-.mp-stats-note{margin-top:8px;font-size:12px;opacity:.55;overflow-wrap:anywhere;}
+.mp-stats-mask{position:fixed;inset:0;z-index:2147483000;background:transparent;pointer-events:none;}
+.mp-stats-card{position:fixed;left:12px;bottom:calc(52px + env(safe-area-inset-bottom));
+  box-sizing:border-box;width:min(264px,calc(100vw - 24px));padding:12px;
+  border:0;border-radius:var(--dsw-radius-lg,12px);
+  background:var(--dsw-specific-menu,Canvas);color:var(--dsw-alias-label-secondary,CanvasText);
+  backdrop-filter:var(--dsw-menu-backdrop-filter,none);
+  box-shadow:var(--dsw-elevation-prominent,0 8px 24px color-mix(in srgb,CanvasText 18%,transparent));
+  font-size:12px;line-height:20px;cursor:default;
+  max-height:calc(100dvh - 80px);overflow-x:hidden;overflow-y:auto;pointer-events:auto;}
+.mp-stats-title{display:flex;align-items:center;gap:6px;margin:0;font-size:12px;font-weight:400;}
+.mp-stats-title>span{color:var(--dsw-alias-label-primary,CanvasText);}
+.mp-stats-close{margin-left:auto;padding:0 2px;border:0;background:transparent;color:inherit;
+  font-size:14px;line-height:1;opacity:.55;cursor:pointer;}
+.mp-stats-rows{margin:6px 0 0;}
+.mp-stats-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:2px 0;}
+.mp-stats-k{color:var(--dsw-alias-label-secondary,CanvasText);}
+.mp-stats-v{margin:0;font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-primary,CanvasText);}
 `;
 
 		function injectStyles() {
@@ -1695,184 +1694,186 @@ window.__ModuleLoader__.load({
 		     常驻 = 轮/步 · 缓存命中% · 上下文环%；tok/s 与 token 总量**从基准档
 		     就已移入弹层**（点药丸即得），不再参与常驻竞争。
 		     这里的档位只剩「极端数字兜底」：轮→步→纯数字、缓存标签→纯百分比。 */
-		// ══ §4.37：状态栏两入口弹层（会话统计 / Token 用量）══════════════════
-		// 数据源：精简前官方原文，见 processStatsLine 里写入的 dataset.mpRaw。
-		// 为什么不调 sessionStats / tokenMeter：那两个是**服务端投影**，客户端拿不到实例；
-		// 而这两枚药丸的原文本身就把官方「详细」档的全部字段带上了（轮/步、tok/s、
-		// 总量、缓存命中%），解析即得，零后端依赖、零上游改动。
-		function mpStatsParts(raw) {
-			const t = (raw || "").replace(/\s+/g, " ").trim();
-			const pick = (re) => { const m = re.exec(t); return m ? m[1] : ""; };
-			return {
-				raw: t,
-				turns: pick(/(\d+)\s*(?:轮|turns?)/i),
-				steps: pick(/(\d+)\s*(?:步|steps?)/i),
-				tps: pick(/([\d.]+)\s*(?:tok\/s|t\/s|tok\/s)/i),
-				total: pick(/^([\d.]+\s*[KMG]?)/),
-				cache: pick(/(?:缓存命中|缓存|cache)\s*([\d.]+%)/i),
-				input: pick(/(?:输入|uncached input|input)\s*([\d.]+\s*[KMG]?)/i),
-				cacheRead: pick(/(?:缓存读|缓存读取|cache read)\s*([\d.]+\s*[KMG]?)/i),
-				output: pick(/(?:输出|output)\s*([\d.]+\s*[KMG]?)/i)
-			};
-		}
-		function mpStatsRow(k, v, key) {
-			const row = document.createElement("div");
-			row.className = "mp-stats-row";
-			if (key) row.dataset.mk = key;
-			const kk = document.createElement("span");
-			kk.className = "mp-stats-k";
-			kk.textContent = k;
-			const vv = document.createElement("span");
-			vv.className = "mp-stats-v";
-			vv.textContent = v && v !== "" ? v : "—";
-			row.appendChild(kk);
-			row.appendChild(vv);
-			return row;
-		}
-		function mpCloseStats() {
-			const m = document.querySelector(".mp-stats-mask");
-			if (m) m.remove();
-		}
-		function mpOpenStats(el) {
-			if (!mpIsMobile()) return;
-			mpCloseStats();
-			const kind = (el.getAttribute("data-composer-stat") || el.dataset.mpKind || "").toLowerCase();
-			const isUsage = kind === "usage";
-			const p = mpStatsParts(el.dataset[MP_STATS_RAW] || el.textContent || "");
-			const mask = document.createElement("div");
-			mask.className = "mp-stats-mask";
-			mask.addEventListener("click", (ev) => { if (ev.target === mask) mpCloseStats(); });
-			const card = document.createElement("div");
-			card.className = "mp-stats-card";
-			const title = document.createElement("div");
-			title.className = "mp-stats-title";
-			const h = document.createElement("span");
-			h.textContent = isUsage ? "Token 用量" : "会话统计";
-			const x = document.createElement("button");
-			x.className = "mp-stats-close";
-			x.type = "button";
-			x.setAttribute("aria-label", "关闭");
-			x.textContent = "×";
-			x.addEventListener("click", mpCloseStats);
-			title.appendChild(h);
-			title.appendChild(x);
-			card.appendChild(title);
-			if (isUsage) {
-				card.appendChild(mpStatsRow("总量", p.total ? p.total + " tok" : "", "total"));
-				card.appendChild(mpStatsRow("缓存命中", p.cache, "cache"));
-				card.appendChild(mpStatsRow("未缓存输入", p.input, "input"));
-				card.appendChild(mpStatsRow("缓存读取", p.cacheRead, "cacheRead"));
-				card.appendChild(mpStatsRow("输出", p.output, "output"));
-			} else {
-				card.appendChild(mpStatsRow("轮 / 步", (p.turns || "—") + " 轮 · " + (p.steps || "—") + " 步", "turns"));
-				card.appendChild(mpStatsRow("输出速度", p.tps ? p.tps + " tok/s" : "", "tps"));
-				card.appendChild(mpStatsRow("模型用时 / 工具用时", "", "times"));
-				card.appendChild(mpStatsRow("首 token（TTFT）", "", "ttft"));
-			}
-			const raw = document.createElement("div");
-			raw.className = "mp-stats-raw";
-			raw.textContent = "原始：" + (p.raw || "（空）");
-			card.appendChild(raw);
-			const note = document.createElement("div");
-			note.className = "mp-stats-note";
-			note.textContent = isUsage
-				? "总量/缓存命中来自药丸原文；输入·缓存读·输出需要官方 usage 投影（当前显示 —）。"
-				: "轮/步与速度来自药丸原文；模型/工具用时、TTFT 需要官方 sessionStats 投影（当前显示 —）。";
-			card.appendChild(note);
-			mask.appendChild(card);
-			document.body.appendChild(mask);
-			mpFillProjection(card, isUsage, p);
-		}
-		function mpBindStatsTrigger(el) {
-			if (!el || el.dataset.mpBound === "1") return;
-			el.dataset.mpBound = "1";
-			el.dataset.mpKind = (el.getAttribute("data-composer-stat") || "").toLowerCase();
-			el.style.cursor = "pointer";
-			el.addEventListener("click", (ev) => {
-				ev.preventDefault();
-				ev.stopPropagation();
-				mpOpenStats(el);
-			}, true);
-		}
-function mpNum(n) {
+		// ══ §4.38：状态栏两入口弹层（会话统计 / Token 用量）══════════════════
+// 骨架照搬上游 ContextMeter 面板：264px popover、padding 12、
+// --dsw-specific-menu 底、--dsw-elevation-prominent 影、12px/20px、
+// rows 的 dt/dd 两端对齐；**无遮罩、无分隔线、无注释**。
+function mpStatsParts(raw) {
+const t = (raw || "").replace(/\s+/g, " ").trim();
+const pick = (re) => { const m = re.exec(t); return m ? m[1] : ""; };
+return {
+raw: t,
+turns: pick(/(\d+)\s*(?:轮|turns?)/i),
+steps: pick(/(\d+)\s*(?:步|steps?)/i),
+tps: pick(/([\d.]+)\s*(?:tok\/s)/i),
+total: pick(/^([\d.]+\s*[KMG]?)/),
+cache: pick(/(?:缓存命中|缓存|cache)\s*([\d.]+%)/i),
+};
+}
+function mpTok(n) {
 if (n == null || !isFinite(n)) return "";
-if (n >= 1e6) return (n / 1e6).toFixed(1).replace(/\.0$/, "") + "M";
-if (n >= 1e3) return (n / 1e3).toFixed(n >= 1e5 ? 0 : 1).replace(/\.0$/, "") + "K";
-return String(Math.round(n));
+return Math.round(n).toLocaleString("en-US") + " tok";
 }
 function mpSec(ms) {
-if (!ms || !isFinite(ms)) return "—";
-const s2 = ms / 1000;
-return (s2 >= 100 ? Math.round(s2) : s2.toFixed(1)) + " 秒";
+if (!ms || !isFinite(ms)) return "";
+const v = ms / 1000;
+return (v >= 100 ? Math.round(v) : v.toFixed(1)) + "秒";
+}
+function mpStatsRow(k, v, key) {
+const row = document.createElement("div");
+row.className = "mp-stats-row";
+if (key) row.dataset.mk = key;
+const kk = document.createElement("span");
+kk.className = "mp-stats-k";
+kk.textContent = k;
+const vv = document.createElement("span");
+vv.className = "mp-stats-v";
+vv.textContent = v && v !== "" ? v : "—";
+row.appendChild(kk);
+row.appendChild(vv);
+return row;
 }
 function mpSetRow(card, key, val) {
 if (!val) return;
 const v = card.querySelector('[data-mk="' + key + '"] .mp-stats-v');
 if (v) v.textContent = val;
 }
-/** 投影回填：读引擎自己的投影缓存（服务端 route 直出），补全药丸原文拿不到的字段。 */
-function mpFillProjection(card, isUsage, p) {
-const noteEl = card.querySelector(".mp-stats-note");
+function mpCloseStats() {
+const m = document.querySelector(".mp-stats-mask");
+if (m) m.remove();
+if (window.__mpStatsOutside) {
+document.removeEventListener("pointerdown", window.__mpStatsOutside, true);
+window.__mpStatsOutside = null;
+}
+}
+function mpOpenStats(el) {
+if (!mpIsMobile()) return;
+mpCloseStats();
+const kind = (el.getAttribute("data-composer-stat") || el.dataset.mpKind || "").toLowerCase();
+const isUsage = kind === "usage" || /tok/i.test(el.textContent || "");
+const p = mpStatsParts(el.dataset[MP_STATS_RAW] || el.textContent || "");
+const mask = document.createElement("div");
+mask.className = "mp-stats-mask";
+const card = document.createElement("div");
+card.className = "mp-stats-card";
+card.setAttribute("role", "dialog");
+const title = document.createElement("div");
+title.className = "mp-stats-title";
+const h = document.createElement("span");
+h.textContent = isUsage ? "Token 用量" : "会话统计";
+const x = document.createElement("button");
+x.className = "mp-stats-close";
+x.type = "button";
+x.setAttribute("aria-label", "关闭");
+x.textContent = "×";
+x.addEventListener("click", mpCloseStats);
+title.appendChild(h);
+title.appendChild(x);
+card.appendChild(title);
+const rows = document.createElement("div");
+rows.className = "mp-stats-rows";
+if (isUsage) {
+rows.appendChild(mpStatsRow("总量", p.total ? p.total + " tok" : "", "total"));
+rows.appendChild(mpStatsRow("缓存命中", p.cache, "cache"));
+rows.appendChild(mpStatsRow("未缓存输入", "", "input"));
+rows.appendChild(mpStatsRow("缓存读取", "", "cacheRead"));
+rows.appendChild(mpStatsRow("输出", "", "output"));
+} else {
+rows.appendChild(mpStatsRow("轮 / 步", (p.turns || "") + (p.steps ? " 轮 · " + p.steps + " 步" : ""), "turns"));
+rows.appendChild(mpStatsRow("模型用时", "", "llm"));
+rows.appendChild(mpStatsRow("工具调用用时", "", "tool"));
+rows.appendChild(mpStatsRow("首 token 平均（TTFT）", "", "ttft"));
+rows.appendChild(mpStatsRow("输出速度（TPS）", p.tps ? p.tps + " tok/s" : "", "tps"));
+}
+card.appendChild(rows);
+mask.appendChild(card);
+document.body.appendChild(mask);
+mpFillProjection(card, isUsage, p);
+window.__mpStatsOutside = (ev) => {
+if (!card.isConnected) { mpCloseStats(); return; }
+if (card.contains(ev.target) || el.contains(ev.target)) return;
+mpCloseStats();
+};
+setTimeout(() => document.addEventListener("pointerdown", window.__mpStatsOutside, true), 0);
+}
+/** 只读投影回填：服务端 route 直出 sessionStats / tokenUsage。 */
+function mpFillProjection(card, isUsage) {
 const apply1 = (d) => {
 if (!d || d.ok !== true) return;
 const st = d.session || {}, u = d.usage || {};
 if (isUsage) {
 const cin = u.uncachedInputTokens || 0, cr = u.cacheReadTokens || 0;
 const out = u.outputTokens || 0, cw = u.cacheWriteTokens || 0;
-const sum = cin + cr + out + cw;
-if (sum > 0) {
-mpSetRow(card, "total", mpNum(sum) + " tok");
+if (cin + cr + out + cw > 0) {
+mpSetRow(card, "total", mpTok(cin + cr + out + cw));
 mpSetRow(card, "cache", Math.round((100 * cr) / Math.max(1, cin + cr)) + "%");
-mpSetRow(card, "input", mpNum(cin) + " tok");
-mpSetRow(card, "cacheRead", mpNum(cr) + " tok");
-mpSetRow(card, "output", mpNum(out) + " tok");
+mpSetRow(card, "input", mpTok(cin));
+mpSetRow(card, "cacheRead", mpTok(cr));
+mpSetRow(card, "output", mpTok(out));
 }
 } else {
 if (st.turns || st.steps) mpSetRow(card, "turns", (st.turns || 0) + " 轮 · " + (st.steps || 0) + " 步");
-if (st.llmMs || st.toolMs) mpSetRow(card, "times", mpSec(st.llmMs) + " / " + mpSec(st.toolMs));
+if (st.llmMs != null) mpSetRow(card, "llm", mpSec(st.llmMs));
+if (st.toolMs != null) mpSetRow(card, "tool", mpSec(st.toolMs));
 if (st.ttftSteps > 0) mpSetRow(card, "ttft", mpSec(st.ttftMs / Math.max(1, st.ttftSteps)));
 if (st.decodeMs > 0) mpSetRow(card, "tps", Math.round((1000 * st.decodeTokens) / st.decodeMs) + " tok/s");
 }
-if (noteEl) noteEl.textContent = "补全字段来自引擎投影缓存（sessionStats / tokenUsage，只读）。";
 };
 fetch("/__dsh_android_mobile/projection", { headers: { accept: "application/json" }, cache: "no-store" })
 .then((r) => r.json()).then(apply1).catch(() => {});
 }
+function mpBindStatsTrigger(el) {
+if (!el || el.dataset.mpBound === "1") return;
+el.dataset.mpBound = "1";
+el.dataset.mpKind = (el.getAttribute("data-composer-stat") || "").toLowerCase();
+el.style.cursor = "pointer";
+el.addEventListener("click", (ev) => {
+ev.preventDefault();
+ev.stopPropagation();
+mpOpenStats(el);
+}, true);
+}
+/** 一次性清除上一版（§4.37）写进 DOM 的内联样式 —— 它误伤了底部药丸。 */
+function mpResetTrajectoryOnce() {
+if (window.__mpTrajReset) return;
+window.__mpTrajReset = 1;
+document.querySelectorAll("[data-kind]").forEach((el) => {
+["height", "min-height", "align-items", "flex-wrap"].forEach((p) => el.style.removeProperty(p));
+el.querySelectorAll('[class*="text" i],[class*="trailing" i]').forEach((n) => {
+["white-space", "overflow", "text-overflow", "overflow-wrap", "flex", "width", "justify-content", "display"]
+.forEach((p) => n.style.removeProperty(p));
+});
+delete el.dataset.mpTrajFixed;
+});
+}
 /**
- * 轨迹行：用**内联样式**强压（inline 优先于任何 CSS modules 规则），
- * 并用「是否真溢出」判定目标，不依赖写死的类名 hash。
+ * 轨迹行：**单行 + 省略号**（与 dsh go 一致），不再强行换行。
+ * 三重排除底部 composer（药丸/输入条），只动 38px 行。
  */
 function mpSweepTrajectory() {
 if (!mpIsMobile()) return;
-const dock = document.querySelector("[data-composer-dock]");
 document.querySelectorAll("[data-kind]").forEach((el) => {
-if (dock && dock.contains(el)) return;
+if (el.closest("[data-composer-stat],[data-composer-dock],footer")) return;
 if (el.dataset.mpTrajFixed === "1") return;
-const cs = getComputedStyle(el);
-const h = parseFloat(cs.height) || 0;
-const over = el.scrollHeight > el.clientHeight + 1;
-const lowRow = h > 30 && h < 46;
-if (!over && !lowRow) return;
-el.style.setProperty("height", "auto", "important");
-el.style.setProperty("min-height", "38px", "important");
-el.style.setProperty("align-items", "flex-start", "important");
-el.style.setProperty("flex-wrap", "wrap", "important");
+const h = parseFloat(getComputedStyle(el).height) || 0;
+if (!(h > 30 && h < 46)) return;
+el.style.setProperty("height", "38px", "important");
 el.querySelectorAll('[class*="text" i]').forEach((t) => {
-t.style.setProperty("white-space", "pre-wrap", "important");
-t.style.setProperty("overflow", "visible", "important");
-t.style.setProperty("text-overflow", "clip", "important");
-t.style.setProperty("overflow-wrap", "anywhere", "important");
-t.style.setProperty("flex", "1 1 100%", "important");
+t.style.setProperty("white-space", "nowrap", "important");
+t.style.setProperty("overflow", "hidden", "important");
+t.style.setProperty("text-overflow", "ellipsis", "important");
 });
+const narrow = el.getBoundingClientRect().width < 420;
 el.querySelectorAll('[class*="trailing" i]').forEach((x) => {
 x.style.setProperty("width", "auto", "important");
-x.style.setProperty("flex", "1 1 100%", "important");
-x.style.setProperty("justify-content", "flex-start", "important");
+x.style.setProperty("flex", "none", "important");
+if (narrow) x.style.setProperty("display", "none", "important");
 });
 el.dataset.mpTrajFixed = "1";
 });
 }
 if (!window.__mpTrajTimer) {
+mpResetTrajectoryOnce();
 window.__mpTrajTimer = setInterval(mpSweepTrajectory, 1500);
 setTimeout(mpSweepTrajectory, 800);
 }

@@ -2121,7 +2121,13 @@ class EngineManager private constructor(private val context: Context) {
         // 而 stamp 又等于它 ⇒ 每次启动都 return，新 APK 里的前端从未被解出。
         // 规则：只有**严格新于内置版本**的热包才允许参与（热更新只能向前）。
         val hot = hotMobileUiBundle()?.takeIf { cmpVersion(it.second, MOBILE_UI_VERSION) > 0 }
-        val want = hot?.second ?: MOBILE_UI_VERSION
+        // §4.38：stamp 带上 versionCode —— 每次装新版 APK 必定重解压。
+        // 之前只比 MOBILE_UI_VERSION，一旦某次常量没跟上（或 dex 里残留旧值），
+        // stamp 就会恒等 → 前端永远不更新。
+        val vc = runCatching {
+            context.packageManager.getPackageInfo(context.packageName, 0).longVersionCode
+        }.getOrDefault(0L)
+        val want = (hot?.second ?: MOBILE_UI_VERSION) + "#" + vc
 
         // 版本戳一致才跳过：热包/内置包版本变了都要重解
         if (clientJs.isFile && clientJs.length() > 0 &&
@@ -8762,7 +8768,7 @@ class EngineManager private constructor(private val context: Context) {
           *      （99 → 100 / 33 → 34），否则会回退，设备上静默跑回没有这张卡的旧 UI。
           *      ⚠️ 两个戳都 bump（本常量 99 → 100，-CompatVersion 33 → 34）。
           */
-        private const val MOBILE_UI_VERSION = "1.1.0-197"
+        private const val MOBILE_UI_VERSION = "1.1.0-198"
         private const val MOBILE_UI_STAMP = ".mobile_ui_version"
 
         // ── 出厂默认设置 ─────────────────────────────────────────────

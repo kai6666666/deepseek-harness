@@ -8,6 +8,54 @@
 - 设备侧清理：删除演练备份 `dsh-backup-drill.zip` 与 13 个历史 APK（约 2.4 GB）。
 
 **不发新版**：本批只有文档与文件清理。
+## [0.2.2-rc.5-debug.56] — 2026-11-28
+vc=141
+
+### ① 两张弹层改成「上下文占用面板」同款 popover
+
+不再是「全屏遮罩 + 底部大卡」，而是照搬 `ContextMeter.module.css` 的几何：
+
+```text
+位置   position:fixed · left:12px · bottom:calc(52px + safe-area)
+宽度   min(264px, 100vw-24px)
+内边距 12px · 圆角 var(--dsw-radius-lg) · border:0
+底色   var(--dsw-specific-menu) · backdrop-filter var(--dsw-menu-backdrop-filter)
+阴影   var(--dsw-elevation-prominent)
+字号   12px / 行高 20px · 行 padding 2px · gap 12px · 数值 tabular-nums
+无遮罩、无分隔线、无原始行、无注释段
+```
+
+### ② 删掉注释/原始区
+
+`.mp-stats-raw` 与 `.mp-stats-note` 的 CSS + DOM 全部移除（dsh go 的卡片底部直接结束）。
+
+### ③ 药丸字号被放大 —— 真因是上一版内联样式误伤
+
+`mpSweepTrajectory()` 原来只排除 `[data-composer-dock]`；该属性不存在时排除失效，
+底部两枚药丸被当成轨迹行，`min-height:38px` + `.text{flex:1 1 100%}` 把字号撑大。
+
+```text
+排除条件   el.closest('[data-composer-stat],[data-composer-dock],footer')
+启动清理   mpResetTrajectoryOnce() 一次性 removeProperty 掉上一版写入的内联样式
+```
+
+### ④ 轨迹改「单行 + 省略号」
+
+```text
+height:38px!important（保持官方行高，不再 height:auto）
+.text  → white-space:nowrap / overflow:hidden / text-overflow:ellipsis
+.trailing → width:auto / flex:none；行宽 < 420px 时 display:none
+```
+
+### ⑤ stamp 带 versionCode（拔掉 stale 钉子）
+
+```text
+want = (hot?.second ?: MOBILE_UI_VERSION) + "#" + versionCode
+⇒ 只要装的是新版 APK，stamp 必不相等 ⇒ 必重解压，不再依赖常量是否跟上
+```
+
+---
+
 ## [0.2.2-rc.5-debug.55] — 2026-11-28
 vc=140
 
