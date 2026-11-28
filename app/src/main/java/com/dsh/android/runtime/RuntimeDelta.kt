@@ -450,8 +450,17 @@ object RuntimeDelta {
     /** 某个版本的某个分片文件（增量产物）；没有则 null。 */
     fun partFile(filesDir: File, version: String, asset: String): File? {
         if (version.isEmpty()) return null
-        val f = File(filesDir, "runtime/parts/" + version + "/" + asset)
-        return if (f.isFile && f.length() > 0L) f else null
+        // ⚠️ 两个名字都要试：
+        //   · manifest 里的 `rootfsParts[].asset` 带 `runtime/` 前缀（`runtime/rootfs-part3-…`）；
+        //   · 而增量下载落盘用的是 chunks 清单里的键（`rootfs-part3-…`，没有前缀）。
+        // 只按 asset 原样拼路径 ⇒ 永远 `parts/<ver>/runtime/rootfs-…`（不存在）⇒ 增量换成
+        // 「退回 APK assets 的旧分片」⇒ 解包期 sha256 校验失败（2026-11-28 真机实测）。
+        val candidates = linkedSetOf(asset, asset.substringAfterLast('/'))
+        for (name in candidates) {
+            val f = File(filesDir, "runtime/parts/" + version + "/" + name)
+            if (f.isFile && f.length() > 0L) return f
+        }
+        return null
     }
 
     /**

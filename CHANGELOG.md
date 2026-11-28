@@ -8,6 +8,25 @@
 - 设备侧清理：删除演练备份 `dsh-backup-drill.zip` 与 13 个历史 APK（约 2.4 GB）。
 
 **不发新版**：本批只有文档与文件清理。
+## [0.2.2-rc.5-debug.50] — 2026-11-28
+vc=135
+
+### 修复（真机 A4-#6 演练挖出）：增量分片文件名带不带 `runtime/` 前缀
+
+`manifest.rootfsParts[].asset` 是 `runtime/rootfs-part3-…`，而 `RuntimeDelta` 下载落盘用的是
+chunks 清单的键 `rootfs-part3-…`。`partFile()` 只按原样拼路径 ⇒ 找不到增量分片 ⇒ 解包期退回
+APK assets 的旧分片 ⇒ `rootfs分片校验失败：part3 sha256=…`（09:13 真机实测，App 进错误页）。
+
+现在两个名字都试（`asset` 与 `asset.substringAfterLast('/')`），并补单测
+`RuntimeDeltaPartFileTest`（裸名 / 带前缀 / 缺版本 / 空文件 4 例）。
+
+### 一并带上（debug.49 已有）
+
+- `boot.timeline` 9 点；`app` 点不再被 `start()` 擦掉；
+- `applyAsync` 0 字节短路；
+- 分块增量判定 `changedChunkIndexes` 与 5 例单测。
+
+---
 ## [0.2.2-rc.5-debug.49] — 2026-11-27
 vc=134
 
