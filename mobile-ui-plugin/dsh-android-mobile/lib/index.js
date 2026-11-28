@@ -653,6 +653,7 @@ send(200, { ok: false, error: String((e && e.message) || e) });
 }
 },
 }), 'dsh-android-mobile: session projection route');
+
 	ctx.effect(() => ctx.webServer.register({
 		kind: 'exact',
 		path: ROUTE,

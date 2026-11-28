@@ -2495,3 +2495,47 @@ vc139 · engine.ready 21,235 ms · health=401 · runtime=proot
 
 字段为「—」时的含义：该数据来自服务端投影（`dsh-session-stats` / `dsh-token-meter`），
 客户端只持有降档前的药丸原文（`dataset.mpRaw`），拿不到的项就显「—」。
+
+### 4.38 状态栏弹层 / 轨迹单行：收口（debug.58 / vc143）
+
+> 提交：`a2ca1f4`（弹层+轨迹 JS）· `bfd605b`（ContextMeter 同款 popover）· `6039cc2`（删残留 media）· 本提交（§4.40 单行 + 删探针）
+
+#### 4.38.1 三步排查法（客户端插件“改了不生效”）
+
+```text
+台阶1 文件到没到设备：grep mpOpenStats files/home/.dsh/mobile-ui/.../lib/client.js
+台阶2 热包是否压制：ls files/runtime/plugins/；cat .mobile_ui_version
+台阶3 页面栈的是哪份：grep "移动端 UI" files/app.log（字节数应与 zip 内 client.js 一致）
+```
+
+本轮挖出的两个真凶：**陈旧热包**（`mobile-ui-1.1.0-237.zip` 一直压着内置包）与
+**我的替换切掉了探针**（v303 起 diag 断流，导致三版“改了无从验证”）。
+
+#### 4.38.2 弹层（会话统计 / Token 用量）
+
+| 项 | 值 |
+|---|---|
+| 骨架 | 上游 `ContextMeter.module.css`：264px popover / padding 12 / `--dsw-specific-menu` / `--dsw-elevation-prominent` / 12px·20px |
+| 配色 | `--dsw-alias-*`（旧的 `--dsh-surface-1` 不存在，永远落死黑卡） |
+| 注释区 | 已删（`mp-stats-raw` / `mp-stats-note` 计数 = 0） |
+| 数值 | 千分位（`44,378 tok`） |
+| 数据 | `GET /__dsh_android_mobile/projection`（读 `storages/session_projcache/sessions/*.json` 最新一份） |
+
+#### 4.38.3 轨迹「未展开」= 单行（§4.40 最终结论）
+
+```text
+根因：上游 ._row_l4nv8_26{height:calc(24px+delta);overflow:hidden}
+      ×  我们「修复57」._text_1rdzk_17{white-space:normal}
+      ⇒ 正文 200px、父行 25px ⇒ 溢出压叠 + 图标错位
+修法：._row 保持 24px+delta + center + hidden
+      ._content_1rdzk_11{min-width:0;overflow:hidden}
+      ._text_1rdzk_17{nowrap;hidden;ellipsis;display:block;max-width:100%}
+真机：cellH=25=parH=25；ws=nowrap；to=ellipsis；scrollHeight=25
+```
+
+#### 4.38.4 两个长期隐患已拔
+
+```text
+① 陈旧热包：hotMobileUiBundle()?.takeIf { cmpVersion(it.second, MOBILE_UI_VERSION) > 0 }
+② 前端不刷新：want = 版本 + "#" + versionCode（装新版必重解压）
+```

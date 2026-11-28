@@ -8,6 +8,54 @@
 - 设备侧清理：删除演练备份 `dsh-backup-drill.zip` 与 13 个历史 APK（约 2.4 GB）。
 
 **不发新版**：本批只有文档与文件清理。
+## [0.2.2-rc.5-debug.58] — 2026-11-28
+vc=143
+
+本版把 `debug.53`~`debug.57` 的客户端改动收口，并删掉全部临时探针。
+
+### ① 底部两枚药丸的弹层（会话统计 / Token 用量）
+
+- 骨架照搬上游 `ContextMeter.module.css`：264px popover、padding 12、
+  `--dsw-specific-menu`、`--dsw-elevation-prominent`、12px/20px、dt-dd 两端对齐、**无遮罩**
+- 配色全部走 `--dsw-alias-*` token（旧版写的 `--dsh-surface-1` 根本不存在 ⇒ 永远是死黑卡）
+- **删除**「原始：…」与「补全字段来自…」两个注释区
+- 数值千分位（`44,378 tok`），与 dsh go 一致
+
+### ② 字段补全：新增只读投影 route
+
+```text
+GET /__dsh_android_mobile/projection
+数据源 $DSH_HOME/storages/session_projcache/sessions/session-*.json（mtime 最新 = 活跃会话）
+返回 sessionStats / tokenUsage / contextPressure
+```
+
+弹层里「未缓存输入 / 缓存读取 / 输出 / 模型用时 / 工具调用用时 / TTFT / tok/s」由此补齐。
+
+### ③ 轨迹「未展开」只显示单行（最终结论）
+
+```text
+根因链：
+  上游 ._row_l4nv8_26 { height: calc(24px+delta); overflow:hidden }
+  我们「修复 57」把 ._text_1rdzk_17 改成 white-space:normal
+  ⇒ 正文 200px 而父行 25px ⇒ 溢出压到下一行 + 图标上下错位
+
+修法（§4.40）：
+  ._row_l4nv8_26 保持 24px+delta、align-items:center、overflow:hidden
+  ._content_1rdzk_11  min-width:0、overflow:hidden
+  ._text_1rdzk_17    nowrap / hidden / ellipsis / display:block / max-width:100%
+
+真机读数（v307 热包）：
+  cellH=25 = parH=25，whiteSpace=nowrap，textOverflow=ellipsis，
+  scrollHeight=25（无隐藏多行）   ⇒ 单行成立，压叠消失
+```
+
+### ④ 顺手拔掉两个长期隐患
+
+- `ensureMobileUi()`：陈旧热包必须**严格新于**内置版本才参与（`cmpVersion > 0`）
+- `want = 版本 + "#" + versionCode` ⇒ 装新版 APK 必重解压，不再看常量脸色
+
+---
+
 ## [0.2.2-rc.5-debug.57] — 2026-11-28
 vc=142
 

@@ -773,10 +773,27 @@ window.__ModuleLoader__.load({
   width: auto !important;
   max-width: 100% !important;
 }
-[data-mobile] ._text_1rdzk_17 {
-  white-space: normal !important;
-  word-break: break-word !important;
-  overflow-wrap: anywhere !important;
+/* §4.39：上游 ._row 是「24px 死高 + overflow:hidden」，而正文被我们强制换行成
+   200px ⇒ 溢出压到下一行。这里改成：行高随内容 + 正文最多两行截断。 */
+/* §4.40：未展开状态**只显示单行**。
+   之前改成 pre-wrap/line-clamp 让文字占两行，而行高仍是 24px ⇒ 图标移位 + 压叠。
+   正确做法：保持上游单行 + 省略号，靠 min-width:0/overflow:hidden 收住宽度，
+   而不是靠换行去避免横向拖拽。 */
+._row_l4nv8_26 {
+  height: calc(24px + var(--dsh-content-font-delta, 0px)) !important;
+  align-items: center !important;
+  overflow: hidden !important;
+}
+._content_1rdzk_11 {
+  min-width: 0 !important;
+  overflow: hidden !important;
+}
+._text_1rdzk_17 {
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  display: block !important;
+  max-width: 100% !important;
 }
 
 /* ══ 修复 71：整页能横向滚 114px，点一下「更多操作」页面就左偏 ══════════
@@ -1824,30 +1841,14 @@ delete el.dataset.mpTrajFixed;
  * 三重排除底部 composer（药丸/输入条），只动 38px 行。
  */
 function mpSweepTrajectory() {
-if (!mpIsMobile()) return;
-document.querySelectorAll("[data-kind]").forEach((el) => {
-if (el.closest("[data-composer-stat],[data-composer-dock],footer")) return;
-if (el.dataset.mpTrajFixed === "1") return;
-el.style.setProperty("height", "38px", "important");
-el.style.setProperty("min-height", "0px", "important");
-el.style.setProperty("max-height", "38px", "important");
-el.style.setProperty("overflow", "hidden", "important");
-el.style.setProperty("align-items", "center", "important");
-el.style.setProperty("flex-wrap", "nowrap", "important");
-el.querySelectorAll('[class*="text" i]').forEach((t) => {
-t.style.setProperty("white-space", "nowrap", "important");
-t.style.setProperty("overflow", "hidden", "important");
-t.style.setProperty("text-overflow", "ellipsis", "important");
-t.style.setProperty("overflow-wrap", "normal", "important");
-});
-const narrow = el.getBoundingClientRect().width < 420;
-el.querySelectorAll('[class*="trailing" i]').forEach((x) => {
-x.style.setProperty("width", "auto", "important");
-x.style.setProperty("flex", "none", "important");
-if (narrow) x.style.setProperty("display", "none", "important");
-});
-el.dataset.mpTrajFixed = "1";
-});
+  if (!mpIsMobile()) return;
+  // §4.39：改由 CSS 负责（._row_l4nv8_26 height:auto + 正文两行截断），
+  // 这里只做一件事：把上一版写进祖先的内联 height/overflow 清掉，避免打架。
+  document.querySelectorAll('[class*="_row_l4nv8_"],[class*="_root_1rdzk_"]').forEach((el) => {
+    if (el.closest('[data-composer-stat],[data-composer-dock],footer')) return;
+    if (!el.style || !el.style.length) return;
+    ['height', 'min-height', 'max-height', 'overflow', 'align-items'].forEach((k) => el.style.removeProperty(k));
+  });
 }
 if (!window.__mpTrajTimer) {
 mpResetTrajectoryOnce();

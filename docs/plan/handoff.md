@@ -661,3 +661,39 @@ run-as com.dsh.android sh -c 'grep -a "移动端 UI" files/logs/app.log | tail -
 | 热包闸门 | `EngineManager.ensureMobileUi()` `takeIf { cmpVersion(...) > 0 }` |
 | 弹层数据源 | `dataset.mpRaw`（降档前原文）；拿不到的字段显「—」 |
 | 轨迹修复 | `height:auto` / `pre-wrap` / `overflow-wrap:anywhere` / trailing `flex:1 1 100%`，**不碰 font-size** |
+
+### 10.24 mobile-ui 插件的「改了不生效」与轨迹压叠（debug.58 定案）
+
+#### 一、判断插件到底加载了哪版
+
+```bash
+run-as com.dsh.android sh -c 'ls -l files/home/.dsh/mobile-ui/dsh-android-mobile/lib/client.js;   cat files/home/.dsh/mobile-ui/dsh-android-mobile/.mobile_ui_version'
+run-as com.dsh.android sh -c 'ls -l files/runtime/plugins/'
+run-as com.dsh.android sh -c 'grep -a "移动端 UI" files/app.log | tail -1'
+```
+
+- `.mobile_ui_version` 现在是 `<ver>#<versionCode>`；只在一份 APK 内有效
+- `files/runtime/plugins/mobile-ui-*.zip` 是热包，**只有严格新于内置版本**才参与；
+  救急：`mv plugins/mobile-ui-*.zip plugins/.stale/ && rm .mobile_ui_version`，重启即重解
+
+#### 二、热更新调试通道（不重装 162 MB）
+
+```bash
+# 本地打 zip → 推进设备 → 重启
+cat /sdcard/Download/mobile-ui-1.1.0-<ver>.zip |   run-as com.dsh.android sh -c 'cat > files/runtime/plugins/mobile-ui-1.1.0-<ver>.zip'
+am force-stop com.dsh.android; am start -n com.dsh.android/.MainActivity
+```
+
+#### 三、轨迹压叠的唯一正解
+
+```text
+上游：._row_l4nv8_26 { height: calc(24px + delta); overflow:hidden; align-items:center }
+错解：把 ._text_1rdzk_17 改成 white-space:normal（会撑到 200px，父行仍 24px）
+正解：nowrap + text-overflow:ellipsis + ._content_1rdzk_11{min-width:0;overflow:hidden}
+验收：cellH = parH = 25，scrollHeight = 25，ws=nowrap，to=ellipsis
+```
+
+#### 四、临时探针要放独立 IIFE
+
+整段替换 `mpSweepTrajectory → if(!window.__mpTrajTimer)` 会把夹在中间的探针一起删掉；
+本轮因此白跑三版。探针一律追加在文件末尾。
