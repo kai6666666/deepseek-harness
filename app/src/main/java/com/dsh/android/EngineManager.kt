@@ -6928,7 +6928,8 @@ class EngineManager private constructor(private val context: Context) {
             writeProotSandboxPatch(),
             writeWorkspacePatch(),
             writeSessionSearchPatch(),
-            writeUiStatsPatch(),
+            // writeUiStatsPatch()：2026-11-28 撤销——experimental「统计 tab」在真机未生效，
+            // 改为在我们自己的 dsh-android-mobile 插件里做「状态栏两入口弹窗」（§4.37）。函数保留便于回退。
             writePluginManagerPatch(),
             writeBubbleToolPatch(),
             writeStatusBarToolPatch(),
