@@ -8,6 +8,30 @@
 - 设备侧清理：删除演练备份 `dsh-backup-drill.zip` 与 13 个历史 APK（约 2.4 GB）。
 
 **不发新版**：本批只有文档与文件清理。
+## [0.2.2-rc.5-debug.52] — 2026-11-28
+vc=137
+
+### 新增：官方统计面板（会话统计 / Token 用量）
+
+官方插件 `@deepseek-ai/dsh-experimental-client-ui-stats` 本体已在 runtime 的 `node_modules` 里，
+本版只做**播种**：App 写 `$DSH_HOME/ui-stats.patch.yml`（`- id: ui-stats`）并挂进 `{PATCHES}`
+（与 `session-search.patch.yml` 同一机制）。效果是会话顶部 [对话 | 轨迹] 旁多出「统计」tab：
+Turn/Step 的上下文大小、首 token 延迟、模型 vs 工具耗时、缓存命中率、输出速度。
+
+- 不改 `profiles/web/cordis.patch.yml`（用户层），删 overlay 文件即回退；
+- 新增 `BuiltinOverlays`（纯函数 + 4 例单测），避免这段 YAML 写错只能靠现象反推。
+
+### 修复：轨迹行在手机上「右侧内容堆叠 / 文字被吃掉」
+
+根因在上游样式：`TrajectoryCell.module.css` 的 `.root{height:38px}` + `.text{nowrap+ellipsis}`
++ `.trailing{width:320px}`（4×71+3×12）。手机宽度下正文区被压到几乎为 0，且 38px 装不下换行内容。
+
+- 方案 a（本版）：壳侧注入 `assets/ui-fixes.js`（`onPageFinished` 评估，脚本自带 MutationObserver），
+  窄屏下把轨迹行改成 `height:auto` + 允许换行 + `trailing` 另起一行；
+- 方案 b（暂不动）：改 rootfs 里 `dsh-client-ui-trajectory` 的 dist —— runtime 升级会覆盖，留作后备。
+
+---
+
 ## [0.2.2-rc.5-debug.51] — 2026-11-28
 vc=136
 

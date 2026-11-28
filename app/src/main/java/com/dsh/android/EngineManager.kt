@@ -1723,6 +1723,30 @@ class EngineManager private constructor(private val context: Context) {
         null
     }
 
+    /**
+     * 启用官方统计面板（`@deepseek-ai/dsh-experimental-client-ui-stats`）。
+     *
+     * 它给会话加一个「统计」tab：turn/step 的上下文大小、首 token 延迟、模型 vs 工具耗时、
+     * 缓存命中率、输出速度 —— 也就是「会话统计 + Token 用量」两块面板（§4.37）。
+     *
+     * 为什么用 overlay 而不是改 profile：
+     *   · 包本体已经在 runtime 的 `node_modules` 里（版本与引擎一致），launch env 带
+     *     `NODE_PATH=/opt/dsh/node_modules`，所以**不需要 npm install**；
+     *   · `profiles/web/cordis.patch.yml` 是用户层，App 不该覆写；
+     *   · overlay 由 App 独占且优先级更高，删掉 `$DSH_HOME/ui-stats.patch.yml` 即回退。
+     *
+     * ⚠️ 插件是 experimental：如果它挂载失败导致前端白屏，删掉这个文件重启引擎就会恢复。
+     */
+    private fun writeUiStatsPatch(): File? = try {
+        val f = File(dshHome, BuiltinOverlays.UI_STATS_FILE)
+        f.writeText(BuiltinOverlays.uiStatsYaml())
+        Log.i(TAG, "已播种统计面板 overlay: ${BuiltinOverlays.UI_STATS_FILE}")
+        f
+    } catch (t: Throwable) {
+        Log.w(TAG, "写统计面板 overlay 失败: ${t.message}")
+        null
+    }
+
     private fun writeSandboxPatch(runner: File?): File? {
         if (runner == null) return null
         val file = File(dshHome, SANDBOX_PATCH)
@@ -6903,6 +6927,7 @@ class EngineManager private constructor(private val context: Context) {
             writeProotSandboxPatch(),
             writeWorkspacePatch(),
             writeSessionSearchPatch(),
+            writeUiStatsPatch(),
             writePluginManagerPatch(),
             writeBubbleToolPatch(),
             writeStatusBarToolPatch(),

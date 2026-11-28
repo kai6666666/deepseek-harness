@@ -1271,6 +1271,25 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
+     * 前端样式修复脚本的缓存（`assets/ui-fixes.js` 每次启动读一次就够）。
+     *
+     * 为什么要在壳里注入：轨迹行是「固定 38px 高 + 单行 ellipsis + 右侧 320px 写死」的上游样式，
+     * 手机上会表现为「右侧内容堆叠 / 文字被吃掉」。改 rootfs 里的 dist 会在 runtime 升级时被覆盖，
+     * 所以先用注入覆盖（方案 a）；脚本自带 MutationObserver，插件晚挂载后样式也不会丢。
+     */
+    private var uiFixesSource: String? = null
+
+    /** 把 `assets/ui-fixes.js` 评估进页面；读不到资源就静默跳过（不影响启动）。 */
+    private fun applyUiFixes() {
+        val src = uiFixesSource ?: runCatching {
+            assets.open(UI_FIXES_ASSET).bufferedReader().use { it.readText() }
+        }.getOrNull()?.also { uiFixesSource = it } ?: return
+        if (!::web.isInitialized) return
+        runCatching { web.evaluateJavascript(src, null) }
+            .onFailure { Log.w(DshApplication.TAG, "注入 ui-fixes 失败: " + it.message) }
+    }
+
+    /**
      * 建 Web 内核宿主并装进布局。
      *
      * 内核相关的全部装配（JS 开关、桥、外链策略、文件选择、下载、控制台）
@@ -1296,6 +1315,7 @@ class MainActivity : AppCompatActivity() {
                     //   （配置早已是 fullscreen:true）页面就永远拿不到这个值，
                     //   症状是"全面屏开着但顶部被状态栏压住"。
                     pushSystemBarInset(SystemBarAppearance.load(this).fullscreen)
+                    applyUiFixes()
                     // DOM 到了，但移动端 UI 插件仍在激活（实测还有约 1.7s）——
                     // 这段宿主本来完全感知不到，上报给启动层，动画才不会提前收尾。
                     engine.notifyPageLoaded()
@@ -4375,6 +4395,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     internal companion object {
+
+        /** 前端样式修复脚本（`assets/ui-fixes.js`）。 */
+        private const val UI_FIXES_ASSET = "ui-fixes.js"
         /** 键盘高度缓存的 SharedPreferences 文件名。 */
         const val IME_PREFS = "dsh_ime"
 
