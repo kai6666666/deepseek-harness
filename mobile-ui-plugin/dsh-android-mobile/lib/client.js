@@ -1436,34 +1436,7 @@ window.__ModuleLoader__.load({
    ① 状态栏两枚药丸（[data-composer-stat=activity|usage]）点击弹层：
       activity → 会话统计；usage → Token 用量。数据取精简前的原文（dataset.mpRaw），
       拿不到的字段显示「—」，绝不臆造。 */
-@media (max-width: 560px) {
-  [data-kind] {
-    height: auto !important;
-    min-height: 38px !important;
-    max-height: none !important;
-    align-items: flex-start !important;
-    flex-wrap: wrap !important;
-    row-gap: 4px !important;
-  }
-  [data-kind] [class*="text" i],
-  [data-kind] [class*="title" i] {
-    white-space: pre-wrap !important;
-    overflow: visible !important;
-    text-overflow: clip !important;
-    overflow-wrap: anywhere !important;
-    word-break: break-word !important;
-    line-height: 1.35 !important;
-    max-height: none !important;
-    -webkit-line-clamp: unset !important;
-  }
-  [data-kind] [class*="trailing" i],
-  [data-kind] [class*="meta" i] {
-    width: auto !important;
-    flex: 1 1 100% !important;
-    justify-content: flex-start !important;
-    column-gap: 10px !important;
-  }
-}
+
 .mp-stats-mask{position:fixed;inset:0;z-index:2147483000;background:transparent;pointer-events:none;}
 .mp-stats-card{position:fixed;left:12px;bottom:calc(52px + env(safe-area-inset-bottom));
   box-sizing:border-box;width:min(264px,calc(100vw - 24px));padding:12px;
@@ -1838,7 +1811,7 @@ function mpResetTrajectoryOnce() {
 if (window.__mpTrajReset) return;
 window.__mpTrajReset = 1;
 document.querySelectorAll("[data-kind]").forEach((el) => {
-["height", "min-height", "align-items", "flex-wrap"].forEach((p) => el.style.removeProperty(p));
+["height", "min-height", "max-height", "align-items", "flex-wrap", "overflow"].forEach((p) => el.style.removeProperty(p));
 el.querySelectorAll('[class*="text" i],[class*="trailing" i]').forEach((n) => {
 ["white-space", "overflow", "text-overflow", "overflow-wrap", "flex", "width", "justify-content", "display"]
 .forEach((p) => n.style.removeProperty(p));
@@ -1855,13 +1828,17 @@ if (!mpIsMobile()) return;
 document.querySelectorAll("[data-kind]").forEach((el) => {
 if (el.closest("[data-composer-stat],[data-composer-dock],footer")) return;
 if (el.dataset.mpTrajFixed === "1") return;
-const h = parseFloat(getComputedStyle(el).height) || 0;
-if (!(h > 30 && h < 46)) return;
 el.style.setProperty("height", "38px", "important");
+el.style.setProperty("min-height", "0px", "important");
+el.style.setProperty("max-height", "38px", "important");
+el.style.setProperty("overflow", "hidden", "important");
+el.style.setProperty("align-items", "center", "important");
+el.style.setProperty("flex-wrap", "nowrap", "important");
 el.querySelectorAll('[class*="text" i]').forEach((t) => {
 t.style.setProperty("white-space", "nowrap", "important");
 t.style.setProperty("overflow", "hidden", "important");
 t.style.setProperty("text-overflow", "ellipsis", "important");
+t.style.setProperty("overflow-wrap", "normal", "important");
 });
 const narrow = el.getBoundingClientRect().width < 420;
 el.querySelectorAll('[class*="trailing" i]').forEach((x) => {

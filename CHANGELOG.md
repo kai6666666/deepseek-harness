@@ -8,6 +8,34 @@
 - 设备侧清理：删除演练备份 `dsh-backup-drill.zip` 与 13 个历史 APK（约 2.4 GB）。
 
 **不发新版**：本批只有文档与文件清理。
+## [0.2.2-rc.5-debug.57] — 2026-11-28
+vc=142
+
+### ④ 轨迹堆叠：两个真因一起修
+
+`debug.56` 装了但轨迹仍叠。设备文件实测旧样式表还在：
+
+```text
+"height: auto !important"      ×2
+"flex: 1 1 100% !important"    ×1
+"@media (max-width: 560px)"    ×1   ← §4.37 那段没删
+```
+
+它把每一行先撑成 `height:auto`（多行 pre-wrap），而 §4.38 的 JS 又写了
+「h 必须在 30~46 才动手」⇒ 被撑高的行全部跳过 ⇒ 永远保持多行 ⇒ 压到下一行。
+
+修法：
+
+1. **删掉整块 `@media (max-width:560px){ … [data-kind] … }`**（这次真删了：`max-width: 560px` 计数 = 0）
+2. **拆掉高度门槛**，凡 `[data-kind]`（不在 composer 区）一律 inline 强压 38px / max-height
+3. `.text` 补 `overflow-wrap:normal`；`.trailing` 宽度 auto、窄屏 `display:none`
+4. `mpResetTrajectoryOnce()` 属性表扩到 `max-height / overflow`
+
+验收判据（WebView 自查）：`row.height=38`、`text.whiteSpace=nowrap`、
+`text.textOverflow=ellipsis`、相邻两行 `rect.top` 差 = 38。
+
+---
+
 ## [0.2.2-rc.5-debug.56] — 2026-11-28
 vc=141
 
