@@ -2190,3 +2190,72 @@ CI        46095426260  success（runtime (arm64-v8a) + assembleSystemDebug，含
 | B 三层测量 | ✅ |
 | 计划外优化 | ✅（42.0 s → 13.8~16.7 s） |
 | direct（免 proot） | ⏸ 已决策不动 |
+
+---
+
+### 4.34 发 `debug.51 (vc136)`：装机 + 二轮真实升级验证 `prune-by-mtime`
+
+> 提交：`9e4f256`（prune 修复）· `cf5d397`（4.33 文档）
+> CI：build `46095426260` success · sign `46096691971` success（artifact `15243805669`）
+> publish `46098056358` success → Release `v0.2.2-rc.5-debug.51`（prerelease，9 资产，APK 161,701,388 B）
+
+#### 4.34.1 装机与 9 点
+
+```text
+pm install -r -d → Success；vc=136 / 0.2.2-rc.5-debug.51
+boot.timeline total=24,016ms
+  app 546 / runtime 887(unpacked=false) / preflight 4,985 / prootSpawn 5,060 /
+  prootMounted 5,176 / nodeExec 21,406 / health 24,013 / ready 24,016 / gui
+engine.ready 23,157ms  health=401 runtime=proot
+```
+
+#### 4.34.2 二轮真实升级：验证「prune 按 mtime」修复
+
+```text
+rD3 = 与 rD2 同长（part3 仍 1,888 B）但内容换成 probe v2：
+      root/.profile = "#A4-#6 runtime probe v2 (prune-by-mtime fix)"
+      压缩用 `xz -5 -T1`（实测正好 1,888 B，无需 padding）
+
+check → {"to":"…-rD3","needBytes":1888,"totalBytes":784556,"incremental":true}
+apply → 运行时 …-rD3 已就绪（增量 1 KB）
+parts → apply 后只剩 `…-rD3`（旧的 `…-rD2` 被 prune 删掉）
+        ⇒ **bug #2 修复成立**（此前是字典序把旧版本留下、新版本删掉）
+解包  → part2 用增量分片：782668 字节
+        part3 用增量分片：1888 字节
+探针  → root/.profile = "#A4-#6 runtime probe v2 (prune-by-mtime fix)"
+启动  → engine.ready 61,624ms（含 146 MB 分片复制 + ~1.5 GB 解包）
+```
+
+#### 4.34.3 修完后的冷启基线（vc136 / 官方 runtime）
+
+```text
+preload→首响应 14,510 ms
+modules.count  247
+modules.compile 3,033 ms
+boot.timeline  total 19,756 ms（app 485 → ready 19,756）
+engine.ready   18,970 ms
+```
+
+#### 4.34.4 收尾：设备与 release 都回到「官方态」，零漂移
+
+演练会制造出与 Release 不同的 runtime 版本（`…-rD3`），若不处理，下次「检查更新」会为了对齐
+而全量重下 145 MB。收尾做法：
+
+```text
+① 把 files/runtime/parts/<…-rD3> 挪成 .old-rD3（不删，留证据）
+② 重启 → resolveManifest 回退 APK assets → 用 assets 分片重新解包
+   → stamp 回到 `…-4820e2beae27`（与 Release51 的 runtime 完全一致）
+   → root/.profile 恢复原样（探针消失，属预期）
+③ 删除演练 Release：runtime-rD2 / runtime-rD3（此前的 rA/rB/rC/rD1 已删）
+   ⇒ 仓库只剩正式 Release：51 / 49 / 47 / 45 / 44 …
+```
+
+现在设备 `stamp` == Release51 的 `runtimeVersion`，**下一次检查更新 = 已是最新**，不会再拉 145 MB。
+
+#### 4.34.5 遗留（不影响功能）
+
+```text
+· files/runtime/parts/.old-rC、.old-rD3（演练中间态，可删）
+· /sdcard/Download/rtbase/（145 MB 演练素材）、dsh49/50/51.apk（可删）
+· `incremental` 语义仍不含「整文件被跳过」的情形（日志会显示「全量 X KB」），只记录不改
+```

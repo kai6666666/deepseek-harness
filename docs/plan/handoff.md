@@ -576,3 +576,16 @@ ESM 事件 19,604 → 3,575，zod 事件 16,333 → 390。
 - 服务端：保留 `runtime-rD2-4820e2beae27`（版本 == 设备本地，check 恒判「已是最新」，防回退）；
   已删 rA/rB/rC/rD1；已恢复 debug.47/49 的 `runtime-chunks.json` 原资产。
 - 设备：vc135 + runtime `…-rD2`；残留 `parts/.old-rC`、`/sdcard/Download/rtbase`、`dsh49/50.apk` 可删。
+
+### 10.20 发 debug.51 + 二轮升级验证 prune（`4.34`）
+
+- Release `v0.2.2-rc.5-debug.51`（prerelease，9 资产，APK 161,701,388 B）；build `46095426260`、
+  sign `46096691971`、publish `46098056358` 全 success；设备已装 vc=136。
+- 装机后 `boot.timeline` 9 点齐全（app 546 → ready 24,016 ms）；冷启 14,510 ms / 247 modules / 18,970 ms。
+- 二轮真实升级（rD3，part3 同长换 probe v2，`xz -5 -T1` 正好 1,888 B）：
+  `incremental=true`、`need=1,888 / total=784,556`；**apply 后 parts 只留 rD3**（旧 rD2 被 prune）
+  ⇒ `prune-by-mtime` 修复成立；解包两片都走增量分片，探针 v2 生效。
+- 收尾：把 `parts/<…-rD3>` 挪成 `.old-rD3` → 重启回退 assets 解包 → `stamp` 回到 `…-4820e2beae27`
+  （与 Release51 一致，零漂移，下次检查更新=已是最新）；删除演练 Release rD2/rD3，仓库只剩正式版。
+- 遗留：`.old-rC` / `.old-rD3` 目录、`/sdcard/Download/rtbase`、`dsh49/50/51.apk` 可删；
+  `incremental` 不含「整文件被跳过」的情形（只记录不改）。
