@@ -602,3 +602,18 @@ ESM 事件 19,604 → 3,575，zod 事件 16,333 → 390。
 - 有意保留：`_tmp` 下 3 份单测副本 + `boot-timing-esm.py`、`/sdcard/Download/v8cache.cjs`、
   `files/home/.dsh/v8cache/`（引擎正常缓存）。
 - 本次不改代码、不动版本号：仍是 `debug.51 / vc136`。
+
+### 10.22 启动回归门禁（`4.36`）
+
+- 执行器：`tools/boot-timing-report.py` 新增 `--assert --baseline <json>` / `--json-metrics`；
+  指标 5 项（`preload_to_first_ms` / `listen_to_listening_ms` / `modules_count` /
+  `modules_compile_ms` / `total_host_to_first_ms`），阈值 `actual ≤ base*(1+tolerance)`，
+  支持 `limit` 绝对上限与 `required`；只看最后一个 block；超标打 `::error` 并 exit 1。
+- 基线：`tools/boot-baseline.json`（14510 / 3408 / 247(+10%) / 3033 / 14500），来源 §4.32~§4.34 真机。
+- 样本：`tools/fixtures/boot-timing/debug51-cold.log`（必绿）、`regressed.log`（必红）。
+- 单测：`tools/tests/test_boot_timing_report.py`（13 例，含 CLI 退出码）。
+- CI：`.github/workflows/boot-regression.yml`（push 路径触发 / PR / dispatch）→ 13 例 + 正例 + 
+  **负例必须判红** + `version.sh --check`；run `46100444633` **success**（7 步全绿）。
+- 提交 `d44ee69`（6 文件，快进推送）；不改 app 代码、不动版本号（仍 debug.51/vc136）。
+- 坑：`api_push.py` 不认未跟踪目录（IsADirectoryError）→ 改走
+  `git fetch → git reset --mixed origin/main → git add -A → commit → push`；跑单测后要清 `__pycache__`。

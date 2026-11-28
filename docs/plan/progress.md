@@ -2318,3 +2318,133 @@ _tmp/boot-timing-esm.py
 files/home/.dsh/v8cache/（引擎侧编译缓存）
   —— 正常运行态，不属于残留
 ```
+
+---
+
+### 4.36 启动回归门禁：把「冷启 14.5 s」变成 CI 硬阈值
+
+> 提交：`d44ee69`；CI：`启动回归门禁` run `46100444633` **success**（7 步全绿）
+> 不改 app 代码、不动版本号：仍是 `debug.51 / vc136`。
+
+#### 4.36.1 为什么要做
+
+`14.5 s` 是「构建脚本 + profile + PRoot + node 版本」四者合起来的结果：
+
+```text
+· 构建期多留一个包 → 模块数从 247 变 420，冷启多 3 s；编译不会报错
+· 谁把 §3.35 的 zod 去重或 §3.36 的 otel 再删/再加 → 只体现在「真机多花几秒」
+· 改了 launch.argv / NODE_OPTIONS → 也可能只退化不报错
+```
+
+以前只能靠人再用手机量一次才发现。现在把真机基线固化，让 CI 每次改动都撞一遍阈值。
+
+#### 4.36.2 实现（`tools/boot-timing-report.py` 增强）
+
+```text
+新增开关            --assert --baseline <json>   逐指标断言，超标 → ::error + exit 1
+                   --json-metrics              只输出折算后的指标（给脚本用）
+                   --log <path>                 显式日志路径（也仍支持位置参数 / stdin 的 -）
+新增指标（5 项）     preload_to_first_ms · listen_to_listening_ms · modules_count
+                   modules_compile_ms · total_host_to_first_ms
+阈值语义            actual ≤ base * (1 + tolerance)
+                   · tolerance 可全局（基线根）或每指标覆盖
+                   · 也支持 "limit": N 写成绝对值上限
+                   · 日志里缺指标 → 记 skip（除非 "required": true 才算失败）
+只看最后一个 block   历史块可能来自旧版本，拿它们比会误报
+```
+
+#### 4.36.3 基线（真机实测，`tools/boot-baseline.json`）
+
+```json
+{
+  "name": "debug.51 冷启基线（真机 M 系 / vc136）",
+  "tolerance": 0.25,
+  "metrics": {
+    "preload_to_first_ms":    { "value": 14510 },
+    "listen_to_listening_ms": { "value": 3408 },
+    "modules_count":          { "value": 247, "tolerance": 0.1 },
+    "modules_compile_ms":     { "value": 3033 },
+    "total_host_to_first_ms": { "value": 14500 }
+  }
+}
+```
+
+`modules_count` 单独收紧到 +10%（涨模块数是最常见的隐性退化）。
+
+#### 4.36.4 固化的正负样本
+
+```text
+tools/fixtures/boot-timing/debug51-cold.log   真机 vc136 冷启原样块（必须绿）
+tools/fixtures/boot-timing/regressed.log      人为把 5 项全放大（必须红）
+```
+
+本地实测：
+
+```text
+$ python3 tools/boot-timing-report.py --assert --baseline tools/boot-baseline.json --log …/debug51-cold.log
+基线：debug.51 冷启基线（真机 M 系 / vc136）（2026-11-28）
+  ✅ （全部指标在阈值内）
+OK：启动耗时未越过基线阈值（…）            rc=0
+
+$ … --log …/regressed.log
+  ❌ preload→首响应(preload_to_first_ms)=26000 > 18138（基线 14510，容差 +25%）
+  ❌ listen→listening(listen_to_listening_ms)=12143 > 4260（基线 3408，容差 +25%）
+  ❌ 模块数(modules_count)=420 > 272（基线 247，容差 +10%）
+  ❌ 模块编译(modules_compile_ms)=9000 > 3791（基线 3033，容差 +25%）
+  ❌ host→首响应(total_host_to_first_ms)=34085 > 18125（基线 14500，容差 +25%）
+::error title=启动回归::…（5 条 annotation） rc=1
+```
+
+#### 4.36.5 CI：`.github/workflows/boot-regression.yml`
+
+```text
+触发    push(main, 只在这些路径：tools/boot-timing-report.py / tools/boot-baseline.json /
+        tools/fixtures/** / tools/tests/** / 本 workflow)、pull_request、workflow_dispatch
+步骤    ① 门禁自测：python3 -m unittest discover -s tools/tests -p 'test_*.py'（13 例）
+        ② 正例：debug51-cold.log 必须绿
+        ③ 负例：regressed.log **必须判红**（否则 `::error` + exit 1，门禁自己坏了要爆）
+        ④ sh tools/version.sh --check（版本头一致性）
+
+run 46100444633 → success
+  JOB boot-timing 阈值回归
+    4 门禁自测（13 例，含容器调用）          success
+    5 正例：已知良好样本必须绿               success
+    6 负例：回归样本必须被判红               success
+    7 版本头一致性                          success
+```
+
+> ③ 是这道门禁的关键：**只测「该绿的绿」会让人以为门禁有效**，必须同时证明「该红的红」。
+> 13 例单测覆盖了解析、指标折算、绝对上限、required、可选指标跳过、以及 3 个 CLI 退出码。
+
+#### 4.36.6 日常怎么用（真机取一次日志就能判）
+
+```bash
+run-as com.dsh.android cat files/logs/boot-timing.log > /tmp/bt.log   # 或 adb
+python3 tools/boot-timing-report.py --assert --baseline tools/boot-baseline.json --log /tmp/bt.log
+# 想看瀑布图就不带 --assert：
+python3 tools/boot-timing-report.py /tmp/bt.log
+```
+
+超标时同一行会带 `::error`，GitHub Actions / 本地 CI 都能直接变成红叉。
+
+#### 4.36.7 踩到的坑
+
+```text
+· api_push.py 不认「未跟踪的目录」：`git ls-files --others` 会把目录当文件 open →
+  IsADirectoryError（tools/__pycache__/、tools/fixtures/ 各踩一次）。
+  正解：本地 `git fetch` → `git reset --mixed origin/main` → `git add -A` → commit → push，
+  这样 commit 干净（只 6 个文件）且是快进推送。
+· 跑完 unittest 会生成 __pycache__/，提交前必须清（仓库未忽略它）。
+· report.py 的 flag 解析不能「过滤掉 -- 开头的 token 就把剩下的当路径」——
+  `--baseline x.json` 里的 x.json 会被误当日志路径（已改成显式消费参数）。
+```
+
+#### 4.36.8 现状
+
+```text
+基线文件    tools/boot-baseline.json（值来自 §4.32~§4.34 真机日志，改基线要写清来源）
+执行器      tools/boot-timing-report.py（--assert / --json-metrics；渲染功能不变）
+门禁        .github/workflows/boot-regression.yml（run 46100444633 success）
+单测        tools/tests/test_boot_timing_report.py（13 例）
+远端 main   d44ee69
+```
