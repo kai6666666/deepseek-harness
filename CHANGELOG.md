@@ -8,6 +8,21 @@
 - 设备侧清理：删除演练备份 `dsh-backup-drill.zip` 与 13 个历史 APK（约 2.4 GB）。
 
 **不发新版**：本批只有文档与文件清理。
+## [0.2.2-rc.5-debug.54] — 2026-11-28
+vc=139
+
+### 修复：mobile-ui 插件从未被重解压（这才是「全部未生效」的真凶）
+
+`EngineManager.MOBILE_UI_VERSION` 一直是 `1.1.0-195`，而它与 `$DSH_HOME/mobile-ui/.stamp`
+比对后就跳过解压 —— 所以这一轮改的 `lib/client.js`（含弹层与轨迹 CSS）**根本没到设备上**：
+真机里那份文件还是 2026-11-24 的 657,311 B 旧版（`grep mpOpenStats` = 0）。
+
+- `MOBILE_UI_VERSION` → `1.1.0-196`（强制重解压）
+- `mobile-ui-plugin/dsh-android-mobile/package.json` version → `1.1.0-196`（与常量同源）
+- 重新打包 `assets/mobile-ui.zip`（244 KB，含本轮 ①弹层 + ②轨迹换行修复）
+
+---
+
 ## [0.2.2-rc.5-debug.53] — 2026-11-28
 vc=138
 
