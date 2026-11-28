@@ -2072,3 +2072,121 @@ engine.ready    21,044 ms
 1. `A4-#6` 的「0 < need ≪ total」需一次真实升级（判据已固定）；
 2. `gui` 点没有单独的 Δ 说明（它在 `ready` 之后由 WebView 回调追加，属既有行为）；
 3. 设备上仍有 `parts.old1` / `.rootfs.stamp.old1` 等演练残留（可删）。
+
+---
+
+### 4.33 A4-#6 闭环：**真机真实升级**，`incremental=true` 且 `needBytes ≪ totalBytes`
+
+> 执行时间：2026-11-28 08:40~09:55（设备 vc133→134→135）
+> 结论：**A4-#6 关闭**。真机跑了 4 次真实升级（含 2 次失败），最终拿到
+> `needBytes=1,888 / totalBytes=784,556 = 0.24%`、`incremental=true`、解包期两片都走「增量分片」、
+> 新运行时里的探针文件真的生效。
+> 顺带挖出并修掉 **2 个真 bug**（其余 1 个只记录）：见 4.33.4。
+
+#### 4.33.1 为什么要在真机上「造一次升级」
+
+`RuntimeDelta.planDelta` 的增量只有在 **本地已有同长度基线** 时才会按 64 KiB 块比 hash：
+
+```text
+local = parts/<ver>/<asset>  或  runtime/<asset>
+if (local != null && local.length() == remote.bytes) → 逐块比 → 只下变化的块
+else → 该文件整包下载
+```
+
+设备出厂状态（用 APK 自带 assets 解包）**没有 `parts/`**，所以第一次联网升级必然是全量；
+`Debug.49` 之前只验过两个极端态（无基线→全量 138.7 MB；清单一致→0 B），**中间态从未被真实触发**。
+
+#### 4.33.2 演练设计（不重下 145 MB 的做法）
+
+真机实测：`rootfs-part0/opt=74.4 MB`、`part1/usr=70.3 MB`、`part2/var+etc=782 KB`、`part3=1.9 KB`。
+所以只拿 `part2 + part3` 做文章：
+
+```text
+① 播种基线：发布 rA/rB 两个「只列 part2 / 只列 part3、字节与原版完全相同」的 runtime Release
+   → 真机走一次真实下载（782,772 / 1,888 B）→ parts/<ver>/ 有了基线
+② 造偏量：把 part3 里的 root/.profile 换成探针文本，并用 `xz -6 -T1` 把**压缩后长度压回 1,888 B**
+   （与旧 part3 逐字节等长）→ 客户端块比对应只下 1 个块
+③ 真升级：发布 rD2（chunks 列 part2+part3，manifest 的 part3 sha 换成新的）
+   → 真机 check → apply → 解包 → 启动，全程真网络、真磁盘
+```
+
+> `xz -6 -T1` 输出恰好 1,888 B 是实测所得（`-6e` 为 1,852 B，可加 4 字节对齐的 stream padding 补齐；
+> 这里直接用 `-6` 命中，避免 padding 争议）。
+
+#### 4.33.3 真机证据（vc135 / runtime `…-4820e2beae27-rD2`）
+
+```text
+check  → {"to":"…-rD2","needBytes":1888,"totalBytes":784556,"incremental":true}
+apply  → 运行时 …-rD2 已就绪（增量 1 KB）
+解包   → part2 用增量分片：runtime/rootfs-part2-arm64-v8a.tar.xz（782668 字节）
+        part3 用增量分片：runtime/rootfs-part3-arm64-v8a.tar.xz（1888 字节）
+        rootfs 就绪（分片）…（…-rD2）
+探针   → files/runtime/rootfs/root/.profile 第一行 = `#A4-#6 runtime probe (part3, same-size 1888)`
+冷启   → app 427 / runtime 760(unpacked=false) / preflight 2487 / prootSpawn 2528 /
+        prootMounted 2789 / nodeExec 16625 / health 18726 / ready 18728 ms
+        preload→首响应 13,839 ms；modules 247；compile 2,401 ms；engine.ready 18,033 ms
+```
+
+`needBytes / totalBytes = 0.24%` —— A4-#6 的判据「0 < need ≪ total 且 incremental=true」**成立**。
+
+#### 4.33.4 演练挖出的 bug（3 个）
+
+| # | Bug | 现象 | 处置 |
+|---|---|---|---|
+| 1 | `RuntimeDelta.partFile` 只按 `asset` 原样拼路径（`runtime/rootfs-…`），而增量落盘名是 chunks 键（`rootfs-…`） | 增量下好的分片永远找不到 → 解包退回 APK 旧分片 → `rootfs分片校验失败：part3 sha256=…`，App 进错误页 | **已修** `80b0c66`（同时试带/不带前缀）+ `RuntimeDeltaPartFileTest` 4 例，出 `debug.50/vc135` |
+| 2 | `pruneOldParts` 用 `sortedByDescending { it.name }`（字典序）保留基线 | `…-r2` 与 `…-rA` 并存时把 `rA` 当「更新」⇒ **刚下好的 r2 被删** | **已修** `9e4f256`（改用 `RuntimeFiles.pruneParts`，按 mtime），出 `debug.51/vc136` |
+| 3 | `RuntimeDelta` 的 `incremental` 语义只覆盖「有基线且发生了块下载」，**整文件被跳过**（`fetch.isEmpty()`）不算增量 | 只跳过文件、没有块级差异时日志显示「全量 X KB」 | **仅记录**（不影响正确性；要改需重定义 `anyIncremental`，属行为变更） |
+
+#### 4.33.5 失败过的路径（都是真实故障，不是假设）
+
+```text
+❌ 直接对 Release49 做全量升级：镜像 429 KB/s，下载到 30 MB 时
+   「分块下载失败 rootfs-arm64-v8a.tar.xz@30867456」（GhProxyCom 断流），且无断点续传
+❌ rA→r2 两段式：mirror 缓存把旧 chunks 又发了一次（files 只列 part3），
+   且 pruneOldParts 把 r2 目录删掉 → 解包期 sha 失败
+✅ rD1（播种）→ rD2（偏量）两段式：一次过
+```
+
+> 镜像缓存实测 TTL ≈ 60~90 s：**删除/替换 Release 资产后要等它过期**，否则设备会拿到旧清单。
+
+#### 4.33.6 服务端现状（演练留下的东西）
+
+```text
+保留  runtime-rD2-4820e2beae27（3 资产：chunks/manifest/part3-1888）
+      —— 故意保留：它排在 releases.atom 首位，且版本 == 设备本地版本
+      ⇒ 以后 check 会命中它并判「已是最新」，不会把设备拽回 49/50 的旧 runtime
+已删  runtime-rA / runtime-rB / runtime-rC / runtime-rD1（4 个演练 Release）
+已恢复 v0.2.2-rc.5-debug.47 / debug.49 的 runtime-chunks.json 原资产（282,673 B）
+```
+
+#### 4.33.7 设备现状
+
+```text
+APK      vc=135 / 0.2.2-rc.5-debug.50（9 点 boot.timeline、partFile 已修）
+runtime  …-4820e2beae27-rD2（stamp 一致；root/.profile = 探针）
+残留     files/runtime/parts/.old-rC（演练中间态，可删）
+         /sdcard/Download/rtbase/（145 MB 演练素材，可删）
+         /sdcard/Download/dsh49.apk、dsh50.apk（可删）
+```
+
+#### 4.33.8 收尾：`debug.51 (vc136)` 已构建通过
+
+```text
+提交      9e4f256   fix(runtime): pruneOldParts 改按 mtime
+CI        46095426260  success（runtime (arm64-v8a) + assembleSystemDebug，含 app-unit-tests）
+版本      tools/app-version.txt → 0.2.2-rc.5-debug.51 / vc=136（VERSION PASS）
+```
+
+真机仍停在 vc135，**这不是回归**：`pruneOldParts` 只在「一次 apply 之后」触发，
+本次演练已实证 bug #2 存在，修复留待下一次真实升级验证（出包即可）。
+
+#### 4.33.9 A4 / B 计划最终状态
+
+| 项 | 状态 |
+|---|---|
+| A1~A4 多线路下载 + 判定 | ✅ |
+| **A4-#6 偏量增量（真机端到端）** | ✅ **本轮关闭**（0.24%，incremental=true） |
+| B1~B6 分段观测 | ✅（9 点、误差 0、`unpacked` 有值、无额外开销） |
+| B 三层测量 | ✅ |
+| 计划外优化 | ✅（42.0 s → 13.8~16.7 s） |
+| direct（免 proot） | ⏸ 已决策不动 |

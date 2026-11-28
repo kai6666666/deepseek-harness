@@ -560,3 +560,19 @@ ESM 事件 19,604 → 3,575，zod 事件 16,333 → 390。
 - A/B 计划验收：A1~A4 ✅（A4-#6 偏量端到端待真实升级）；B1~B6 ✅（9 点、误差 0、unpacked、无额外开销、
   guest 时间戳超额）；三层测量 ✅；计划外 42.0 s → 16.7 s。
 - 遗留：A4-#6 偏量端到端；设备演练残留 `parts.old1` / `.rootfs.stamp.old1` 可删。
+
+### 10.19 A4-#6 闭环：真机真实升级（`4.33`）
+
+- **判据成立**：`incremental=true`、`needBytes=1,888 / totalBytes=784,556 = 0.24%`，解包期
+  `part2/part3 用增量分片` 均有日志，新运行时里 `root/.profile` 的探针文本生效。
+- 演练做法：`rD1`（列 part2+part3 原样字节，播种基线 784,556 B）→ `rD2`（part3 内容换探针、
+  用 `xz -6 -T1` 把压缩后长度压回 1,888 B，逐字节等长）→ 客户端块比对只下 1 个块。
+- 挖出并修掉两个真 bug：①`partFile` 不认「不带 `runtime/` 前缀」的落盘名 ⇒ 增量分片永远找不到、
+  解包退回 assets 后 sha256 失败（`80b0c66` / `debug.50 vc135`）；②`pruneOldParts` 按字典序保留 ⇒
+  刚下好的新基线被删（`9e4f256` / `debug.51 vc136`，CI `46095426260` success）。
+- 第三个只记录：`incremental` 不含「整文件被跳过」的情形（日志显示「全量 X KB」，不影响正确性）。
+- 运维两条：镜像缓存 TTL ≈ 60~90 s（换/删 Release 资产后要等）；Release 里只放��用到的分片会被
+  `planDelta` 当成 total，要控制 total 就必须让「未变文件」也有基线。
+- 服务端：保留 `runtime-rD2-4820e2beae27`（版本 == 设备本地，check 恒判「已是最新」，防回退）；
+  已删 rA/rB/rC/rD1；已恢复 debug.47/49 的 `runtime-chunks.json` 原资产。
+- 设备：vc135 + runtime `…-rD2`；残留 `parts/.old-rC`、`/sdcard/Download/rtbase`、`dsh49/50.apk` 可删。
