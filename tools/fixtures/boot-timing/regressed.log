@@ -1,0 +1,15 @@
+--- boot-timing v1 reason=token ---
+pid=9999 node=v24.22.1 entry=/opt/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js
+epoch.preload=1795833850691
+host.epoch=1795833850459
+node.start.epoch=1795833850582
+epoch.listen=1795833861954
+epoch.listening=1795833874097
+epoch.first=1795833884544
+preload.to.first.ms=26000
+modules.count=420
+modules.compile.ms=9000
+modules.avg.ms=21.4
+io.preload=rchar:39597 read_bytes:0 syscr:40
+io.first=rchar:37861017 read_bytes:4096 syscr:10370
+--- end ---

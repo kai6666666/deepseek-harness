@@ -1,0 +1,49 @@
+name: 启动回归门禁
+# 为什么单独一道：冷启 14.5 s 是「构建脚本 + profile + PRoot + node 版本」四者合起来的结果，
+# 任何一处退化都不会编译失败，只会在真机上多花几秒。这里用**固化的真机日志样本**
+# 把它变成一道阈值门禁：
+#   ① 样本本身（tools/fixtures/boot-timing/debug51-cold.log）必须过基线
+#   ② 人为回归样本（regressed.log）必须被判红 —— 否则说明门禁自己坏了
+# 基线定义：tools/boot-baseline.json（§4.34 真机实测），执行器 tools/boot-timing-report.py --assert。
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'tools/boot-timing-report.py'
+      - 'tools/boot-baseline.json'
+      - 'tools/fixtures/**'
+      - 'tools/tests/**'
+      - '.github/workflows/boot-regression.yml'
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  boot-regression:
+    name: boot-timing 阈值回归
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: 门禁自测（13 例，含容器调用）
+        run: python3 -m unittest discover -s tools/tests -p 'test_*.py' -v
+      - name: 正例：已知良好样本必须绿
+        run: |
+          python3 tools/boot-timing-report.py --assert \
+            --baseline tools/boot-baseline.json \
+            --log tools/fixtures/boot-timing/debug51-cold.log
+      - name: 负例：回归样本必须被判红
+        run: |
+          if python3 tools/boot-timing-report.py --assert \
+               --baseline tools/boot-baseline.json \
+               --log tools/fixtures/boot-timing/regressed.log; then
+            echo "::error::回归样本没被判红 —— 阈值逻辑失效"
+            exit 1
+          else
+            echo "OK：regressed.log 已按预期判红（exit≠0）"
+          fi
+      - name: 版本头一致性
+        run: sh tools/version.sh --check

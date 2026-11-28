@@ -1,0 +1,14 @@
+{
+  "name": "debug.51 冷启基线（真机 M 系 / vc136）",
+  "captured": "2026-11-28",
+  "device": "com.dsh.android vc=136 · runtime r1-arm64-v8a-…-4820e2beae27 · soc 未变",
+  "source": "docs/plan/progress.md §4.32~§4.34 的真机 boot-timing.log",
+  "tolerance": 0.25,
+  "metrics": {
+    "preload_to_first_ms": { "value": 14510, "note": "preload→首响应（§4.34 实测 14,510；历史 13,839~16,737）" },
+    "listen_to_listening_ms": { "value": 3408, "note": "listen→listening（zod 去重后稳定 3.4 s）" },
+    "modules_count": { "value": 247, "tolerance": 0.1, "note": "去 zod + 摘 otel 后稳态 247；涨说明构建又漏装了包" },
+    "modules_compile_ms": { "value": 3033, "note": "模块编译；PRoot ptrace 放大后 2.3~3.0 s" },
+    "total_host_to_first_ms": { "value": 14500, "note": "host spawn→guest 首响应（跨时钟域对齐后）" }
+  }
+}
