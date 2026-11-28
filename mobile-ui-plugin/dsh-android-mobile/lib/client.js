@@ -1465,21 +1465,21 @@ window.__ModuleLoader__.load({
   }
 }
 .mp-stats-mask{position:fixed;inset:0;z-index:2147483000;display:flex;align-items:flex-end;
-  justify-content:center;background:rgba(0,0,0,.45);padding:16px;
+  justify-content:center;background:color-mix(in srgb,CanvasText 38%,transparent);padding:16px;
   padding-bottom:calc(16px + env(safe-area-inset-bottom));}
 .mp-stats-card{width:100%;max-width:520px;max-height:70vh;overflow:auto;border-radius:16px;
-  background:var(--dsh-surface-1,#1f2126);color:var(--dsh-text-1,#e8eaed);
-  padding:16px 18px;box-shadow:0 12px 40px rgba(0,0,0,.5);font-size:14px;line-height:1.5;}
+  background:var(--dsw-alias-bg-layer-1,Canvas);color:var(--dsw-alias-label-primary,CanvasText);
+  padding:16px 18px;box-shadow:0 12px 40px color-mix(in srgb,CanvasText 22%,transparent);font-size:14px;line-height:1.5;}
 .mp-stats-title{font-size:15px;font-weight:600;margin:0 0 10px;display:flex;
   justify-content:space-between;align-items:center;}
 .mp-stats-close{border:0;background:transparent;color:inherit;font-size:18px;line-height:1;
   padding:4px 6px;opacity:.7;}
 .mp-stats-row{display:flex;justify-content:space-between;gap:12px;padding:6px 0;
-  border-top:1px solid rgba(255,255,255,.07);}
+  border-top:1px solid var(--dsw-alias-border-l4,color-mix(in srgb,CanvasText 14%,transparent));}
 .mp-stats-row:first-of-type{border-top:0;}
 .mp-stats-k{opacity:.72;}
 .mp-stats-v{font-variant-numeric:tabular-nums;font-weight:600;}
-.mp-stats-raw{margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,.07);
+.mp-stats-raw{margin-top:10px;padding-top:10px;border-top:1px solid var(--dsw-alias-border-l4,color-mix(in srgb,CanvasText 14%,transparent));
   font-size:12px;opacity:.6;overflow-wrap:anywhere;white-space:pre-wrap;}
 .mp-stats-note{margin-top:8px;font-size:12px;opacity:.55;overflow-wrap:anywhere;}
 `;
@@ -1715,9 +1715,10 @@ window.__ModuleLoader__.load({
 				output: pick(/(?:输出|output)\s*([\d.]+\s*[KMG]?)/i)
 			};
 		}
-		function mpStatsRow(k, v) {
+		function mpStatsRow(k, v, key) {
 			const row = document.createElement("div");
 			row.className = "mp-stats-row";
+			if (key) row.dataset.mk = key;
 			const kk = document.createElement("span");
 			kk.className = "mp-stats-k";
 			kk.textContent = k;
@@ -1757,16 +1758,16 @@ window.__ModuleLoader__.load({
 			title.appendChild(x);
 			card.appendChild(title);
 			if (isUsage) {
-				card.appendChild(mpStatsRow("总量", p.total ? p.total + " tok" : ""));
-				card.appendChild(mpStatsRow("缓存命中", p.cache));
-				card.appendChild(mpStatsRow("未缓存输入", p.input));
-				card.appendChild(mpStatsRow("缓存读取", p.cacheRead));
-				card.appendChild(mpStatsRow("输出", p.output));
+				card.appendChild(mpStatsRow("总量", p.total ? p.total + " tok" : "", "total"));
+				card.appendChild(mpStatsRow("缓存命中", p.cache, "cache"));
+				card.appendChild(mpStatsRow("未缓存输入", p.input, "input"));
+				card.appendChild(mpStatsRow("缓存读取", p.cacheRead, "cacheRead"));
+				card.appendChild(mpStatsRow("输出", p.output, "output"));
 			} else {
-				card.appendChild(mpStatsRow("轮 / 步", (p.turns || "—") + " 轮 · " + (p.steps || "—") + " 步"));
-				card.appendChild(mpStatsRow("输出速度", p.tps ? p.tps + " tok/s" : ""));
-				card.appendChild(mpStatsRow("模型用时 / 工具用时", ""));
-				card.appendChild(mpStatsRow("首 token（TTFT）", ""));
+				card.appendChild(mpStatsRow("轮 / 步", (p.turns || "—") + " 轮 · " + (p.steps || "—") + " 步", "turns"));
+				card.appendChild(mpStatsRow("输出速度", p.tps ? p.tps + " tok/s" : "", "tps"));
+				card.appendChild(mpStatsRow("模型用时 / 工具用时", "", "times"));
+				card.appendChild(mpStatsRow("首 token（TTFT）", "", "ttft"));
 			}
 			const raw = document.createElement("div");
 			raw.className = "mp-stats-raw";
@@ -1780,6 +1781,7 @@ window.__ModuleLoader__.load({
 			card.appendChild(note);
 			mask.appendChild(card);
 			document.body.appendChild(mask);
+			mpFillProjection(card, isUsage, p);
 		}
 		function mpBindStatsTrigger(el) {
 			if (!el || el.dataset.mpBound === "1") return;
@@ -1792,6 +1794,88 @@ window.__ModuleLoader__.load({
 				mpOpenStats(el);
 			}, true);
 		}
+function mpNum(n) {
+if (n == null || !isFinite(n)) return "";
+if (n >= 1e6) return (n / 1e6).toFixed(1).replace(/\.0$/, "") + "M";
+if (n >= 1e3) return (n / 1e3).toFixed(n >= 1e5 ? 0 : 1).replace(/\.0$/, "") + "K";
+return String(Math.round(n));
+}
+function mpSec(ms) {
+if (!ms || !isFinite(ms)) return "—";
+const s2 = ms / 1000;
+return (s2 >= 100 ? Math.round(s2) : s2.toFixed(1)) + " 秒";
+}
+function mpSetRow(card, key, val) {
+if (!val) return;
+const v = card.querySelector('[data-mk="' + key + '"] .mp-stats-v');
+if (v) v.textContent = val;
+}
+/** 投影回填：读引擎自己的投影缓存（服务端 route 直出），补全药丸原文拿不到的字段。 */
+function mpFillProjection(card, isUsage, p) {
+const noteEl = card.querySelector(".mp-stats-note");
+const apply1 = (d) => {
+if (!d || d.ok !== true) return;
+const st = d.session || {}, u = d.usage || {};
+if (isUsage) {
+const cin = u.uncachedInputTokens || 0, cr = u.cacheReadTokens || 0;
+const out = u.outputTokens || 0, cw = u.cacheWriteTokens || 0;
+const sum = cin + cr + out + cw;
+if (sum > 0) {
+mpSetRow(card, "total", mpNum(sum) + " tok");
+mpSetRow(card, "cache", Math.round((100 * cr) / Math.max(1, cin + cr)) + "%");
+mpSetRow(card, "input", mpNum(cin) + " tok");
+mpSetRow(card, "cacheRead", mpNum(cr) + " tok");
+mpSetRow(card, "output", mpNum(out) + " tok");
+}
+} else {
+if (st.turns || st.steps) mpSetRow(card, "turns", (st.turns || 0) + " 轮 · " + (st.steps || 0) + " 步");
+if (st.llmMs || st.toolMs) mpSetRow(card, "times", mpSec(st.llmMs) + " / " + mpSec(st.toolMs));
+if (st.ttftSteps > 0) mpSetRow(card, "ttft", mpSec(st.ttftMs / Math.max(1, st.ttftSteps)));
+if (st.decodeMs > 0) mpSetRow(card, "tps", Math.round((1000 * st.decodeTokens) / st.decodeMs) + " tok/s");
+}
+if (noteEl) noteEl.textContent = "补全字段来自引擎投影缓存（sessionStats / tokenUsage，只读）。";
+};
+fetch("/__dsh_android_mobile/projection", { headers: { accept: "application/json" }, cache: "no-store" })
+.then((r) => r.json()).then(apply1).catch(() => {});
+}
+/**
+ * 轨迹行：用**内联样式**强压（inline 优先于任何 CSS modules 规则），
+ * 并用「是否真溢出」判定目标，不依赖写死的类名 hash。
+ */
+function mpSweepTrajectory() {
+if (!mpIsMobile()) return;
+const dock = document.querySelector("[data-composer-dock]");
+document.querySelectorAll("[data-kind]").forEach((el) => {
+if (dock && dock.contains(el)) return;
+if (el.dataset.mpTrajFixed === "1") return;
+const cs = getComputedStyle(el);
+const h = parseFloat(cs.height) || 0;
+const over = el.scrollHeight > el.clientHeight + 1;
+const lowRow = h > 30 && h < 46;
+if (!over && !lowRow) return;
+el.style.setProperty("height", "auto", "important");
+el.style.setProperty("min-height", "38px", "important");
+el.style.setProperty("align-items", "flex-start", "important");
+el.style.setProperty("flex-wrap", "wrap", "important");
+el.querySelectorAll('[class*="text" i]').forEach((t) => {
+t.style.setProperty("white-space", "pre-wrap", "important");
+t.style.setProperty("overflow", "visible", "important");
+t.style.setProperty("text-overflow", "clip", "important");
+t.style.setProperty("overflow-wrap", "anywhere", "important");
+t.style.setProperty("flex", "1 1 100%", "important");
+});
+el.querySelectorAll('[class*="trailing" i]').forEach((x) => {
+x.style.setProperty("width", "auto", "important");
+x.style.setProperty("flex", "1 1 100%", "important");
+x.style.setProperty("justify-content", "flex-start", "important");
+});
+el.dataset.mpTrajFixed = "1";
+});
+}
+if (!window.__mpTrajTimer) {
+window.__mpTrajTimer = setInterval(mpSweepTrajectory, 1500);
+setTimeout(mpSweepTrajectory, 800);
+}
 		function processStatsLine() {
 			if (!mpIsMobile()) return; // 修复 40：仅移动端；桌面端完全走官方
 			// ⚠️⚠️ **修复 65：官方换过 DOM 结构，旧选择器已全部失配。**

@@ -8,6 +8,52 @@
 - 设备侧清理：删除演练备份 `dsh-backup-drill.zip` 与 13 个历史 APK（约 2.4 GB）。
 
 **不发新版**：本批只有文档与文件清理。
+## [0.2.2-rc.5-debug.55] — 2026-11-28
+vc=140
+
+### ① 弹层跟随「外观」（浅色/深色）
+
+旧版写的 `var(--dsh-surface-1,#1f2126)` / `var(--dsh-text-1,#e8eaed)` —— 这两个变量**在整个前端不存在**，
+所以永远落到硬编码深色。现全部换成上游真实 token：
+
+```text
+背景  --dsw-alias-bg-layer-1        （fallback Canvas）
+文字  --dsw-alias-label-primary     （fallback CanvasText）
+分隔  --dsw-alias-border-l4         （fallback color-mix(CanvasText 14%)）
+遮罩  color-mix(in srgb, CanvasText 38%, transparent)
+阴影  color-mix(in srgb, CanvasText 22%, transparent)
+字体  不写死，继承面板
+```
+
+### ② 轨迹堆叠：改用 JS 内联强制 + 溢出探测
+
+上一版纯 CSS（`[data-kind]{height:auto!important}`）真机未生效（CSS modules 特异性/匹配问题）。
+现改为：遍历 `[data-kind]`（排除 composer dock 里的两枚药丸）→ 读 `clientHeight/scrollHeight`
+与 computed height → **真溢出或行高≈38px 才动手** → `style.setProperty(..., 'important')` 直接压 inline：
+行高 auto / min-height 38 / align-items flex-start / flex-wrap wrap；
+`.text` 子节点 pre-wrap + overflow visible + text-overflow clip + overflow-wrap anywhere + `flex:1 1 100%`；
+`.trailing` 宽度 auto + 换行。每 1.5 s 扫一次（幂等，打 `data-mp-traj-fixed` 标记）。
+
+### ④ 弹层字段补全：新增只读投影 route
+
+服务端半边（`lib/index.js`）新增：
+
+```text
+GET /__dsh_android_mobile/projection
+→ { ok, session:{turns,steps,llmMs,toolMs,ttftMs,ttftSteps,decodeMs,decodeTokens},
+       usage:{uncachedInputTokens,outputTokens,cacheReadTokens,cacheWriteTokens},
+       pressure:{surfaceTokens} }
+数据源 $DSH_HOME/storages/session_projcache/sessions/session-*.json（mtime 最新 = 活跃会话）
+```
+
+客户端拿到后回填：未缓存输入 / 缓存读取 / 输出 / 总量 / 命中率 / 模型用时 / 工具用时 / TTFT / tok/s。
+
+### 版本
+
+`MOBILE_UI_VERSION` 与包 version 同步提到 `1.1.0-197`（强制重解压）。
+
+---
+
 ## [0.2.2-rc.5-debug.54] — 2026-11-28
 vc=139
 

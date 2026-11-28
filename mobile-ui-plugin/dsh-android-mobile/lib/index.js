@@ -615,6 +615,44 @@ req.on('error', reject);
 }
 
 export function apply(ctx) {
+// ── §4.38 会话投影直出（给底部两枚药丸的弹层补全字段）──────────────────
+// 客户端拿不到 sessionStats / tokenMeter 实例，但**读得到落盘投影**：
+//   $DSH_HOME/storages/session_projcache/sessions/session-*.json
+// 这里只读、只挑 mtime 最新那个（=当前活跃会话），不写任何东西。
+ctx.effect(() => ctx.webServer.register({
+kind: 'exact',
+path: '/__dsh_android_mobile/projection',
+handler: async (req, res) => {
+const send = (code, body) => {
+res.writeHead(code, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
+res.end(JSON.stringify(body));
+};
+try {
+const fs = await import('node:fs/promises');
+const path = await import('node:path');
+const home = process.env.DSH_HOME || path.join(process.env.HOME || '', '.dsh');
+const dir = path.join(home, 'storages/session_projcache/sessions');
+const names = (await fs.readdir(dir)).filter((n) => n.startsWith('session-') && n.endsWith('.json'));
+let best = null, bestAt = 0;
+for (const n of names) {
+const st = await fs.stat(path.join(dir, n));
+if (st.mtimeMs > bestAt) { bestAt = st.mtimeMs; best = n; }
+}
+if (!best) return send(200, { ok: false, error: 'no projection yet' });
+const rec = JSON.parse(await fs.readFile(path.join(dir, best), 'utf8'));
+const rows = (rec && rec.record && rec.record.rows) || {};
+send(200, {
+ok: true,
+session: (rows.sessionStats && rows.sessionStats.val) || null,
+usage: (rows.tokenUsage && rows.tokenUsage.val && rows.tokenUsage.val.totals) || null,
+pressure: (rows.contextPressure && rows.contextPressure.val) || null,
+at: bestAt,
+});
+} catch (e) {
+send(200, { ok: false, error: String((e && e.message) || e) });
+}
+},
+}), 'dsh-android-mobile: session projection route');
 	ctx.effect(() => ctx.webServer.register({
 		kind: 'exact',
 		path: ROUTE,
