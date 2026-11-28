@@ -8,6 +8,33 @@
 - 设备侧清理：删除演练备份 `dsh-backup-drill.zip` 与 13 个历史 APK（约 2.4 GB）。
 
 **不发新版**：本批只有文档与文件清理。
+## [0.2.2-rc.5-debug.53] — 2026-11-28
+vc=138
+
+### ① 底部状态栏两入口弹层（会话统计 / Token 用量）
+
+`dsh-android-mobile` 客户端插件里补上「三组药丸都能点开」的承诺（此前只有注释、没有实现）：
+
+- 降档前把官方原文存进 `dataset.mpRaw`（常量早就有，但从未使用过）；
+- `[data-composer-stat=activity]` 点击 → **会话统计**（轮/步、输出速度，模型/工具用时与 TTFT 需
+  官方 `sessionStats` 投影，暂显 —）；
+- `[data-composer-stat=usage]` 点击 → **Token 用量**（总量、缓存命中%，输入/缓存读/输出暂显 —）；
+- 弹层沿用现有「上下文已用」的视觉：圆角卡 + 遮罩 + 点外关闭 + 安全区避让，**不动 body 级样式**。
+
+### ② 思维链右侧内容堆叠（轨迹面板）
+
+根因是上游 `TrajectoryCell.module.css` 的 `.root{height:38px}` + `.text{nowrap/ellipsis}` +
+右侧指标区写死 `320px`。在**同一份插件 CSS** 里覆盖：`height:auto` / `pre-wrap` /
+`overflow-wrap:anywhere` / trailing 区 `flex:1 1 100%` 换行 / 行高 1.35。
+不写任何 `font-size` 或 zoom（避免再次出现「字体变大」）。
+
+### 撤销
+
+`experimental` 的 `dsh-experimental-client-ui-stats` overlay 已停止播种（真机未生效），
+`writeUiStatsPatch()` 保留但不入参；`$DSH_HOME/ui-stats.patch.yml` 改名 `.off` 备份。
+
+---
+
 ## [0.2.2-rc.5-debug.52] — 2026-11-28
 vc=137
 

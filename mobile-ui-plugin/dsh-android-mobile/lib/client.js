@@ -1428,6 +1428,60 @@ window.__ModuleLoader__.load({
  *
  * ⚠️ 本注释位于 CSS 模板字符串内部：**禁止出现反引号**，那会提前终止字符串。
  *    上面提到的属性名一律不加 markdown 反引号，就是这个原因。 */
+/* ══ 2026-11-28（§4.37）：轨迹堆叠修复（②）+ 状态栏两入口弹层（①）══════
+   ② 根因（上游 TrajectoryCell.module.css）：.root{height:38px} 固定行高、
+      .text{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}、
+      右侧指标区写死 width:320px ⇒ 手机正文只剩几十 px，换行后与下一条重叠。
+      这里只改布局，**不写 font-size / zoom**（避免再次出现「字体变大」）。
+   ① 状态栏两枚药丸（[data-composer-stat=activity|usage]）点击弹层：
+      activity → 会话统计；usage → Token 用量。数据取精简前的原文（dataset.mpRaw），
+      拿不到的字段显示「—」，绝不臆造。 */
+@media (max-width: 560px) {
+  [data-kind] {
+    height: auto !important;
+    min-height: 38px !important;
+    max-height: none !important;
+    align-items: flex-start !important;
+    flex-wrap: wrap !important;
+    row-gap: 4px !important;
+  }
+  [data-kind] [class*="text" i],
+  [data-kind] [class*="title" i] {
+    white-space: pre-wrap !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    overflow-wrap: anywhere !important;
+    word-break: break-word !important;
+    line-height: 1.35 !important;
+    max-height: none !important;
+    -webkit-line-clamp: unset !important;
+  }
+  [data-kind] [class*="trailing" i],
+  [data-kind] [class*="meta" i] {
+    width: auto !important;
+    flex: 1 1 100% !important;
+    justify-content: flex-start !important;
+    column-gap: 10px !important;
+  }
+}
+.mp-stats-mask{position:fixed;inset:0;z-index:2147483000;display:flex;align-items:flex-end;
+  justify-content:center;background:rgba(0,0,0,.45);padding:16px;
+  padding-bottom:calc(16px + env(safe-area-inset-bottom));}
+.mp-stats-card{width:100%;max-width:520px;max-height:70vh;overflow:auto;border-radius:16px;
+  background:var(--dsh-surface-1,#1f2126);color:var(--dsh-text-1,#e8eaed);
+  padding:16px 18px;box-shadow:0 12px 40px rgba(0,0,0,.5);font-size:14px;line-height:1.5;}
+.mp-stats-title{font-size:15px;font-weight:600;margin:0 0 10px;display:flex;
+  justify-content:space-between;align-items:center;}
+.mp-stats-close{border:0;background:transparent;color:inherit;font-size:18px;line-height:1;
+  padding:4px 6px;opacity:.7;}
+.mp-stats-row{display:flex;justify-content:space-between;gap:12px;padding:6px 0;
+  border-top:1px solid rgba(255,255,255,.07);}
+.mp-stats-row:first-of-type{border-top:0;}
+.mp-stats-k{opacity:.72;}
+.mp-stats-v{font-variant-numeric:tabular-nums;font-weight:600;}
+.mp-stats-raw{margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,.07);
+  font-size:12px;opacity:.6;overflow-wrap:anywhere;white-space:pre-wrap;}
+.mp-stats-note{margin-top:8px;font-size:12px;opacity:.55;overflow-wrap:anywhere;}
 `;
 
 		function injectStyles() {
@@ -1641,6 +1695,103 @@ window.__ModuleLoader__.load({
 		     常驻 = 轮/步 · 缓存命中% · 上下文环%；tok/s 与 token 总量**从基准档
 		     就已移入弹层**（点药丸即得），不再参与常驻竞争。
 		     这里的档位只剩「极端数字兜底」：轮→步→纯数字、缓存标签→纯百分比。 */
+		// ══ §4.37：状态栏两入口弹层（会话统计 / Token 用量）══════════════════
+		// 数据源：精简前官方原文，见 processStatsLine 里写入的 dataset.mpRaw。
+		// 为什么不调 sessionStats / tokenMeter：那两个是**服务端投影**，客户端拿不到实例；
+		// 而这两枚药丸的原文本身就把官方「详细」档的全部字段带上了（轮/步、tok/s、
+		// 总量、缓存命中%），解析即得，零后端依赖、零上游改动。
+		function mpStatsParts(raw) {
+			const t = (raw || "").replace(/\s+/g, " ").trim();
+			const pick = (re) => { const m = re.exec(t); return m ? m[1] : ""; };
+			return {
+				raw: t,
+				turns: pick(/(\d+)\s*(?:轮|turns?)/i),
+				steps: pick(/(\d+)\s*(?:步|steps?)/i),
+				tps: pick(/([\d.]+)\s*(?:tok\/s|t\/s|tok\/s)/i),
+				total: pick(/^([\d.]+\s*[KMG]?)/),
+				cache: pick(/(?:缓存命中|缓存|cache)\s*([\d.]+%)/i),
+				input: pick(/(?:输入|uncached input|input)\s*([\d.]+\s*[KMG]?)/i),
+				cacheRead: pick(/(?:缓存读|缓存读取|cache read)\s*([\d.]+\s*[KMG]?)/i),
+				output: pick(/(?:输出|output)\s*([\d.]+\s*[KMG]?)/i)
+			};
+		}
+		function mpStatsRow(k, v) {
+			const row = document.createElement("div");
+			row.className = "mp-stats-row";
+			const kk = document.createElement("span");
+			kk.className = "mp-stats-k";
+			kk.textContent = k;
+			const vv = document.createElement("span");
+			vv.className = "mp-stats-v";
+			vv.textContent = v && v !== "" ? v : "—";
+			row.appendChild(kk);
+			row.appendChild(vv);
+			return row;
+		}
+		function mpCloseStats() {
+			const m = document.querySelector(".mp-stats-mask");
+			if (m) m.remove();
+		}
+		function mpOpenStats(el) {
+			if (!mpIsMobile()) return;
+			mpCloseStats();
+			const kind = (el.getAttribute("data-composer-stat") || el.dataset.mpKind || "").toLowerCase();
+			const isUsage = kind === "usage";
+			const p = mpStatsParts(el.dataset[MP_STATS_RAW] || el.textContent || "");
+			const mask = document.createElement("div");
+			mask.className = "mp-stats-mask";
+			mask.addEventListener("click", (ev) => { if (ev.target === mask) mpCloseStats(); });
+			const card = document.createElement("div");
+			card.className = "mp-stats-card";
+			const title = document.createElement("div");
+			title.className = "mp-stats-title";
+			const h = document.createElement("span");
+			h.textContent = isUsage ? "Token 用量" : "会话统计";
+			const x = document.createElement("button");
+			x.className = "mp-stats-close";
+			x.type = "button";
+			x.setAttribute("aria-label", "关闭");
+			x.textContent = "×";
+			x.addEventListener("click", mpCloseStats);
+			title.appendChild(h);
+			title.appendChild(x);
+			card.appendChild(title);
+			if (isUsage) {
+				card.appendChild(mpStatsRow("总量", p.total ? p.total + " tok" : ""));
+				card.appendChild(mpStatsRow("缓存命中", p.cache));
+				card.appendChild(mpStatsRow("未缓存输入", p.input));
+				card.appendChild(mpStatsRow("缓存读取", p.cacheRead));
+				card.appendChild(mpStatsRow("输出", p.output));
+			} else {
+				card.appendChild(mpStatsRow("轮 / 步", (p.turns || "—") + " 轮 · " + (p.steps || "—") + " 步"));
+				card.appendChild(mpStatsRow("输出速度", p.tps ? p.tps + " tok/s" : ""));
+				card.appendChild(mpStatsRow("模型用时 / 工具用时", ""));
+				card.appendChild(mpStatsRow("首 token（TTFT）", ""));
+			}
+			const raw = document.createElement("div");
+			raw.className = "mp-stats-raw";
+			raw.textContent = "原始：" + (p.raw || "（空）");
+			card.appendChild(raw);
+			const note = document.createElement("div");
+			note.className = "mp-stats-note";
+			note.textContent = isUsage
+				? "总量/缓存命中来自药丸原文；输入·缓存读·输出需要官方 usage 投影（当前显示 —）。"
+				: "轮/步与速度来自药丸原文；模型/工具用时、TTFT 需要官方 sessionStats 投影（当前显示 —）。";
+			card.appendChild(note);
+			mask.appendChild(card);
+			document.body.appendChild(mask);
+		}
+		function mpBindStatsTrigger(el) {
+			if (!el || el.dataset.mpBound === "1") return;
+			el.dataset.mpBound = "1";
+			el.dataset.mpKind = (el.getAttribute("data-composer-stat") || "").toLowerCase();
+			el.style.cursor = "pointer";
+			el.addEventListener("click", (ev) => {
+				ev.preventDefault();
+				ev.stopPropagation();
+				mpOpenStats(el);
+			}, true);
+		}
 		function processStatsLine() {
 			if (!mpIsMobile()) return; // 修复 40：仅移动端；桌面端完全走官方
 			// ⚠️⚠️ **修复 65：官方换过 DOM 结构，旧选择器已全部失配。**
@@ -1704,8 +1855,10 @@ window.__ModuleLoader__.load({
 			//       已在候选表里（idx ≥ 0）才允许、且只在溢出时降一级。
 			labels.forEach((el, i) => {
 				const v = variants[i];
+				mpBindStatsTrigger(el);
 				const cur = el.textContent || "";
 				const idx = v.indexOf(cur);
+				if (idx < 0) el.dataset[MP_STATS_RAW] = cur;
 				let next;
 				if (idx < 0) next = v[0];               // 官方原文 → 归一为精简基准档
 				else if (fits) return;                  // 已是候选档且放得下 → 不写（断环）
