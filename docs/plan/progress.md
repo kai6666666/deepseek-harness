@@ -2539,3 +2539,26 @@ vc139 · engine.ready 21,235 ms · health=401 · runtime=proot
 ① 陈旧热包：hotMobileUiBundle()?.takeIf { cmpVersion(it.second, MOBILE_UI_VERSION) > 0 }
 ② 前端不刷新：want = 版本 + "#" + versionCode（装新版必重解压）
 ```
+
+#### 4.38.5 「237」的真凶：`tools/mobile-ui-version.txt`
+
+```text
+apk.yml 第 141~153 步：
+  MUI=$(cat tools/mobile-ui-version.txt)
+  sed -i -E "s/MOBILE_UI_VERSION = "[0-9.]+-[0-9]+"/…"$MUI"/" EngineManager.kt
+⇒ CI 每次都会用这个文件覆盖 Kotlin 常量
+⇒ 仓库里写 200、CI 里写 237（文件停在 1.1.0-237）⇒ 装上的 APK 常量恒为 237
+```
+
+修法（本提交）：
+
+```text
+① tools/mobile-ui-version.txt 1.1.0-237 → 1.1.0-200（与 package.json / 常量对齐）
+② tools/version.sh --check 新增「mobile-ui 版本三处同源」体检：
+   tools/mobile-ui-version.txt == 插件 package.json version == EngineManager.MOBILE_UI_VERSION
+   不一致 ⇒ VERSION FAIL，本地就拦，不再等 CI 出包才发现
+③ 设备侧 files/runtime/plugins/.old/ 里 7 个调试热包已删；
+   /sdcard/Download 的 mobile-ui-*.zip 也已清
+```
+
+> `.stale/` 里那份 1.1.0-237 保留（回滚用，不参与加载）。

@@ -88,6 +88,26 @@ if [ -n "$PREV_VC" ] && [ -n "$CL_VC" ]; then
 fi
 
 
+# ---- 4. mobile-ui 插件版本：三处同源（这个坑曾导致装上的 APK 常量恒为旧值）----
+# ① tools/mobile-ui-version.txt（apk.yml 会用它 sed 改写 Kotlin 常量）
+# ② mobile-ui-plugin/dsh-android-mobile/package.json 的 version
+# ③ EngineManager.kt 的 MOBILE_UI_VERSION
+MUI_SRC=$(tr -d ' 
+' < tools/mobile-ui-version.txt 2>/dev/null)
+MUI_PKG=$(sed -n 's/^[[:space:]]*"version":[[:space:]]*"\([^"]*\)".*/\1/p' mobile-ui-plugin/dsh-android-mobile/package.json 2>/dev/null | head -1)
+MUI_KT=$(sed -n 's/.*MOBILE_UI_VERSION = "\([^"]*\)".*/\1/p' app/src/main/java/com/dsh/android/EngineManager.kt 2>/dev/null | head -1)
+printf '  %-34s %-22s
+' "mobile-ui-version.txt" "${MUI_SRC:-<none>}"
+printf '  %-34s %-22s
+' "插件 package.json" "${MUI_PKG:-<none>}"
+printf '  %-34s %-22s
+' "EngineManager 常量" "${MUI_KT:-<none>}"
+if [ -n "$MUI_SRC" ] && [ "$MUI_SRC" = "$MUI_PKG" ] && [ "$MUI_SRC" = "$MUI_KT" ]; then
+    ok "mobile-ui 版本三处同源" "$MUI_SRC"
+else
+    bad "mobile-ui 版本三处同源" "$MUI_SRC / $MUI_PKG / $MUI_KT"
+fi
+
 if [ -n "$ENG_ASSERT" ] && [ "$ENG_ASSERT" != "$ENG_SRC" ]; then
     bad "引擎断言 = engine-version.txt" "$ENG_ASSERT vs $ENG_SRC"
 else

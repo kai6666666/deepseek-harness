@@ -697,3 +697,25 @@ am force-stop com.dsh.android; am start -n com.dsh.android/.MainActivity
 
 整段替换 `mpSweepTrajectory → if(!window.__mpTrajTimer)` 会把夹在中间的探针一起删掉；
 本轮因此白跑三版。探针一律追加在文件末尾。
+
+#### 五、mobile-ui 版本号只有一个真源头
+
+```text
+tools/mobile-ui-version.txt   ← CI(apk.yml) 用它 sed 覆盖 EngineManager.MOBILE_UI_VERSION
+mobile-ui-plugin/dsh-android-mobile/package.json  version
+app/src/main/java/com/dsh/android/EngineManager.kt  MOBILE_UI_VERSION
+```
+
+三者必须一致，`sh tools/version.sh --check` 现在会体检这一条。
+历史坑：文件停在 `1.1.0-237`，于是每次 CI 都把常量改成 237，
+仓库里怎么改都用不上新前端（配合 `.mobile_ui_version` 恒等 ⇒ 永远不重解压）。
+
+**改插件版本时的正确顺序**：
+
+```bash
+1. 改 tools/mobile-ui-version.txt
+2. 改 package.json version
+3. 改 EngineManager.MOBILE_UI_VERSION
+4. 重打 assets/mobile-ui.zip（package.json 必须在打 zip 之前改完）
+5. sh tools/version.sh --check   # 三处不同源会 FAIL
+```
