@@ -2116,7 +2116,11 @@ class EngineManager private constructor(private val context: Context) {
         // `files/runtime/plugins/mobile-ui-<ver>.zip` 存在时解它，目的是
         // 「改一行 CSS 不必重装 161 MB APK」。包由 PluginUpdater 下载（或人工 push）；
         // **解包失败一律回退内置 assets** —— 宁可停在旧 UI，也不能白屏。
-        val hot = hotMobileUiBundle()
+        // §4.37：**陈旧热包不得压制内置更新**  
+        // 实测事故：设备上残留 `mobile-ui-1.1.0-237.zip`，它的版本号 ≥ 内置常量，
+        // 而 stamp 又等于它 ⇒ 每次启动都 return，新 APK 里的前端从未被解出。
+        // 规则：只有**严格新于内置版本**的热包才允许参与（热更新只能向前）。
+        val hot = hotMobileUiBundle()?.takeIf { cmpVersion(it.second, MOBILE_UI_VERSION) > 0 }
         val want = hot?.second ?: MOBILE_UI_VERSION
 
         // 版本戳一致才跳过：热包/内置包版本变了都要重解
