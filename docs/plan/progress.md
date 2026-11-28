@@ -2259,3 +2259,62 @@ engine.ready   18,970 ms
 · /sdcard/Download/rtbase/（145 MB 演练素材）、dsh49/50/51.apk（可删）
 · `incremental` 语义仍不含「整文件被跳过」的情形（日志会显示「全量 X KB」），只记录不改
 ```
+
+---
+
+### 4.35 清理演练残留（A4-#6 收尾）
+
+> 不改代码、不动版本号（仍是 `debug.51 / vc136`）。只清「演练过程中制造的临时物」，
+> 目标：设备、下载目录、`/data/local/tmp`、GitHub tag、工作区草稿五处都不留垃圾。
+
+#### 4.35.1 清理清单与结果
+
+| # | 位置 | 内容 | 处置 | 结果 |
+|---|---|---|---|---|
+| 1 | `files/runtime/parts/` | `.old-rC`、`.old-rD3`（演练中间态基线） | `rm -r` | ✅ 目录已空（只剩 `.`/`..`） |
+| 2 | `/data/local/tmp` | 15 个历史 APK（apk34s/apk35/apk41~45/dsh46*/dsh47~51…） | `rm -f *.apk` | ✅ 4,207,381 KB → 1,785,529 KB（**−2.42 GB**） |
+| 3 | `/sdcard/Download` | `rtbase/`（145 MB 演练素材）+ `dsh46-c/dsh46-layer2/dsh46-upgrade-signed/dsh47~51.apk`（8 个） | `rm -rf` | ✅ 全部消失（**−1.45 GB**） |
+| 4 | `/sdcard/Download` | `dsh-0.2.2-rc.5-debug.46-layer1.apk`（B 阶段早期包，166 MB） | `rm -f` | ✅ 已删 |
+| 5 | GitHub | 7 个演练 tag：`runtime-r2/rA/rB/rC/rD1/rD2/rD3` | `DELETE /git/refs/tags/…` | ✅ 7 个全 204，`matching-refs` 返回空 |
+| 6 | 工作区 `_tmp/` | 已入库的 progress 草稿（4.18/4.18.7/4.20~4.34）+ handoff 草稿 | `rm -f` | ✅ 125 KB → **28 KB**（只剩 3 份单测副本 + `boot-timing-esm.py`） |
+
+#### 4.35.2 磁盘前后对比（真机实测）
+
+```text
+/data/user/0      308G → 304G   （−4 GB，tmp 里的历史 APK 是大头）
+/storage/emulated 307G → 305G   （−1.6 GB）
+```
+
+#### 4.35.3 清理后的健康自检（真机）
+
+```text
+versionName = 0.2.2-rc.5-debug.51（vc136）
+stamp       = r1-arm64-v8a-…-4820e2beae27      ← 官方 runtime，未被清理动摇
+parts/      = 空（`.` / `..`）                  ← 无演练基线残留
+root/.profile = 原版（探针已被 assets 解包覆盖）
+engine.ready  = 18,001 ms  health=401 runtime=proot
+check         = {"message":"运行时已是最新（…-4820e2beae27）","needBytes":0}
+```
+
+> 注意：`parts/` 清空**不影响**正常运行 —— `RootfsInstaller` 先看 `parts/<ver>/manifest.json`，
+> 没有就回退 APK assets；`stamp` 与 assets 版本一致 ⇒ 直接 `isInstalled` 返回 true，不会重新解包。
+> 下次真实升级会重新在 `parts/` 里播种基线，属于设计路径。
+
+#### 4.35.4 GitHub 侧现状（只剩正式 Release）
+
+```text
+v0.2.2-rc.5-debug.51 / .49 / .47 / .45 / .44 …   （都是 9 资产、prerelease）
+runtime-*  ：0 个 release、0 个 tag
+```
+
+#### 4.35.5 有意保留的东西
+
+```text
+_tmp/BootTimelineTest.kt · BootTimingPreloadTest.kt · RuntimeDeltaChunkTest.kt
+_tmp/boot-timing-esm.py
+  —— 这三份是「仓库里同一文件的副本」，留着方便对照；py 是 ESM 分析脚本
+/sdcard/Download/v8cache.cjs
+  —— 手工 flush 脚本（§4.22.5），排障时还会用到
+files/home/.dsh/v8cache/（引擎侧编译缓存）
+  —— 正常运行态，不属于残留
+```

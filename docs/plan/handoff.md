@@ -589,3 +589,16 @@ ESM 事件 19,604 → 3,575，zod 事件 16,333 → 390。
   （与 Release51 一致，零漂移，下次检查更新=已是最新）；删除演练 Release rD2/rD3，仓库只剩正式版。
 - 遗留：`.old-rC` / `.old-rD3` 目录、`/sdcard/Download/rtbase`、`dsh49/50/51.apk` 可删；
   `incremental` 不含「整文件被跳过」的情形（只记录不改）。
+
+### 10.21 清理演练残留（`4.35`）
+
+- 设备 `files/runtime/parts/.old-rC`、`.old-rD3` 删除 → parts 目录空；`stamp` 仍是官方 runtime，
+  `engine.ready 18,001 ms`、`check = 运行时已是最新`（parts 空时回退 assets，不会重解压）。
+- `/data/local/tmp` 清掉 15 个历史 APK：4,207 MB → 1,786 MB（−2.42 GB）。
+- `/sdcard/Download` 清掉 `rtbase/`（145 MB 演练素材）+ 8 个历史 APK + debug.46-layer1（−1.6 GB 量级）。
+- GitHub 删 7 个演练 tag（`runtime-r2/rA/rB/rC/rD1/rD2/rD3`），`matching-refs` 已空；
+  release 侧此前已只剩正式版（51/49/47/45/44…）。
+- 工作区 `_tmp/` 清掉已入库的 progress/handoff 草稿：125 KB → 28 KB。
+- 有意保留：`_tmp` 下 3 份单测副本 + `boot-timing-esm.py`、`/sdcard/Download/v8cache.cjs`、
+  `files/home/.dsh/v8cache/`（引擎正常缓存）。
+- 本次不改代码、不动版本号：仍是 `debug.51 / vc136`。
