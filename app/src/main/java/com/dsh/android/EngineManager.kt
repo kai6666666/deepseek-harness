@@ -7,6 +7,7 @@ import com.dsh.android.runtime.RootfsInstaller
 import com.dsh.android.runtime.RuntimeFailure
 import com.dsh.android.runtime.RuntimeManifest
 import com.dsh.android.runtime.RuntimeFiles
+import com.dsh.android.runtime.BuiltinOverlays
 import com.dsh.android.runtime.PluginUpdater
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
